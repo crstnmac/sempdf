@@ -28,6 +28,7 @@
     "example:image": "npm run build && node dist/examples/jpeg-image.js",
     "example:png": "npm run build && node dist/examples/png-image.js",
     "example:tagged": "npm run build && node dist/examples/tagged-pdf.js",
+    "example:report": "npm run build && node dist/examples/tagged-pdf-report.js",
     "example:web": "npm run build && node examples/website/server.mjs"
   },
   "keywords": [

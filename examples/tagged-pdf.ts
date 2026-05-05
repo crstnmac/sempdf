@@ -22,11 +22,30 @@ const doc = createDocument({
   structureRoot: "Document",
   info: {
     title: "Quarterly Business Review",
-    author: "pdf-editing-lib",
-    creationDate: "D:20260505000000Z",
-    modificationDate: "D:20260505000000Z"
+    author: "pdf-editing-lib"
   }
 });
+
+// Supply explicit XMP metadata with ISO 8601 dates (required by PDF/UA).
+// The library auto-builds XMP from `info` dates, but those use PDF date
+// format (D:YYYYMMDDHHmmSS) which is not valid XMP.  Passing the full XMP
+// packet bypasses the auto-generation.
+doc.setXmpMetadata(
+  '<?xpacket begin="\uFEFF" id="W5M0MpCehiHzreSzNTczkc9d"?>' +
+  '<x:xmpmeta xmlns:x="adobe:ns:meta/">' +
+  '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">' +
+  '<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmlns:pdf="http://ns.adobe.com/pdf/1.3/">' +
+  '<dc:title><rdf:Alt><rdf:li xml:lang="x-default">Quarterly Business Review</rdf:li></rdf:Alt></dc:title>' +
+  '<dc:creator><rdf:Seq><rdf:li>pdf-editing-lib</rdf:li></rdf:Seq></dc:creator>' +
+  '<xmp:CreateDate>2026-05-05T00:00:00Z</xmp:CreateDate>' +
+  '<xmp:ModifyDate>2026-05-05T00:00:00Z</xmp:ModifyDate>' +
+  '<xmp:MetadataDate>2026-05-05T00:00:00Z</xmp:MetadataDate>' +
+  '</rdf:Description>' +
+  '</rdf:RDF>' +
+  '</x:xmpmeta>' +
+  '<?xpacket end="w"?>'
+);
+
 const font = doc.embedTrueTypeFont(readFileSync(fontPath), { family: "TaggedPdfExample" });
 
 // ── Page 1: Cover ──
@@ -69,8 +88,8 @@ cover.container("Sect", (section) => {
     y: 600,
     font,
     fontSize: 10,
-    color: rgb(0.5, 0.5, 0.5),
-    tag: "Span"
+    color: rgb(0.4, 0.4, 0.4),
+    tag: "P"
   });
 });
 
@@ -228,21 +247,23 @@ compliance.container("Sect", (section) => {
     tag: "H2"
   });
 
-  section.structure("Link", { altText: "Full audit reports" }, (link) => {
-    link.text("View full audit reports: https://example.com/audit-reports", {
-      x: 56,
-      y: 525,
-      font,
-      fontSize: 10,
-      color: rgb(0.4, 0.4, 0.4),
-      tag: "Span"
-    });
-    link.link("https://example.com/audit-reports", {
-      x: 56,
-      y: 521,
-      width: 320,
-      height: 18,
-      tag: "Link"
+  section.structure("P", (p) => {
+    p.structure("Link", { altText: "Full audit reports" }, (link) => {
+      link.text("View full audit reports: https://example.com/audit-reports", {
+        x: 56,
+        y: 525,
+        font,
+        fontSize: 10,
+        color: rgb(0.11, 0.2, 0.42),
+        tag: "Span"
+      });
+      link.link("https://example.com/audit-reports", {
+        x: 56,
+        y: 521,
+        width: 320,
+        height: 18,
+        tag: "Link"
+      });
     });
   });
 });
