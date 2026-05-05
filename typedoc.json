@@ -1,0 +1,40 @@
+{
+  "$schema": "https://typedoc-plugin-markdown.org/schema.json",
+  "plugin": ["typedoc-plugin-markdown"],
+  "entryPoints": ["src/index.ts"],
+  "out": "docs/api",
+  "readme": "none",
+  "name": "pdf-editing-lib",
+  "includeVersion": true,
+  "entryPointStrategy": "resolve",
+  "excludeInternal": true,
+  "excludePrivate": true,
+  "excludeProtected": true,
+  "intentionallyNotExported": [
+    "InternalOutlineModel",
+    "InternalPageModel",
+    "InternalStructureNode",
+    "ParsedDocumentEncryption",
+    "ParsedPdfInspectedStructureElement",
+    "ParsedTrueTypeFont",
+    "PdfDict",
+    "PdfDocumentModel",
+    "PdfEncryptionContext",
+    "PdfIncrementalUpdateModel",
+    "PdfValue"
+  ],
+  "hideGenerator": true,
+  "entryFileName": "index",
+  "indexFormat": "table",
+  "parametersFormat": "table",
+  "interfacePropertiesFormat": "table",
+  "classPropertiesFormat": "table",
+  "typeAliasPropertiesFormat": "table",
+  "enumMembersFormat": "table",
+  "useCodeBlocks": true,
+  "categorizeByGroup": true,
+  "navigation": {
+    "includeCategories": true,
+    "includeGroups": true
+  }
+}
