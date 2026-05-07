@@ -30,6 +30,11 @@ Zero-dependency PDF generation engine written in TypeScript.
 - Vector paths, colors, transforms, and graphics state control
 - Deterministic serialization for stable tests
 - Node and browser-friendly output helpers
+- `renderTemplate()` header spacing automatically accounts for header height, preventing overlap with body content
+- Cookbook entry examples for common document types: invoice, ticket, certificate, and multi-column reports
+- Performance guide covering streaming vs in-memory trade-offs, object stream savings, font subsetting costs, and encryption overhead
+- Security hardening guide with threat model, password and key management best practices, and parsing untrusted PDFs safely
+- Troubleshooting guide with error code reference table, CJK font debugging, broken xref fixups, and compliance validation checklists
 
 ## Quick Start
 
@@ -563,6 +568,15 @@ npm run docs
 npm run example:hello
 npm run example:image
 npm run example:png
+npm run example:tagged
+npm run example:report
+npm run example:cookbook-invoice
+npm run example:cookbook-ticket
+npm run example:cookbook-certificate
+npm run example:cookbook-report
+npm run example:pdf2-encryption
+npm run example:pdf2-tagged
+npm run example:pdf-version
 npm run example:web
 ```
 
