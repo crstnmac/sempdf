@@ -1,8 +1,14 @@
+/**
+ * Streaming output contract implemented by sinks that receive generated PDF byte chunks.
+ */
 export interface ByteSink {
   write(chunk: Uint8Array): Promise<void>;
   close(): Promise<void>;
 }
 
+/**
+ * Minimal writable-stream shape accepted by NodeStreamSink.
+ */
 export interface NodeWritableLike {
   write(chunk: Uint8Array, callback?: (error?: Error | null) => void): boolean;
   once(event: "drain", listener: () => void): unknown;
@@ -12,11 +18,23 @@ export interface NodeWritableLike {
   end(callback?: (error?: Error | null) => void): unknown;
 }
 
+/**
+ *
+ * An in-memory byte sink that collects streamed PDF output chunks and exposes them as a single Uint8Array when needed.
+ *
+ * @export
+ * @class BufferSink
+ */
 export class BufferSink implements ByteSink {
   private readonly chunks: Uint8Array[] = [];
   private length = 0;
   private closed = false;
 
+  /**
+   * Stores a streamed byte chunk in memory.
+   *
+   * @param chunk The byte chunk to write.
+   */
   async write(chunk: Uint8Array): Promise<void> {
     if (this.closed) {
       throw new Error("Cannot write to a closed BufferSink.");
@@ -26,10 +44,18 @@ export class BufferSink implements ByteSink {
     this.length += chunk.length;
   }
 
+  /**
+   * Marks the sink as closed so no more chunks can be written.
+   */
   async close(): Promise<void> {
     this.closed = true;
   }
 
+  /**
+   * Combines all collected chunks into a single Uint8Array.
+   *
+   * @returns The collected bytes.
+   */
   collect(): Uint8Array {
     const output = new Uint8Array(this.length);
     let offset = 0;
@@ -41,9 +67,26 @@ export class BufferSink implements ByteSink {
   }
 }
 
+/**
+ *
+ * A byte sink adapter for writing generated PDF output to a Node.js writable stream while respecting backpressure and stream errors.
+ *
+ * @export
+ * @class NodeStreamSink
+ */
 export class NodeStreamSink implements ByteSink {
+  /**
+   * Creates a byte sink for a Node.js writable stream.
+   *
+   * @param stream The writable stream that receives byte chunks.
+   */
   constructor(private readonly stream: NodeWritableLike) {}
 
+  /**
+   * Writes a byte chunk to the Node.js stream and waits for backpressure when needed.
+   *
+   * @param chunk The byte chunk to write.
+   */
   write(chunk: Uint8Array): Promise<void> {
     return new Promise((resolve, reject) => {
       let settled = false;
@@ -89,6 +132,9 @@ export class NodeStreamSink implements ByteSink {
     });
   }
 
+  /**
+   * Ends the Node.js stream.
+   */
   close(): Promise<void> {
     return new Promise((resolve, reject) => {
       this.stream.end((error?: Error | null) => {
@@ -102,18 +148,38 @@ export class NodeStreamSink implements ByteSink {
   }
 }
 
+/**
+ *
+ * A byte sink adapter for writing generated PDF output to a Web WritableStream through its default writer.
+ *
+ * @export
+ * @class WebStreamSink
+ */
 export class WebStreamSink implements ByteSink {
   private readonly writer: WritableStreamDefaultWriter<Uint8Array>;
 
+  /**
+   * Creates a byte sink for a Web WritableStream.
+   *
+   * @param stream The writable stream that receives byte chunks.
+   */
   constructor(stream: WritableStream<Uint8Array>) {
     this.writer = stream.getWriter();
   }
 
+  /**
+   * Writes a byte chunk through the stream writer.
+   *
+   * @param chunk The byte chunk to write.
+   */
   async write(chunk: Uint8Array): Promise<void> {
     await this.writer.ready;
     await this.writer.write(chunk);
   }
 
+  /**
+   * Closes the stream writer.
+   */
   async close(): Promise<void> {
     await this.writer.close();
   }

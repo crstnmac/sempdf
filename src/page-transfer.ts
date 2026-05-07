@@ -41,6 +41,9 @@ interface CloneContext {
 
 const encoder = new TextEncoder();
 
+/**
+ * Creates a new PDF containing only the selected pages from an existing document.
+ */
 export function extractPages(
   data: BinaryData,
   pageIndexes: readonly number[],
@@ -49,6 +52,9 @@ export function extractPages(
   return buildTransferredPdf(collectImportedPages(document, pageIndexes));
 }
 
+/**
+ * Splits a PDF into one single-page PDF byte array per source page.
+ */
 export function splitDocument(data: BinaryData): Uint8Array[] {
   const document = parseDocument(data);
   return document
@@ -58,6 +64,9 @@ export function splitDocument(data: BinaryData): Uint8Array[] {
     );
 }
 
+/**
+ * Combines multiple PDF documents into a single PDF in the order provided.
+ */
 export function mergeDocuments(documents: readonly BinaryData[]): Uint8Array {
   if (documents.length === 0) {
     throw new PdfEngineError(
@@ -74,6 +83,9 @@ export function mergeDocuments(documents: readonly BinaryData[]): Uint8Array {
   return buildTransferredPdf(importedPages);
 }
 
+/**
+ * Appends selected pages from one PDF to the end of another PDF and returns the updated document bytes.
+ */
 export function appendPages(
   target: BinaryData,
   source: BinaryData,

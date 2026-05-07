@@ -107,6 +107,7 @@ import type {
   FlowHeadingOptions,
   FlowImageOptions,
   FlowLinkOptions,
+  FlowMarginShorthand,
   FlowOptions,
   FlowSpacingScale,
   FlowTableOptions,
@@ -206,8 +207,14 @@ export interface ExistingPageEdit {
   readonly page: InternalPageModel;
 }
 
+/**
+ * Editable structure element API for changing roles, alt text, language, and order.
+ */
 export type PdfEditableStructureElement = ParsedPdfEditableStructureElement;
 
+/**
+ * Query criteria for finding editable structure elements.
+ */
 export interface PdfEditableStructureQuery {
   readonly role?: string | undefined;
   readonly pageObjectId?: number | undefined;
@@ -216,6 +223,9 @@ export interface PdfEditableStructureQuery {
   readonly objectIds?: readonly number[] | undefined;
 }
 
+/**
+ * Options for finding structurally similar tagged elements.
+ */
 export interface PdfEditableStructureSimilarityOptions {
   readonly scope?: 'document' | 'page' | 'siblings' | undefined;
 }
@@ -263,17 +273,43 @@ interface EditableAppendedPageEntry {
 
 type EditablePageEntry = EditableExistingPageEntry | EditableAppendedPageEntry;
 
+/**
+ *
+ * A builder for grouping tagged PDF content under a shared structure element. It can add text, blocks, lists, tables, images, and nested sections to the same semantic container.
+ *
+ * @export
+ * @class PdfStructureContainer
+ */
 export class PdfStructureContainer {
+  /**
+   * Creates a structure container bound to a page, embedded fonts, and parent structure node.
+   *
+   * @param page The internal page model to write into.
+   * @param embeddedFonts The embedded font registry used for text layout.
+   * @param node The parent structure node for tagged content.
+   */
   constructor(
     private readonly page: InternalPageModel,
     private readonly embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>,
     private readonly node: InternalStructureNode,
   ) {}
 
+  /**
+   * Adds tagged text to this structure container.
+   *
+   * @param text The text to add.
+   * @param options Options that control the operation.
+   */
   text(text: string, options: TextOptions): void {
     addTextToPage(this.page, this.embeddedFonts, text, options, this.node, 'P');
   }
 
+  /**
+   * Adds a tagged multiline text block to this structure container.
+   *
+   * @param text The text to add.
+   * @param options Options that control the operation.
+   */
   textBlock(text: string, options: TextBlockOptions): void {
     addTextBlockToPage(
       this.page,
@@ -285,6 +321,12 @@ export class PdfStructureContainer {
     );
   }
 
+  /**
+   * Adds a tagged list to this structure container.
+   *
+   * @param items The list items to add.
+   * @param options Options that control the operation.
+   */
   list(items: readonly ListItem[], options: ListOptions): void {
     const normalizedItems = normalizeListItems(items);
     const normalizedOptions = normalizeListOptions(normalizedItems, options);
@@ -298,6 +340,12 @@ export class PdfStructureContainer {
     );
   }
 
+  /**
+   * Adds a tagged table to this structure container.
+   *
+   * @param rows The table rows to add.
+   * @param options Options that control the operation.
+   */
   table(rows: readonly TableRow[], options: TableOptions): void {
     const normalizedRows = normalizeTableRows(rows);
     const normalizedOptions = normalizeTableOptions(normalizedRows, options);
@@ -315,27 +363,71 @@ export class PdfStructureContainer {
     );
   }
 
+  /**
+   * Adds a tagged JPEG image to this structure container.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   */
   jpeg(data: BinaryData, options: JpegImageOptions): void {
     addImageToPage(this.page, 'jpeg', data, options, this.node, 'Figure');
   }
 
+  /**
+   * Adds a tagged PNG image to this structure container.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   */
   png(data: BinaryData, options: PngImageOptions): void {
     addImageToPage(this.page, 'png', data, options, this.node, 'Figure');
   }
 
+  /**
+   * Adds a tagged URI link annotation to this structure container.
+   *
+   * @param url The URI target.
+   * @param options Options that control the operation.
+   */
   link(url: string, options: UriLinkOptions): void {
     addLinkToPage(this.page, url, options, this.node);
   }
 
+  /**
+   * Creates a nested tagged structure container.
+   *
+   * @param tag The structure tag to create.
+   * @param build An optional callback that receives the created container.
+   *
+   * @returns The created structure container.
+   */
   container(
     tag: PdfContainerTag,
     build?: (container: PdfStructureContainer) => void,
   ): PdfStructureContainer;
+  /**
+   * Creates a nested tagged structure container.
+   *
+   * @param tag The structure tag to create.
+   * @param options Options that control the operation.
+   * @param build An optional callback that receives the created container.
+   *
+   * @returns The created structure container.
+   */
   container(
     tag: PdfContainerTag,
     options?: PdfStructureOptions,
     build?: (container: PdfStructureContainer) => void,
   ): PdfStructureContainer;
+  /**
+   * Creates a nested tagged structure container.
+   *
+   * @param tag The structure tag to create.
+   * @param optionsOrBuild Either structure options or a build callback.
+   * @param maybeBuild An optional build callback when options are provided separately.
+   *
+   * @returns The created structure container.
+   */
   container(
     tag: PdfContainerTag,
     optionsOrBuild?:
@@ -363,15 +455,41 @@ export class PdfStructureContainer {
     return child;
   }
 
+  /**
+   * Creates a nested tagged structure container.
+   *
+   * @param role The replacement structure role.
+   * @param build An optional callback that receives the created container.
+   *
+   * @returns The created structure container.
+   */
   structure(
     role: Exclude<PdfStructureTag, 'Artifact'>,
     build?: (container: PdfStructureContainer) => void,
   ): PdfStructureContainer;
+  /**
+   * Creates a nested tagged structure container.
+   *
+   * @param role The replacement structure role.
+   * @param options Options that control the operation.
+   * @param build An optional callback that receives the created container.
+   *
+   * @returns The created structure container.
+   */
   structure(
     role: Exclude<PdfStructureTag, 'Artifact'>,
     options?: PdfStructureOptions,
     build?: (container: PdfStructureContainer) => void,
   ): PdfStructureContainer;
+  /**
+   * Creates a nested tagged structure container.
+   *
+   * @param role The replacement structure role.
+   * @param optionsOrBuild Either structure options or a build callback.
+   * @param maybeBuild An optional build callback when options are provided separately.
+   *
+   * @returns The created structure container.
+   */
   structure(
     role: Exclude<PdfStructureTag, 'Artifact'>,
     optionsOrBuild?:
@@ -399,6 +517,13 @@ export class PdfStructureContainer {
     return child;
   }
 
+  /**
+   * Creates a flow helper that writes into this structure container.
+   *
+   * @param options Options that control the operation.
+   *
+   * @returns The created flow helper.
+   */
   flow(options: FlowOptions = {}): PdfFlow {
     return new PdfFlow(
       this.page,
@@ -443,6 +568,48 @@ interface RequiredFlowSpacingScale {
 interface ResolvedBlockSpacing {
   before: number;
   after: number;
+  left: number;
+  right: number;
+}
+
+interface FlowMarginOptions {
+  margin?: FlowMarginShorthand | undefined;
+  marginTop?: number | undefined;
+  marginRight?: number | undefined;
+  marginBottom?: number | undefined;
+  marginLeft?: number | undefined;
+}
+
+function defaultFlowMargin(size: { width: number; height: number }): number {
+  const presets: Array<[number, number, number]> = [
+    [595.28, 841.89, 72],
+    [612, 792, 72],
+    [612, 1008, 72],
+  ];
+  for (const [w, h, m] of presets) {
+    if (Math.abs(size.width - w) < 0.5 && Math.abs(size.height - h) < 0.5) {
+      return m;
+    }
+  }
+  const shorter = Math.min(size.width, size.height);
+  return Math.max(24, Math.min(72, Math.round(shorter * 0.1)));
+}
+
+function resolveMarginShorthand(
+  margin: FlowMarginShorthand | undefined,
+): { top: number; right: number; bottom: number; left: number } {
+  if (margin === undefined) {
+    return { top: 0, right: 0, bottom: 0, left: 0 };
+  }
+  if (typeof margin === 'number') {
+    return { top: margin, right: margin, bottom: margin, left: margin };
+  }
+  if (margin.length === 2) {
+    const [vertical, horizontal] = margin;
+    return { top: vertical, right: horizontal, bottom: vertical, left: horizontal };
+  }
+  const [top, right, bottom, left] = margin;
+  return { top, right, bottom, left };
 }
 
 const STANDARD_FLOW_SPACING: RequiredFlowSpacingScale = {
@@ -472,7 +639,22 @@ const STANDARD_FLOW_SPACING: RequiredFlowSpacingScale = {
   linkAfter: 8,
 };
 
+/**
+ *
+ * A cursor-based layout helper for writing report-style content. It manages vertical flow, spacing, page breaks, headings, paragraphs, links, images, and tables.
+ *
+ * @export
+ * @class PdfFlow
+ */
 export class PdfFlow {
+  /**
+   * Creates a cursor-based flow writer for a page and optional parent structure node.
+   *
+   * @param page The internal page model to write into.
+   * @param embeddedFonts The embedded font registry used for text layout.
+   * @param state The mutable flow state to use.
+   * @param parent The parent structure element whose child order should change.
+   */
   constructor(
     private readonly page: InternalPageModel,
     private readonly embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>,
@@ -480,35 +662,67 @@ export class PdfFlow {
     private readonly parent: InternalStructureNode | undefined = undefined,
   ) {}
 
+  /**
+   * Gets the current vertical cursor position.
+   *
+   * @returns The current cursor y-coordinate.
+   */
   get cursorY(): number {
     return this.state.y;
   }
 
+  /**
+   * Gets the remaining writable height above the bottom margin.
+   *
+   * @returns The remaining writable height.
+   */
   get remainingHeight(): number {
     return Math.max(this.state.y - this.state.marginBottom, 0);
   }
 
+  /**
+   * Adds a heading at the current flow cursor.
+   *
+   * @param text The text to add.
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
   heading(text: string, options: FlowHeadingOptions = {}): this {
     const level = options.level ?? 1;
     const tag = options.tag ?? (`H${level}` as FlowTextOptions['tag']);
     const fontSize = options.fontSize ?? headingFontSize(level);
     const spacing = this.resolveSpacing('heading', options, level);
-    this.applySpaceBefore(spacing.before);
+    this.applyMarginTop(spacing.before);
     const consumedHeight = this.writeTextBlock(text, {
       ...options,
       fontSize,
       lineHeight: options.lineHeight ?? Math.round(fontSize * 1.25),
       tag,
-    });
+    }, spacing.left, spacing.right);
     this.state.y -= consumedHeight + spacing.after;
     return this;
   }
 
+  /**
+   * Renders a sequence of template blocks into the flow.
+   *
+   * @param blocks The template blocks to render.
+   *
+   * @returns This flow helper for chaining.
+   */
   render(blocks: readonly TemplateBlock[]): this {
     renderTemplateBlocksToFlow(this, blocks);
     return this;
   }
 
+  /**
+   * Estimates the height a template block would consume.
+   *
+   * @param block The template block to estimate.
+   *
+   * @returns The estimated height.
+   */
   estimate(block: TemplateBlock): number {
     switch (block.type) {
       case 'heading': {
@@ -521,8 +735,8 @@ export class PdfFlow {
           fontSize,
           lineHeight: options?.lineHeight ?? Math.round(fontSize * 1.25),
           tag: options?.tag ?? (`H${level}` as FlowTextOptions['tag']),
-          spaceBefore: spacing.before,
-          spaceAfter: spacing.after,
+          marginTop: spacing.before,
+          marginBottom: spacing.after,
         });
       }
       case 'paragraph':
@@ -548,30 +762,71 @@ export class PdfFlow {
     }
   }
 
+  /**
+   * Adds a paragraph at the current flow cursor.
+   *
+   * @param text The text to add.
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
   paragraph(text: string, options: FlowTextOptions = {}): this {
     this.textBlock(text, { ...options, tag: options.tag ?? 'P' });
     return this;
   }
 
+  /**
+   * Adds a text block at the current flow cursor.
+   *
+   * @param text The text to add.
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
   textBlock(text: string, options: FlowTextOptions = {}): this {
     const spacing = this.resolveSpacing('paragraph', options);
-    this.applySpaceBefore(spacing.before);
-    const consumedHeight = this.writeTextBlock(text, options);
+    this.applyMarginTop(spacing.before);
+    const consumedHeight = this.writeTextBlock(text, options, spacing.left, spacing.right);
     this.state.y -= consumedHeight + spacing.after;
     return this;
   }
 
+  /**
+   * Adds a PNG image at the current flow cursor.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
   png(data: BinaryData, options: FlowImageOptions = {}): this {
     return this.image('png', data, options);
   }
 
+  /**
+   * Adds a JPEG image at the current flow cursor.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
   jpeg(data: BinaryData, options: FlowImageOptions = {}): this {
     return this.image('jpeg', data, options);
   }
 
+  /**
+   * Adds a text link at the current flow cursor.
+   *
+   * @param text The text to add.
+   * @param url The URI target.
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
   link(text: string, url: string, options: FlowLinkOptions = {}): this {
     const spacing = this.resolveSpacing('link', options);
-    this.applySpaceBefore(spacing.before);
+    this.applyMarginTop(spacing.before);
     const font = options.font ?? this.state.font ?? 'Helvetica';
     const fallbackFonts =
       options.fallbackFonts ?? this.state.fallbackFonts ?? [];
@@ -592,6 +847,15 @@ export class PdfFlow {
       ),
       1,
     );
+    const align = options.align ?? 'left';
+    const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
+    const baseX = this.state.x + spacing.left;
+    const linkX =
+      align === 'center'
+        ? baseX + Math.max((innerWidth - textWidth) / 2, 0)
+        : align === 'right'
+          ? baseX + Math.max(innerWidth - textWidth, 0)
+          : baseX;
     const linkNode = createStructureNode(
       this.page,
       'Link',
@@ -603,7 +867,7 @@ export class PdfFlow {
       this.embeddedFonts,
       text,
       {
-        x: this.state.x,
+        x: linkX,
         y: this.state.y,
         font,
         fallbackFonts,
@@ -619,7 +883,7 @@ export class PdfFlow {
       this.page,
       url,
       {
-        x: this.state.x,
+        x: linkX,
         y: this.state.y - lineHeight + Math.max((lineHeight - fontSize) / 2, 0),
         width: textWidth,
         height: lineHeight,
@@ -633,15 +897,24 @@ export class PdfFlow {
     return this;
   }
 
+  /**
+   * Adds a table at the current flow cursor.
+   *
+   * @param rows The table rows to add.
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
   table(rows: readonly TableRow[], options: FlowTableOptions = {}): this {
     const spacing = this.resolveSpacing('table', options);
-    this.applySpaceBefore(spacing.before);
+    this.applyMarginTop(spacing.before);
     const normalizedRows = normalizeTableRows(rows);
-    const width = options.width ?? this.state.width;
+    const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
+    const width = options.width ?? innerWidth;
     const normalizedOptions = normalizeTableOptions(normalizedRows, {
       ...flowTextDefaults(this.state),
       ...options,
-      x: this.state.x,
+      x: this.state.x + spacing.left,
       y: this.state.y,
       width,
     });
@@ -661,30 +934,55 @@ export class PdfFlow {
     return this;
   }
 
+  /**
+   * Moves the flow cursor downward by the supplied distance.
+   *
+   * @param distance The distance to move the cursor.
+   *
+   * @returns This flow helper for chaining.
+   */
   moveDown(distance: number = this.state.gap): this {
     this.state.y -= distance;
     return this;
   }
 
+  /**
+   * Adds an image of the provided format at the current flow cursor.
+   *
+   * @param format The image format to add.
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   *
+   * @returns The result of the operation.
+   */
   private image(
     format: 'jpeg' | 'png',
     data: BinaryData,
     options: FlowImageOptions,
   ): this {
     const spacing = this.resolveSpacing('image', options);
-    this.applySpaceBefore(spacing.before);
+    this.applyMarginTop(spacing.before);
     const image = parseImage(format, data);
-    const maxWidth = options.maxWidth ?? this.state.width;
+    const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
+    const maxWidth = options.maxWidth ?? innerWidth;
     const width = options.width ?? Math.min(image.pixelWidth, maxWidth);
     const height =
       options.height ?? width * (image.pixelHeight / image.pixelWidth);
+    const align = options.align ?? 'left';
+    const baseX = this.state.x + spacing.left;
+    const x =
+      align === 'center'
+        ? baseX + Math.max((innerWidth - width) / 2, 0)
+        : align === 'right'
+          ? baseX + Math.max(innerWidth - width, 0)
+          : baseX;
     addImageToPage(
       this.page,
       format,
       data,
       {
         ...options,
-        x: this.state.x,
+        x,
         y: this.state.y - height,
         width,
         height,
@@ -696,6 +994,14 @@ export class PdfFlow {
     return this;
   }
 
+  /**
+   * Estimates the height of a flow text block.
+   *
+   * @param text The text to add.
+   * @param options Options that control the operation.
+   *
+   * @returns The estimated text block height.
+   */
   private estimateTextBlockHeight(
     text: string,
     options: FlowTextOptions = {},
@@ -713,6 +1019,14 @@ export class PdfFlow {
     return spacing.before + lineCount * normalized.lineHeight + spacing.after;
   }
 
+  /**
+   * Estimates the height of a flow table.
+   *
+   * @param rows The table rows to add.
+   * @param options Options that control the operation.
+   *
+   * @returns The estimated table height.
+   */
   private estimateTableHeight(
     rows: readonly TableRow[],
     options: FlowTableOptions = {},
@@ -796,6 +1110,15 @@ export class PdfFlow {
     return spacing.before + height + spacing.after;
   }
 
+  /**
+   * Estimates the height of a flow image.
+   *
+   * @param format The image format to add.
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   *
+   * @returns The estimated image height.
+   */
   private estimateImageHeight(
     format: 'jpeg' | 'png',
     data: BinaryData,
@@ -810,6 +1133,13 @@ export class PdfFlow {
     return spacing.before + height + spacing.after;
   }
 
+  /**
+   * Estimates the height of a flow link.
+   *
+   * @param options Options that control the operation.
+   *
+   * @returns The estimated link height.
+   */
   private estimateLinkHeight(options: FlowLinkOptions = {}): number {
     const spacing = this.resolveSpacing('link', options);
     const fontSize = options.fontSize ?? this.state.fontSize ?? 12;
@@ -820,7 +1150,26 @@ export class PdfFlow {
     return spacing.before + lineHeight + spacing.after;
   }
 
-  private writeTextBlock(text: string, options: FlowTextOptions = {}): number {
+  /**
+   * Writes a flow text block with optional horizontal margins.
+   *
+   * @param text The text to add.
+   * @param options Options that control the operation.
+   * @param marginLeft The left margin to apply.
+   * @param marginRight The right margin to apply.
+   *
+   * @returns The result of the operation.
+   */
+  private writeTextBlock(text: string, options: FlowTextOptions = {}, marginLeft = 0, marginRight = 0): number {
+    const innerWidth = Math.max(this.state.width - marginLeft - marginRight, 1);
+    const blockWidth = Math.min(options.blockWidth ?? innerWidth, innerWidth);
+    const blockAlign = options.blockAlign ?? 'left';
+    const blockX =
+      blockAlign === 'center'
+        ? this.state.x + marginLeft + (innerWidth - blockWidth) / 2
+        : blockAlign === 'right'
+          ? this.state.x + marginLeft + (innerWidth - blockWidth)
+          : this.state.x + marginLeft;
     return addFlowTextBlockToPage(
       this.page,
       this.embeddedFonts,
@@ -828,83 +1177,152 @@ export class PdfFlow {
       {
         ...flowTextDefaults(this.state),
         ...options,
-        x: this.state.x,
+        x: blockX,
         y: this.state.y,
-        width: this.state.width,
+        width: blockWidth,
       },
       this.parent,
     );
   }
 
-  private applySpaceBefore(spaceBefore: number): void {
-    if (spaceBefore > 0 && this.state.y < this.state.startY) {
-      this.state.y -= spaceBefore;
+  /**
+   * Applies top spacing when the cursor has already moved below the start position.
+   *
+   * @param marginTop The top margin to apply.
+   */
+  private applyMarginTop(marginTop: number): void {
+    if (marginTop > 0 && this.state.y < this.state.startY) {
+      this.state.y -= marginTop;
     }
   }
 
+  /**
+   * Resolves effective flow spacing and horizontal margins for a block.
+   *
+   * @param kind The flow block kind whose spacing is being resolved.
+   * @param options Options that control the operation.
+   *
+   * @returns The result of the operation.
+   */
   private resolveSpacing(
     kind: 'paragraph' | 'table' | 'image' | 'link',
-    options: { spaceBefore?: number | undefined; spaceAfter?: number | undefined },
+    options: FlowMarginOptions,
   ): ResolvedBlockSpacing;
+  /**
+   * Resolves effective flow spacing and horizontal margins for a block.
+   *
+   * @param kind The flow block kind whose spacing is being resolved.
+   * @param options Options that control the operation.
+   * @param level The heading level used for heading spacing.
+   *
+   * @returns The result of the operation.
+   */
   private resolveSpacing(
     kind: 'heading',
-    options: { spaceBefore?: number | undefined; spaceAfter?: number | undefined },
+    options: FlowMarginOptions,
     level: 1 | 2 | 3 | 4 | 5 | 6,
   ): ResolvedBlockSpacing;
+  /**
+   * Resolves effective flow spacing and horizontal margins for a block.
+   *
+   * @param kind The flow block kind whose spacing is being resolved.
+   * @param options Options that control the operation.
+   * @param level The heading level used for heading spacing.
+   *
+   * @returns The result of the operation.
+   */
   private resolveSpacing(
     kind: 'paragraph' | 'heading' | 'table' | 'image' | 'link',
-    options: { spaceBefore?: number | undefined; spaceAfter?: number | undefined },
+    options: FlowMarginOptions,
     level: 1 | 2 | 3 | 4 | 5 | 6 = 1,
   ): ResolvedBlockSpacing {
     const defaults = this.state.spacing;
-    switch (kind) {
-      case 'heading':
-        return {
-          before: options.spaceBefore ?? defaults.headingBefore[level],
-          after: options.spaceAfter ?? defaults.headingAfter[level],
-        };
-      case 'table':
-        return {
-          before: options.spaceBefore ?? defaults.tableBefore,
-          after: options.spaceAfter ?? defaults.tableAfter,
-        };
-      case 'image':
-        return {
-          before: options.spaceBefore ?? defaults.imageBefore,
-          after: options.spaceAfter ?? defaults.imageAfter,
-        };
-      case 'link':
-        return {
-          before: options.spaceBefore ?? defaults.linkBefore,
-          after: options.spaceAfter ?? defaults.linkAfter,
-        };
-      case 'paragraph':
-        return {
-          before: options.spaceBefore ?? defaults.paragraphBefore,
-          after: options.spaceAfter ?? defaults.paragraphAfter,
-        };
-    }
+    const shorthand = resolveMarginShorthand(options.margin);
+    const hasShorthand = options.margin !== undefined;
+    const left = options.marginLeft ?? (hasShorthand ? shorthand.left : 0);
+    const right = options.marginRight ?? (hasShorthand ? shorthand.right : 0);
+    const defaultBefore =
+      kind === 'heading'
+        ? defaults.headingBefore[level]
+        : kind === 'table'
+          ? defaults.tableBefore
+          : kind === 'image'
+            ? defaults.imageBefore
+            : kind === 'link'
+              ? defaults.linkBefore
+              : defaults.paragraphBefore;
+    const defaultAfter =
+      kind === 'heading'
+        ? defaults.headingAfter[level]
+        : kind === 'table'
+          ? defaults.tableAfter
+          : kind === 'image'
+            ? defaults.imageAfter
+            : kind === 'link'
+              ? defaults.linkAfter
+              : defaults.paragraphAfter;
+    const explicitTop = options.marginTop;
+    const explicitBottom = options.marginBottom;
+    const before = explicitTop ?? (hasShorthand ? shorthand.top : defaultBefore);
+    const after = explicitBottom ?? (hasShorthand ? shorthand.bottom : defaultAfter);
+    return { before, after, left, right };
   }
 }
 
+/**
+ *
+ * A mutable page builder for placing text, graphics, images, links, annotations, form fields, and structured content on a PDF page.
+ *
+ * @export
+ * @class PdfPage
+ */
 export class PdfPage {
+  /**
+   * Creates a page builder around an internal page model and embedded font registry.
+   *
+   * @param page The internal page model to write into.
+   * @param embeddedFonts The embedded font registry used for text layout.
+   */
   constructor(
     private readonly page: InternalPageModel,
     private readonly embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>,
   ) {}
 
+  /**
+   * Gets the page size.
+   *
+   * @returns The number of bytes.
+   */
   get size(): CustomPageSize {
     return this.page.size;
   }
 
+  /**
+   * Adds text to the page.
+   *
+   * @param text The text to add.
+   * @param options Options that control the operation.
+   */
   text(text: string, options: TextOptions): void {
     addTextToPage(this.page, this.embeddedFonts, text, options);
   }
 
+  /**
+   * Adds a multiline text block to the page.
+   *
+   * @param text The text to add.
+   * @param options Options that control the operation.
+   */
   textBlock(text: string, options: TextBlockOptions): void {
     addTextBlockToPage(this.page, this.embeddedFonts, text, options);
   }
 
+  /**
+   * Adds a tagged list to the page.
+   *
+   * @param items The list items to add.
+   * @param options Options that control the operation.
+   */
   list(items: readonly ListItem[], options: ListOptions): void {
     const normalizedItems = normalizeListItems(items);
     const normalizedOptions = normalizeListOptions(normalizedItems, options);
@@ -918,6 +1336,12 @@ export class PdfPage {
     );
   }
 
+  /**
+   * Adds a tagged table to the page.
+   *
+   * @param rows The table rows to add.
+   * @param options Options that control the operation.
+   */
   table(rows: readonly TableRow[], options: TableOptions): void {
     const normalizedRows = normalizeTableRows(rows);
     const normalizedOptions = normalizeTableOptions(normalizedRows, options);
@@ -930,15 +1354,41 @@ export class PdfPage {
     );
   }
 
+  /**
+   * Creates a tagged structure container on the page.
+   *
+   * @param tag The structure tag to create.
+   * @param build An optional callback that receives the created container.
+   *
+   * @returns The created structure container.
+   */
   container(
     tag: PdfContainerTag,
     build?: (container: PdfStructureContainer) => void,
   ): PdfStructureContainer;
+  /**
+   * Creates a tagged structure container on the page.
+   *
+   * @param tag The structure tag to create.
+   * @param options Options that control the operation.
+   * @param build An optional callback that receives the created container.
+   *
+   * @returns The created structure container.
+   */
   container(
     tag: PdfContainerTag,
     options?: PdfStructureOptions,
     build?: (container: PdfStructureContainer) => void,
   ): PdfStructureContainer;
+  /**
+   * Creates a tagged structure container on the page.
+   *
+   * @param tag The structure tag to create.
+   * @param optionsOrBuild Either structure options or a build callback.
+   * @param maybeBuild An optional build callback when options are provided separately.
+   *
+   * @returns The created structure container.
+   */
   container(
     tag: PdfContainerTag,
     optionsOrBuild?:
@@ -965,15 +1415,41 @@ export class PdfPage {
     return container;
   }
 
+  /**
+   * Creates a tagged structure container on the page.
+   *
+   * @param role The replacement structure role.
+   * @param build An optional callback that receives the created container.
+   *
+   * @returns The created structure container.
+   */
   structure(
     role: Exclude<PdfStructureTag, 'Artifact'>,
     build?: (container: PdfStructureContainer) => void,
   ): PdfStructureContainer;
+  /**
+   * Creates a tagged structure container on the page.
+   *
+   * @param role The replacement structure role.
+   * @param options Options that control the operation.
+   * @param build An optional callback that receives the created container.
+   *
+   * @returns The created structure container.
+   */
   structure(
     role: Exclude<PdfStructureTag, 'Artifact'>,
     options?: PdfStructureOptions,
     build?: (container: PdfStructureContainer) => void,
   ): PdfStructureContainer;
+  /**
+   * Creates a tagged structure container on the page.
+   *
+   * @param role The replacement structure role.
+   * @param optionsOrBuild Either structure options or a build callback.
+   * @param maybeBuild An optional build callback when options are provided separately.
+   *
+   * @returns The created structure container.
+   */
   structure(
     role: Exclude<PdfStructureTag, 'Artifact'>,
     optionsOrBuild?:
@@ -1000,6 +1476,13 @@ export class PdfPage {
     return container;
   }
 
+  /**
+   * Creates a cursor-based flow helper for the page.
+   *
+   * @param options Options that control the operation.
+   *
+   * @returns The created flow helper.
+   */
   flow(options: FlowOptions = {}): PdfFlow {
     return new PdfFlow(
       this.page,
@@ -1008,6 +1491,12 @@ export class PdfPage {
     );
   }
 
+  /**
+   * Adds vector path commands to the page.
+   *
+   * @param commands The vector path commands to add.
+   * @param style The drawing style for the path.
+   */
   path(commands: PathCommand[], style: PathStyle): void {
     validatePathCommands(commands);
     this.page.ops.push({
@@ -1017,18 +1506,42 @@ export class PdfPage {
     });
   }
 
+  /**
+   * Adds a JPEG image to the page.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   */
   jpeg(data: BinaryData, options: JpegImageOptions): void {
     addImageToPage(this.page, 'jpeg', data, options);
   }
 
+  /**
+   * Adds a PNG image to the page.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   */
   png(data: BinaryData, options: PngImageOptions): void {
     addImageToPage(this.page, 'png', data, options);
   }
 
+  /**
+   * Adds a URI link annotation to the page.
+   *
+   * @param url The URI target.
+   * @param options Options that control the operation.
+   */
   link(url: string, options: UriLinkOptions): void {
     addLinkToPage(this.page, url, options);
   }
 
+  /**
+   * Adds an internal page link annotation.
+   *
+   * @param target The destination page, outline target, or structure element.
+   * @param options Options that control the operation.
+   */
   linkToPage(target: PdfPage, options: PageLinkOptions): void {
     const normalizedOptions = normalizePageLinkOptions(options);
     const annotationIndex = this.page.annotations.length;
@@ -1048,6 +1561,11 @@ export class PdfPage {
     });
   }
 
+  /**
+   * Adds a highlight annotation to the page.
+   *
+   * @param options Options that control the operation.
+   */
   highlight(options: HighlightAnnotationOptions): void {
     const normalizedOptions = normalizeHighlightAnnotationOptions(options);
     const annotationIndex = this.page.annotations.length;
@@ -1066,6 +1584,11 @@ export class PdfPage {
     });
   }
 
+  /**
+   * Adds a text note annotation to the page.
+   *
+   * @param options Options that control the operation.
+   */
   note(options: NoteAnnotationOptions): void {
     const normalizedOptions = normalizeNoteAnnotationOptions(options);
     const annotationIndex = this.page.annotations.length;
@@ -1084,6 +1607,11 @@ export class PdfPage {
     });
   }
 
+  /**
+   * Adds a free-text annotation to the page.
+   *
+   * @param options Options that control the operation.
+   */
   freeText(options: FreeTextAnnotationOptions): void {
     const normalizedOptions = normalizeFreeTextAnnotationOptions(options);
     const annotationIndex = this.page.annotations.length;
@@ -1102,6 +1630,12 @@ export class PdfPage {
     });
   }
 
+  /**
+   * Adds a text form field to the page.
+   *
+   * @param name The name to assign or look up.
+   * @param options Options that control the operation.
+   */
   textField(name: string, options: TextFieldOptions): void {
     const normalizedOptions = normalizeTextFieldOptions(name, options);
     const annotationIndex = this.page.annotations.length;
@@ -1121,6 +1655,12 @@ export class PdfPage {
     });
   }
 
+  /**
+   * Adds a checkbox form field to the page.
+   *
+   * @param name The name to assign or look up.
+   * @param options Options that control the operation.
+   */
   checkBox(name: string, options: CheckBoxOptions): void {
     const normalizedOptions = normalizeCheckBoxOptions(name, options);
     const annotationIndex = this.page.annotations.length;
@@ -1140,6 +1680,12 @@ export class PdfPage {
     });
   }
 
+  /**
+   * Adds a choice form field to the page.
+   *
+   * @param name The name to assign or look up.
+   * @param options Options that control the operation.
+   */
   choiceField(name: string, options: ChoiceFieldOptions): void {
     const normalizedOptions = normalizeChoiceFieldOptions(name, options);
     const annotationIndex = this.page.annotations.length;
@@ -1159,6 +1705,12 @@ export class PdfPage {
     });
   }
 
+  /**
+   * Adds a radio-button group to the page.
+   *
+   * @param name The name to assign or look up.
+   * @param options Options that control the operation.
+   */
   radioGroup(name: string, options: RadioGroupOptions): void {
     const normalizedOptions = normalizeRadioGroupOptions(name, options);
     const annotationIndex = this.page.annotations.length;
@@ -1178,6 +1730,12 @@ export class PdfPage {
     });
   }
 
+  /**
+   * Adds a push-button form field to the page.
+   *
+   * @param name The name to assign or look up.
+   * @param options Options that control the operation.
+   */
   pushButton(name: string, options: PushButtonOptions): void {
     const normalizedOptions = normalizePushButtonOptions(name, options);
     const annotationIndex = this.page.annotations.length;
@@ -1197,6 +1755,12 @@ export class PdfPage {
     });
   }
 
+  /**
+   * Adds a signature form field placeholder to the page.
+   *
+   * @param name The name to assign or look up.
+   * @param options Options that control the operation.
+   */
   signatureField(name: string, options: SignatureFieldOptions): void {
     const normalizedOptions = normalizeSignatureFieldOptions(name, options);
     const annotationIndex = this.page.annotations.length;
@@ -1216,11 +1780,17 @@ export class PdfPage {
     });
   }
 
+  /**
+   * Saves the current graphics state.
+   */
   saveState(): void {
     this.page.graphicsDepth += 1;
     this.page.ops.push({ type: 'saveState' });
   }
 
+  /**
+   * Restores the most recently saved graphics state.
+   */
   restoreState(): void {
     if (this.page.graphicsDepth === 0) {
       throw new PdfEngineError(
@@ -1233,14 +1803,31 @@ export class PdfPage {
     this.page.ops.push({ type: 'restoreState' });
   }
 
+  /**
+   * Adds a translation transform to subsequent page operations.
+   *
+   * @param x The horizontal transform value.
+   * @param y The vertical transform value.
+   */
   translate(x: number, y: number): void {
     this.transform({ a: 1, b: 0, c: 0, d: 1, e: x, f: y });
   }
 
+  /**
+   * Adds a scale transform to subsequent page operations.
+   *
+   * @param x The horizontal transform value.
+   * @param y The vertical transform value.
+   */
   scale(x: number, y: number = x): void {
     this.transform({ a: x, b: 0, c: 0, d: y, e: 0, f: 0 });
   }
 
+  /**
+   * Adds a rotation transform to subsequent page operations.
+   *
+   * @param degrees The rotation angle in degrees.
+   */
   rotate(degrees: number): void {
     const radians = (degrees * Math.PI) / 180;
     this.transform({
@@ -1253,19 +1840,50 @@ export class PdfPage {
     });
   }
 
+  /**
+   * Adds a raw transformation matrix to subsequent page operations.
+   *
+   * @param matrix The transformation matrix to apply.
+   */
   transform(matrix: Transform): void {
     validateTransform(matrix);
     this.page.ops.push({ type: 'transform', matrix });
   }
 
+  /**
+   * Returns the internal page model used by serializers and editors.
+   *
+   * @returns The internal page model.
+   */
   toInternalModel(): InternalPageModel {
     return this.page;
   }
 }
 
+/**
+ *
+ * A handle for an outline entry in a PDF document. It can receive nested child outline items that point to pages or named destinations.
+ *
+ * @export
+ * @class PdfOutlineItem
+ */
 export class PdfOutlineItem {
+  /**
+   * Creates an outline item handle for an internal outline model.
+   *
+   * @param outline The internal outline model to wrap.
+   */
   constructor(private readonly outline: InternalOutlineModel) {}
 
+  /**
+   * Adds a nested outline item below this outline entry.
+   *
+   * @param title The outline title.
+   * @param target The destination page, outline target, or structure element.
+   * @param options Options that control the operation.
+   *
+   * @returns The created child outline item handle.
+   */
   addChild(
     title: string,
     target: PdfPage | string,
@@ -1277,6 +1895,13 @@ export class PdfOutlineItem {
   }
 }
 
+/**
+ *
+ * A mutable builder for creating new PDF documents from scratch. It manages pages, fonts, metadata, outlines, attachments, accessibility data, encryption, and serialization.
+ *
+ * @export
+ * @class PdfDocument
+ */
 export class PdfDocument {
   private readonly pages: InternalPageModel[] = [];
   private readonly embeddedFonts = new Map<string, ParsedTrueTypeFont>();
@@ -1294,6 +1919,11 @@ export class PdfDocument {
   private xmpMetadata?: string | undefined;
   private readonly compress?: boolean | undefined;
 
+  /**
+   * Creates a new mutable PDF document builder.
+   *
+   * @param options Options that control the operation.
+   */
   constructor(options: DocumentOptions = {}) {
     this.info = normalizeDocumentInfo(options.info);
     this.defaultPageSize = resolvePageSize(options.defaultPageSize);
@@ -1303,12 +1933,24 @@ export class PdfDocument {
     this.compress = options.compress;
   }
 
+  /**
+   * Adds a page to the document and returns its page builder.
+   *
+   * @param options Options that control the operation.
+   *
+   * @returns The new page builder.
+   */
   addPage(options: PageOptions = {}): PdfPage {
     const page = createPageModel(options.size ?? this.defaultPageSize);
     this.pages.push(page);
     return new PdfPage(page, this.embeddedFonts);
   }
 
+  /**
+   * Renders a template document into this PDF document.
+   *
+   * @param options Options that control the operation.
+   */
   renderTemplate(options: TemplateDocumentOptions): void {
     if (options.info !== undefined) {
       this.updateInfo(options.info);
@@ -1322,6 +1964,14 @@ export class PdfDocument {
     });
   }
 
+  /**
+   * Embeds a TrueType font and registers it under the provided name.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   *
+   * @returns The result of the operation.
+   */
   embedTrueTypeFont(
     data: BinaryData,
     options: EmbedTrueTypeFontOptions = {},
@@ -1331,6 +1981,12 @@ export class PdfDocument {
     return font;
   }
 
+  /**
+   * Adds a named destination that points to a page.
+   *
+   * @param name The name to assign or look up.
+   * @param target The destination page, outline target, or structure element.
+   */
   addNamedDestination(name: string, target: PdfPage): void {
     this.namedDestinations.push({
       name: normalizeDestinationName(name),
@@ -1338,6 +1994,12 @@ export class PdfDocument {
     });
   }
 
+  /**
+   * Sets the label style for a page-label range beginning at the target page.
+   *
+   * @param target The destination page, outline target, or structure element.
+   * @param options Options that control the operation.
+   */
   setPageLabel(target: PdfPage, options: PageLabelOptions): void {
     this.pageLabels.set(
       target.toInternalModel(),
@@ -1345,6 +2007,13 @@ export class PdfDocument {
     );
   }
 
+  /**
+   * Embeds a file attachment in the document.
+   *
+   * @param name The name to assign or look up.
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   */
   attachFile(
     name: string,
     data: BinaryData,
@@ -1368,6 +2037,11 @@ export class PdfDocument {
     });
   }
 
+  /**
+   * Merges document information metadata into the current document info dictionary.
+   *
+   * @param info The document information metadata to merge.
+   */
   private updateInfo(info: DocumentInfo): void {
     this.info = normalizeDocumentInfo({
       title: info.title ?? this.info.title,
@@ -1381,10 +2055,24 @@ export class PdfDocument {
     });
   }
 
+  /**
+   * Sets or clears the document XMP metadata packet.
+   *
+   * @param metadata The XMP metadata input, or undefined to clear it.
+   */
   setXmpMetadata(metadata: XmpMetadataInput | undefined): void {
     this.xmpMetadata = normalizeXmpMetadata(metadata);
   }
 
+  /**
+   * Adds a top-level outline item to the document.
+   *
+   * @param title The outline title.
+   * @param target The destination page, outline target, or structure element.
+   * @param options Options that control the operation.
+   *
+   * @returns The created outline item handle.
+   */
   addOutline(
     title: string,
     target: PdfPage | string,
@@ -1395,10 +2083,18 @@ export class PdfDocument {
     return new PdfOutlineItem(outline);
   }
 
+  /**
+   * Flattens form fields into static page content where possible.
+   */
   flattenForms(): void {
     flattenFormsOnPages(this.pages);
   }
 
+  /**
+   * Validates the current document model against enabled compliance rules.
+   *
+   * @returns The compliance issues found in the current model.
+   */
   validateCompliance(): readonly PdfComplianceIssue[] {
     return collectComplianceIssues(
       buildComplianceCheckInput(
@@ -1410,14 +2106,29 @@ export class PdfDocument {
     );
   }
 
+  /**
+   * Serializes the document into PDF bytes.
+   *
+   * @returns The serialized or collected bytes.
+   */
   toUint8Array(): Uint8Array {
     return serializeDocument(this.toModel());
   }
 
+  /**
+   * Streams the serialized document to a byte sink.
+   *
+   * @param sink The sink that receives written byte chunks.
+   */
   async writeTo(sink: ByteSink): Promise<void> {
     await serializeDocumentToSink(this.toModel(), sink);
   }
 
+  /**
+   * Serializes the document into an ArrayBuffer.
+   *
+   * @returns The serialized PDF data as an ArrayBuffer.
+   */
   toArrayBuffer(): ArrayBuffer {
     const bytes = this.toUint8Array();
     const buffer = new ArrayBuffer(bytes.byteLength);
@@ -1425,12 +2136,22 @@ export class PdfDocument {
     return buffer;
   }
 
+  /**
+   * Serializes the document into a PDF Blob.
+   *
+   * @returns The serialized PDF data as a Blob.
+   */
   toBlob(): Blob {
     return new Blob([new Uint8Array(this.toArrayBuffer())], {
       type: 'application/pdf',
     });
   }
 
+  /**
+   * Returns the internal document model used by the serializer.
+   *
+   * @returns The internal document model.
+   */
   toModel(): PdfDocumentModel {
     if (this.pages.length === 0) {
       throw new PdfEngineError(
@@ -1543,6 +2264,13 @@ export class PdfDocument {
   }
 }
 
+/**
+ *
+ * A mutable editor for applying incremental updates to an existing PDF document. It supports page edits, appended pages, form updates, structure changes, embedded resources, and incremental serialization.
+ *
+ * @export
+ * @class PdfEditableDocument
+ */
 export class PdfEditableDocument {
   private readonly appendedPages: InternalPageModel[] = [];
   private readonly editedPages = new Map<number, InternalPageModel>();
@@ -1579,6 +2307,11 @@ export class PdfEditableDocument {
   private readonly taggedBase: boolean;
   private readonly conformanceBase: 'pdfa-1b' | 'pdfua-1' | undefined;
 
+  /**
+   * Creates an editor around a parsed source PDF.
+   *
+   * @param base The parsed source PDF to edit.
+   */
   constructor(private readonly base: ParsedPdfDocument) {
     this.taggedBase = base.isTagged();
     this.conformanceBase = base.getConformanceProfile();
@@ -1603,10 +2336,25 @@ export class PdfEditableDocument {
     }
   }
 
+  /**
+   * Appends a new page and returns its page builder.
+   *
+   * @param options Options that control the operation.
+   *
+   * @returns The new page builder.
+   */
   addPage(options: PageOptions = {}): PdfPage {
     return this.insertPage(this.pageOrder.length, options);
   }
 
+  /**
+   * Inserts a new page at the requested position and returns its page builder.
+   *
+   * @param index The page index.
+   * @param options Options that control the operation.
+   *
+   * @returns The inserted page builder.
+   */
   insertPage(index: number, options: PageOptions = {}): PdfPage {
     if (
       (this.taggedBase || this.conformanceBase !== undefined) &&
@@ -1628,10 +2376,20 @@ export class PdfEditableDocument {
     return new PdfPage(page, this.embeddedFonts);
   }
 
+  /**
+   * Returns the current page count including appended and inserted pages.
+   *
+   * @returns The page count.
+   */
   getPageCount(): number {
     return this.pageOrder.length;
   }
 
+  /**
+   * Removes a page from the editable page order.
+   *
+   * @param index The page index.
+   */
   removePage(index: number): void {
     if (this.taggedBase || this.conformanceBase !== undefined) {
       throw new PdfEngineError(
@@ -1650,6 +2408,12 @@ export class PdfEditableDocument {
     }
   }
 
+  /**
+   * Moves a page from one position to another.
+   *
+   * @param fromIndex The current page index.
+   * @param toIndex The destination page index.
+   */
   movePage(fromIndex: number, toIndex: number): void {
     if (this.taggedBase || this.conformanceBase !== undefined) {
       throw new PdfEngineError(
@@ -1679,6 +2443,13 @@ export class PdfEditableDocument {
     this.pageOrder.splice(toIndex, 0, entry);
   }
 
+  /**
+   * Creates or returns a page builder for editing an existing page.
+   *
+   * @param index The page index.
+   *
+   * @returns The editable page builder.
+   */
   editPage(index: number): PdfPage {
     assertEditablePageIndex(index, this.pageOrder.length - 1, 'edit');
     const entry = this.pageOrder[index];
@@ -1708,6 +2479,14 @@ export class PdfEditableDocument {
     return new PdfPage(overlay, this.embeddedFonts);
   }
 
+  /**
+   * Embeds a TrueType font for use by appended or edited pages.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   *
+   * @returns The result of the operation.
+   */
   embedTrueTypeFont(
     data: BinaryData,
     options: EmbedTrueTypeFontOptions = {},
@@ -1717,6 +2496,11 @@ export class PdfEditableDocument {
     return font;
   }
 
+  /**
+   * Queues updates to the document information dictionary.
+   *
+   * @param info The document information metadata to merge.
+   */
   updateInfo(info: DocumentInfo): void {
     const current =
       this.updatedInfo ??
@@ -1735,11 +2519,22 @@ export class PdfEditableDocument {
     });
   }
 
+  /**
+   * Queues an XMP metadata update or removal.
+   *
+   * @param metadata The XMP metadata input, or undefined to clear it.
+   */
   setXmpMetadata(metadata: XmpMetadataInput | undefined): void {
     this.updatedXmpMetadata = normalizeXmpMetadata(metadata);
     this.hasUpdatedXmpMetadata = true;
   }
 
+  /**
+   * Queues a form field value update by field name.
+   *
+   * @param name The name to assign or look up.
+   * @param value The value to write or apply.
+   */
   setFieldValue(name: string, value: string | boolean): void {
     const match = resolveEditableFieldTarget(
       this.base,
@@ -1903,6 +2698,11 @@ export class PdfEditableDocument {
     );
   }
 
+  /**
+   * Returns editable tagged structure element handles from the source document.
+   *
+   * @returns The editable structure element handles.
+   */
   listEditableStructureElements(): readonly PdfEditableStructureElement[] {
     if (!this.taggedBase) {
       return [];
@@ -1911,6 +2711,13 @@ export class PdfEditableDocument {
     return this.editableStructureElements;
   }
 
+  /**
+   * Finds editable tagged structure elements that match the supplied query.
+   *
+   * @param query The criteria used to match structure elements.
+   *
+   * @returns The result of the operation.
+   */
   findEditableStructureElements(
     query: PdfEditableStructureQuery = {},
   ): readonly PdfEditableStructureElement[] {
@@ -1950,6 +2757,14 @@ export class PdfEditableDocument {
     );
   }
 
+  /**
+   * Finds tagged structure elements related to the supplied element.
+   *
+   * @param target The destination page, outline target, or structure element.
+   * @param options Options that control the operation.
+   *
+   * @returns The result of the operation.
+   */
   findSimilarStructureElements(
     target: PdfEditableStructureElement,
     options: PdfEditableStructureSimilarityOptions = {},
@@ -1963,6 +2778,12 @@ export class PdfEditableDocument {
     });
   }
 
+  /**
+   * Queues a role update for a tagged structure element.
+   *
+   * @param target The destination page, outline target, or structure element.
+   * @param role The replacement structure role.
+   */
   setStructureRole(
     target: PdfEditableStructureElement,
     role: Exclude<PdfStructureTag, 'Artifact'>,
@@ -1985,6 +2806,12 @@ export class PdfEditableDocument {
     this.structureRoleUpdates.set(target.objectId, role);
   }
 
+  /**
+   * Queues role updates for multiple tagged structure elements.
+   *
+   * @param targets The structure element handles to update.
+   * @param role The replacement structure role.
+   */
   setStructureRoles(
     targets: readonly PdfEditableStructureElement[],
     role: Exclude<PdfStructureTag, 'Artifact'>,
@@ -1994,6 +2821,12 @@ export class PdfEditableDocument {
     }
   }
 
+  /**
+   * Queues alternate text updates for a tagged structure element.
+   *
+   * @param target The destination page, outline target, or structure element.
+   * @param altText The replacement alternate text, or undefined to clear it.
+   */
   setStructureAltText(
     target: PdfEditableStructureElement,
     altText: string | undefined,
@@ -2016,6 +2849,11 @@ export class PdfEditableDocument {
     this.structureAltTextUpdates.set(target.objectId, normalizedAltText);
   }
 
+  /**
+   * Queues a child reading-order update for a tagged structure element.
+   *
+   * @param orderedChildren The child element handles in the desired reading order.
+   */
   setStructureReadingOrder(
     orderedChildren: readonly PdfEditableStructureElement[],
   ): void {
@@ -2108,6 +2946,13 @@ export class PdfEditableDocument {
     this.structureChildrenOrderUpdates.set(parentObjectId, orderedIds);
   }
 
+  /**
+   * Validates that a structure element handle belongs to this editable document.
+   *
+   * @param target The destination page, outline target, or structure element.
+   *
+   * @returns The result of the operation.
+   */
   private requireEditableStructureHandle(
     target: PdfEditableStructureElement,
   ): ParsedPdfEditableStructureElement {
@@ -2135,6 +2980,11 @@ export class PdfEditableDocument {
     return known;
   }
 
+  /**
+   * Serializes the incremental update into PDF bytes.
+   *
+   * @returns The serialized or collected bytes.
+   */
   toUint8Array(): Uint8Array {
     if (
       !hasEditablePageChanges(this.base, this.pageOrder) &&
@@ -2153,6 +3003,11 @@ export class PdfEditableDocument {
     return serializeIncrementalUpdate(this.toIncrementalModel());
   }
 
+  /**
+   * Streams the incremental update bytes to a byte sink.
+   *
+   * @param sink The sink that receives written byte chunks.
+   */
   async writeTo(sink: ByteSink): Promise<void> {
     if (
       !hasEditablePageChanges(this.base, this.pageOrder) &&
@@ -2173,6 +3028,11 @@ export class PdfEditableDocument {
     await serializeIncrementalUpdateToSink(this.toIncrementalModel(), sink);
   }
 
+  /**
+   * Serializes the incremental update into an ArrayBuffer.
+   *
+   * @returns The serialized PDF data as an ArrayBuffer.
+   */
   toArrayBuffer(): ArrayBuffer {
     const bytes = this.toUint8Array();
     const buffer = new ArrayBuffer(bytes.byteLength);
@@ -2180,12 +3040,20 @@ export class PdfEditableDocument {
     return buffer;
   }
 
+  /**
+   * Serializes the incremental update into a PDF Blob.
+   *
+   * @returns The serialized PDF data as a Blob.
+   */
   toBlob(): Blob {
     return new Blob([new Uint8Array(this.toArrayBuffer())], {
       type: 'application/pdf',
     });
   }
 
+  /**
+   * Queues flattening for all parsed form fields.
+   */
   flattenForms(): void {
     if (this.taggedBase || this.conformanceBase !== undefined) {
       throw new PdfEngineError(
@@ -2236,6 +3104,11 @@ export class PdfEditableDocument {
     flattenFormsOnPages(this.editedPages.values());
   }
 
+  /**
+   * Builds the internal incremental update model for serialization.
+   *
+   * @returns The internal incremental update model.
+   */
   toIncrementalModel(): PdfIncrementalUpdateModel {
     const retainedEditedPages = this.pageOrder
       .filter(
@@ -2307,10 +3180,16 @@ export class PdfEditableDocument {
   }
 }
 
+/**
+ * Creates a new PDF document builder for generating pages, text, graphics, forms, metadata, tagging, and attachments.
+ */
 export function createDocument(options: DocumentOptions = {}): PdfDocument {
   return new PdfDocument(options);
 }
 
+/**
+ * Opens an existing PDF for incremental edits such as appending pages, updating fields, changing structure metadata, and preserving existing bytes when possible.
+ */
 export function editDocument(
   data: BinaryData,
   options: ParseDocumentOptions = {},
@@ -2481,10 +3360,16 @@ function createFlowState(
   page: InternalPageModel,
   options: FlowOptions,
 ): FlowState {
-  const margin = options.margin ?? 56;
-  const x = options.x ?? margin;
-  const y = options.y ?? page.size.height - margin;
-  const width = options.width ?? page.size.width - (x + margin);
+  const fallback = defaultFlowMargin(page.size);
+  const shorthand = resolveMarginShorthand(options.margin);
+  const hasShorthand = options.margin !== undefined;
+  const top = options.marginTop ?? (hasShorthand ? shorthand.top : fallback);
+  const right = options.marginRight ?? (hasShorthand ? shorthand.right : fallback);
+  const bottomMargin = options.marginBottom ?? (hasShorthand ? shorthand.bottom : fallback);
+  const leftMargin = options.marginLeft ?? (hasShorthand ? shorthand.left : fallback);
+  const x = options.x ?? leftMargin;
+  const y = options.y ?? page.size.height - top;
+  const width = options.width ?? page.size.width - x - right;
 
   return {
     x,
@@ -2492,10 +3377,7 @@ function createFlowState(
     startY: y,
     width,
     gap: options.gap ?? STANDARD_FLOW_SPACING.paragraphAfter,
-    marginBottom:
-      'marginBottom' in options && typeof options.marginBottom === 'number'
-        ? options.marginBottom
-        : margin,
+    marginBottom: bottomMargin,
     spacing: resolveFlowSpacing(options),
     ...(options.font === undefined ? {} : { font: options.font }),
     ...(options.fallbackFonts === undefined
@@ -3060,4 +3942,3 @@ function resolveExistingCheckBoxOnStateName(
   const onState = normalAppearance.find(([key]) => key !== 'Off')?.[0];
   return onState;
 }
-

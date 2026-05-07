@@ -107,17 +107,19 @@ const pdfIssues: Array<{
   },
 ];
 
+const exampleFontPath = process.env.PDF_EDITING_LIB_EXAMPLE_FONT ?? process.env.PDF_EDITING_LIB_FONT_PATH;
 const fontPath = [
+  exampleFontPath,
   '/System/Library/Fonts/SFNS.ttf',
   '/System/Library/Fonts/SFNSMono.ttf',
   '/System/Library/Fonts/Geneva.ttf',
   '/Library/Fonts/Arial.ttf',
   '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-].find((path) => existsSync(path));
+].find((path): path is string => path !== undefined && existsSync(path));
 
 if (!fontPath) {
   throw new Error(
-    'examples/tagged-pdf-report.ts needs a local TrueType font to generate PDF/UA-1 compliant embedded-font output.',
+    'examples/tagged-pdf-report.ts needs a local TrueType font to generate PDF/UA-1 compliant embedded-font output. Set PDF_EDITING_LIB_EXAMPLE_FONT=/path/to/font.ttf to choose one.',
   );
 }
 
@@ -159,6 +161,10 @@ function issueBlocks(issue: (typeof pdfIssues)[number]): TemplateBlock[] {
         headerColumns: 1,
         fontSize: 10,
         color: BODY,
+        cellPadding: 8,
+        rowGap: 2,
+        marginTop: 6,
+        marginBottom: 12,
       },
     },
     {
@@ -169,7 +175,7 @@ function issueBlocks(issue: (typeof pdfIssues)[number]): TemplateBlock[] {
     {
       type: 'paragraph',
       text: issue.environments.join('; '),
-      options: { fontSize: 10, color: BODY },
+      options: { fontSize: 10, color: BODY, align: 'justify' },
     },
     {
       type: 'heading',
@@ -179,7 +185,7 @@ function issueBlocks(issue: (typeof pdfIssues)[number]): TemplateBlock[] {
     {
       type: 'paragraph',
       text: issue.actualResult,
-      options: { fontSize: 10, color: BODY },
+      options: { fontSize: 10, color: BODY, align: 'justify' },
     },
     {
       type: 'heading',
@@ -189,7 +195,7 @@ function issueBlocks(issue: (typeof pdfIssues)[number]): TemplateBlock[] {
     {
       type: 'paragraph',
       text: issue.expectedResult,
-      options: { fontSize: 10, color: BODY },
+      options: { fontSize: 10, color: BODY, align: 'justify' },
     },
     {
       type: 'heading',
@@ -199,7 +205,7 @@ function issueBlocks(issue: (typeof pdfIssues)[number]): TemplateBlock[] {
     {
       type: 'paragraph',
       text: issue.recommendation.join('; '),
-      options: { fontSize: 10, color: BODY },
+      options: { fontSize: 10, color: BODY, align: 'justify' },
     },
   ];
 }
@@ -233,31 +239,79 @@ doc.renderTemplate({
   blocks: [
     {
       type: 'heading',
-      text: `Accessibility Audit Report - ${projectName}`,
-      options: { color: BLUE },
+      text: 'Accessibility Audit Report',
+      options: { color: BLUE, align: 'center', marginBottom: 200 },
     },
-    { type: 'paragraph', text: reportDate, options: { color: DARK } },
     {
       type: 'png',
       data: logo,
-      options: { maxWidth: 150, altText: 'zeropdf logo', structure: { altText: 'zeropdf logo' } },
+      options: {
+        maxWidth: 180,
+        align: 'center',
+        altText: 'zeropdf logo',
+      },
     },
-    { type: 'paragraph', text: 'Prepared by', options: { color: DARK } },
     {
       type: 'heading',
-      text: 'zeropdf',
-      options: { level: 2, color: BLUE },
+      text: projectName,
+      options: { level: 2, color: DARK, align: 'center', marginBottom: 24 },
     },
     {
       type: 'paragraph',
-      text: 'Office No. 102, Highway Commercial Complex, IB Patel Road, Opposite Laghu Udyog Industrial Estate, Goregaon (E), Mumbai - 400 063. Telephone: +91 (22) 2686 0485/6, +15862329773',
-      options: { fontSize: 10 },
+      text: reportDate,
+      options: { color: DARK, align: 'center', marginBottom: 80 },
+    },
+    {
+      type: 'paragraph',
+      text: 'Prepared by',
+      options: { color: DARK, align: 'left', marginBottom: 4 },
+    },
+    {
+      type: 'heading',
+      text: 'zeropdf',
+      options: { level: 2, color: BLUE, align: 'left', marginBottom: 8 },
+    },
+    {
+      type: 'paragraph',
+      text: [
+        'Office No. 102, Highway Commercial Complex',
+        'IB Patel Road, Opposite Laghu Udyog Industrial Estate',
+        'Goregaon (E), Mumbai 400 063',
+        'Maharashtra, India',
+      ].join('\n'),
+      options: {
+        fontSize: 10,
+        align: 'left',
+        blockWidth: 320,
+        lineHeight: 14,
+        marginBottom: 6,
+      },
+    },
+    {
+      type: 'paragraph',
+      text: [
+        'Tel: +91 (22) 2686 0485 / +91 (22) 2686 0486',
+        'Tel: +1 586 232 9773',
+      ].join('\n'),
+      options: {
+        fontSize: 10,
+        align: 'left',
+        blockWidth: 320,
+        lineHeight: 14,
+        marginBottom: 8,
+      },
     },
     {
       type: 'link',
       text: 'zeropdf website',
       url: 'https://www.zeropdf.com/',
-      options: { structure: { altText: 'zeropdf website' } },
+      options: {
+        align: 'left',
+        structure: { altText: 'zeropdf website' },
+      },
+    },
+    {
+      type: 'pageBreak',
     },
     {
       type: 'heading',
@@ -271,7 +325,14 @@ doc.renderTemplate({
         ['Prepared for', clientName],
         ['Version', '1.0'],
       ],
-      options: { headerColumns: 1, fontSize: 11 },
+      options: {
+        headerColumns: 1,
+        fontSize: 11,
+        cellPadding: 8,
+        rowGap: 2,
+        marginTop: 6,
+        marginBottom: 12,
+      },
     },
     {
       type: 'heading',
@@ -281,7 +342,7 @@ doc.renderTemplate({
     {
       type: 'paragraph',
       text: 'Findings are grouped based on WCAG 2.2 Guidelines and the related success criterion. For most of the issues mentioned below, few examples are included. Findings discussed in these examples need to be applied to rest of the website.',
-      options: { fontSize: 11, color: DARK },
+      options: { fontSize: 11, color: DARK, align: 'justify' },
     },
     {
       type: 'heading',
@@ -296,7 +357,14 @@ doc.renderTemplate({
         issue.severity,
         issue.wcagCriteria,
       ]),
-      options: { headerColumns: 1, fontSize: 9 },
+      options: {
+        headerColumns: 1,
+        fontSize: 9,
+        cellPadding: 6,
+        rowGap: 2,
+        marginTop: 6,
+        marginBottom: 12,
+      },
     },
     { type: 'pageBreak' },
     ...pdfIssues.flatMap((issue) => issueBlocks(issue)),

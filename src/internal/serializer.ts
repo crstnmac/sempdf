@@ -6,6 +6,7 @@ import type { FontName, PdfFont, PathCommand, PdfColor, PdfStructureAttributeVal
 import type { EmbeddedImageAsset } from "./image.js";
 import type { EmbeddedTextGlyph, PdfOp } from "./ops.js";
 import { deflateZlib } from "./deflate.js";
+import { subsetTrueTypeFont } from "./truetype-subset.js";
 import { createCipherForObject, createDocumentFileId, createPdfEncryptionContext, encryptBytesForObject, latin1Bytes, type PdfEncryptionContext } from "./pdf-encryption.js";
 import { array, dict, formatPdfNumber, hexString, isPdfLazyStream, isPdfStream, lazyStream, literalString, name, ref, serializePdfValue, stream, type PdfDict, type PdfIndirectObject, type PdfLazyStream, type PdfStream, type PdfValue } from "./pdf-primitives.js";
 import { getSrgbIccProfileBytes } from "./srgb-icc.js";
@@ -196,6 +197,7 @@ const encoder = new TextEncoder();
 const STREAM_CHUNK_SIZE = 64 * 1024;
 
 const COMPRESSION_MIN_BYTES = 256;
+const LAZY_STREAM_MIN_BYTES = 64 * 1024;
 
 function compressedStream(dictEntries: PdfDict, bytes: Uint8Array, enabled: boolean | undefined): PdfStream {
   if (!enabled || bytes.length < COMPRESSION_MIN_BYTES) {
@@ -301,7 +303,7 @@ function* buildSerializedPageObjects(
     }
 
     const contentStreamValue =
-      options.lazyPageContentStreams === true
+      options.lazyPageContentStreams === true && options.compress !== true
         ? lazyStream(
             dict([]),
             options.allocateLazyLengthObjectId(),
@@ -312,7 +314,18 @@ function* buildSerializedPageObjects(
               taggedContentItems: page.taggedContentItems
             })
           )
-        : compressedStream(dict([]), getSerializedPageContentBytes(page), options.compress);
+        : compressedStream(
+            dict([]),
+            options.lazyPageContentStreams === true
+              ? encodePageContent(page.modelPage.ops, {
+                  fonts: page.fontResourceMap,
+                  images: page.imageResourceMap,
+                  embeddedFonts: new Map(options.embeddedFontContexts),
+                  taggedContentItems: page.taggedContentItems
+                })
+              : getSerializedPageContentBytes(page),
+            options.compress
+          );
 
     yield {
       id: page.contentObjectId,
@@ -765,7 +778,7 @@ function prepareDocumentSerialization(
   let nextObjectId = reservedObjectId;
   let nextLazyLengthObjectId = nextObjectId;
   const prepareByteStream = (value: PdfStream): PdfStream | PdfLazyStream =>
-    options.lazyByteStreams === true
+    options.lazyByteStreams === true && value.bytes.length >= LAZY_STREAM_MIN_BYTES
       ? lazyStream(
           value.dict,
           nextLazyLengthObjectId++,
@@ -947,13 +960,14 @@ function prepareDocumentSerialization(
 
   for (const context of embeddedFontContexts.values()) {
     const objectIds = embeddedFontObjectIds.get(context.font.id)!;
+    const subsetBytes = subsetTrueTypeFont(context.font.bytes, context.glyphToUnicode.keys());
     documentObjects.push({
       id: objectIds.fontFile,
       value: prepareByteStream(compressedStream(
         dict([
-          ["Length1", context.font.bytes.length]
+          ["Length1", subsetBytes.length]
         ]),
-        context.font.bytes,
+        subsetBytes,
         "compress" in model ? (model as { compress?: boolean }).compress : undefined
       ))
     });
@@ -1274,7 +1288,7 @@ function prepareIncrementalUpdateSerialization(
   const prefixObjects: PdfIndirectObject[] = [];
   let nextLazyLengthObjectId = nextObjectId;
   const prepareByteStream = (value: PdfStream): PdfStream | PdfLazyStream =>
-    options.lazyByteStreams === true
+    options.lazyByteStreams === true && value.bytes.length >= LAZY_STREAM_MIN_BYTES
       ? lazyStream(
           value.dict,
           nextLazyLengthObjectId++,
@@ -1317,13 +1331,14 @@ function prepareIncrementalUpdateSerialization(
 
   for (const context of embeddedFontContexts.values()) {
     const objectIds = embeddedFontObjectIds.get(context.font.id)!;
+    const subsetBytes = subsetTrueTypeFont(context.font.bytes, context.glyphToUnicode.keys());
     prefixObjects.push({
       id: objectIds.fontFile,
       value: prepareByteStream(compressedStream(
         dict([
-          ["Length1", context.font.bytes.length]
+          ["Length1", subsetBytes.length]
         ]),
-        context.font.bytes,
+        subsetBytes,
         "compress" in model ? (model as { compress?: boolean }).compress : undefined
       ))
     });
@@ -3701,8 +3716,17 @@ async function* encodePageContentChunks(
     taggedContentItems: readonly TaggedPageContentItem[];
   }
 ): AsyncIterable<Uint8Array> {
+  const target = STREAM_CHUNK_SIZE;
+  let pending = "";
   for (const line of serializePageContentLines(ops, resources)) {
-    yield encoder.encode(`${line}\n`);
+    pending += `${line}\n`;
+    if (pending.length >= target) {
+      yield encoder.encode(pending);
+      pending = "";
+    }
+  }
+  if (pending.length > 0) {
+    yield encoder.encode(pending);
   }
 }
 

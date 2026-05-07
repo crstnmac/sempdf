@@ -1,19 +1,84 @@
-import type { PdfDocument, PdfFlow, PdfPage } from "../document.js";
+import type { PdfDocument, PdfFlow, PdfPage } from '../document.js';
 import type {
   FlowHeadingOptions,
+  FlowMarginShorthand,
   FlowOptions,
   FlowTextOptions,
   TemplateBlock,
   TemplateDocumentOptions,
   TemplatePageOptions,
-  TemplateRenderContext
-} from "../types.js";
-import type { ResolvedPageSize } from "./validation.js";
+  TemplateRenderContext,
+} from '../types.js';
+import type { ResolvedPageSize } from './validation.js';
+
+interface ResolvedPageMargins {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+function resolvePageMargins(
+  options: TemplatePageOptions | undefined,
+  pageSize: ResolvedPageSize,
+): ResolvedPageMargins {
+  const fallback = defaultMarginForPage(pageSize);
+  const shorthand = expandMarginShorthand(options?.margin);
+  return {
+    top: options?.marginTop ?? shorthand?.top ?? fallback,
+    right: options?.marginRight ?? shorthand?.right ?? fallback,
+    bottom: options?.marginBottom ?? shorthand?.bottom ?? fallback,
+    left: options?.marginLeft ?? shorthand?.left ?? fallback,
+  };
+}
+
+function defaultMarginForPage(pageSize: ResolvedPageSize): number {
+  for (const preset of STANDARD_PAGE_MARGINS) {
+    if (
+      Math.abs(pageSize.width - preset.width) < 0.5 &&
+      Math.abs(pageSize.height - preset.height) < 0.5
+    ) {
+      return preset.margin;
+    }
+  }
+  const shorter = Math.min(pageSize.width, pageSize.height);
+  return Math.max(24, Math.min(72, Math.round(shorter * 0.1)));
+}
+
+const STANDARD_PAGE_MARGINS: ReadonlyArray<{
+  width: number;
+  height: number;
+  margin: number;
+}> = [
+  { width: 595.28, height: 841.89, margin: 72 },
+  { width: 612, height: 792, margin: 72 },
+  { width: 612, height: 1008, margin: 72 },
+];
+
+function expandMarginShorthand(
+  margin: FlowMarginShorthand | undefined,
+): ResolvedPageMargins | undefined {
+  if (margin === undefined) return undefined;
+  if (typeof margin === 'number') {
+    return { top: margin, right: margin, bottom: margin, left: margin };
+  }
+  if (margin.length === 2) {
+    const [vertical, horizontal] = margin;
+    return {
+      top: vertical,
+      right: horizontal,
+      bottom: vertical,
+      left: horizontal,
+    };
+  }
+  const [top, right, bottom, left] = margin;
+  return { top, right, bottom, left };
+}
 
 export function renderTemplateDocument(
   doc: PdfDocument,
   options: TemplateDocumentOptions,
-  metadata: Pick<TemplateRenderContext, "title" | "author">
+  metadata: Pick<TemplateRenderContext, 'title' | 'author'>,
 ): void {
   const pages: Array<{ pageNumber: number; page: PdfPage }> = [];
   let current = createTemplatePage(doc, options, 1);
@@ -21,7 +86,7 @@ export function renderTemplateDocument(
 
   for (let index = 0; index < options.blocks.length; index += 1) {
     const block = options.blocks[index]!;
-    if (block.type === "pageBreak") {
+    if (block.type === 'pageBreak') {
       if (current.flow.cursorY < current.startY) {
         current = createTemplatePage(doc, options, current.pageNumber + 1);
         pages.push({ pageNumber: current.pageNumber, page: current.page });
@@ -30,15 +95,15 @@ export function renderTemplateDocument(
     }
 
     const estimatedHeight = estimateTemplateBlockHeight(block, current.flow);
-    const keepWithNext = block.keepWithNext ?? block.type === "heading";
+    const keepWithNext = block.keepWithNext ?? block.type === 'heading';
     const nextEstimatedHeight =
       keepWithNext && options.blocks[index + 1] !== undefined
         ? estimateTemplateBlockHeight(options.blocks[index + 1]!, current.flow)
         : 0;
 
     if (
-      current.flow.remainingHeight < estimatedHeight + nextEstimatedHeight
-      && current.flow.cursorY < current.startY
+      current.flow.remainingHeight < estimatedHeight + nextEstimatedHeight &&
+      current.flow.cursorY < current.startY
     ) {
       current = createTemplatePage(doc, options, current.pageNumber + 1);
       pages.push({ pageNumber: current.pageNumber, page: current.page });
@@ -53,9 +118,11 @@ export function renderTemplateDocument(
 function createTemplatePage(
   doc: PdfDocument,
   options: TemplateDocumentOptions,
-  pageNumber: number
+  pageNumber: number,
 ): { pageNumber: number; page: PdfPage; flow: PdfFlow; startY: number } {
-  const page = doc.addPage(options.page?.size === undefined ? {} : { size: options.page.size });
+  const page = doc.addPage(
+    options.page?.size === undefined ? {} : { size: options.page.size },
+  );
   const flow = page.flow(bodyFlowOptions(page.size, options));
   return { pageNumber, page, flow, startY: flow.cursorY };
 }
@@ -63,114 +130,125 @@ function createTemplatePage(
 function renderTemplateRunningRegions(
   pages: ReadonlyArray<{ pageNumber: number; page: PdfPage }>,
   options: TemplateDocumentOptions,
-  metadata: Pick<TemplateRenderContext, "title" | "author">
+  metadata: Pick<TemplateRenderContext, 'title' | 'author'>,
 ): void {
   const totalPages = pages.length;
   for (const { pageNumber, page } of pages) {
     const context = { pageNumber, totalPages, ...metadata };
     if (options.header) {
-      page.flow(headerFlowOptions(page.size, options.page)).render(options.header(context));
+      page
+        .flow(headerFlowOptions(page.size, options.page))
+        .render(options.header(context));
     }
     if (options.footer) {
-      page.flow(footerFlowOptions(page.size, options.page)).render(options.footer(context));
+      page
+        .flow(footerFlowOptions(page.size, options.page))
+        .render(options.footer(context));
     }
     renderTemplatePageNumber(page, context, options);
   }
 }
 
-function bodyFlowOptions(pageSize: ResolvedPageSize, options: TemplateDocumentOptions): FlowOptions {
+const DEFAULT_HEADER_OFFSET = 24;
+const DEFAULT_FOOTER_OFFSET = 24;
+
+function resolveHeaderOffset(options: TemplatePageOptions | undefined): number {
+  return options?.headerHeight ?? DEFAULT_HEADER_OFFSET;
+}
+
+function resolveFooterOffset(options: TemplatePageOptions | undefined): number {
+  return options?.footerHeight ?? DEFAULT_FOOTER_OFFSET;
+}
+
+function bodyFlowOptions(
+  pageSize: ResolvedPageSize,
+  options: TemplateDocumentOptions,
+): FlowOptions {
   const page = options.page;
-  const margin = page?.margin ?? 56;
-  const x = page?.x ?? margin;
-  const headerHeight = resolveTemplateHeaderHeight(options);
-  const footerHeight = resolveTemplateFooterHeight(options);
+  const m = resolvePageMargins(page, pageSize);
+  const x = page?.x ?? m.left;
   return {
     ...page,
     x,
-    y: page?.y ?? pageSize.height - margin - headerHeight,
-    width: page?.width ?? pageSize.width - (x + margin),
-    marginBottom: page?.marginBottom ?? margin + footerHeight
+    y: page?.y ?? pageSize.height - m.top,
+    width: page?.width ?? pageSize.width - x - m.right,
+    marginBottom: page?.marginBottom ?? m.bottom,
   };
 }
 
 function headerFlowOptions(
   pageSize: ResolvedPageSize,
-  options: TemplatePageOptions | undefined
+  options: TemplatePageOptions | undefined,
 ): FlowOptions {
-  const margin = options?.margin ?? 56;
-  const x = options?.x ?? margin;
-  const headerHeight = options?.headerHeight ?? 32;
+  const m = resolvePageMargins(options, pageSize);
+  const x = options?.x ?? m.left;
+  const headerOffset = resolveHeaderOffset(options);
   return {
     ...options,
     x,
-    y: pageSize.height - margin,
-    width: options?.width ?? pageSize.width - (x + margin),
-    marginBottom: pageSize.height - margin - headerHeight
+    y: pageSize.height - headerOffset,
+    width: options?.width ?? pageSize.width - x - m.right,
+    marginBottom: pageSize.height - m.top,
   };
 }
 
 function footerFlowOptions(
   pageSize: ResolvedPageSize,
-  options: TemplatePageOptions | undefined
+  options: TemplatePageOptions | undefined,
 ): FlowOptions {
-  const margin = options?.margin ?? 56;
-  const x = options?.x ?? margin;
-  const footerHeight = options?.footerHeight ?? 32;
+  const m = resolvePageMargins(options, pageSize);
+  const x = options?.x ?? m.left;
+  const footerOffset = resolveFooterOffset(options);
   return {
     ...options,
     x,
-    y: margin + footerHeight,
-    width: options?.width ?? pageSize.width - (x + margin),
-    marginBottom: margin
+    y: footerOffset,
+    width: options?.width ?? pageSize.width - x - m.right,
+    marginBottom: 0,
   };
 }
 
 function renderTemplatePageNumber(
   page: PdfPage,
   context: TemplateRenderContext,
-  options: TemplateDocumentOptions
+  options: TemplateDocumentOptions,
 ): void {
   if (!options.pageNumber) {
     return;
   }
 
   const pageNumber = options.pageNumber;
-  const region = pageNumber.region ?? "footer";
+  const region = pageNumber.region ?? 'footer';
   const flowOptions =
-    region === "header"
+    region === 'header'
       ? headerFlowOptions(page.size, options.page)
       : footerFlowOptions(page.size, options.page);
-  const align = pageNumber.align ?? "center";
-  page.flow(flowOptions).paragraph((pageNumber.format ?? defaultTemplatePageNumberFormat)(context), {
-    fontSize: 8,
-    ...pageNumber.options,
-    align,
-    tag: pageNumber.options?.tag ?? "Artifact",
-    spaceBefore: pageNumber.options?.spaceBefore ?? 0,
-    spaceAfter: pageNumber.options?.spaceAfter ?? 0
-  });
+  const align = pageNumber.align ?? 'center';
+  page
+    .flow(flowOptions)
+    .paragraph(
+      (pageNumber.format ?? defaultTemplatePageNumberFormat)(context),
+      {
+        fontSize: 8,
+        ...pageNumber.options,
+        align,
+        tag: pageNumber.options?.tag ?? 'Artifact',
+        marginTop: pageNumber.options?.marginTop ?? 0,
+        marginBottom: pageNumber.options?.marginBottom ?? 0,
+      },
+    );
 }
 
-function defaultTemplatePageNumberFormat(context: TemplateRenderContext): string {
+function defaultTemplatePageNumberFormat(
+  context: TemplateRenderContext,
+): string {
   return `Page ${context.pageNumber} of ${context.totalPages}`;
 }
 
-function resolveTemplateHeaderHeight(options: TemplateDocumentOptions): number {
-  return options.page?.headerHeight ?? (options.header || options.pageNumber?.region === "header" ? 32 : 0);
-}
-
-function resolveTemplateFooterHeight(options: TemplateDocumentOptions): number {
-  if (options.page?.footerHeight !== undefined) {
-    return options.page.footerHeight;
-  }
-  return options.footer || !options.pageNumber || options.pageNumber.region === "footer"
-    ? options.footer || options.pageNumber
-      ? 32
-      : 0
-    : 0;
-}
-
-export function renderTemplateBlocksToFlow(flow: PdfFlow, blocks: readonly TemplateBlock[]): void {
+export function renderTemplateBlocksToFlow(
+  flow: PdfFlow,
+  blocks: readonly TemplateBlock[],
+): void {
   for (const block of blocks) {
     renderTemplateBlockToFlow(flow, block);
   }
@@ -178,33 +256,36 @@ export function renderTemplateBlocksToFlow(flow: PdfFlow, blocks: readonly Templ
 
 function renderTemplateBlockToFlow(flow: PdfFlow, block: TemplateBlock): void {
   switch (block.type) {
-    case "heading":
+    case 'heading':
       flow.heading(block.text, block.options as FlowHeadingOptions | undefined);
       return;
-    case "paragraph":
+    case 'paragraph':
       flow.paragraph(block.text, block.options as FlowTextOptions | undefined);
       return;
-    case "table":
+    case 'table':
       flow.table(block.rows, block.options);
       return;
-    case "png":
+    case 'png':
       flow.png(block.data, block.options);
       return;
-    case "jpeg":
+    case 'jpeg':
       flow.jpeg(block.data, block.options);
       return;
-    case "link":
+    case 'link':
       flow.link(block.text, block.url, block.options);
       return;
-    case "section":
+    case 'section':
       flow.render(block.blocks);
       return;
-    case "pageBreak":
+    case 'pageBreak':
       flow.moveDown(flow.remainingHeight);
       return;
   }
 }
 
-function estimateTemplateBlockHeight(block: TemplateBlock, flow: PdfFlow): number {
+function estimateTemplateBlockHeight(
+  block: TemplateBlock,
+  flow: PdfFlow,
+): number {
   return flow.estimate(block);
 }

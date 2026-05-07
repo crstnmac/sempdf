@@ -23,6 +23,7 @@
     "docs:dev": "npm run docs:api && vitepress dev docs --host 0.0.0.0",
     "docs:preview": "vitepress preview docs --host 0.0.0.0",
     "test": "npm run build && node --test dist/test/**/*.test.js",
+    "test:performance": "npm run build && node --test dist/test/performance.test.js",
     "validate:pdf": "node scripts/validate-verapdf.mjs",
     "example:hello": "npm run build && node dist/examples/hello-world.js",
     "example:image": "npm run build && node dist/examples/jpeg-image.js",
@@ -41,7 +42,11 @@
     "node": ">=22"
   },
   "devDependencies": {
+    "@pdf-lib/fontkit": "^1.1.1",
     "@types/node": "^25.6.0",
+    "@types/pdfkit": "^0.17.6",
+    "pdf-lib": "^1.17.1",
+    "pdfkit": "^0.18.0",
     "typedoc": "^0.28.19",
     "typedoc-plugin-markdown": "^4.11.0",
     "typescript": "^6.0.2",
