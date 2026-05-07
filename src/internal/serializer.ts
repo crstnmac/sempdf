@@ -2,7 +2,7 @@ import { ByteWriter } from "./byte-writer.js";
 import type { ByteSink } from "./byte-sink.js";
 import { StreamingByteWriter } from "./streaming-byte-writer.js";
 import type { PdfDocumentModel, PdfIncrementalUpdateModel } from "../document.js";
-import type { FontName, PdfEmbeddedFont, PdfFont, PathCommand, PdfColor, PdfStructureAttributeValue, PdfStructureTag, Transform } from "../types.js";
+import type { FontName, PdfFont, PathCommand, PdfColor, PdfStructureAttributeValue, PdfStructureTag, Transform } from "../types.js";
 import type { EmbeddedImageAsset } from "./image.js";
 import type { EmbeddedTextGlyph, PdfOp } from "./ops.js";
 import { deflateZlib } from "./deflate.js";
