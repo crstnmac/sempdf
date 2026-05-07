@@ -27,6 +27,7 @@ export function buildXmpMetadataPacket(options: XmpMetadataOptions): string {
     '<x:xmpmeta xmlns:x="adobe:ns:meta/">',
     '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">',
     '<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:pdf="http://ns.adobe.com/pdf/1.3/" xmlns:xmp="http://ns.adobe.com/xap/1.0/">',
+    '<dc:format>application/pdf</dc:format>',
     title,
     creator,
     producer,

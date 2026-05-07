@@ -1,16 +1,31 @@
 import { PdfEngineError, PdfErrorCode } from "./errors.js";
 import { inflateZlib } from "./internal/deflate.js";
-import { decryptBytesForObject, encryptBytesForObject, latin1Bytes, openPdfEncryptionContext, type PdfEncryptionContext } from "./internal/pdf-encryption.js";
+import {
+  decryptBytesForObject,
+  latin1Bytes,
+  openPdfEncryptionContext,
+  type PdfEncryptionContext,
+} from "./internal/pdf-encryption.js";
 import type { BinaryData } from "./types.js";
-import { isPdfStream, type PdfDict, type PdfRef, type PdfStream, type PdfValue } from "./internal/pdf-primitives.js";
+import {
+  isPdfStream,
+  type PdfDict,
+  type PdfRef,
+  type PdfStream,
+  type PdfValue,
+} from "./internal/pdf-primitives.js";
 
 /**
  * Low-level parsed indirect object record.
  */
 export interface ParsedPdfIndirectObject {
+  /** PDF indirect object number. */
   readonly id: number;
+  /** PDF indirect object generation number. */
   readonly generation: number;
+  /** Byte offset where the indirect object was parsed. */
   readonly offset: number;
+  /** Current or default value for the option. */
   readonly value: PdfValue;
 }
 
@@ -18,8 +33,11 @@ export interface ParsedPdfIndirectObject {
  * Page metadata discovered while parsing an existing PDF.
  */
 export interface ParsedPdfPage {
+  /** PDF indirect object number for the parsed item. */
   readonly objectId: number;
+  /** Parsed page media box array. */
   readonly mediaBox?: readonly number[] | undefined;
+  /** Object ids of content streams attached to the page. */
   readonly contentObjectIds: readonly number[];
 }
 
@@ -27,13 +45,21 @@ export interface ParsedPdfPage {
  * Document metadata discovered while parsing an existing PDF.
  */
 export interface ParsedPdfMetadata {
+  /** Document title or display title. */
   readonly title?: string | undefined;
+  /** Document author name. */
   readonly author?: string | undefined;
+  /** Document subject or summary. */
   readonly subject?: string | undefined;
+  /** Document keywords for search and metadata. */
   readonly keywords?: string | undefined;
+  /** Application or person that created the document. */
   readonly creator?: string | undefined;
+  /** PDF producer value recorded in metadata. */
   readonly producer?: string | undefined;
+  /** Document creation date. */
   readonly creationDate?: string | undefined;
+  /** Document modification date. */
   readonly modificationDate?: string | undefined;
 }
 
@@ -41,8 +67,11 @@ export interface ParsedPdfMetadata {
  * Named destination discovered while parsing an existing PDF.
  */
 export interface ParsedPdfNamedDestination {
+  /** Name of the item, field, destination, or signer. */
   readonly name: string;
+  /** Object id of the page associated with this item. */
   readonly pageObjectId?: number | undefined;
+  /** Choice field display mode. */
   readonly mode?: string | undefined;
 }
 
@@ -50,9 +79,13 @@ export interface ParsedPdfNamedDestination {
  * Outline item discovered while parsing an existing PDF.
  */
 export interface ParsedPdfOutlineItem {
+  /** Document title or display title. */
   readonly title: string;
+  /** Named destination targeted by the outline item. */
   readonly targetName?: string | undefined;
+  /** Page object id targeted by the outline item. */
   readonly targetPageObjectId?: number | undefined;
+  /** Nested child list items or structure elements. */
   readonly children: readonly ParsedPdfOutlineItem[];
 }
 
@@ -60,9 +93,19 @@ export interface ParsedPdfOutlineItem {
  * Page-label range discovered while parsing an existing PDF.
  */
 export interface ParsedPdfPageLabelRange {
+  /** Zero-based page index where the label range starts. */
   readonly startPageIndex: number;
-  readonly style?: "decimal" | "romanUpper" | "romanLower" | "lettersUpper" | "lettersLower" | undefined;
+  /** Page-label numbering style. */
+  readonly style?:
+    | "decimal"
+    | "romanUpper"
+    | "romanLower"
+    | "lettersUpper"
+    | "lettersLower"
+    | undefined;
+  /** Text prefix prepended to page labels. */
   readonly prefix?: string | undefined;
+  /** Starting number for ordered output. */
   readonly startAt: number;
 }
 
@@ -70,10 +113,15 @@ export interface ParsedPdfPageLabelRange {
  * Attachment metadata discovered while parsing an existing PDF.
  */
 export interface ParsedPdfAttachment {
+  /** Name of the item, field, destination, or signer. */
   readonly name: string;
+  /** Human-readable attachment description. */
   readonly description?: string | undefined;
+  /** MIME type associated with the attachment. */
   readonly mimeType?: string | undefined;
+  /** Attachment byte length when it can be determined. */
   readonly byteLength?: number | undefined;
+  /** PDF indirect object number for the parsed item. */
   readonly objectId?: number | undefined;
 }
 
@@ -81,33 +129,55 @@ export interface ParsedPdfAttachment {
  * Tagged structure element discovered while parsing an existing PDF.
  */
 export interface ParsedPdfStructureElement {
+  /** Structure role used to tag this content. */
   readonly role: string;
+  /** Object id of the page associated with this item. */
   readonly pageObjectId?: number | undefined;
+  /** First marked-content id associated with the structure element. */
   readonly mcid?: number | undefined;
+  /** Marked-content ids associated with the structure element. */
   readonly mcids?: readonly number[] | undefined;
+  /** Alternate text for tagged non-text content. */
   readonly altText?: string | undefined;
+  /** Replacement text exposed to assistive technology. */
   readonly actualText?: string | undefined;
+  /** BCP 47 language tag for document or structure content. */
   readonly language?: string | undefined;
+  /** Nested child list items or structure elements. */
   readonly children?: readonly ParsedPdfStructureElement[] | undefined;
 }
 
 export interface ParsedPdfTaggedAnnotation {
+  /** PDF indirect object number for the parsed item. */
   readonly objectId: number;
+  /** Subtype. */
   readonly subtype?: string | undefined;
+  /** Object id of the page associated with this item. */
   readonly pageObjectId?: number | undefined;
+  /** Annotation or widget rectangle in PDF coordinates. */
   readonly rect?: readonly number[] | undefined;
+  /** URI target for the link. */
   readonly url?: string | undefined;
+  /** Destination page object id. */
   readonly destinationPageObjectId?: number | undefined;
+  /** Annotation contents text. */
   readonly contents?: string | undefined;
+  /** Signature form field name. */
   readonly fieldName?: string | undefined;
+  /** Raw AcroForm field type name. */
   readonly fieldType?: string | undefined;
+  /** Current or default value for the option. */
   readonly value?: string | undefined;
 }
 
 export interface ParsedPdfInspectedStructureElement extends ParsedPdfStructureElement {
+  /** PDF indirect object number for the parsed item. */
   readonly objectId?: number | undefined;
+  /** Text content to render or inspect. */
   readonly text?: string | undefined;
+  /** Annotations. */
   readonly annotations?: readonly ParsedPdfTaggedAnnotation[] | undefined;
+  /** Nested child list items or structure elements. */
   readonly children?: readonly ParsedPdfInspectedStructureElement[] | undefined;
 }
 
@@ -115,15 +185,25 @@ export interface ParsedPdfInspectedStructureElement extends ParsedPdfStructureEl
  * Editable structure element handle returned by editable-document queries.
  */
 export interface ParsedPdfEditableStructureElement {
+  /** PDF indirect object number for the parsed item. */
   readonly objectId: number;
+  /** Structure role used to tag this content. */
   readonly role: string;
+  /** Object id of the parent structure element. */
   readonly parentObjectId?: number | undefined;
+  /** Object id of the page associated with this item. */
   readonly pageObjectId?: number | undefined;
+  /** First marked-content id associated with the structure element. */
   readonly mcid?: number | undefined;
+  /** Marked-content ids associated with the structure element. */
   readonly mcids?: readonly number[] | undefined;
+  /** Alternate text for tagged non-text content. */
   readonly altText?: string | undefined;
+  /** Replacement text exposed to assistive technology. */
   readonly actualText?: string | undefined;
+  /** BCP 47 language tag for document or structure content. */
   readonly language?: string | undefined;
+  /** Nested child list items or structure elements. */
   readonly children?: readonly ParsedPdfEditableStructureElement[] | undefined;
 }
 
@@ -131,35 +211,56 @@ export interface ParsedPdfEditableStructureElement {
  * Form field metadata discovered while parsing an existing PDF.
  */
 export interface ParsedPdfFormField {
+  /** PDF indirect object number for the parsed item. */
   readonly objectId: number;
+  /** Name of the item, field, destination, or signer. */
   readonly name: string;
+  /** Raw AcroForm field type name. */
   readonly fieldType?: string | undefined;
+  /** Resolved button field subtype. */
   readonly buttonKind?: "checkBox" | "radio" | "pushButton" | undefined;
+  /** Current or default value for the option. */
   readonly value?: string | undefined;
+  /** Options that control this item. */
   readonly options?: readonly string[] | undefined;
+  /** Resolved choice field display mode. */
   readonly choiceMode?: "combo" | "list" | undefined;
+  /** Initial checkbox checked state. */
   readonly checked?: boolean | undefined;
+  /** Object id of the page associated with this item. */
   readonly pageObjectId?: number | undefined;
+  /** Annotation or widget rectangle in PDF coordinates. */
   readonly rect?: readonly number[] | undefined;
+  /** Whether the form field is read-only. */
   readonly readOnly?: boolean | undefined;
+  /** Whether the form field is required. */
   readonly required?: boolean | undefined;
+  /** Whether the text field accepts multiple lines. */
   readonly multiline?: boolean | undefined;
 }
 
 interface XrefCompressedEntry {
+  /** Object stream id. */
   readonly objectStreamId: number;
+  /** Index. */
   readonly index: number;
 }
 
 interface ParsedXrefSection {
+  /** Offsets. */
   readonly offsets: Map<number, number>;
+  /** Compressed. */
   readonly compressed: Map<number, XrefCompressedEntry>;
+  /** Free. */
   readonly free: Set<number>;
+  /** Trailer. */
   readonly trailer: PdfDict;
 }
 
 interface ParsedDocumentEncryption {
+  /** Context. */
   readonly context: PdfEncryptionContext;
+  /** Encrypt object id. */
   readonly encryptObjectId?: number | undefined;
 }
 
@@ -169,15 +270,13 @@ type StreamLengthResolver = (refValue: PdfRef) => number | undefined;
  * Options that control parsing behavior for existing PDFs.
  */
 export interface ParseDocumentOptions {
+  /** Password used to open an encrypted source PDF. */
   readonly password?: string | undefined;
 }
 
 /**
  *
  * A read-only parsed representation of a PDF document. It provides helpers for inspecting document-level metadata, object references, pages, forms, outlines, structure trees, and source bytes.
- *
- * @export
- * @class ParsedPdfDocument
  */
 export class ParsedPdfDocument {
   /**
@@ -198,7 +297,7 @@ export class ParsedPdfDocument {
     private readonly objects: ReadonlyMap<number, ParsedPdfIndirectObject>,
     private readonly sourceBytes: Uint8Array,
     readonly startXrefOffset: number,
-    private readonly encryption?: ParsedDocumentEncryption | undefined
+    private readonly encryption?: ParsedDocumentEncryption | undefined,
   ) {}
 
   /**
@@ -248,10 +347,40 @@ export class ParsedPdfDocument {
   getRootObjectId(): number {
     const rootRef = getDictValue(this.trailer, "Root");
     if (!isPdfRef(rootRef)) {
-      throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "PDF trailer Root entry must be a reference.");
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_PDF,
+        "PDF trailer Root entry must be a reference.",
+      );
     }
 
     return rootRef.objectId;
+  }
+
+  /**
+   * Returns the effective PDF version, taking into account a Catalog `/Version` override that may raise the version above the file header.
+   */
+  getEffectiveVersion(): string {
+    const catalog = getCatalogDict(this);
+    const override = getDictValue(catalog, "Version");
+    if (
+      override &&
+      typeof override === "object" &&
+      "kind" in override &&
+      override.kind === "name"
+    ) {
+      const overrideValue = (
+        override as {
+          value: string;
+        }
+      ).value;
+      if (
+        /^\d+\.\d+$/.test(overrideValue) &&
+        compareVersionStrings(overrideValue, this.version) > 0
+      ) {
+        return overrideValue;
+      }
+    }
+    return this.version;
   }
 
   /**
@@ -310,7 +439,7 @@ export class ParsedPdfDocument {
       creator: readString(infoDict, "Creator"),
       producer: readString(infoDict, "Producer"),
       creationDate: readString(infoDict, "CreationDate"),
-      modificationDate: readString(infoDict, "ModDate")
+      modificationDate: readString(infoDict, "ModDate"),
     };
   }
 
@@ -326,7 +455,9 @@ export class ParsedPdfDocument {
       return undefined;
     }
 
-    return new TextDecoder().decode(decodePdfStreamBytes(metadataValue, "metadata stream"));
+    return new TextDecoder().decode(
+      decodePdfStreamBytes(metadataValue, "metadata stream"),
+    );
   }
 
   /**
@@ -350,7 +481,9 @@ export class ParsedPdfDocument {
       return true;
     }
 
-    return resolveDict(this, getDictValue(catalog, "StructTreeRoot")) !== undefined;
+    return (
+      resolveDict(this, getDictValue(catalog, "StructTreeRoot")) !== undefined
+    );
   }
 
   /**
@@ -360,7 +493,10 @@ export class ParsedPdfDocument {
    */
   getConformanceProfile(): "pdfa-1b" | "pdfua-1" | undefined {
     const catalog = getCatalogDict(this);
-    const outputIntents = resolveValue(this, getDictValue(catalog, "OutputIntents"));
+    const outputIntents = resolveValue(
+      this,
+      getDictValue(catalog, "OutputIntents"),
+    );
     if (Array.isArray(outputIntents) && !isPdfDict(outputIntents)) {
       for (const entry of outputIntents) {
         const intent = resolveDict(this, entry);
@@ -375,7 +511,11 @@ export class ParsedPdfDocument {
       return "pdfua-1";
     }
 
-    if (xmpMetadata && /pdfaid:part>\s*1\s*</.test(xmpMetadata) && /pdfaid:conformance>\s*B\s*</.test(xmpMetadata)) {
+    if (
+      xmpMetadata &&
+      /pdfaid:part>\s*1\s*</.test(xmpMetadata) &&
+      /pdfaid:conformance>\s*B\s*</.test(xmpMetadata)
+    ) {
       return "pdfa-1b";
     }
 
@@ -414,14 +554,19 @@ export class ParsedPdfDocument {
   listNamedDestinations(): readonly ParsedPdfNamedDestination[] {
     const catalog = getCatalogDict(this);
     const names = resolveDict(this, getDictValue(catalog, "Names"));
-    const dests = resolveDict(this, names ? getDictValue(names, "Dests") : undefined);
+    const dests = resolveDict(
+      this,
+      names ? getDictValue(names, "Dests") : undefined,
+    );
     if (!dests) {
       return [];
     }
 
     const destinations = new Map<string, ParsedPdfNamedDestination>();
     collectNamedDestinations(this, dests, destinations);
-    return [...destinations.values()].sort((left, right) => left.name.localeCompare(right.name));
+    return [...destinations.values()].sort((left, right) =>
+      left.name.localeCompare(right.name),
+    );
   }
 
   /**
@@ -437,8 +582,18 @@ export class ParsedPdfDocument {
       return [];
     }
 
-    const namedDestinations = new Map(this.listNamedDestinations().map((destination) => [destination.name, destination]));
-    return readOutlineChain(this, getDictValue(outlinesDict, "First"), namedDestinations, new Set<number>());
+    const namedDestinations = new Map(
+      this.listNamedDestinations().map((destination) => [
+        destination.name,
+        destination,
+      ]),
+    );
+    return readOutlineChain(
+      this,
+      getDictValue(outlinesDict, "First"),
+      namedDestinations,
+      new Set<number>(),
+    );
   }
 
   /**
@@ -457,7 +612,9 @@ export class ParsedPdfDocument {
     collectNumberTreeEntries(this, pageLabels, entries, new Set<number>());
     return [...entries.entries()]
       .sort((left, right) => left[0] - right[0])
-      .map(([startPageIndex, labelDict]) => compactPageLabelRange(startPageIndex, labelDict));
+      .map(([startPageIndex, labelDict]) =>
+        compactPageLabelRange(startPageIndex, labelDict),
+      );
   }
 
   /**
@@ -468,14 +625,19 @@ export class ParsedPdfDocument {
   listAttachments(): readonly ParsedPdfAttachment[] {
     const catalog = getCatalogDict(this);
     const names = resolveDict(this, getDictValue(catalog, "Names"));
-    const embeddedFiles = resolveDict(this, names ? getDictValue(names, "EmbeddedFiles") : undefined);
+    const embeddedFiles = resolveDict(
+      this,
+      names ? getDictValue(names, "EmbeddedFiles") : undefined,
+    );
     if (!embeddedFiles) {
       return [];
     }
 
     const attachments = new Map<string, ParsedPdfAttachment>();
     collectEmbeddedFiles(this, embeddedFiles, attachments, new Set<number>());
-    return [...attachments.values()].sort((left, right) => left.name.localeCompare(right.name));
+    return [...attachments.values()].sort((left, right) =>
+      left.name.localeCompare(right.name),
+    );
   }
 
   /**
@@ -511,12 +673,19 @@ export class ParsedPdfDocument {
    */
   listStructureElements(): readonly ParsedPdfStructureElement[] {
     const catalog = getCatalogDict(this);
-    const structTreeRoot = resolveDict(this, getDictValue(catalog, "StructTreeRoot"));
+    const structTreeRoot = resolveDict(
+      this,
+      getDictValue(catalog, "StructTreeRoot"),
+    );
     if (!structTreeRoot) {
       return [];
     }
 
-    return collectStructureElements(this, getDictValue(structTreeRoot, "K"), new Set<number>());
+    return collectStructureElements(
+      this,
+      getDictValue(structTreeRoot, "K"),
+      new Set<number>(),
+    );
   }
 
   /**
@@ -526,12 +695,20 @@ export class ParsedPdfDocument {
    */
   inspectStructureElements(): readonly ParsedPdfInspectedStructureElement[] {
     const catalog = getCatalogDict(this);
-    const structTreeRoot = resolveDict(this, getDictValue(catalog, "StructTreeRoot"));
+    const structTreeRoot = resolveDict(
+      this,
+      getDictValue(catalog, "StructTreeRoot"),
+    );
     if (!structTreeRoot) {
       return [];
     }
 
-    return collectInspectedStructureElements(this, getDictValue(structTreeRoot, "K"), new Set<number>(), new Map<string, string>());
+    return collectInspectedStructureElements(
+      this,
+      getDictValue(structTreeRoot, "K"),
+      new Set<number>(),
+      new Map<string, string>(),
+    );
   }
 
   /**
@@ -541,19 +718,34 @@ export class ParsedPdfDocument {
    */
   listEditableStructureElements(): readonly ParsedPdfEditableStructureElement[] {
     const catalog = getCatalogDict(this);
-    const structTreeRoot = resolveDict(this, getDictValue(catalog, "StructTreeRoot"));
+    const structTreeRoot = resolveDict(
+      this,
+      getDictValue(catalog, "StructTreeRoot"),
+    );
     if (!structTreeRoot) {
       return [];
     }
 
-    return collectEditableStructureElements(this, getDictValue(structTreeRoot, "K"), new Set<number>());
+    return collectEditableStructureElements(
+      this,
+      getDictValue(structTreeRoot, "K"),
+      new Set<number>(),
+    );
   }
 }
 
 /**
  * Parses PDF bytes into an inspection object for metadata, pages, forms, outlines, attachments, and structure information.
+ *
+ * @param data The PDF bytes to parse.
+ * @param options Parsing options, including a password for encrypted sources.
+ *
+ * @returns The parsed PDF inspection object.
  */
-export function parseDocument(data: BinaryData, options: ParseDocumentOptions = {}): ParsedPdfDocument {
+export function parseDocument(
+  data: BinaryData,
+  options: ParseDocumentOptions = {},
+): ParsedPdfDocument {
   const bytes = toBytes(data);
   const version = parseHeaderVersion(bytes);
   const startXref = findStartXref(bytes);
@@ -561,8 +753,13 @@ export function parseDocument(data: BinaryData, options: ParseDocumentOptions = 
   const resolveStreamLength = createStreamLengthResolver(bytes, offsets);
 
   let objects = new Map<number, ParsedPdfIndirectObject>();
-  for (const [objectId, offset] of [...offsets.entries()].sort((left, right) => left[0] - right[0])) {
-    objects.set(objectId, parseIndirectObject(bytes, offset, resolveStreamLength));
+  for (const [objectId, offset] of [...offsets.entries()].sort(
+    (left, right) => left[0] - right[0],
+  )) {
+    objects.set(
+      objectId,
+      parseIndirectObject(bytes, offset, resolveStreamLength),
+    );
   }
 
   const encryption = resolveDocumentEncryption(trailer, objects, options);
@@ -571,49 +768,81 @@ export function parseDocument(data: BinaryData, options: ParseDocumentOptions = 
   }
 
   if (compressed.size > 0) {
-    const objectStreamCache = new Map<number, Map<number, { value: PdfValue; index: number }>>();
-    for (const [objectId, entry] of [...compressed.entries()].sort((left, right) => left[0] - right[0])) {
+    const objectStreamCache = new Map<
+      number,
+      Map<
+        number,
+        {
+          /** Current or default value for the option. */
+          value: PdfValue; /** Index. */
+          index: number;
+        }
+      >
+    >();
+    for (const [objectId, entry] of [...compressed.entries()].sort(
+      (left, right) => left[0] - right[0],
+    )) {
       const objectStream = objects.get(entry.objectStreamId);
       if (!objectStream) {
-        throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Object stream referenced by xref stream could not be resolved.", {
-          objectId,
-          objectStreamId: entry.objectStreamId
-        });
+        throw new PdfEngineError(
+          PdfErrorCode.INVALID_PDF,
+          "Object stream referenced by xref stream could not be resolved.",
+          {
+            objectId,
+            objectStreamId: entry.objectStreamId,
+          },
+        );
       }
 
       const values = parseObjectStream(bytes, objectStream, objectStreamCache);
       const objectEntry = values.get(objectId);
       if (!objectEntry) {
-        throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Compressed object was not found inside its object stream.", {
-          objectId,
-          objectStreamId: entry.objectStreamId
-        });
+        throw new PdfEngineError(
+          PdfErrorCode.INVALID_PDF,
+          "Compressed object was not found inside its object stream.",
+          {
+            objectId,
+            objectStreamId: entry.objectStreamId,
+          },
+        );
       }
 
       if (objectEntry.index !== entry.index) {
-        throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Compressed object index does not match xref stream entry.", {
-          objectId,
-          expectedIndex: entry.index,
-          actualIndex: objectEntry.index
-        });
+        throw new PdfEngineError(
+          PdfErrorCode.INVALID_PDF,
+          "Compressed object index does not match xref stream entry.",
+          {
+            objectId,
+            expectedIndex: entry.index,
+            actualIndex: objectEntry.index,
+          },
+        );
       }
 
       objects.set(objectId, {
         id: objectId,
         generation: 0,
         offset: objectStream.offset,
-        value: objectEntry.value
+        value: objectEntry.value,
       });
     }
   }
 
-  return new ParsedPdfDocument(version, offsets, trailer, objects, bytes.slice(), startXref, encryption);
+  return new ParsedPdfDocument(
+    version,
+    offsets,
+    trailer,
+    objects,
+    bytes.slice(),
+    startXref,
+    encryption,
+  );
 }
 
 function resolveDocumentEncryption(
   trailer: PdfDict,
   objects: ReadonlyMap<number, ParsedPdfIndirectObject>,
-  options: ParseDocumentOptions
+  options: ParseDocumentOptions,
 ): ParsedDocumentEncryption | undefined {
   const encryptValue = getDictValue(trailer, "Encrypt");
   if (encryptValue === undefined) {
@@ -623,7 +852,7 @@ function resolveDocumentEncryption(
   if (options.password === undefined) {
     throw new PdfEngineError(
       PdfErrorCode.INVALID_ENCRYPTION,
-      "A password is required to parse this encrypted PDF."
+      "A password is required to parse this encrypted PDF.",
     );
   }
 
@@ -632,15 +861,39 @@ function resolveDocumentEncryption(
   const filter = getNameValue(encryptDict, "Filter");
   const rawVersion = getDictValue(encryptDict, "V");
   const rawRevision = getDictValue(encryptDict, "R");
-  const version = rawVersion === 1 || rawVersion === 2 || rawVersion === 4 || rawVersion === 5 ? rawVersion : undefined;
-  const revision = rawRevision === 2 || rawRevision === 3 || rawRevision === 4 || rawRevision === 5 ? rawRevision : undefined;
-  const keyLengthBytes = resolveEncryptionKeyLength(version, revision, getDictValue(encryptDict, "Length"));
+  const version =
+    rawVersion === 1 || rawVersion === 2 || rawVersion === 4 || rawVersion === 5
+      ? rawVersion
+      : undefined;
+  const revision =
+    rawRevision === 2 ||
+    rawRevision === 3 ||
+    rawRevision === 4 ||
+    rawRevision === 5 ||
+    rawRevision === 6
+      ? rawRevision
+      : undefined;
+  const keyLengthBytes = resolveEncryptionKeyLength(
+    version,
+    revision,
+    getDictValue(encryptDict, "Length"),
+  );
   const algorithm =
-    revision === 2 ? "rc4-40"
-      : revision === 3 ? "rc4-128"
-        : revision === 5 ? "aes-256"
-          : "aes-128";
-  if (filter !== "Standard" || version === undefined || revision === undefined || keyLengthBytes === undefined) {
+    revision === 2
+      ? "rc4-40"
+      : revision === 3
+        ? "rc4-128"
+        : revision === 5
+          ? "aes-256"
+          : revision === 6
+            ? "aes-256-r6"
+            : "aes-128";
+  if (
+    filter !== "Standard" ||
+    version === undefined ||
+    revision === undefined ||
+    keyLengthBytes === undefined
+  ) {
     throw new PdfEngineError(
       PdfErrorCode.UNSUPPORTED_ENCRYPTION,
       "Only Standard Security Handler RC4 and AES password encryption are supported.",
@@ -648,8 +901,8 @@ function resolveDocumentEncryption(
         filter,
         version: rawVersion,
         revision: rawRevision,
-        length: getDictValue(encryptDict, "Length")
-      }
+        length: getDictValue(encryptDict, "Length"),
+      },
     );
   }
 
@@ -657,8 +910,26 @@ function resolveDocumentEncryption(
   const userKey = readEncryptionBytes(getDictValue(encryptDict, "U"), "U");
   const permissionsValue = getDictValue(encryptDict, "P");
   if (typeof permissionsValue !== "number") {
-    throw new PdfEngineError(PdfErrorCode.INVALID_ENCRYPTION, "Encrypted PDF is missing a valid permissions value.");
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_ENCRYPTION,
+      "Encrypted PDF is missing a valid permissions value.",
+    );
   }
+
+  const ownerEncryptionKey =
+    revision === 6
+      ? readEncryptionBytes(getDictValue(encryptDict, "OE"), "OE")
+      : undefined;
+  const userEncryptionKey =
+    revision === 6
+      ? readEncryptionBytes(getDictValue(encryptDict, "UE"), "UE")
+      : undefined;
+  const permsEncryptedRaw =
+    revision === 6 ? getDictValue(encryptDict, "Perms") : undefined;
+  const permsEncrypted =
+    permsEncryptedRaw !== undefined
+      ? readEncryptionBytes(permsEncryptedRaw, "Perms")
+      : undefined;
 
   const fileId = readEncryptionFileId(trailer);
   const context = openPdfEncryptionContext({
@@ -670,29 +941,44 @@ function resolveDocumentEncryption(
     keyLengthBytes,
     permissionsValue,
     ownerKey,
-    userKey
+    userKey,
+    ...(ownerEncryptionKey !== undefined ? { ownerEncryptionKey } : {}),
+    ...(userEncryptionKey !== undefined ? { userEncryptionKey } : {}),
+    ...(permsEncrypted !== undefined ? { permsEncrypted } : {}),
   });
   if (!context) {
-    throw new PdfEngineError(PdfErrorCode.INVALID_ENCRYPTION, "Incorrect password for encrypted PDF.");
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_ENCRYPTION,
+      "Incorrect password for encrypted PDF.",
+    );
   }
 
   return {
     context,
-    ...(encryptRef !== undefined ? { encryptObjectId: encryptRef.objectId } : {})
+    ...(encryptRef !== undefined
+      ? { encryptObjectId: encryptRef.objectId }
+      : {}),
   };
 }
 
 function resolveEncryptionKeyLength(
   version: PdfValue | undefined,
   revision: PdfValue | undefined,
-  lengthValue: PdfValue | undefined
+  lengthValue: PdfValue | undefined,
 ): number | undefined {
   if (version === 1 && revision === 2) {
     return 5;
   }
 
-  if ((version === 4 && revision === 4) || (version === 5 && revision === 5)) {
-    if (typeof lengthValue !== "number" || !Number.isInteger(lengthValue) || lengthValue % 8 !== 0) {
+  if (
+    (version === 4 && revision === 4) ||
+    (version === 5 && (revision === 5 || revision === 6))
+  ) {
+    if (
+      typeof lengthValue !== "number" ||
+      !Number.isInteger(lengthValue) ||
+      lengthValue % 8 !== 0
+    ) {
       return undefined;
     }
     const bytes = lengthValue / 8;
@@ -707,31 +993,50 @@ function resolveEncryptionKeyLength(
     return 5;
   }
 
-  if (typeof lengthValue !== "number" || !Number.isInteger(lengthValue) || lengthValue % 8 !== 0) {
+  if (
+    typeof lengthValue !== "number" ||
+    !Number.isInteger(lengthValue) ||
+    lengthValue % 8 !== 0
+  ) {
     return undefined;
   }
 
   const keyLengthBytes = lengthValue / 8;
-  return keyLengthBytes >= 5 && keyLengthBytes <= 16 ? keyLengthBytes : undefined;
+  return keyLengthBytes >= 5 && keyLengthBytes <= 16
+    ? keyLengthBytes
+    : undefined;
 }
 
 function resolveEncryptionDictionary(
   encryptValue: PdfValue,
-  objects: ReadonlyMap<number, ParsedPdfIndirectObject>
+  objects: ReadonlyMap<number, ParsedPdfIndirectObject>,
 ): PdfDict {
   const resolvedValue = isPdfRef(encryptValue)
     ? objects.get(encryptValue.objectId)?.value
     : encryptValue;
-  if (!resolvedValue || !Array.isArray(resolvedValue) || !isPdfDict(resolvedValue)) {
-    throw new PdfEngineError(PdfErrorCode.INVALID_ENCRYPTION, "Encrypted PDF is missing a valid encryption dictionary.");
+  if (
+    !resolvedValue ||
+    !Array.isArray(resolvedValue) ||
+    !isPdfDict(resolvedValue)
+  ) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_ENCRYPTION,
+      "Encrypted PDF is missing a valid encryption dictionary.",
+    );
   }
 
   return resolvedValue;
 }
 
-function readEncryptionBytes(value: PdfValue | undefined, key: string): Uint8Array {
+function readEncryptionBytes(
+  value: PdfValue | undefined,
+  key: string,
+): Uint8Array {
   if (!isPdfString(value)) {
-    throw new PdfEngineError(PdfErrorCode.INVALID_ENCRYPTION, `Encrypted PDF is missing a valid ${key} entry.`);
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_ENCRYPTION,
+      `Encrypted PDF is missing a valid ${key} entry.`,
+    );
   }
 
   return latin1Bytes(value.value);
@@ -739,8 +1044,16 @@ function readEncryptionBytes(value: PdfValue | undefined, key: string): Uint8Arr
 
 function readEncryptionFileId(trailer: PdfDict): Uint8Array {
   const ids = getDictValue(trailer, "ID");
-  if (!Array.isArray(ids) || isPdfDict(ids) || ids.length === 0 || !isPdfString(ids[0])) {
-    throw new PdfEngineError(PdfErrorCode.INVALID_ENCRYPTION, "Encrypted PDF is missing a valid file identifier.");
+  if (
+    !Array.isArray(ids) ||
+    isPdfDict(ids) ||
+    ids.length === 0 ||
+    !isPdfString(ids[0])
+  ) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_ENCRYPTION,
+      "Encrypted PDF is missing a valid file identifier.",
+    );
   }
 
   return latin1Bytes(ids[0].value);
@@ -748,13 +1061,14 @@ function readEncryptionFileId(trailer: PdfDict): Uint8Array {
 
 function decryptParsedObjects(
   objects: ReadonlyMap<number, ParsedPdfIndirectObject>,
-  encryption: ParsedDocumentEncryption
+  encryption: ParsedDocumentEncryption,
 ): Map<number, ParsedPdfIndirectObject> {
   const decrypted = new Map<number, ParsedPdfIndirectObject>();
   for (const [objectId, object] of objects) {
     if (
-      objectId === encryption.encryptObjectId
-      || (isPdfStream(object.value) && getNameValue(object.value.dict, "Type") === "XRef")
+      objectId === encryption.encryptObjectId ||
+      (isPdfStream(object.value) &&
+        getNameValue(object.value.dict, "Type") === "XRef")
     ) {
       decrypted.set(objectId, object);
       continue;
@@ -762,7 +1076,12 @@ function decryptParsedObjects(
 
     decrypted.set(objectId, {
       ...object,
-      value: decryptPdfValueForObject(object.value, encryption.context, object.id, object.generation)
+      value: decryptPdfValueForObject(
+        object.value,
+        encryption.context,
+        object.id,
+        object.generation,
+      ),
     });
   }
 
@@ -773,36 +1092,83 @@ function decryptPdfValueForObject(
   value: PdfValue,
   encryption: PdfEncryptionContext,
   objectId: number,
-  generation: number
+  generation: number,
 ): PdfValue {
-  if (value === null || typeof value === "boolean" || typeof value === "number") {
+  if (
+    value === null ||
+    typeof value === "boolean" ||
+    typeof value === "number"
+  ) {
     return value;
   }
 
   if (Array.isArray(value)) {
     if (isPdfDict(value)) {
-      return value.map(([key, entryValue]) => [key, decryptPdfValueForObject(entryValue, encryption, objectId, generation)] as [string, PdfValue]);
+      return value.map(
+        ([key, entryValue]) =>
+          [
+            key,
+            decryptPdfValueForObject(
+              entryValue,
+              encryption,
+              objectId,
+              generation,
+            ),
+          ] as [string, PdfValue],
+      );
     }
 
-    return value.map((entry) => decryptPdfValueForObject(entry, encryption, objectId, generation));
+    return value.map((entry) =>
+      decryptPdfValueForObject(entry, encryption, objectId, generation),
+    );
   }
 
   if (isPdfStream(value)) {
     return {
       kind: "stream",
-      dict: value.dict.map(([key, entryValue]) => [key, decryptPdfValueForObject(entryValue, encryption, objectId, generation)] as [string, PdfValue]),
-      bytes: decryptBytesForObject(encryption, objectId, generation, value.bytes)
+      dict: value.dict.map(
+        ([key, entryValue]) =>
+          [
+            key,
+            decryptPdfValueForObject(
+              entryValue,
+              encryption,
+              objectId,
+              generation,
+            ),
+          ] as [string, PdfValue],
+      ),
+      bytes: decryptBytesForObject(
+        encryption,
+        objectId,
+        generation,
+        value.bytes,
+      ),
     };
   }
 
   if (isPdfString(value)) {
     return {
       kind: "string",
-      value: decodeLatin1(decryptBytesForObject(encryption, objectId, generation, latin1Bytes(value.value)))
+      value: decodeLatin1(
+        decryptBytesForObject(
+          encryption,
+          objectId,
+          generation,
+          latin1Bytes(value.value),
+        ),
+      ),
     };
   }
 
   return value;
+}
+
+function compareVersionStrings(a: string, b: string): number {
+  const [am, an] = a.split(".").map(Number);
+  const [bm, bn] = b.split(".").map(Number);
+  if (am !== bm) return (am ?? 0) - (bm ?? 0);
+  return (an ?? 0) - (bn ?? 0);
 }
 
 function parseHeaderVersion(bytes: Uint8Array): string {
@@ -820,22 +1186,34 @@ function findStartXref(bytes: Uint8Array): number {
   const marker = "startxref";
   const index = text.lastIndexOf(marker);
   if (index === -1) {
-    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "startxref section not found.");
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_PDF,
+      "startxref section not found.",
+    );
   }
 
   const match = /startxref\s+(\d+)/.exec(text.slice(index));
   if (!match?.[1]) {
-    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "startxref offset is missing.");
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_PDF,
+      "startxref offset is missing.",
+    );
   }
 
   return Number(match[1]);
 }
 
-function parseClassicXrefSection(bytes: Uint8Array, offset: number): ParsedXrefSection {
+function parseClassicXrefSection(
+  bytes: Uint8Array,
+  offset: number,
+): ParsedXrefSection {
   const parser = new ValueParser(bytes, offset);
   parser.skipWhitespaceAndComments();
   if (!parser.consumeKeyword("xref")) {
-    throw new PdfEngineError(PdfErrorCode.UNSUPPORTED_XREF_FORMAT, "Only classic xref tables are supported.");
+    throw new PdfEngineError(
+      PdfErrorCode.UNSUPPORTED_XREF_FORMAT,
+      "Only classic xref tables are supported.",
+    );
   }
 
   const offsets = new Map<number, number>();
@@ -856,7 +1234,11 @@ function parseClassicXrefSection(bytes: Uint8Array, offset: number): ParsedXrefS
       const line = parser.readLine().trim();
       const parts = line.split(/\s+/);
       if (parts.length < 3) {
-        throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Malformed xref entry.", { line });
+        throw new PdfEngineError(
+          PdfErrorCode.INVALID_PDF,
+          "Malformed xref entry.",
+          { line },
+        );
       }
 
       if (parts[2] === "n") {
@@ -869,44 +1251,72 @@ function parseClassicXrefSection(bytes: Uint8Array, offset: number): ParsedXrefS
 
   const trailerValue = parser.parseValue();
   if (!Array.isArray(trailerValue) || !isPdfDict(trailerValue)) {
-    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "PDF trailer must be a dictionary.");
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_PDF,
+      "PDF trailer must be a dictionary.",
+    );
   }
 
   return {
     offsets,
     compressed,
     free,
-    trailer: trailerValue
+    trailer: trailerValue,
   };
 }
 
-function parseXrefStreamSection(bytes: Uint8Array, offset: number): ParsedXrefSection {
+function parseXrefStreamSection(
+  bytes: Uint8Array,
+  offset: number,
+): ParsedXrefSection {
   const object = parseIndirectObject(bytes, offset);
-  if (!isPdfStream(object.value) || getNameValue(object.value.dict, "Type") !== "XRef") {
-    throw new PdfEngineError(PdfErrorCode.UNSUPPORTED_XREF_FORMAT, "Unsupported xref section at startxref offset.", {
-      offset
-    });
+  if (
+    !isPdfStream(object.value) ||
+    getNameValue(object.value.dict, "Type") !== "XRef"
+  ) {
+    throw new PdfEngineError(
+      PdfErrorCode.UNSUPPORTED_XREF_FORMAT,
+      "Unsupported xref section at startxref offset.",
+      {
+        offset,
+      },
+    );
   }
 
   const size = getDictValue(object.value.dict, "Size");
   if (typeof size !== "number") {
-    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "XRef stream is missing Size.");
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_PDF,
+      "XRef stream is missing Size.",
+    );
   }
 
   const widths = getArrayNumbers(getDictValue(object.value.dict, "W"));
   if (!widths || widths.length < 3) {
-    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "XRef stream is missing a valid W array.");
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_PDF,
+      "XRef stream is missing a valid W array.",
+    );
   }
 
-  const index = getArrayNumbers(getDictValue(object.value.dict, "Index")) ?? [0, size];
+  const index = getArrayNumbers(getDictValue(object.value.dict, "Index")) ?? [
+    0,
+    size,
+  ];
   if (index.length % 2 !== 0) {
-    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "XRef stream Index array must contain pairs.");
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_PDF,
+      "XRef stream Index array must contain pairs.",
+    );
   }
 
   const decoded = decodePdfStreamBytes(object.value, "xref stream");
   const entryLength = widths[0]! + widths[1]! + widths[2]!;
   if (entryLength <= 0) {
-    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "XRef stream entry width must be greater than zero.");
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_PDF,
+      "XRef stream entry width must be greater than zero.",
+    );
   }
 
   const offsets = new Map<number, number>();
@@ -920,16 +1330,25 @@ function parseXrefStreamSection(bytes: Uint8Array, offset: number): ParsedXrefSe
 
     for (let objectIndex = 0; objectIndex < count; objectIndex += 1) {
       if (cursor + entryLength > decoded.length) {
-        throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "XRef stream ended before all entries were read.", {
-          cursor,
-          entryLength,
-          decodedLength: decoded.length
-        });
+        throw new PdfEngineError(
+          PdfErrorCode.INVALID_PDF,
+          "XRef stream ended before all entries were read.",
+          {
+            cursor,
+            entryLength,
+            decodedLength: decoded.length,
+          },
+        );
       }
 
-      const type = widths[0] === 0 ? 1 : readBigEndian(decoded, cursor, widths[0]!);
+      const type =
+        widths[0] === 0 ? 1 : readBigEndian(decoded, cursor, widths[0]!);
       const field2 = readBigEndian(decoded, cursor + widths[0]!, widths[1]!);
-      const field3 = readBigEndian(decoded, cursor + widths[0]! + widths[1]!, widths[2]!);
+      const field3 = readBigEndian(
+        decoded,
+        cursor + widths[0]! + widths[1]!,
+        widths[2]!,
+      );
       const objectId = startObject + objectIndex;
 
       if (type === 0) {
@@ -939,13 +1358,17 @@ function parseXrefStreamSection(bytes: Uint8Array, offset: number): ParsedXrefSe
       } else if (type === 2) {
         compressed.set(objectId, {
           objectStreamId: field2,
-          index: field3
+          index: field3,
         });
       } else {
-        throw new PdfEngineError(PdfErrorCode.UNSUPPORTED_XREF_FORMAT, "Unsupported xref stream entry type.", {
-          type,
-          objectId
-        });
+        throw new PdfEngineError(
+          PdfErrorCode.UNSUPPORTED_XREF_FORMAT,
+          "Unsupported xref stream entry type.",
+          {
+            type,
+            objectId,
+          },
+        );
       }
 
       cursor += entryLength;
@@ -956,26 +1379,43 @@ function parseXrefStreamSection(bytes: Uint8Array, offset: number): ParsedXrefSe
     offsets,
     compressed,
     free,
-    trailer: object.value.dict
+    trailer: object.value.dict,
   };
 }
 
-function parseXrefSection(bytes: Uint8Array, offset: number): ParsedXrefSection {
+function parseXrefSection(
+  bytes: Uint8Array,
+  offset: number,
+): ParsedXrefSection {
   const parser = new ValueParser(bytes, offset);
   parser.skipWhitespaceAndComments();
-  return parser.consumeKeyword("xref") ? parseClassicXrefSection(bytes, offset) : parseXrefStreamSection(bytes, offset);
+  return parser.consumeKeyword("xref")
+    ? parseClassicXrefSection(bytes, offset)
+    : parseXrefStreamSection(bytes, offset);
 }
 
-function parseXrefChain(bytes: Uint8Array, offset: number): { offsets: Map<number, number>; compressed: Map<number, XrefCompressedEntry>; trailer: PdfDict } {
+function parseXrefChain(
+  bytes: Uint8Array,
+  offset: number,
+): {
+  /** Offsets. */
+  offsets: Map<number, number>; /** Compressed. */
+  compressed: Map<number, XrefCompressedEntry>; /** Trailer. */
+  trailer: PdfDict;
+} {
   const sections: ParsedXrefSection[] = [];
   const visited = new Set<number>();
   let currentOffset: number | undefined = offset;
 
   while (currentOffset !== undefined) {
     if (visited.has(currentOffset)) {
-      throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Circular Prev chain found in xref sections.", {
-        offset: currentOffset
-      });
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_PDF,
+        "Circular Prev chain found in xref sections.",
+        {
+          offset: currentOffset,
+        },
+      );
     }
 
     visited.add(currentOffset);
@@ -988,7 +1428,11 @@ function parseXrefChain(bytes: Uint8Array, offset: number): { offsets: Map<numbe
     } else if (typeof prev === "number") {
       currentOffset = prev;
     } else {
-      throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Trailer Prev entry must be a number.", { prev });
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_PDF,
+        "Trailer Prev entry must be a number.",
+        { prev },
+      );
     }
   }
 
@@ -1014,13 +1458,13 @@ function parseXrefChain(bytes: Uint8Array, offset: number): { offsets: Map<numbe
   return {
     offsets,
     compressed,
-    trailer
+    trailer,
   };
 }
 
 function createStreamLengthResolver(
   bytes: Uint8Array,
-  offsets: ReadonlyMap<number, number>
+  offsets: ReadonlyMap<number, number>,
 ): StreamLengthResolver {
   const cache = new Map<number, number | undefined>();
   const resolving = new Set<number>();
@@ -1043,9 +1487,12 @@ function createStreamLengthResolver(
     resolving.add(refValue.objectId);
     try {
       const object = parseIndirectObject(bytes, offset);
-      const length = typeof object.value === "number" && Number.isInteger(object.value) && object.value >= 0
-        ? object.value
-        : undefined;
+      const length =
+        typeof object.value === "number" &&
+        Number.isInteger(object.value) &&
+        object.value >= 0
+          ? object.value
+          : undefined;
       cache.set(refValue.objectId, length);
       return length;
     } finally {
@@ -1057,7 +1504,7 @@ function createStreamLengthResolver(
 function parseIndirectObject(
   bytes: Uint8Array,
   offset: number,
-  resolveStreamLength?: StreamLengthResolver
+  resolveStreamLength?: StreamLengthResolver,
 ): ParsedPdfIndirectObject {
   const parser = new ValueParser(bytes, offset);
   const id = parser.parseInteger();
@@ -1070,21 +1517,38 @@ function parseIndirectObject(
   parser.skipWhitespaceAndComments();
 
   let finalValue = value;
-  if (Array.isArray(value) && isPdfDict(value) && parser.consumeKeyword("stream")) {
+  if (
+    Array.isArray(value) &&
+    isPdfDict(value) &&
+    parser.consumeKeyword("stream")
+  ) {
     parser.consumeSingleEol();
 
     const lengthValue = getDictValue(value, "Length");
     let streamBytes: Uint8Array;
-    const resolvedLength = resolveStreamLengthValue(lengthValue, resolveStreamLength);
+    const resolvedLength = resolveStreamLengthValue(
+      lengthValue,
+      resolveStreamLength,
+    );
     if (resolvedLength !== undefined) {
-      streamBytes = bytes.slice(parser.position, parser.position + resolvedLength);
+      streamBytes = bytes.slice(
+        parser.position,
+        parser.position + resolvedLength,
+      );
       parser.position += resolvedLength;
     } else {
       const endstream = findKeyword(bytes, parser.position, "endstream");
       if (endstream === -1) {
-        throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Stream terminator not found.", { objectId: id });
+        throw new PdfEngineError(
+          PdfErrorCode.INVALID_PDF,
+          "Stream terminator not found.",
+          { objectId: id },
+        );
       }
-      streamBytes = bytes.slice(parser.position, trimTrailingLineBreak(bytes, parser.position, endstream));
+      streamBytes = bytes.slice(
+        parser.position,
+        trimTrailingLineBreak(bytes, parser.position, endstream),
+      );
       parser.position = endstream;
     }
 
@@ -1093,7 +1557,7 @@ function parseIndirectObject(
     finalValue = {
       kind: "stream",
       dict: value,
-      bytes: streamBytes
+      bytes: streamBytes,
     } satisfies PdfStream;
     parser.skipWhitespaceAndComments();
   }
@@ -1104,15 +1568,19 @@ function parseIndirectObject(
     id,
     generation,
     offset,
-    value: finalValue
+    value: finalValue,
   };
 }
 
 function resolveStreamLengthValue(
   lengthValue: PdfValue | undefined,
-  resolveStreamLength: StreamLengthResolver | undefined
+  resolveStreamLength: StreamLengthResolver | undefined,
 ): number | undefined {
-  if (typeof lengthValue === "number" && Number.isInteger(lengthValue) && lengthValue >= 0) {
+  if (
+    typeof lengthValue === "number" &&
+    Number.isInteger(lengthValue) &&
+    lengthValue >= 0
+  ) {
     return lengthValue;
   }
 
@@ -1126,30 +1594,62 @@ function resolveStreamLengthValue(
 function parseObjectStream(
   bytes: Uint8Array,
   objectStream: ParsedPdfIndirectObject,
-  cache: Map<number, Map<number, { value: PdfValue; index: number }>>
-): Map<number, { value: PdfValue; index: number }> {
+  cache: Map<
+    number,
+    Map<
+      number,
+      {
+        /** Current or default value for the option. */
+        value: PdfValue; /** Index. */
+        index: number;
+      }
+    >
+  >,
+): Map<
+  number,
+  {
+    /** Current or default value for the option. */
+    value: PdfValue; /** Index. */
+    index: number;
+  }
+> {
   const cached = cache.get(objectStream.id);
   if (cached) {
     return cached;
   }
 
-  if (!isPdfStream(objectStream.value) || getNameValue(objectStream.value.dict, "Type") !== "ObjStm") {
-    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Referenced compressed object stream is invalid.", {
-      objectStreamId: objectStream.id
-    });
+  if (
+    !isPdfStream(objectStream.value) ||
+    getNameValue(objectStream.value.dict, "Type") !== "ObjStm"
+  ) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_PDF,
+      "Referenced compressed object stream is invalid.",
+      {
+        objectStreamId: objectStream.id,
+      },
+    );
   }
 
   const count = getDictValue(objectStream.value.dict, "N");
   const first = getDictValue(objectStream.value.dict, "First");
   if (typeof count !== "number" || typeof first !== "number") {
-    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Object stream is missing N or First metadata.", {
-      objectStreamId: objectStream.id
-    });
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_PDF,
+      "Object stream is missing N or First metadata.",
+      {
+        objectStreamId: objectStream.id,
+      },
+    );
   }
 
   const decoded = decodePdfStreamBytes(objectStream.value, "object stream");
   const headerParser = new ValueParser(decoded, 0);
-  const entries: Array<{ objectId: number; offset: number }> = [];
+  const entries: Array<{
+    /** PDF indirect object number for the parsed item. */
+    objectId: number; /** Byte offset where the indirect object was parsed. */
+    offset: number;
+  }> = [];
 
   for (let index = 0; index < count; index += 1) {
     headerParser.skipWhitespaceAndComments();
@@ -1159,12 +1659,19 @@ function parseObjectStream(
     entries.push({ objectId, offset: objectOffset });
   }
 
-  const values = new Map<number, { value: PdfValue; index: number }>();
+  const values = new Map<
+    number,
+    {
+      /** Current or default value for the option. */
+      value: PdfValue; /** Index. */
+      index: number;
+    }
+  >();
   for (const [index, entry] of entries.entries()) {
     const parser = new ValueParser(decoded, first + entry.offset);
     values.set(entry.objectId, {
       value: parser.parseValue(),
-      index
+      index,
     });
   }
 
@@ -1172,7 +1679,10 @@ function parseObjectStream(
   return values;
 }
 
-function decodePdfStreamBytes(streamValue: PdfStream, context: string): Uint8Array {
+function decodePdfStreamBytes(
+  streamValue: PdfStream,
+  context: string,
+): Uint8Array {
   const filter = getDictValue(streamValue.dict, "Filter");
   if (filter === undefined) {
     return streamValue.bytes;
@@ -1180,18 +1690,26 @@ function decodePdfStreamBytes(streamValue: PdfStream, context: string): Uint8Arr
 
   const filterNames = readFilterNames(filter);
   if (filterNames.length !== 1 || filterNames[0] !== "FlateDecode") {
-    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, `Unsupported filter configuration for ${context}.`, {
-      filters: filterNames
-    });
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_PDF,
+      `Unsupported filter configuration for ${context}.`,
+      {
+        filters: filterNames,
+      },
+    );
   }
 
   try {
     const inflated = inflateZlib(streamValue.bytes);
     return applyDecodePredictor(inflated, streamValue.dict);
   } catch (error) {
-    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, `Unable to decode ${context}.`, {
-      cause: error instanceof Error ? error.message : String(error)
-    });
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_PDF,
+      `Unable to decode ${context}.`,
+      {
+        cause: error instanceof Error ? error.message : String(error),
+      },
+    );
   }
 }
 
@@ -1204,9 +1722,13 @@ function applyDecodePredictor(bytes: Uint8Array, dict: PdfDict): Uint8Array {
 
   const columns = getNumericDictValue(decodeParms, "Columns") ?? 1;
   if (columns <= 0 || !Number.isInteger(columns)) {
-    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Decode predictor Columns must be a positive integer.", {
-      columns
-    });
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_PDF,
+      "Decode predictor Columns must be a positive integer.",
+      {
+        columns,
+      },
+    );
   }
 
   if (predictor === 2) {
@@ -1217,13 +1739,18 @@ function applyDecodePredictor(bytes: Uint8Array, dict: PdfDict): Uint8Array {
     return applyPngPredictor(bytes, columns, predictor);
   }
 
-  throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Unsupported stream decode predictor.", {
-    predictor
-  });
+  throw new PdfEngineError(
+    PdfErrorCode.INVALID_PDF,
+    "Unsupported stream decode predictor.",
+    {
+      predictor,
+    },
+  );
 }
 
 function resolveDecodeParams(dict: PdfDict): PdfDict | undefined {
-  const decodeParms = getDictValue(dict, "DecodeParms") ?? getDictValue(dict, "DP");
+  const decodeParms =
+    getDictValue(dict, "DecodeParms") ?? getDictValue(dict, "DP");
   if (Array.isArray(decodeParms) && isPdfDict(decodeParms)) {
     return decodeParms;
   }
@@ -1234,7 +1761,10 @@ function resolveDecodeParams(dict: PdfDict): PdfDict | undefined {
   return undefined;
 }
 
-function getNumericDictValue(dict: PdfDict | undefined, key: string): number | undefined {
+function getNumericDictValue(
+  dict: PdfDict | undefined,
+  key: string,
+): number | undefined {
   const value = dict ? getDictValue(dict, key) : undefined;
   return typeof value === "number" ? value : undefined;
 }
@@ -1250,7 +1780,11 @@ function applyTiffPredictor(bytes: Uint8Array, columns: number): Uint8Array {
   return output;
 }
 
-function applyPngPredictor(bytes: Uint8Array, columns: number, predictor: number): Uint8Array {
+function applyPngPredictor(
+  bytes: Uint8Array,
+  columns: number,
+  predictor: number,
+): Uint8Array {
   const hasRowFilters = predictor >= 10;
   const rowLength = hasRowFilters ? columns + 1 : columns;
   const rows = Math.ceil(bytes.length / rowLength);
@@ -1260,16 +1794,26 @@ function applyPngPredictor(bytes: Uint8Array, columns: number, predictor: number
   const previous = new Uint8Array(columns);
 
   while (inputCursor < bytes.length) {
-    const encodedFilter = hasRowFilters ? bytes[inputCursor++]! : predictor - 10;
+    const encodedFilter = hasRowFilters
+      ? bytes[inputCursor++]!
+      : predictor - 10;
     const filter = predictor === 15 ? encodedFilter : predictor - 10;
     if (predictor !== 15 && encodedFilter !== filter) {
-      throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "PNG predictor row filter does not match the stream predictor.", {
-        predictor,
-        filter: encodedFilter
-      });
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_PDF,
+        "PNG predictor row filter does not match the stream predictor.",
+        {
+          predictor,
+          filter: encodedFilter,
+        },
+      );
     }
     const current = new Uint8Array(columns);
-    for (let column = 0; column < columns && inputCursor < bytes.length; column += 1) {
+    for (
+      let column = 0;
+      column < columns && inputCursor < bytes.length;
+      column += 1
+    ) {
       const raw = bytes[inputCursor++]!;
       const left = column > 0 ? current[column - 1]! : 0;
       const up = previous[column]!;
@@ -1291,7 +1835,11 @@ function applyPngPredictor(bytes: Uint8Array, columns: number, predictor: number
           current[column] = (raw + paethPredictor(left, up, upLeft)) & 0xff;
           break;
         default:
-          throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Unsupported PNG predictor row filter.", { filter });
+          throw new PdfEngineError(
+            PdfErrorCode.INVALID_PDF,
+            "Unsupported PNG predictor row filter.",
+            { filter },
+          );
       }
     }
     output.set(current, outputCursor);
@@ -1318,23 +1866,41 @@ function readFilterNames(value: PdfValue): string[] {
   }
 
   if (Array.isArray(value) && !isPdfDict(value)) {
-    return value.filter((entry): entry is { kind: "name"; value: string } => isPdfName(entry)).map((entry) => entry.value);
+    return value
+      .filter(
+        (
+          entry,
+        ): entry is {
+          /** Discriminator identifying this value shape. */
+          kind: "name"; /** Current or default value for the option. */
+          value: string;
+        } => isPdfName(entry),
+      )
+      .map((entry) => entry.value);
   }
 
   return [];
 }
 
-function readBigEndian(bytes: Uint8Array, offset: number, width: number): number {
+function readBigEndian(
+  bytes: Uint8Array,
+  offset: number,
+  width: number,
+): number {
   let value = 0;
   for (let index = 0; index < width; index += 1) {
     const byte = bytes[offset + index];
     if (byte === undefined) {
-      throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Unexpected end of binary xref entry.", {
-        offset,
-        width
-      });
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_PDF,
+        "Unexpected end of binary xref entry.",
+        {
+          offset,
+          width,
+        },
+      );
     }
-    value = (value * 256) + byte;
+    value = value * 256 + byte;
   }
   return value;
 }
@@ -1352,7 +1918,10 @@ class ValueParser {
    * @param bytes The source bytes to read.
    * @param position The starting byte position.
    */
-  constructor(private readonly bytes: Uint8Array, public position: number) {}
+  constructor(
+    private readonly bytes: Uint8Array,
+    public position: number,
+  ) {}
 
   /**
    * Moves the cursor past PDF whitespace and comment lines.
@@ -1387,7 +1956,10 @@ class ValueParser {
     this.skipWhitespaceAndComments();
     const byte = this.bytes[this.position];
     if (byte === undefined) {
-      throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Unexpected end of PDF value.");
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_PDF,
+        "Unexpected end of PDF value.",
+      );
     }
 
     if (byte === 0x3c && this.bytes[this.position + 1] === 0x3c) {
@@ -1426,10 +1998,14 @@ class ValueParser {
       return null;
     }
 
-    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Unsupported PDF token.", {
-      position: this.position,
-      byte
-    });
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_PDF,
+      "Unsupported PDF token.",
+      {
+        position: this.position,
+        byte,
+      },
+    );
   }
 
   /**
@@ -1440,7 +2016,11 @@ class ValueParser {
   parseInteger(): number {
     const token = this.parseNumberToken();
     if (!/^[+-]?\d+$/.test(token)) {
-      throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Expected an integer token.", { token });
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_PDF,
+        "Expected an integer token.",
+        { token },
+      );
     }
 
     return Number(token);
@@ -1473,9 +2053,13 @@ class ValueParser {
    */
   expectKeyword(keyword: string): void {
     if (!this.consumeKeyword(keyword)) {
-      throw new PdfEngineError(PdfErrorCode.INVALID_PDF, `Expected keyword "${keyword}".`, {
-        position: this.position
-      });
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_PDF,
+        `Expected keyword "${keyword}".`,
+        {
+          position: this.position,
+        },
+      );
     }
   }
 
@@ -1523,15 +2107,22 @@ class ValueParser {
 
     while (true) {
       this.skipWhitespaceAndComments();
-      if (this.bytes[this.position] === 0x3e && this.bytes[this.position + 1] === 0x3e) {
+      if (
+        this.bytes[this.position] === 0x3e &&
+        this.bytes[this.position + 1] === 0x3e
+      ) {
         this.position += 2;
         return entries;
       }
 
       if (this.bytes[this.position] !== 0x2f) {
-        throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Dictionary keys must be names.", {
-          position: this.position
-        });
+        throw new PdfEngineError(
+          PdfErrorCode.INVALID_PDF,
+          "Dictionary keys must be names.",
+          {
+            position: this.position,
+          },
+        );
       }
 
       const key = this.parseName();
@@ -1587,7 +2178,9 @@ class ValueParser {
     }
 
     const raw = decodeLatin1(this.bytes.slice(start, this.position));
-    return raw.replace(/#([0-9A-Fa-f]{2})/g, (_match, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+    return raw.replace(/#([0-9A-Fa-f]{2})/g, (_match, hex: string) =>
+      String.fromCharCode(parseInt(hex, 16)),
+    );
   }
 
   /**
@@ -1626,7 +2219,10 @@ class ValueParser {
       output += String.fromCharCode(byte ?? 0);
     }
 
-    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Unterminated literal string.");
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_PDF,
+      "Unterminated literal string.",
+    );
   }
 
   /**
@@ -1637,21 +2233,32 @@ class ValueParser {
   private parseHexString(): string {
     this.position += 1;
     const start = this.position;
-    while (this.position < this.bytes.length && this.bytes[this.position] !== 0x3e) {
+    while (
+      this.position < this.bytes.length &&
+      this.bytes[this.position] !== 0x3e
+    ) {
       this.position += 1;
     }
 
     if (this.bytes[this.position] !== 0x3e) {
-      throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Unterminated hex string.");
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_PDF,
+        "Unterminated hex string.",
+      );
     }
 
-    const raw = decodeLatin1(this.bytes.slice(start, this.position)).replace(/\s+/g, "");
+    const raw = decodeLatin1(this.bytes.slice(start, this.position)).replace(
+      /\s+/g,
+      "",
+    );
     this.position += 1;
 
     const normalized = raw.length % 2 === 0 ? raw : `${raw}0`;
     let output = "";
     for (let index = 0; index < normalized.length; index += 2) {
-      output += String.fromCharCode(parseInt(normalized.slice(index, index + 2), 16));
+      output += String.fromCharCode(
+        parseInt(normalized.slice(index, index + 2), 16),
+      );
     }
     return output;
   }
@@ -1669,21 +2276,29 @@ class ValueParser {
 
     this.skipWhitespaceAndComments();
     const maybeSecond = this.peekNumberToken();
-    if (/^[+-]?\d+$/.test(firstToken) && maybeSecond && /^[+-]?\d+$/.test(maybeSecond)) {
+    if (
+      /^[+-]?\d+$/.test(firstToken) &&
+      maybeSecond &&
+      /^[+-]?\d+$/.test(maybeSecond)
+    ) {
       const secondToken = this.parseNumberToken();
       this.skipWhitespaceAndComments();
       if (this.consumeKeyword("R")) {
         return {
           kind: "ref",
           objectId: Number(firstToken),
-          generation: Number(secondToken)
+          generation: Number(secondToken),
         } satisfies PdfRef;
       }
     }
 
     this.position = checkpoint;
     if (!Number.isFinite(first)) {
-      throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Invalid number token.", { token: firstToken, start });
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_PDF,
+        "Invalid number token.",
+        { token: firstToken, start },
+      );
     }
     return first;
   }
@@ -1736,7 +2351,10 @@ function getPagesRef(document: ParsedPdfDocument): PdfRef {
   const catalog = getCatalogDict(document);
   const pagesRef = getDictValue(catalog, "Pages");
   if (!isPdfRef(pagesRef)) {
-    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "PDF catalog Pages entry must be a reference.");
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_PDF,
+      "PDF catalog Pages entry must be a reference.",
+    );
   }
 
   return pagesRef;
@@ -1745,23 +2363,37 @@ function getPagesRef(document: ParsedPdfDocument): PdfRef {
 function getCatalogDict(document: ParsedPdfDocument): PdfDict {
   const rootRef = getDictValue(document.trailer, "Root");
   if (!isPdfRef(rootRef)) {
-    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "PDF trailer Root entry must be a reference.");
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_PDF,
+      "PDF trailer Root entry must be a reference.",
+    );
   }
 
   const catalog = resolveDict(document, rootRef);
   if (!catalog) {
-    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "PDF catalog could not be resolved.");
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_PDF,
+      "PDF catalog could not be resolved.",
+    );
   }
 
   return catalog;
 }
 
-function walkPages(document: ParsedPdfDocument, refValue: PdfRef, output: ParsedPdfPage[]): void {
+function walkPages(
+  document: ParsedPdfDocument,
+  refValue: PdfRef,
+  output: ParsedPdfPage[],
+): void {
   const dict = resolveDict(document, refValue);
   if (!dict) {
-    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Page tree reference could not be resolved.", {
-      objectId: refValue.objectId
-    });
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_PDF,
+      "Page tree reference could not be resolved.",
+      {
+        objectId: refValue.objectId,
+      },
+    );
   }
 
   const type = getNameValue(dict, "Type");
@@ -1769,7 +2401,9 @@ function walkPages(document: ParsedPdfDocument, refValue: PdfRef, output: Parsed
     const contents = getDictValue(dict, "Contents");
     let contentObjectIds: number[] = [];
     if (Array.isArray(contents) && !isPdfDict(contents)) {
-      contentObjectIds = contents.filter((entry): entry is PdfRef => isPdfRef(entry)).map((entry) => entry.objectId);
+      contentObjectIds = contents
+        .filter((entry): entry is PdfRef => isPdfRef(entry))
+        .map((entry) => entry.objectId);
     } else if (isPdfRef(contents)) {
       contentObjectIds = [contents.objectId];
     }
@@ -1777,16 +2411,20 @@ function walkPages(document: ParsedPdfDocument, refValue: PdfRef, output: Parsed
     output.push({
       objectId: refValue.objectId,
       mediaBox,
-      contentObjectIds
+      contentObjectIds,
     });
     return;
   }
 
   const kids = getDictValue(dict, "Kids");
   if (!Array.isArray(kids) || isPdfDict(kids)) {
-    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Page tree node is missing Kids.", {
-      objectId: refValue.objectId
-    });
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_PDF,
+      "Page tree node is missing Kids.",
+      {
+        objectId: refValue.objectId,
+      },
+    );
   }
 
   for (const kid of kids) {
@@ -1796,12 +2434,18 @@ function walkPages(document: ParsedPdfDocument, refValue: PdfRef, output: Parsed
   }
 }
 
-function resolveDict(document: ParsedPdfDocument, value: PdfValue | undefined): PdfDict | undefined {
+function resolveDict(
+  document: ParsedPdfDocument,
+  value: PdfValue | undefined,
+): PdfDict | undefined {
   const resolved = resolveValue(document, value);
   return Array.isArray(resolved) && isPdfDict(resolved) ? resolved : undefined;
 }
 
-function resolveValue(document: ParsedPdfDocument, value: PdfValue | undefined): PdfValue | undefined {
+function resolveValue(
+  document: ParsedPdfDocument,
+  value: PdfValue | undefined,
+): PdfValue | undefined {
   if (!isPdfRef(value)) {
     return value;
   }
@@ -1812,19 +2456,26 @@ function resolveValue(document: ParsedPdfDocument, value: PdfValue | undefined):
 function collectNamedDestinations(
   document: ParsedPdfDocument,
   node: PdfDict,
-  output: Map<string, ParsedPdfNamedDestination>
+  output: Map<string, ParsedPdfNamedDestination>,
 ): void {
   const names = getDictValue(node, "Names");
   if (Array.isArray(names) && !isPdfDict(names)) {
     for (let index = 0; index < names.length; index += 2) {
       const key = names[index];
       const value = names[index + 1];
-      const destinationName = isPdfString(key) ? key.value : isPdfName(key) ? key.value : undefined;
+      const destinationName = isPdfString(key)
+        ? key.value
+        : isPdfName(key)
+          ? key.value
+          : undefined;
       if (!destinationName) {
         continue;
       }
 
-      output.set(destinationName, parseNamedDestinationValue(document, destinationName, value));
+      output.set(
+        destinationName,
+        parseNamedDestinationValue(document, destinationName, value),
+      );
     }
   }
 
@@ -1843,19 +2494,26 @@ function collectEmbeddedFiles(
   document: ParsedPdfDocument,
   node: PdfDict,
   output: Map<string, ParsedPdfAttachment>,
-  seen: Set<number>
+  seen: Set<number>,
 ): void {
   const names = getDictValue(node, "Names");
   if (Array.isArray(names) && !isPdfDict(names)) {
     for (let index = 0; index < names.length; index += 2) {
       const key = names[index];
       const value = names[index + 1];
-      const attachmentName = isPdfString(key) ? key.value : isPdfName(key) ? key.value : undefined;
+      const attachmentName = isPdfString(key)
+        ? key.value
+        : isPdfName(key)
+          ? key.value
+          : undefined;
       if (!attachmentName) {
         continue;
       }
 
-      output.set(attachmentName, parseAttachmentValue(document, attachmentName, value));
+      output.set(
+        attachmentName,
+        parseAttachmentValue(document, attachmentName, value),
+      );
     }
   }
 
@@ -1880,7 +2538,7 @@ function collectNumberTreeEntries(
   document: ParsedPdfDocument,
   node: PdfDict,
   output: Map<number, PdfDict>,
-  seen: Set<number>
+  seen: Set<number>,
 ): void {
   const nums = getDictValue(node, "Nums");
   if (Array.isArray(nums) && !isPdfDict(nums)) {
@@ -1918,7 +2576,7 @@ function collectNumberTreeEntries(
 function collectStructureElements(
   document: ParsedPdfDocument,
   value: PdfValue | undefined,
-  seen: Set<number>
+  seen: Set<number>,
 ): ParsedPdfStructureElement[] {
   const resolvedValue = resolveValue(document, value);
   if (Array.isArray(resolvedValue) && !isPdfDict(resolvedValue)) {
@@ -1939,7 +2597,7 @@ function collectStructureElements(
 function collectEditableStructureElements(
   document: ParsedPdfDocument,
   value: PdfValue | undefined,
-  seen: Set<number>
+  seen: Set<number>,
 ): ParsedPdfEditableStructureElement[] {
   const resolvedValue = resolveValue(document, value);
   if (Array.isArray(resolvedValue) && !isPdfDict(resolvedValue)) {
@@ -1961,13 +2619,18 @@ function collectInspectedStructureElements(
   document: ParsedPdfDocument,
   value: PdfValue | undefined,
   seen: Set<number>,
-  textCache: Map<string, string>
+  textCache: Map<string, string>,
 ): ParsedPdfInspectedStructureElement[] {
   const resolvedValue = resolveValue(document, value);
   if (Array.isArray(resolvedValue) && !isPdfDict(resolvedValue)) {
     const output: ParsedPdfInspectedStructureElement[] = [];
     for (const entry of resolvedValue) {
-      const parsed = parseInspectedStructureElement(document, entry, seen, textCache);
+      const parsed = parseInspectedStructureElement(
+        document,
+        entry,
+        seen,
+        textCache,
+      );
       if (parsed) {
         output.push(parsed);
       }
@@ -1975,14 +2638,19 @@ function collectInspectedStructureElements(
     return output;
   }
 
-  const parsed = parseInspectedStructureElement(document, resolvedValue, seen, textCache);
+  const parsed = parseInspectedStructureElement(
+    document,
+    resolvedValue,
+    seen,
+    textCache,
+  );
   return parsed ? [parsed] : [];
 }
 
 function parseStructureElement(
   document: ParsedPdfDocument,
   value: PdfValue | undefined,
-  seen: Set<number>
+  seen: Set<number>,
 ): ParsedPdfStructureElement | undefined {
   const valueRef = isPdfRef(value) ? value : undefined;
   if (valueRef) {
@@ -2003,7 +2671,7 @@ function parseStructureElement(
 function parseEditableStructureElement(
   document: ParsedPdfDocument,
   value: PdfValue | undefined,
-  seen: Set<number>
+  seen: Set<number>,
 ): ParsedPdfEditableStructureElement | undefined {
   const valueRef = isPdfRef(value) ? value : undefined;
   if (!valueRef) {
@@ -2020,14 +2688,19 @@ function parseEditableStructureElement(
     return undefined;
   }
 
-  return compactEditableStructureElement(document, valueRef.objectId, structElement, seen);
+  return compactEditableStructureElement(
+    document,
+    valueRef.objectId,
+    structElement,
+    seen,
+  );
 }
 
 function parseInspectedStructureElement(
   document: ParsedPdfDocument,
   value: PdfValue | undefined,
   seen: Set<number>,
-  textCache: Map<string, string>
+  textCache: Map<string, string>,
 ): ParsedPdfInspectedStructureElement | undefined {
   const valueRef = isPdfRef(value) ? value : undefined;
   if (valueRef) {
@@ -2042,29 +2715,48 @@ function parseInspectedStructureElement(
     return undefined;
   }
 
-  return compactInspectedStructureElement(document, valueRef?.objectId, structElement, seen, textCache);
+  return compactInspectedStructureElement(
+    document,
+    valueRef?.objectId,
+    structElement,
+    seen,
+    textCache,
+  );
 }
 
 function isStructureElementDictionary(dict: PdfDict): boolean {
-  return getNameValue(dict, "Type") === "StructElem" || getNameValue(dict, "S") !== undefined;
+  return (
+    getNameValue(dict, "Type") === "StructElem" ||
+    getNameValue(dict, "S") !== undefined
+  );
 }
 
 function parseNamedDestinationValue(
   document: ParsedPdfDocument,
   destinationName: string,
-  value: PdfValue | undefined
+  value: PdfValue | undefined,
 ): ParsedPdfNamedDestination {
   const destinationValue = resolveValue(document, value);
   if (Array.isArray(destinationValue) && !isPdfDict(destinationValue)) {
     const [pageRef, mode] = destinationValue;
-    return compactNamedDestination(destinationName, isPdfRef(pageRef) ? pageRef.objectId : undefined, isPdfName(mode) ? mode.value : undefined);
+    return compactNamedDestination(
+      destinationName,
+      isPdfRef(pageRef) ? pageRef.objectId : undefined,
+      isPdfName(mode) ? mode.value : undefined,
+    );
   }
 
   const destinationDict = resolveDict(document, destinationValue);
-  const arrayValue = destinationDict ? getDictValue(destinationDict, "D") : undefined;
+  const arrayValue = destinationDict
+    ? getDictValue(destinationDict, "D")
+    : undefined;
   if (Array.isArray(arrayValue) && !isPdfDict(arrayValue)) {
     const [pageRef, mode] = arrayValue;
-    return compactNamedDestination(destinationName, isPdfRef(pageRef) ? pageRef.objectId : undefined, isPdfName(mode) ? mode.value : undefined);
+    return compactNamedDestination(
+      destinationName,
+      isPdfRef(pageRef) ? pageRef.objectId : undefined,
+      isPdfName(mode) ? mode.value : undefined,
+    );
   }
 
   return { name: destinationName };
@@ -2073,20 +2765,22 @@ function parseNamedDestinationValue(
 function parseAttachmentValue(
   document: ParsedPdfDocument,
   attachmentName: string,
-  value: PdfValue | undefined
+  value: PdfValue | undefined,
 ): ParsedPdfAttachment {
   const fileSpecRef = isPdfRef(value) ? value : undefined;
   const fileSpec = resolveDict(document, value);
   if (!fileSpec) {
     return {
       name: attachmentName,
-      ...(fileSpecRef !== undefined ? { objectId: fileSpecRef.objectId } : {})
+      ...(fileSpecRef !== undefined ? { objectId: fileSpecRef.objectId } : {}),
     };
   }
 
   const embeddedFile = readEmbeddedFile(document, fileSpec);
   const embeddedFileStream = embeddedFile?.stream;
-  const paramsDict = embeddedFileStream ? resolveDict(document, getDictValue(embeddedFileStream.dict, "Params")) : undefined;
+  const paramsDict = embeddedFileStream
+    ? resolveDict(document, getDictValue(embeddedFileStream.dict, "Params"))
+    : undefined;
   const sizeValue = paramsDict ? getDictValue(paramsDict, "Size") : undefined;
   const byteLength =
     typeof sizeValue === "number" && sizeValue >= 0
@@ -2094,7 +2788,9 @@ function parseAttachmentValue(
       : embeddedFileStream
         ? embeddedFileStream.bytes.length
         : undefined;
-  const mimeType = embeddedFileStream ? getNameValue(embeddedFileStream.dict, "Subtype") : undefined;
+  const mimeType = embeddedFileStream
+    ? getNameValue(embeddedFileStream.dict, "Subtype")
+    : undefined;
   const description = readString(fileSpec, "Desc");
 
   return {
@@ -2102,14 +2798,20 @@ function parseAttachmentValue(
     ...(description !== undefined ? { description } : {}),
     ...(mimeType !== undefined ? { mimeType } : {}),
     ...(byteLength !== undefined ? { byteLength } : {}),
-    ...(fileSpecRef !== undefined ? { objectId: fileSpecRef.objectId } : {})
+    ...(fileSpecRef !== undefined ? { objectId: fileSpecRef.objectId } : {}),
   };
 }
 
 function readEmbeddedFile(
   document: ParsedPdfDocument,
-  fileSpec: PdfDict
-): { ref?: PdfRef; stream?: PdfStream } | undefined {
+  fileSpec: PdfDict,
+):
+  | {
+      /** Ref. */
+      ref?: PdfRef; /** Stream. */
+      stream?: PdfStream;
+    }
+  | undefined {
   const efDict = resolveDict(document, getDictValue(fileSpec, "EF"));
   if (!efDict) {
     return undefined;
@@ -2118,14 +2820,15 @@ function readEmbeddedFile(
   const fileValue = getDictValue(efDict, "UF") ?? getDictValue(efDict, "F");
   const refValue = isPdfRef(fileValue) ? fileValue : undefined;
   const resolvedValue = resolveValue(document, fileValue);
-  const streamValue = resolvedValue && isPdfStream(resolvedValue) ? resolvedValue : undefined;
+  const streamValue =
+    resolvedValue && isPdfStream(resolvedValue) ? resolvedValue : undefined;
   if (!refValue && !streamValue) {
     return undefined;
   }
 
   return {
     ...(refValue !== undefined ? { ref: refValue } : {}),
-    ...(streamValue !== undefined ? { stream: streamValue } : {})
+    ...(streamValue !== undefined ? { stream: streamValue } : {}),
   };
 }
 
@@ -2133,7 +2836,7 @@ function readOutlineChain(
   document: ParsedPdfDocument,
   firstValue: PdfValue | undefined,
   namedDestinations: ReadonlyMap<string, ParsedPdfNamedDestination>,
-  seen: Set<number>
+  seen: Set<number>,
 ): ParsedPdfOutlineItem[] {
   const items: ParsedPdfOutlineItem[] = [];
   let current = firstValue;
@@ -2150,9 +2853,25 @@ function readOutlineChain(
     }
 
     const title = readString(dictValue, "Title") ?? "";
-    const destination = readOutlineDestination(document, getDictValue(dictValue, "Dest"), namedDestinations);
-    const children = readOutlineChain(document, getDictValue(dictValue, "First"), namedDestinations, seen);
-    items.push(compactOutlineItem(title, destination.targetName, destination.targetPageObjectId, children));
+    const destination = readOutlineDestination(
+      document,
+      getDictValue(dictValue, "Dest"),
+      namedDestinations,
+    );
+    const children = readOutlineChain(
+      document,
+      getDictValue(dictValue, "First"),
+      namedDestinations,
+      seen,
+    );
+    items.push(
+      compactOutlineItem(
+        title,
+        destination.targetName,
+        destination.targetPageObjectId,
+        children,
+      ),
+    );
 
     current = getDictValue(dictValue, "Next");
   }
@@ -2163,15 +2882,27 @@ function readOutlineChain(
 function readOutlineDestination(
   document: ParsedPdfDocument,
   value: PdfValue | undefined,
-  namedDestinations: ReadonlyMap<string, ParsedPdfNamedDestination>
-): { targetName?: string; targetPageObjectId?: number } {
+  namedDestinations: ReadonlyMap<string, ParsedPdfNamedDestination>,
+): {
+  /** Named destination targeted by the outline item. */
+  targetName?: string; /** Page object id targeted by the outline item. */
+  targetPageObjectId?: number;
+} {
   const resolved = resolveValue(document, value);
   if (Array.isArray(resolved) && !isPdfDict(resolved)) {
-    const pageObjectId = isPdfRef(resolved[0]) ? resolved[0].objectId : undefined;
-    return pageObjectId !== undefined ? { targetPageObjectId: pageObjectId } : {};
+    const pageObjectId = isPdfRef(resolved[0])
+      ? resolved[0].objectId
+      : undefined;
+    return pageObjectId !== undefined
+      ? { targetPageObjectId: pageObjectId }
+      : {};
   }
 
-  const destinationName = isPdfString(resolved) ? resolved.value : isPdfName(resolved) ? resolved.value : undefined;
+  const destinationName = isPdfString(resolved)
+    ? resolved.value
+    : isPdfName(resolved)
+      ? resolved.value
+      : undefined;
   if (!destinationName) {
     return {};
   }
@@ -2179,7 +2910,7 @@ function readOutlineDestination(
   const pageObjectId = namedDestinations.get(destinationName)?.pageObjectId;
   return {
     targetName: destinationName,
-    ...(pageObjectId !== undefined ? { targetPageObjectId: pageObjectId } : {})
+    ...(pageObjectId !== undefined ? { targetPageObjectId: pageObjectId } : {}),
   };
 }
 
@@ -2188,14 +2919,20 @@ function collectFormFields(
   value: PdfValue | undefined,
   output: ParsedPdfFormField[],
   inherited: {
+    /** Name parts. */
     nameParts: readonly string[];
+    /** Raw AcroForm field type name. */
     fieldType?: string | undefined;
+    /** Current or default value for the option. */
     value?: string | undefined;
+    /** Options that control this item. */
     options?: readonly string[] | undefined;
+    /** Flags. */
     flags?: number | undefined;
+    /** Object id of the page associated with this item. */
     pageObjectId?: number | undefined;
   },
-  seen: Set<number>
+  seen: Set<number>,
 ): void {
   const fieldRef = isPdfRef(value) ? value : undefined;
   if (fieldRef && seen.has(fieldRef.objectId)) {
@@ -2211,21 +2948,37 @@ function collectFormFields(
   }
 
   const partialName = readString(fieldDict, "T");
-  const nameParts = partialName !== undefined ? [...inherited.nameParts, partialName] : [...inherited.nameParts];
+  const nameParts =
+    partialName !== undefined
+      ? [...inherited.nameParts, partialName]
+      : [...inherited.nameParts];
   const fieldType = getNameValue(fieldDict, "FT") ?? inherited.fieldType;
   const fieldValue =
     readFieldValue(document, getDictValue(fieldDict, "V")) ??
     readFieldValue(document, getDictValue(fieldDict, "AS")) ??
     inherited.value;
-  const fieldOptions = readChoiceOptions(document, getDictValue(fieldDict, "Opt")) ?? inherited.options;
-  const fieldFlags = typeof getDictValue(fieldDict, "Ff") === "number" ? (getDictValue(fieldDict, "Ff") as number) : inherited.flags;
+  const fieldOptions =
+    readChoiceOptions(document, getDictValue(fieldDict, "Opt")) ??
+    inherited.options;
+  const fieldFlags =
+    typeof getDictValue(fieldDict, "Ff") === "number"
+      ? (getDictValue(fieldDict, "Ff") as number)
+      : inherited.flags;
   const pageRef = getDictValue(fieldDict, "P");
-  const pageObjectId = isPdfRef(pageRef) ? pageRef.objectId : inherited.pageObjectId;
+  const pageObjectId = isPdfRef(pageRef)
+    ? pageRef.objectId
+    : inherited.pageObjectId;
   const rect = getArrayNumbers(getDictValue(fieldDict, "Rect"));
   const kids = getDictValue(fieldDict, "Kids");
   const subtype = getNameValue(fieldDict, "Subtype");
 
-  if (Array.isArray(kids) && !isPdfDict(kids) && subtype !== "Widget" && fieldType === "Btn" && hasFieldFlag(fieldFlags, 1 << 15)) {
+  if (
+    Array.isArray(kids) &&
+    !isPdfDict(kids) &&
+    subtype !== "Widget" &&
+    fieldType === "Btn" &&
+    hasFieldFlag(fieldFlags, 1 << 15)
+  ) {
     output.push(
       compactRadioGroupField(
         document,
@@ -2234,8 +2987,8 @@ function collectFormFields(
         fieldValue,
         fieldOptions,
         kids,
-        fieldFlags
-      )
+        fieldFlags,
+      ),
     );
     return;
   }
@@ -2252,9 +3005,9 @@ function collectFormFields(
           ...(fieldValue !== undefined ? { value: fieldValue } : {}),
           ...(fieldOptions !== undefined ? { options: fieldOptions } : {}),
           ...(fieldFlags !== undefined ? { flags: fieldFlags } : {}),
-          ...(pageObjectId !== undefined ? { pageObjectId } : {})
+          ...(pageObjectId !== undefined ? { pageObjectId } : {}),
         },
-        seen
+        seen,
       );
     }
     return;
@@ -2269,17 +3022,27 @@ function collectFormFields(
       fieldOptions,
       pageObjectId,
       rect,
-      fieldFlags
-    )
+      fieldFlags,
+    ),
   );
 }
 
-function readFieldValue(document: ParsedPdfDocument, value: PdfValue | undefined): string | undefined {
+function readFieldValue(
+  document: ParsedPdfDocument,
+  value: PdfValue | undefined,
+): string | undefined {
   const resolved = resolveValue(document, value);
-  return isPdfString(resolved) ? resolved.value : isPdfName(resolved) ? resolved.value : undefined;
+  return isPdfString(resolved)
+    ? resolved.value
+    : isPdfName(resolved)
+      ? resolved.value
+      : undefined;
 }
 
-function readChoiceOptions(document: ParsedPdfDocument, value: PdfValue | undefined): readonly string[] | undefined {
+function readChoiceOptions(
+  document: ParsedPdfDocument,
+  value: PdfValue | undefined,
+): readonly string[] | undefined {
   const resolved = resolveValue(document, value);
   if (!Array.isArray(resolved) || isPdfDict(resolved)) {
     return undefined;
@@ -2296,7 +3059,10 @@ function readChoiceOptions(document: ParsedPdfDocument, value: PdfValue | undefi
   return options.length > 0 ? options : undefined;
 }
 
-function readChoiceOptionValue(document: ParsedPdfDocument, value: PdfValue | undefined): string | undefined {
+function readChoiceOptionValue(
+  document: ParsedPdfDocument,
+  value: PdfValue | undefined,
+): string | undefined {
   const resolved = resolveValue(document, value);
   if (isPdfString(resolved) || isPdfName(resolved)) {
     return resolved.value;
@@ -2312,7 +3078,9 @@ function readChoiceOptionValue(document: ParsedPdfDocument, value: PdfValue | un
   }
 
   const displayValue = resolveValue(document, resolved[1]);
-  return isPdfString(displayValue) || isPdfName(displayValue) ? displayValue.value : undefined;
+  return isPdfString(displayValue) || isPdfName(displayValue)
+    ? displayValue.value
+    : undefined;
 }
 
 function compactFormField(
@@ -2323,24 +3091,34 @@ function compactFormField(
   options: readonly string[] | undefined,
   pageObjectId: number | undefined,
   rect: readonly number[] | undefined,
-  flags: number | undefined
+  flags: number | undefined,
 ): ParsedPdfFormField {
   return {
     objectId,
     name,
     ...(fieldType !== undefined ? { fieldType } : {}),
     ...(fieldType === "Btn"
-      ? { buttonKind: hasFieldFlag(flags, 1 << 15) ? "radio" : hasFieldFlag(flags, 1 << 16) ? "pushButton" : "checkBox" }
+      ? {
+          buttonKind: hasFieldFlag(flags, 1 << 15)
+            ? "radio"
+            : hasFieldFlag(flags, 1 << 16)
+              ? "pushButton"
+              : "checkBox",
+        }
       : {}),
     ...(value !== undefined ? { value } : {}),
     ...(options !== undefined ? { options } : {}),
-    ...(fieldType === "Ch" ? { choiceMode: hasFieldFlag(flags, 1 << 17) ? "combo" : "list" } : {}),
-    ...(fieldType === "Btn" && !hasFieldFlag(flags, 1 << 15) ? { checked: value !== undefined && value !== "Off" } : {}),
+    ...(fieldType === "Ch"
+      ? { choiceMode: hasFieldFlag(flags, 1 << 17) ? "combo" : "list" }
+      : {}),
+    ...(fieldType === "Btn" && !hasFieldFlag(flags, 1 << 15)
+      ? { checked: value !== undefined && value !== "Off" }
+      : {}),
     ...(pageObjectId !== undefined ? { pageObjectId } : {}),
     ...(rect !== undefined ? { rect } : {}),
     ...(hasFieldFlag(flags, 1) ? { readOnly: true } : {}),
     ...(hasFieldFlag(flags, 1 << 1) ? { required: true } : {}),
-    ...(hasFieldFlag(flags, 1 << 12) ? { multiline: true } : {})
+    ...(hasFieldFlag(flags, 1 << 12) ? { multiline: true } : {}),
   };
 }
 
@@ -2351,7 +3129,7 @@ function compactRadioGroupField(
   value: string | undefined,
   inheritedOptions: readonly string[] | undefined,
   kids: readonly PdfValue[],
-  flags: number | undefined
+  flags: number | undefined,
 ): ParsedPdfFormField {
   const widgetOptions: string[] = [];
   let pageObjectId: number | undefined;
@@ -2369,7 +3147,9 @@ function compactRadioGroupField(
     }
 
     const widgetPageRef = getDictValue(widgetDict, "P");
-    const widgetPageObjectId = isPdfRef(widgetPageRef) ? widgetPageRef.objectId : undefined;
+    const widgetPageObjectId = isPdfRef(widgetPageRef)
+      ? widgetPageRef.objectId
+      : undefined;
     if (widgetPageObjectId === undefined) {
       continue;
     }
@@ -2384,7 +3164,8 @@ function compactRadioGroupField(
     }
   }
 
-  const options = inheritedOptions ?? (widgetOptions.length > 0 ? widgetOptions : undefined);
+  const options =
+    inheritedOptions ?? (widgetOptions.length > 0 ? widgetOptions : undefined);
 
   return {
     objectId,
@@ -2393,15 +3174,22 @@ function compactRadioGroupField(
     buttonKind: "radio",
     ...(value !== undefined ? { value } : {}),
     ...(options !== undefined ? { options } : {}),
-    ...(!hasConflictingPages && pageObjectId !== undefined ? { pageObjectId } : {}),
+    ...(!hasConflictingPages && pageObjectId !== undefined
+      ? { pageObjectId }
+      : {}),
     ...(hasFieldFlag(flags, 1) ? { readOnly: true } : {}),
-    ...(hasFieldFlag(flags, 1 << 1) ? { required: true } : {})
+    ...(hasFieldFlag(flags, 1 << 1) ? { required: true } : {}),
   };
 }
 
-function readRadioWidgetValue(document: ParsedPdfDocument, widgetDict: PdfDict): string | undefined {
+function readRadioWidgetValue(
+  document: ParsedPdfDocument,
+  widgetDict: PdfDict,
+): string | undefined {
   const apDict = resolveDict(document, getDictValue(widgetDict, "AP"));
-  const normalAppearance = apDict ? resolveDict(document, getDictValue(apDict, "N")) : undefined;
+  const normalAppearance = apDict
+    ? resolveDict(document, getDictValue(apDict, "N"))
+    : undefined;
   if (!normalAppearance) {
     return undefined;
   }
@@ -2413,11 +3201,15 @@ function hasFieldFlag(flags: number | undefined, mask: number): boolean {
   return typeof flags === "number" && (flags & mask) !== 0;
 }
 
-function compactNamedDestination(name: string, pageObjectId: number | undefined, mode: string | undefined): ParsedPdfNamedDestination {
+function compactNamedDestination(
+  name: string,
+  pageObjectId: number | undefined,
+  mode: string | undefined,
+): ParsedPdfNamedDestination {
   return {
     name,
     ...(pageObjectId !== undefined ? { pageObjectId } : {}),
-    ...(mode !== undefined ? { mode } : {})
+    ...(mode !== undefined ? { mode } : {}),
   };
 }
 
@@ -2425,34 +3217,42 @@ function compactOutlineItem(
   title: string,
   targetName: string | undefined,
   targetPageObjectId: number | undefined,
-  children: readonly ParsedPdfOutlineItem[]
+  children: readonly ParsedPdfOutlineItem[],
 ): ParsedPdfOutlineItem {
   return {
     title,
     ...(targetName !== undefined ? { targetName } : {}),
     ...(targetPageObjectId !== undefined ? { targetPageObjectId } : {}),
-    children
+    children,
   };
 }
 
-function compactPageLabelRange(startPageIndex: number, labelDict: PdfDict): ParsedPdfPageLabelRange {
+function compactPageLabelRange(
+  startPageIndex: number,
+  labelDict: PdfDict,
+): ParsedPdfPageLabelRange {
   const style = parsePageLabelStyle(getNameValue(labelDict, "S"));
   const prefix = readString(labelDict, "P");
   const startValue = getDictValue(labelDict, "St");
-  const startAt = typeof startValue === "number" && Number.isInteger(startValue) && startValue > 0 ? startValue : 1;
+  const startAt =
+    typeof startValue === "number" &&
+    Number.isInteger(startValue) &&
+    startValue > 0
+      ? startValue
+      : 1;
 
   return {
     startPageIndex,
     ...(style !== undefined ? { style } : {}),
     ...(prefix !== undefined ? { prefix } : {}),
-    startAt
+    startAt,
   };
 }
 
 function compactStructureElement(
   document: ParsedPdfDocument,
   structElement: PdfDict,
-  seen: Set<number>
+  seen: Set<number>,
 ): ParsedPdfStructureElement {
   const pageRef = getDictValue(structElement, "Pg");
   const contentRef = getDictValue(structElement, "K");
@@ -2471,7 +3271,7 @@ function compactStructureElement(
     ...(altText !== undefined ? { altText } : {}),
     ...(actualText !== undefined ? { actualText } : {}),
     ...(language !== undefined ? { language } : {}),
-    ...(children.length > 0 ? { children } : {})
+    ...(children.length > 0 ? { children } : {}),
   };
 }
 
@@ -2479,7 +3279,7 @@ function compactEditableStructureElement(
   document: ParsedPdfDocument,
   objectId: number,
   structElement: PdfDict,
-  seen: Set<number>
+  seen: Set<number>,
 ): ParsedPdfEditableStructureElement {
   const pageRef = getDictValue(structElement, "Pg");
   const contentRef = getDictValue(structElement, "K");
@@ -2493,14 +3293,18 @@ function compactEditableStructureElement(
   return {
     objectId,
     role: getNameValue(structElement, "S") ?? "Unknown",
-    ...(isPdfRef(getDictValue(structElement, "P")) ? { parentObjectId: (getDictValue(structElement, "P") as PdfRef).objectId } : {}),
+    ...(isPdfRef(getDictValue(structElement, "P"))
+      ? {
+          parentObjectId: (getDictValue(structElement, "P") as PdfRef).objectId,
+        }
+      : {}),
     ...(isPdfRef(pageRef) ? { pageObjectId: pageRef.objectId } : {}),
     ...(mcid !== undefined ? { mcid } : {}),
     ...(mcids.length > 0 ? { mcids } : {}),
     ...(altText !== undefined ? { altText } : {}),
     ...(actualText !== undefined ? { actualText } : {}),
     ...(language !== undefined ? { language } : {}),
-    ...(children.length > 0 ? { children } : {})
+    ...(children.length > 0 ? { children } : {}),
   };
 }
 
@@ -2509,18 +3313,39 @@ function compactInspectedStructureElement(
   objectId: number | undefined,
   structElement: PdfDict,
   seen: Set<number>,
-  textCache: Map<string, string>
+  textCache: Map<string, string>,
 ): ParsedPdfInspectedStructureElement {
   const pageRef = getDictValue(structElement, "Pg");
   const pageObjectId = isPdfRef(pageRef) ? pageRef.objectId : undefined;
   const contentRef = getDictValue(structElement, "K");
   const mcids = collectStructureMcids(contentRef);
   const mcid = mcids[0];
-  const annotations = collectStructureAnnotations(document, contentRef, pageObjectId);
-  const children = collectInspectedStructureElements(document, contentRef, seen, textCache);
-  const directText = collectStructureText(document, contentRef, pageObjectId, textCache);
-  const childText = children.map((child) => child.text).filter((text): text is string => text !== undefined && text.length > 0).join(" ");
-  const text = [directText, childText].filter((entry) => entry.length > 0).join(" ").replace(/\s+/g, " ").trim();
+  const annotations = collectStructureAnnotations(
+    document,
+    contentRef,
+    pageObjectId,
+  );
+  const children = collectInspectedStructureElements(
+    document,
+    contentRef,
+    seen,
+    textCache,
+  );
+  const directText = collectStructureText(
+    document,
+    contentRef,
+    pageObjectId,
+    textCache,
+  );
+  const childText = children
+    .map((child) => child.text)
+    .filter((text): text is string => text !== undefined && text.length > 0)
+    .join(" ");
+  const text = [directText, childText]
+    .filter((entry) => entry.length > 0)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
   const altText = readString(structElement, "Alt");
   const actualText = readString(structElement, "ActualText");
   const language = readString(structElement, "Lang");
@@ -2536,7 +3361,7 @@ function compactInspectedStructureElement(
     ...(language !== undefined ? { language } : {}),
     ...(text.length > 0 ? { text } : {}),
     ...(annotations.length > 0 ? { annotations } : {}),
-    ...(children.length > 0 ? { children } : {})
+    ...(children.length > 0 ? { children } : {}),
   };
 }
 
@@ -2579,9 +3404,13 @@ function collectStructureText(
   document: ParsedPdfDocument,
   value: PdfValue | undefined,
   defaultPageObjectId: number | undefined,
-  textCache: Map<string, string>
+  textCache: Map<string, string>,
 ): string {
-  const items = collectStructureMarkedContentItems(document, value, defaultPageObjectId);
+  const items = collectStructureMarkedContentItems(
+    document,
+    value,
+    defaultPageObjectId,
+  );
   const parts: string[] = [];
   for (const item of items) {
     if (item.pageObjectId === undefined) {
@@ -2604,10 +3433,21 @@ function collectStructureText(
 function collectStructureMarkedContentItems(
   document: ParsedPdfDocument,
   value: PdfValue | undefined,
-  defaultPageObjectId: number | undefined
-): Array<{ pageObjectId?: number; mcid: number }> {
+  defaultPageObjectId: number | undefined,
+): Array<{
+  /** Object id of the page associated with this item. */
+  pageObjectId?: number; /** First marked-content id associated with the structure element. */
+  mcid: number;
+}> {
   if (typeof value === "number") {
-    return [{ ...(defaultPageObjectId !== undefined ? { pageObjectId: defaultPageObjectId } : {}), mcid: value }];
+    return [
+      {
+        ...(defaultPageObjectId !== undefined
+          ? { pageObjectId: defaultPageObjectId }
+          : {}),
+        mcid: value,
+      },
+    ];
   }
 
   const resolved = resolveValue(document, value);
@@ -2618,17 +3458,36 @@ function collectStructureMarkedContentItems(
 
     const mcidValue = getDictValue(resolved, "MCID");
     const pageValue = getDictValue(resolved, "Pg");
-    const pageObjectId = isPdfRef(pageValue) ? pageValue.objectId : defaultPageObjectId;
-    return typeof mcidValue === "number" ? [{ ...(pageObjectId !== undefined ? { pageObjectId } : {}), mcid: mcidValue }] : [];
+    const pageObjectId = isPdfRef(pageValue)
+      ? pageValue.objectId
+      : defaultPageObjectId;
+    return typeof mcidValue === "number"
+      ? [
+          {
+            ...(pageObjectId !== undefined ? { pageObjectId } : {}),
+            mcid: mcidValue,
+          },
+        ]
+      : [];
   }
 
   if (!Array.isArray(resolved) || isPdfDict(resolved)) {
     return [];
   }
 
-  const items: Array<{ pageObjectId?: number; mcid: number }> = [];
+  const items: Array<{
+    /** Object id of the page associated with this item. */
+    pageObjectId?: number; /** First marked-content id associated with the structure element. */
+    mcid: number;
+  }> = [];
   for (const entry of resolved) {
-    items.push(...collectStructureMarkedContentItems(document, entry, defaultPageObjectId));
+    items.push(
+      ...collectStructureMarkedContentItems(
+        document,
+        entry,
+        defaultPageObjectId,
+      ),
+    );
   }
   return items;
 }
@@ -2636,12 +3495,16 @@ function collectStructureMarkedContentItems(
 function collectStructureAnnotations(
   document: ParsedPdfDocument,
   value: PdfValue | undefined,
-  defaultPageObjectId: number | undefined
+  defaultPageObjectId: number | undefined,
 ): ParsedPdfTaggedAnnotation[] {
   const refs = collectStructureObjectRefs(document, value);
   const annotations: ParsedPdfTaggedAnnotation[] = [];
   for (const refValue of refs) {
-    const parsed = parseTaggedAnnotation(document, refValue, defaultPageObjectId);
+    const parsed = parseTaggedAnnotation(
+      document,
+      refValue,
+      defaultPageObjectId,
+    );
     if (parsed) {
       annotations.push(parsed);
     }
@@ -2649,7 +3512,10 @@ function collectStructureAnnotations(
   return annotations;
 }
 
-function collectStructureObjectRefs(document: ParsedPdfDocument, value: PdfValue | undefined): PdfRef[] {
+function collectStructureObjectRefs(
+  document: ParsedPdfDocument,
+  value: PdfValue | undefined,
+): PdfRef[] {
   const resolved = resolveValue(document, value);
   if (Array.isArray(resolved) && isPdfDict(resolved)) {
     if (getNameValue(resolved, "Type") === "OBJR") {
@@ -2673,7 +3539,7 @@ function collectStructureObjectRefs(document: ParsedPdfDocument, value: PdfValue
 function parseTaggedAnnotation(
   document: ParsedPdfDocument,
   refValue: PdfRef,
-  defaultPageObjectId: number | undefined
+  defaultPageObjectId: number | undefined,
 ): ParsedPdfTaggedAnnotation | undefined {
   const annotation = resolveDict(document, refValue);
   if (!annotation) {
@@ -2682,30 +3548,44 @@ function parseTaggedAnnotation(
 
   const pageValue = getDictValue(annotation, "P");
   const action = resolveDict(document, getDictValue(annotation, "A"));
-  const destination = readAnnotationDestination(document, getDictValue(annotation, "Dest") ?? getDictValue(action ?? [], "D"));
+  const destination = readAnnotationDestination(
+    document,
+    getDictValue(annotation, "Dest") ?? getDictValue(action ?? [], "D"),
+  );
   const fieldName = readString(annotation, "T");
   const fieldType = getNameValue(annotation, "FT");
-  const value = readFieldValue(document, getDictValue(annotation, "V")) ?? readFieldValue(document, getDictValue(annotation, "AS"));
+  const value =
+    readFieldValue(document, getDictValue(annotation, "V")) ??
+    readFieldValue(document, getDictValue(annotation, "AS"));
   const uri = action ? readString(action, "URI") : undefined;
   const rect = getArrayNumbers(getDictValue(annotation, "Rect"));
   const contents = readString(annotation, "Contents");
-  const pageObjectId = isPdfRef(pageValue) ? pageValue.objectId : defaultPageObjectId;
+  const pageObjectId = isPdfRef(pageValue)
+    ? pageValue.objectId
+    : defaultPageObjectId;
 
   return {
     objectId: refValue.objectId,
-    ...(getNameValue(annotation, "Subtype") !== undefined ? { subtype: getNameValue(annotation, "Subtype") } : {}),
+    ...(getNameValue(annotation, "Subtype") !== undefined
+      ? { subtype: getNameValue(annotation, "Subtype") }
+      : {}),
     ...(pageObjectId !== undefined ? { pageObjectId } : {}),
     ...(rect !== undefined ? { rect } : {}),
     ...(uri !== undefined ? { url: uri } : {}),
-    ...(destination !== undefined ? { destinationPageObjectId: destination } : {}),
+    ...(destination !== undefined
+      ? { destinationPageObjectId: destination }
+      : {}),
     ...(contents !== undefined ? { contents } : {}),
     ...(fieldName !== undefined ? { fieldName } : {}),
     ...(fieldType !== undefined ? { fieldType } : {}),
-    ...(value !== undefined ? { value } : {})
+    ...(value !== undefined ? { value } : {}),
   };
 }
 
-function readAnnotationDestination(document: ParsedPdfDocument, value: PdfValue | undefined): number | undefined {
+function readAnnotationDestination(
+  document: ParsedPdfDocument,
+  value: PdfValue | undefined,
+): number | undefined {
   const resolved = resolveValue(document, value);
   if (Array.isArray(resolved) && !isPdfDict(resolved)) {
     return isPdfRef(resolved[0]) ? resolved[0].objectId : undefined;
@@ -2714,8 +3594,14 @@ function readAnnotationDestination(document: ParsedPdfDocument, value: PdfValue 
   return undefined;
 }
 
-function extractMarkedContentText(document: ParsedPdfDocument, pageObjectId: number, mcid: number): string {
-  const page = document.listPages().find((entry) => entry.objectId === pageObjectId);
+function extractMarkedContentText(
+  document: ParsedPdfDocument,
+  pageObjectId: number,
+  mcid: number,
+): string {
+  const page = document
+    .listPages()
+    .find((entry) => entry.objectId === pageObjectId);
   if (!page) {
     return "";
   }
@@ -2728,7 +3614,9 @@ function extractMarkedContentText(document: ParsedPdfDocument, pageObjectId: num
     }
 
     try {
-      streams.push(decodeLatin1(decodePdfStreamBytes(object.value, "page content stream")));
+      streams.push(
+        decodeLatin1(decodePdfStreamBytes(object.value, "page content stream")),
+      );
     } catch {
       // Content inspection is best-effort; malformed or unsupported streams should not break structure parsing.
     }
@@ -2740,7 +3628,10 @@ function extractMarkedContentText(document: ParsedPdfDocument, pageObjectId: num
 
   const content = streams.join("\n");
   const parts: string[] = [];
-  const markerPattern = new RegExp(String.raw`\/[A-Za-z0-9_.:-]+\s*<<[^>]*\/MCID\s+${escapeRegExp(String(mcid))}\b[^>]*>>\s*BDC`, "g");
+  const markerPattern = new RegExp(
+    String.raw`\/[A-Za-z0-9_.:-]+\s*<<[^>]*\/MCID\s+${escapeRegExp(String(mcid))}\b[^>]*>>\s*BDC`,
+    "g",
+  );
   let match: RegExpExecArray | null;
   while ((match = markerPattern.exec(content)) !== null) {
     const start = match.index + match[0].length;
@@ -2760,7 +3651,8 @@ function extractMarkedContentText(document: ParsedPdfDocument, pageObjectId: num
 
 function findMatchingEndMarkedContent(content: string, start: number): number {
   let depth = 1;
-  const tokenPattern = /\/[A-Za-z0-9_.:-]+\s*(?:<<[^>]*>>\s*)?B(?:D|M)?C\b|EMC\b/g;
+  const tokenPattern =
+    /\/[A-Za-z0-9_.:-]+\s*(?:<<[^>]*>>\s*)?B(?:D|M)?C\b|EMC\b/g;
   tokenPattern.lastIndex = start;
   let token: RegExpExecArray | null;
   while ((token = tokenPattern.exec(content)) !== null) {
@@ -2778,7 +3670,8 @@ function findMatchingEndMarkedContent(content: string, start: number): number {
 
 function extractPdfTextOperations(content: string): string {
   const parts: string[] = [];
-  const textOperationPattern = /((?:\((?:\\.|[^\\()])*\)|<[\dA-Fa-f\s]+>|\[(?:[^\[\]]|\((?:\\.|[^\\()])*\)|<[\dA-Fa-f\s]+>)*\])\s*T[Jj])/g;
+  const textOperationPattern =
+    /((?:\((?:\\.|[^\\()])*\)|<[\dA-Fa-f\s]+>|\[(?:[^\[\]]|\((?:\\.|[^\\()])*\)|<[\dA-Fa-f\s]+>)*\])\s*T[Jj])/g;
   let match: RegExpExecArray | null;
   while ((match = textOperationPattern.exec(content)) !== null) {
     parts.push(...decodePdfTextOperands(match[1]!));
@@ -2890,7 +3783,9 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function parsePageLabelStyle(style: string | undefined): ParsedPdfPageLabelRange["style"] {
+function parsePageLabelStyle(
+  style: string | undefined,
+): ParsedPdfPageLabelRange["style"] {
   switch (style) {
     case undefined:
       return undefined;
@@ -2923,12 +3818,16 @@ function readString(dict: PdfDict, key: string): string | undefined {
   return isPdfString(value) ? value.value : undefined;
 }
 
-function getArrayNumbers(value: PdfValue | undefined): readonly number[] | undefined {
+function getArrayNumbers(
+  value: PdfValue | undefined,
+): readonly number[] | undefined {
   if (!Array.isArray(value) || isPdfDict(value)) {
     return undefined;
   }
 
-  return value.every((entry) => typeof entry === "number") ? [...value] : undefined;
+  return value.every((entry) => typeof entry === "number")
+    ? [...value]
+    : undefined;
 }
 
 function mergePdfDicts(base: PdfDict, overrides: PdfDict): PdfDict {
@@ -2954,17 +3853,32 @@ function mergePdfDicts(base: PdfDict, overrides: PdfDict): PdfDict {
   return result;
 }
 
-function trimTrailingLineBreak(bytes: Uint8Array, start: number, end: number): number {
+function trimTrailingLineBreak(
+  bytes: Uint8Array,
+  start: number,
+  end: number,
+): number {
   let result = end;
-  while (result > start && (bytes[result - 1] === 0x0a || bytes[result - 1] === 0x0d)) {
+  while (
+    result > start &&
+    (bytes[result - 1] === 0x0a || bytes[result - 1] === 0x0d)
+  ) {
     result -= 1;
   }
   return result;
 }
 
-function findKeyword(bytes: Uint8Array, start: number, keyword: string): number {
+function findKeyword(
+  bytes: Uint8Array,
+  start: number,
+  keyword: string,
+): number {
   const pattern = encodeAscii(keyword);
-  for (let offset = start; offset <= bytes.length - pattern.length; offset += 1) {
+  for (
+    let offset = start;
+    offset <= bytes.length - pattern.length;
+    offset += 1
+  ) {
     let matches = true;
     for (let index = 0; index < pattern.length; index += 1) {
       if (bytes[offset + index] !== pattern[index]) {
@@ -2993,7 +3907,14 @@ function decodeLatin1(bytes: Uint8Array): string {
 }
 
 function isWhitespace(byte: number): boolean {
-  return byte === 0x00 || byte === 0x09 || byte === 0x0a || byte === 0x0c || byte === 0x0d || byte === 0x20;
+  return (
+    byte === 0x00 ||
+    byte === 0x09 ||
+    byte === 0x0a ||
+    byte === 0x0c ||
+    byte === 0x0d ||
+    byte === 0x20
+  );
 }
 
 function isDigit(byte: number): boolean {
@@ -3027,17 +3948,45 @@ function decodeEscape(byte: number): string {
 }
 
 function isPdfRef(value: PdfValue | undefined): value is PdfRef {
-  return typeof value === "object" && value !== null && "kind" in value && value.kind === "ref";
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "kind" in value &&
+    value.kind === "ref"
+  );
 }
 
-function isPdfName(value: PdfValue | undefined): value is { kind: "name"; value: string } {
-  return typeof value === "object" && value !== null && "kind" in value && value.kind === "name";
+function isPdfName(value: PdfValue | undefined): value is {
+  /** Discriminator identifying this value shape. */
+  kind: "name"; /** Current or default value for the option. */
+  value: string;
+} {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "kind" in value &&
+    value.kind === "name"
+  );
 }
 
-function isPdfString(value: PdfValue | undefined): value is { kind: "string"; value: string } {
-  return typeof value === "object" && value !== null && "kind" in value && value.kind === "string";
+function isPdfString(value: PdfValue | undefined): value is {
+  /** Discriminator identifying this value shape. */
+  kind: "string"; /** Current or default value for the option. */
+  value: string;
+} {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "kind" in value &&
+    value.kind === "string"
+  );
 }
 
 function isPdfDict(value: PdfValue[] | PdfDict): value is PdfDict {
-  return value.every((entry) => Array.isArray(entry) && entry.length === 2 && typeof entry[0] === "string");
+  return value.every(
+    (entry) =>
+      Array.isArray(entry) &&
+      entry.length === 2 &&
+      typeof entry[0] === "string",
+  );
 }

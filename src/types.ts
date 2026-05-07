@@ -21,8 +21,11 @@ export type FontName =
  * Font handle returned after embedding a TrueType font in a document.
  */
 export interface PdfEmbeddedFont {
+  /** Discriminator identifying this value shape. */
   readonly kind: "embedded-font";
+  /** PDF indirect object number. */
   readonly id: string;
+  /** Post script name. */
   readonly postScriptName: string;
 }
 
@@ -70,7 +73,9 @@ export type BuiltInPageSize =
  * Explicit PDF page dimensions in points.
  */
 export interface CustomPageSize {
+  /** Width in PDF points. */
   width: number;
+  /** Height in PDF points. */
   height: number;
 }
 
@@ -83,13 +88,21 @@ export type PageSize = BuiltInPageSize | CustomPageSize;
  * Document information dictionary metadata such as title, author, subject, and dates.
  */
 export interface DocumentInfo {
+  /** Document title or display title. */
   title?: string | undefined;
+  /** Document author name. */
   author?: string | undefined;
+  /** Document subject or summary. */
   subject?: string | undefined;
+  /** Document keywords for search and metadata. */
   keywords?: string | string[] | undefined;
+  /** Application or person that created the document. */
   creator?: string | undefined;
+  /** PDF producer value recorded in metadata. */
   producer?: string | undefined;
+  /** Document creation date. */
   creationDate?: Date | string | undefined;
+  /** Document modification date. */
   modificationDate?: Date | string | undefined;
 }
 
@@ -97,13 +110,21 @@ export interface DocumentInfo {
  * Structured XMP metadata fields used to build an XMP packet.
  */
 export interface XmpMetadataOptions {
+  /** Document title or display title. */
   title?: string | undefined;
+  /** Application or person that created the document. */
   creator?: string | undefined;
+  /** Ordered list of document creator names for XMP metadata. */
   creators?: readonly string[] | undefined;
+  /** Tool name recorded in XMP metadata. */
   creatorTool?: string | undefined;
+  /** PDF producer value recorded in metadata. */
   producer?: string | undefined;
+  /** XMP creation date. */
   createDate?: Date | string | undefined;
+  /** XMP modification date. */
   modifyDate?: Date | string | undefined;
+  /** XMP metadata packet timestamp. */
   metadataDate?: Date | string | undefined;
 }
 
@@ -116,16 +137,25 @@ export type XmpMetadataInput = string | XmpMetadataOptions;
  * Permission flags used when creating an encrypted PDF.
  */
 export interface DocumentPermissions {
+  /** Whether printing is permitted for encrypted output. */
   printing?: boolean | undefined;
+  /** Whether document modification is permitted for encrypted output. */
   modifying?: boolean | undefined;
+  /** Whether text and graphics copying is permitted for encrypted output. */
   copying?: boolean | undefined;
+  /** Whether annotation and form editing is permitted for encrypted output. */
   annotating?: boolean | undefined;
 }
 
 /**
  * Supported password-encryption algorithms for generated PDFs.
  */
-export type DocumentEncryptionAlgorithm = "rc4-40" | "rc4-128" | "aes-128" | "aes-256";
+export type DocumentEncryptionAlgorithm =
+  | "rc4-40"
+  | "rc4-128"
+  | "aes-128"
+  | "aes-256"
+  | "aes-256-r6";
 /**
  * Supported document conformance profiles for PDF/A and PDF/UA output.
  */
@@ -185,11 +215,17 @@ export type PdfFigureStructureTag = "Figure" | "Formula" | "Form";
 /**
  * Union of standard PDF structure tags supported by the library.
  */
-export type PdfStandardStructureTag = PdfTextStructureTag | PdfContainerTag | PdfFigureStructureTag;
+export type PdfStandardStructureTag =
+  | PdfTextStructureTag
+  | PdfContainerTag
+  | PdfFigureStructureTag;
 /**
  * Any supported standard, custom, or artifact structure tag.
  */
-export type PdfStructureTag = PdfStandardStructureTag | "Artifact" | (string & {});
+export type PdfStructureTag =
+  | PdfStandardStructureTag
+  | "Artifact"
+  | (string & {});
 /**
  * Mapping from custom structure roles to standard PDF structure roles.
  */
@@ -201,7 +237,10 @@ export type PdfStructureAttributeValue =
   | string
   | number
   | boolean
-  | { readonly name: string }
+  | {
+      /** Name of the item, field, destination, or signer. */
+      readonly name: string;
+    }
   | readonly PdfStructureAttributeValue[];
 /**
  * Bounding box tuple in PDF coordinates: left, bottom, right, top.
@@ -212,10 +251,15 @@ export type PdfBoundingBox = readonly [number, number, number, number];
  * Accessibility metadata and attributes for tagged PDF structure elements.
  */
 export interface PdfStructureOptions {
+  /** Alternate text for tagged non-text content. */
   altText?: string | undefined;
+  /** Replacement text exposed to assistive technology. */
   actualText?: string | undefined;
+  /** BCP 47 language tag for document or structure content. */
   language?: string | undefined;
+  /** Bounding box associated with the structure element. */
   boundingBox?: PdfBoundingBox | undefined;
+  /** Structure attributes to emit for the tagged element. */
   attributes?: Record<string, PdfStructureAttributeValue> | undefined;
 }
 
@@ -223,8 +267,11 @@ export interface PdfStructureOptions {
  * Compliance validation issue returned by document validation.
  */
 export interface PdfComplianceIssue {
+  /** Stable machine-readable issue or error code. */
   code: string;
+  /** Severity of the compliance issue. */
   severity: "error" | "warning";
+  /** Human-readable diagnostic message. */
   message: string;
 }
 
@@ -232,9 +279,13 @@ export interface PdfComplianceIssue {
  * Password and permission options for encrypting a generated document.
  */
 export interface DocumentEncryptionOptions {
+  /** Password required to open the document. */
   userPassword?: string | undefined;
+  /** Password used to grant owner-level permissions. */
   ownerPassword?: string | undefined;
+  /** Permission flags applied to encrypted output. */
   permissions?: DocumentPermissions | undefined;
+  /** Encryption algorithm to use when writing encrypted output. */
   algorithm?: DocumentEncryptionAlgorithm | undefined;
 }
 
@@ -242,11 +293,17 @@ export interface DocumentEncryptionOptions {
  * ICC output profile options for generated documents.
  */
 export interface DocumentOutputIntentOptions {
+  /** ICC profile bytes for the output intent. */
   profile: BinaryData;
+  /** Output condition identifier recorded in the output intent. */
   outputConditionIdentifier?: string | undefined;
+  /** Document information dictionary values. */
   info?: string | undefined;
+  /** Output intent registry name. */
   registryName?: string | undefined;
+  /** Fallback device color space for the ICC profile. */
   alternate?: "DeviceRGB" | "DeviceCMYK" | "DeviceGray" | undefined;
+  /** Number of color channels in the ICC profile. */
   channels?: 1 | 3 | 4 | undefined;
 }
 
@@ -254,12 +311,19 @@ export interface DocumentOutputIntentOptions {
  * Detached digital-signature options for generated documents.
  */
 export interface DocumentSignatureOptions {
+  /** Signature form field name. */
   fieldName?: string | undefined;
+  /** Reason string recorded in the signature dictionary. */
   reason?: string | undefined;
+  /** Signing location recorded in the signature dictionary. */
   location?: string | undefined;
+  /** Signer contact information recorded in the signature dictionary. */
   contactInfo?: string | undefined;
+  /** Name of the item, field, destination, or signer. */
   name?: string | undefined;
+  /** Reserved byte length for the serialized signature contents. */
   placeholderBytes?: number | undefined;
+  /** Callback that returns CMS/PKCS#7 signature bytes for the prepared PDF byte range. */
   sign: (bytes: Uint8Array) => Uint8Array;
 }
 
@@ -267,18 +331,31 @@ export interface DocumentSignatureOptions {
  * Top-level options for creating a new PDF document.
  */
 export interface DocumentOptions {
+  /** Page size used when a page does not specify its own size. */
   defaultPageSize?: PageSize;
+  /** Document information dictionary values. */
   info?: DocumentInfo;
+  /** XMP metadata packet or structured XMP metadata input. */
   xmpMetadata?: XmpMetadataInput | undefined;
+  /** Password encryption settings for serialized output. */
   encryption?: DocumentEncryptionOptions | undefined;
+  /** BCP 47 language tag for document or structure content. */
   language?: string | undefined;
+  /** Whether to emit tagged PDF structure metadata. */
   tagged?: boolean | undefined;
+  /** Mapping from custom structure roles to standard PDF roles. */
   roleMap?: PdfRoleMap | undefined;
+  /** Root structure tag to emit, or false to suppress a custom root. */
   structureRoot?: PdfContainerTag | false | undefined;
+  /** PDF/A or PDF/UA conformance profile to validate and emit. */
   conformance?: DocumentConformanceProfile | undefined;
+  /** Whether eligible streams are compressed with FlateDecode. */
   compress?: boolean | undefined;
+  /** Whether to emit compressed object streams and xref streams. */
   objectStreams?: boolean | undefined;
+  /** ICC output intent required by color-managed profiles such as PDF/A. */
   outputIntent?: DocumentOutputIntentOptions | undefined;
+  /** Detached digital-signature options for serialized output. */
   signature?: DocumentSignatureOptions | undefined;
 }
 
@@ -286,6 +363,7 @@ export interface DocumentOptions {
  * Options used when registering a TrueType font with a document.
  */
 export interface EmbedTrueTypeFontOptions {
+  /** Family. */
   family?: string | undefined;
 }
 
@@ -293,20 +371,29 @@ export interface EmbedTrueTypeFontOptions {
  * Options that control outline item state, such as expansion.
  */
 export interface OutlineOptions {
+  /** Whether outline items are expanded by default. */
   expanded?: boolean | undefined;
 }
 
 /**
  * Supported page-label numbering styles.
  */
-export type PageLabelStyle = "decimal" | "romanUpper" | "romanLower" | "lettersUpper" | "lettersLower";
+export type PageLabelStyle =
+  | "decimal"
+  | "romanUpper"
+  | "romanLower"
+  | "lettersUpper"
+  | "lettersLower";
 
 /**
  * Options for assigning logical page labels and numbering styles.
  */
 export interface PageLabelOptions {
+  /** Page-label numbering style. */
   style?: PageLabelStyle | undefined;
+  /** Text prefix prepended to page labels. */
   prefix?: string | undefined;
+  /** Starting number for ordered output. */
   startAt?: number | undefined;
 }
 
@@ -314,6 +401,7 @@ export interface PageLabelOptions {
  * Options for creating or inserting a page.
  */
 export interface PageOptions {
+  /** Page size for the generated page. */
   size?: PageSize;
 }
 
@@ -326,7 +414,9 @@ export type BinaryData = Uint8Array | ArrayBuffer;
  * Grayscale color representation used by drawing and text APIs.
  */
 export interface GrayColor {
+  /** Discriminator identifying this value shape. */
   kind: "gray";
+  /** Current or default value for the option. */
   value: number;
 }
 
@@ -334,9 +424,13 @@ export interface GrayColor {
  * RGB color representation used by drawing and text APIs.
  */
 export interface RgbColor {
+  /** Discriminator identifying this value shape. */
   kind: "rgb";
+  /** Red channel value normalized from 0 to 1. */
   r: number;
+  /** Green channel value normalized from 0 to 1. */
   g: number;
+  /** Blue channel value normalized from 0 to 1. */
   b: number;
 }
 
@@ -344,10 +438,15 @@ export interface RgbColor {
  * CMYK color representation used by drawing and text APIs.
  */
 export interface CmykColor {
+  /** Discriminator identifying this value shape. */
   kind: "cmyk";
+  /** Cyan channel value normalized from 0 to 1. */
   c: number;
+  /** Magenta channel value normalized from 0 to 1. */
   m: number;
+  /** Vertical position in PDF points. */
   y: number;
+  /** Key/black channel value normalized from 0 to 1. */
   k: number;
 }
 
@@ -365,18 +464,31 @@ export type TextDirection = "ltr" | "rtl" | "auto";
  * Options for placing a single line of text.
  */
 export interface TextOptions {
+  /** Horizontal position in PDF points. */
   x: number;
+  /** Vertical position in PDF points. */
   y: number;
+  /** Font used to render text. */
   font?: PdfFont | undefined;
+  /** Fallback fonts used when the primary font lacks a glyph. */
   fallbackFonts?: PdfFont[] | undefined;
+  /** Text direction used for shaping and layout. */
   direction?: TextDirection | undefined;
+  /** Font size in PDF points. */
   fontSize?: number | undefined;
+  /** Color used for drawing, text, or highlighting. */
   color?: PdfColor | undefined;
+  /** Additional spacing between characters in PDF points. */
   characterSpacing?: number | undefined;
+  /** Additional spacing between words in PDF points. */
   wordSpacing?: number | undefined;
+  /** Text leading value in PDF points. */
   leading?: number | undefined;
+  /** Whether kerning should be applied where supported. */
   kerning?: boolean | undefined;
+  /** Structure tag used for tagged PDF output. */
   tag?: PdfTextStructureTag | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
 
@@ -389,21 +501,37 @@ export type TextAlign = "left" | "center" | "right" | "justify";
  * Options for laying out wrapped text blocks.
  */
 export interface TextBlockOptions {
+  /** Horizontal position in PDF points. */
   x: number;
+  /** Vertical position in PDF points. */
   y: number;
+  /** Width in PDF points. */
   width: number;
+  /** Font used to render text. */
   font?: PdfFont | undefined;
+  /** Fallback fonts used when the primary font lacks a glyph. */
   fallbackFonts?: PdfFont[] | undefined;
+  /** Text direction used for shaping and layout. */
   direction?: TextDirection | undefined;
+  /** Font size in PDF points. */
   fontSize?: number | undefined;
+  /** Color used for drawing, text, or highlighting. */
   color?: PdfColor | undefined;
+  /** Additional spacing between characters in PDF points. */
   characterSpacing?: number | undefined;
+  /** Additional spacing between words in PDF points. */
   wordSpacing?: number | undefined;
+  /** Line height in PDF points. */
   lineHeight?: number | undefined;
+  /** Horizontal alignment for laid-out content. */
   align?: TextAlign | undefined;
+  /** Maximum number of lines to render. */
   maxLines?: number | undefined;
+  /** Whether kerning should be applied where supported. */
   kerning?: boolean | undefined;
+  /** Structure tag used for tagged PDF output. */
   tag?: PdfTextStructureTag | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
 
@@ -411,23 +539,41 @@ export interface TextBlockOptions {
  * Initial layout, typography, and spacing options for a PdfFlow cursor.
  */
 export interface FlowOptions {
+  /** Horizontal position in PDF points. */
   x?: number | undefined;
+  /** Vertical position in PDF points. */
   y?: number | undefined;
+  /** Width in PDF points. */
   width?: number | undefined;
+  /** CSS-like margin shorthand in PDF points. */
   margin?: FlowMarginShorthand | undefined;
+  /** Top margin in PDF points. */
   marginTop?: number | undefined;
+  /** Right margin in PDF points. */
   marginRight?: number | undefined;
+  /** Bottom margin in PDF points. */
   marginBottom?: number | undefined;
+  /** Left margin in PDF points. */
   marginLeft?: number | undefined;
+  /** Default vertical gap between flow blocks in PDF points. */
   gap?: number | undefined;
+  /** Semantic spacing scale used by flow layout. */
   spacing?: FlowSpacingScale | undefined;
+  /** Font used to render text. */
   font?: PdfFont | undefined;
+  /** Fallback fonts used when the primary font lacks a glyph. */
   fallbackFonts?: PdfFont[] | undefined;
+  /** Text direction used for shaping and layout. */
   direction?: TextDirection | undefined;
+  /** Font size in PDF points. */
   fontSize?: number | undefined;
+  /** Color used for drawing, text, or highlighting. */
   color?: PdfColor | undefined;
+  /** Line height in PDF points. */
   lineHeight?: number | undefined;
+  /** Horizontal alignment for laid-out content. */
   align?: TextAlign | undefined;
+  /** Whether kerning should be applied where supported. */
   kerning?: boolean | undefined;
 }
 
@@ -440,15 +586,25 @@ export type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
  * Semantic spacing scale used by flow layout for paragraphs, headings, tables, images, and links.
  */
 export interface FlowSpacingScale {
+  /** Default spacing before paragraph blocks. */
   paragraphBefore?: number | undefined;
+  /** Default spacing after paragraph blocks. */
   paragraphAfter?: number | undefined;
+  /** Default spacing before heading blocks. */
   headingBefore?: number | Partial<Record<HeadingLevel, number>> | undefined;
+  /** Default spacing after heading blocks. */
   headingAfter?: number | Partial<Record<HeadingLevel, number>> | undefined;
+  /** Default spacing before table blocks. */
   tableBefore?: number | undefined;
+  /** Default spacing after table blocks. */
   tableAfter?: number | undefined;
+  /** Default spacing before image blocks. */
   imageBefore?: number | undefined;
+  /** Default spacing after image blocks. */
   imageAfter?: number | undefined;
+  /** Default spacing before link blocks. */
   linkBefore?: number | undefined;
+  /** Default spacing after link blocks. */
   linkAfter?: number | undefined;
 }
 
@@ -464,18 +620,26 @@ export type FlowMarginShorthand =
  * Per-block margin options for flow-authored content.
  */
 export interface FlowBlockSpacingOptions {
+  /** CSS-like margin shorthand in PDF points. */
   margin?: FlowMarginShorthand | undefined;
+  /** Top margin in PDF points. */
   marginTop?: number | undefined;
+  /** Right margin in PDF points. */
   marginRight?: number | undefined;
+  /** Bottom margin in PDF points. */
   marginBottom?: number | undefined;
+  /** Left margin in PDF points. */
   marginLeft?: number | undefined;
 }
 
 /**
  * Options for placing paragraphs or text blocks through the flow layout API.
  */
-export interface FlowTextOptions extends Omit<TextBlockOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+export interface FlowTextOptions
+  extends Omit<TextBlockOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+  /** Optional width for the flow text block within the flow column. */
   blockWidth?: number | undefined;
+  /** Alignment of the block inside the flow column. */
   blockAlign?: "left" | "center" | "right" | undefined;
 }
 
@@ -483,38 +647,60 @@ export interface FlowTextOptions extends Omit<TextBlockOptions, "x" | "y" | "wid
  * Flow text options plus heading-level configuration.
  */
 export interface FlowHeadingOptions extends FlowTextOptions {
+  /** Heading level to render and tag. */
   level?: HeadingLevel | undefined;
 }
 
 /**
  * Options for placing images through the flow layout API.
  */
-export interface FlowImageOptions extends Omit<JpegImageOptions, "x" | "y" | "width" | "height">, FlowBlockSpacingOptions {
+export interface FlowImageOptions
+  extends
+    Omit<JpegImageOptions, "x" | "y" | "width" | "height">,
+    FlowBlockSpacingOptions {
+  /** Width in PDF points. */
   width?: number | undefined;
+  /** Height in PDF points. */
   height?: number | undefined;
+  /** Maximum image width in PDF points. */
   maxWidth?: number | undefined;
+  /** Horizontal alignment for laid-out content. */
   align?: "left" | "center" | "right" | undefined;
 }
 
 /**
  * Options for placing URI links through the flow layout API.
  */
-export interface FlowLinkOptions extends Omit<UriLinkOptions, "x" | "y" | "width" | "height" | "tag">, FlowBlockSpacingOptions {
+export interface FlowLinkOptions
+  extends
+    Omit<UriLinkOptions, "x" | "y" | "width" | "height" | "tag">,
+    FlowBlockSpacingOptions {
+  /** Font used to render text. */
   font?: PdfFont | undefined;
+  /** Fallback fonts used when the primary font lacks a glyph. */
   fallbackFonts?: PdfFont[] | undefined;
+  /** Text direction used for shaping and layout. */
   direction?: TextDirection | undefined;
+  /** Font size in PDF points. */
   fontSize?: number | undefined;
+  /** Color used for drawing, text, or highlighting. */
   color?: PdfColor | undefined;
+  /** Line height in PDF points. */
   lineHeight?: number | undefined;
+  /** Whether kerning should be applied where supported. */
   kerning?: boolean | undefined;
+  /** Structure tag used for tagged PDF output. */
   tag?: "Link" | undefined;
+  /** Horizontal alignment for laid-out content. */
   align?: "left" | "center" | "right" | undefined;
 }
 
 /**
  * Options for placing tables through the flow layout API.
  */
-export interface FlowTableOptions extends Omit<TableOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+export interface FlowTableOptions
+  extends Omit<TableOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+  /** Width in PDF points. */
   width?: number | undefined;
 }
 
@@ -522,8 +708,11 @@ export interface FlowTableOptions extends Omit<TableOptions, "x" | "y" | "width"
  * Page layout options used by template rendering.
  */
 export interface TemplatePageOptions extends FlowOptions {
+  /** Page size for the generated page. */
   size?: PageSize | undefined;
+  /** Reserved header height in PDF points. */
   headerHeight?: number | undefined;
+  /** Reserved footer height in PDF points. */
   footerHeight?: number | undefined;
 }
 
@@ -531,9 +720,13 @@ export interface TemplatePageOptions extends FlowOptions {
  * Context passed to template header, footer, and page-number callbacks.
  */
 export interface TemplateRenderContext {
+  /** One-based page number currently being rendered. */
   readonly pageNumber: number;
+  /** Total page count in the rendered template document. */
   readonly totalPages: number;
+  /** Document title or display title. */
   readonly title?: string | undefined;
+  /** Document author name. */
   readonly author?: string | undefined;
 }
 
@@ -550,9 +743,13 @@ export type TemplatePageNumberAlign = "left" | "center" | "right";
  * Options for automatic page-number rendering in templates.
  */
 export interface TemplatePageNumberOptions {
+  /** Running region where the content is rendered. */
   region?: TemplateRunningRegion | undefined;
+  /** Horizontal alignment for laid-out content. */
   align?: TemplatePageNumberAlign | undefined;
+  /** Callback that formats the rendered page-number text. */
   format?: ((context: TemplateRenderContext) => string) | undefined;
+  /** Options that control this item. */
   options?: FlowTextOptions | undefined;
 }
 
@@ -560,9 +757,13 @@ export interface TemplatePageNumberOptions {
  * Template block for rendering a heading or paragraph.
  */
 export interface TemplateTextBlock {
+  /** Discriminator identifying this option or command shape. */
   type: "heading" | "paragraph";
+  /** Text content to render or inspect. */
   text: string;
+  /** Options that control this item. */
   options?: FlowHeadingOptions | FlowTextOptions | undefined;
+  /** Whether this block should stay on the same page as the following block when possible. */
   keepWithNext?: boolean | undefined;
 }
 
@@ -570,9 +771,13 @@ export interface TemplateTextBlock {
  * Template block for rendering a table.
  */
 export interface TemplateTableBlock {
+  /** Discriminator identifying this option or command shape. */
   type: "table";
+  /** Table rows to render. */
   rows: readonly TableRow[];
+  /** Options that control this item. */
   options?: FlowTableOptions | undefined;
+  /** Whether this block should stay on the same page as the following block when possible. */
   keepWithNext?: boolean | undefined;
 }
 
@@ -580,9 +785,13 @@ export interface TemplateTableBlock {
  * Template block for rendering a PNG or JPEG image.
  */
 export interface TemplateImageBlock {
+  /** Discriminator identifying this option or command shape. */
   type: "png" | "jpeg";
+  /** Binary data for the image, font, PDF, or attachment. */
   data: BinaryData;
+  /** Options that control this item. */
   options?: FlowImageOptions | undefined;
+  /** Whether this block should stay on the same page as the following block when possible. */
   keepWithNext?: boolean | undefined;
 }
 
@@ -590,10 +799,15 @@ export interface TemplateImageBlock {
  * Template block for rendering a URI link.
  */
 export interface TemplateLinkBlock {
+  /** Discriminator identifying this option or command shape. */
   type: "link";
+  /** Text content to render or inspect. */
   text: string;
+  /** URI target for the link. */
   url: string;
+  /** Options that control this item. */
   options?: FlowLinkOptions | undefined;
+  /** Whether this block should stay on the same page as the following block when possible. */
   keepWithNext?: boolean | undefined;
 }
 
@@ -601,10 +815,15 @@ export interface TemplateLinkBlock {
  * Template block that groups child blocks under a structure container.
  */
 export interface TemplateSectionBlock {
+  /** Discriminator identifying this option or command shape. */
   type: "section";
+  /** Structure role used to tag this content. */
   role?: PdfContainerTag | undefined;
+  /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
+  /** Child template blocks to render. */
   blocks: readonly TemplateBlock[];
+  /** Whether this block should stay on the same page as the following block when possible. */
   keepWithNext?: boolean | undefined;
 }
 
@@ -612,6 +831,7 @@ export interface TemplateSectionBlock {
  * Template block that forces a new page.
  */
 export interface TemplatePageBreakBlock {
+  /** Discriminator identifying this option or command shape. */
   type: "pageBreak";
 }
 
@@ -636,13 +856,27 @@ export interface TemplateAutoOutlineOptions {
   expanded?: boolean | undefined;
 }
 
+/**
+ * Top-level options for rendering template blocks into a complete document.
+ */
 export interface TemplateDocumentOptions {
+  /** Document information dictionary values. */
   info?: DocumentInfo | undefined;
+  /** XMP metadata packet or structured XMP metadata input. */
   xmpMetadata?: XmpMetadataInput | undefined;
+  /** Page. */
   page?: TemplatePageOptions | undefined;
+  /** Child template blocks to render. */
   blocks: readonly TemplateBlock[];
-  header?: ((context: TemplateRenderContext) => readonly TemplateBlock[]) | undefined;
-  footer?: ((context: TemplateRenderContext) => readonly TemplateBlock[]) | undefined;
+  /** Callback that returns header blocks for each page. */
+  header?:
+    | ((context: TemplateRenderContext) => readonly TemplateBlock[])
+    | undefined;
+  /** Callback that returns footer blocks for each page. */
+  footer?:
+    | ((context: TemplateRenderContext) => readonly TemplateBlock[])
+    | undefined;
+  /** One-based page number currently being rendered. */
   pageNumber?: TemplatePageNumberOptions | undefined;
   /**
    * When set, auto-generates a bookmarks/outline tree from heading blocks.
@@ -655,8 +889,11 @@ export interface TemplateDocumentOptions {
  * Detailed list item object with optional nested children.
  */
 export interface ListItemDefinition {
+  /** Primary list item text. */
   body?: string | undefined;
+  /** Explicit list marker or button label text. */
   label?: string | undefined;
+  /** Nested child list items or structure elements. */
   children?: readonly ListItem[] | undefined;
 }
 
@@ -669,24 +906,43 @@ export type ListItem = string | ListItemDefinition;
  * Options for rendering tagged ordered or unordered lists.
  */
 export interface ListOptions {
+  /** Horizontal position in PDF points. */
   x: number;
+  /** Vertical position in PDF points. */
   y: number;
+  /** Width in PDF points. */
   width: number;
+  /** Font used to render text. */
   font?: PdfFont | undefined;
+  /** Fallback fonts used when the primary font lacks a glyph. */
   fallbackFonts?: PdfFont[] | undefined;
+  /** Text direction used for shaping and layout. */
   direction?: TextDirection | undefined;
+  /** Font size in PDF points. */
   fontSize?: number | undefined;
+  /** Color used for drawing, text, or highlighting. */
   color?: PdfColor | undefined;
+  /** Additional spacing between characters in PDF points. */
   characterSpacing?: number | undefined;
+  /** Additional spacing between words in PDF points. */
   wordSpacing?: number | undefined;
+  /** Line height in PDF points. */
   lineHeight?: number | undefined;
+  /** Horizontal alignment for laid-out content. */
   align?: TextAlign | undefined;
+  /** Whether kerning should be applied where supported. */
   kerning?: boolean | undefined;
+  /** Whether to render the list with ordered labels. */
   ordered?: boolean | undefined;
+  /** Starting number for ordered output. */
   startAt?: number | undefined;
+  /** Bullet text used for unordered list items. */
   bullet?: string | undefined;
+  /** Vertical spacing between list items in PDF points. */
   itemSpacing?: number | undefined;
+  /** List indentation in PDF points. */
   indent?: number | undefined;
+  /** Gap between list labels and item bodies in PDF points. */
   labelGap?: number | undefined;
 }
 
@@ -699,11 +955,17 @@ export type TableHeaderScope = "row" | "column" | "both";
  * Detailed table cell object with span, header, scope, and structure options.
  */
 export interface TableCellDefinition {
+  /** Text content to render or inspect. */
   text: string;
+  /** Callback that returns header blocks for each page. */
   header?: boolean | undefined;
+  /** Search scope used when finding related structure elements. */
   scope?: TableHeaderScope | undefined;
+  /** Number of rows spanned by the cell. */
   rowSpan?: number | undefined;
+  /** Number of columns spanned by the cell. */
   colSpan?: number | undefined;
+  /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
 
@@ -720,24 +982,43 @@ export type TableRow = readonly TableCell[];
  * Options for rendering tagged tables.
  */
 export interface TableOptions {
+  /** Horizontal position in PDF points. */
   x: number;
+  /** Vertical position in PDF points. */
   y: number;
+  /** Width in PDF points. */
   width: number;
+  /** Explicit table column widths in PDF points. */
   columnWidths?: readonly number[] | undefined;
+  /** Number of leading rows treated as table headers. */
   headerRows?: number | undefined;
+  /** Number of leading columns treated as table headers. */
   headerColumns?: number | undefined;
+  /** Padding inside table cells in PDF points. */
   cellPadding?: number | undefined;
+  /** Gap between table rows in PDF points. */
   rowGap?: number | undefined;
+  /** Font used to render text. */
   font?: PdfFont | undefined;
+  /** Fallback fonts used when the primary font lacks a glyph. */
   fallbackFonts?: PdfFont[] | undefined;
+  /** Text direction used for shaping and layout. */
   direction?: TextDirection | undefined;
+  /** Font size in PDF points. */
   fontSize?: number | undefined;
+  /** Color used for drawing, text, or highlighting. */
   color?: PdfColor | undefined;
+  /** Additional spacing between characters in PDF points. */
   characterSpacing?: number | undefined;
+  /** Additional spacing between words in PDF points. */
   wordSpacing?: number | undefined;
+  /** Line height in PDF points. */
   lineHeight?: number | undefined;
+  /** Horizontal alignment for laid-out content. */
   align?: TextAlign | undefined;
+  /** Whether kerning should be applied where supported. */
   kerning?: boolean | undefined;
+  /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
 
@@ -745,12 +1026,19 @@ export interface TableOptions {
  * Options for placing JPEG images on a page.
  */
 export interface JpegImageOptions {
+  /** Horizontal position in PDF points. */
   x: number;
+  /** Vertical position in PDF points. */
   y: number;
+  /** Width in PDF points. */
   width: number;
+  /** Height in PDF points. */
   height: number;
+  /** Alternate text for tagged non-text content. */
   altText?: string | undefined;
+  /** Structure tag used for tagged PDF output. */
   tag?: PdfFigureStructureTag | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
 
@@ -758,12 +1046,19 @@ export interface JpegImageOptions {
  * Options for placing PNG images on a page.
  */
 export interface PngImageOptions {
+  /** Horizontal position in PDF points. */
   x: number;
+  /** Vertical position in PDF points. */
   y: number;
+  /** Width in PDF points. */
   width: number;
+  /** Height in PDF points. */
   height: number;
+  /** Alternate text for tagged non-text content. */
   altText?: string | undefined;
+  /** Structure tag used for tagged PDF output. */
   tag?: PdfFigureStructureTag | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
 
@@ -771,12 +1066,19 @@ export interface PngImageOptions {
  * Options for creating an external URI link annotation.
  */
 export interface UriLinkOptions {
+  /** Horizontal position in PDF points. */
   x: number;
+  /** Vertical position in PDF points. */
   y: number;
+  /** Width in PDF points. */
   width: number;
+  /** Height in PDF points. */
   height: number;
+  /** Annotation or field border width in PDF points. */
   borderWidth?: number | undefined;
+  /** Structure tag used for tagged PDF output. */
   tag?: "Link" | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
 
@@ -784,12 +1086,19 @@ export interface UriLinkOptions {
  * Options for creating an internal link annotation to another page.
  */
 export interface PageLinkOptions {
+  /** Horizontal position in PDF points. */
   x: number;
+  /** Vertical position in PDF points. */
   y: number;
+  /** Width in PDF points. */
   width: number;
+  /** Height in PDF points. */
   height: number;
+  /** Annotation or field border width in PDF points. */
   borderWidth?: number | undefined;
+  /** Structure tag used for tagged PDF output. */
   tag?: "Link" | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
 
@@ -797,12 +1106,19 @@ export interface PageLinkOptions {
  * Options for creating a highlight annotation.
  */
 export interface HighlightAnnotationOptions {
+  /** Horizontal position in PDF points. */
   x: number;
+  /** Vertical position in PDF points. */
   y: number;
+  /** Width in PDF points. */
   width: number;
+  /** Height in PDF points. */
   height: number;
+  /** Color used for drawing, text, or highlighting. */
   color?: PdfColor | undefined;
+  /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
 
@@ -810,13 +1126,21 @@ export interface HighlightAnnotationOptions {
  * Options for creating a text note annotation.
  */
 export interface NoteAnnotationOptions {
+  /** Horizontal position in PDF points. */
   x: number;
+  /** Vertical position in PDF points. */
   y: number;
+  /** Width in PDF points. */
   width?: number | undefined;
+  /** Height in PDF points. */
   height?: number | undefined;
+  /** Annotation contents text. */
   contents: string;
+  /** Whether the note annotation is initially open. */
   open?: boolean | undefined;
+  /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
 
@@ -824,16 +1148,27 @@ export interface NoteAnnotationOptions {
  * Options for creating a free-text annotation.
  */
 export interface FreeTextAnnotationOptions {
+  /** Horizontal position in PDF points. */
   x: number;
+  /** Vertical position in PDF points. */
   y: number;
+  /** Width in PDF points. */
   width: number;
+  /** Height in PDF points. */
   height: number;
+  /** Text content to render or inspect. */
   text: string;
+  /** Font used to render text. */
   font?: FontName | undefined;
+  /** Font size in PDF points. */
   fontSize?: number | undefined;
+  /** Color used for drawing, text, or highlighting. */
   color?: PdfColor | undefined;
+  /** Annotation or field border width in PDF points. */
   borderWidth?: number | undefined;
+  /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
 
@@ -841,19 +1176,33 @@ export interface FreeTextAnnotationOptions {
  * Options for creating a text form field.
  */
 export interface TextFieldOptions {
+  /** Horizontal position in PDF points. */
   x: number;
+  /** Vertical position in PDF points. */
   y: number;
+  /** Width in PDF points. */
   width: number;
+  /** Height in PDF points. */
   height: number;
+  /** Current or default value for the option. */
   value?: string | undefined;
+  /** Font used to render text. */
   font?: FontName | undefined;
+  /** Font size in PDF points. */
   fontSize?: number | undefined;
+  /** Color used for drawing, text, or highlighting. */
   color?: PdfColor | undefined;
+  /** Annotation or field border width in PDF points. */
   borderWidth?: number | undefined;
+  /** Whether the form field is read-only. */
   readOnly?: boolean | undefined;
+  /** Whether the form field is required. */
   required?: boolean | undefined;
+  /** Whether the text field accepts multiple lines. */
   multiline?: boolean | undefined;
+  /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
 
@@ -861,15 +1210,25 @@ export interface TextFieldOptions {
  * Options for creating a checkbox form field widget.
  */
 export interface CheckBoxOptions {
+  /** Horizontal position in PDF points. */
   x: number;
+  /** Vertical position in PDF points. */
   y: number;
+  /** Width in PDF points. */
   width: number;
+  /** Height in PDF points. */
   height: number;
+  /** Annotation or field border width in PDF points. */
   borderWidth?: number | undefined;
+  /** Initial checkbox checked state. */
   checked?: boolean | undefined;
+  /** Whether the form field is read-only. */
   readOnly?: boolean | undefined;
+  /** Whether the form field is required. */
   required?: boolean | undefined;
+  /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
 
@@ -882,20 +1241,35 @@ export type ChoiceFieldMode = "combo" | "list";
  * Options for creating a list box or combo box form field.
  */
 export interface ChoiceFieldOptions {
+  /** Horizontal position in PDF points. */
   x: number;
+  /** Vertical position in PDF points. */
   y: number;
+  /** Width in PDF points. */
   width: number;
+  /** Height in PDF points. */
   height: number;
+  /** Options that control this item. */
   options: string[];
+  /** Current or default value for the option. */
   value?: string | undefined;
+  /** Font used to render text. */
   font?: FontName | undefined;
+  /** Font size in PDF points. */
   fontSize?: number | undefined;
+  /** Color used for drawing, text, or highlighting. */
   color?: PdfColor | undefined;
+  /** Annotation or field border width in PDF points. */
   borderWidth?: number | undefined;
+  /** Whether the form field is read-only. */
   readOnly?: boolean | undefined;
+  /** Whether the form field is required. */
   required?: boolean | undefined;
+  /** Choice field display mode. */
   mode?: ChoiceFieldMode | undefined;
+  /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
 
@@ -903,10 +1277,15 @@ export interface ChoiceFieldOptions {
  * Options for a single radio button in a radio group.
  */
 export interface RadioGroupItemOptions {
+  /** Current or default value for the option. */
   value: string;
+  /** Horizontal position in PDF points. */
   x: number;
+  /** Vertical position in PDF points. */
   y: number;
+  /** Width in PDF points. */
   width: number;
+  /** Height in PDF points. */
   height: number;
 }
 
@@ -914,12 +1293,19 @@ export interface RadioGroupItemOptions {
  * Options for creating a radio-button group form field.
  */
 export interface RadioGroupOptions {
+  /** Radio-button items in the group. */
   items: RadioGroupItemOptions[];
+  /** Current or default value for the option. */
   value?: string | undefined;
+  /** Annotation or field border width in PDF points. */
   borderWidth?: number | undefined;
+  /** Whether the form field is read-only. */
   readOnly?: boolean | undefined;
+  /** Whether the form field is required. */
   required?: boolean | undefined;
+  /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
 
@@ -927,17 +1313,29 @@ export interface RadioGroupOptions {
  * Options for creating a push-button form field.
  */
 export interface PushButtonOptions {
+  /** Horizontal position in PDF points. */
   x: number;
+  /** Vertical position in PDF points. */
   y: number;
+  /** Width in PDF points. */
   width: number;
+  /** Height in PDF points. */
   height: number;
+  /** Explicit list marker or button label text. */
   label: string;
+  /** Font used to render text. */
   font?: FontName | undefined;
+  /** Font size in PDF points. */
   fontSize?: number | undefined;
+  /** Color used for drawing, text, or highlighting. */
   color?: PdfColor | undefined;
+  /** Annotation or field border width in PDF points. */
   borderWidth?: number | undefined;
+  /** Whether the form field is read-only. */
   readOnly?: boolean | undefined;
+  /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
 
@@ -945,14 +1343,23 @@ export interface PushButtonOptions {
  * Options for creating a signature form field.
  */
 export interface SignatureFieldOptions {
+  /** Horizontal position in PDF points. */
   x: number;
+  /** Vertical position in PDF points. */
   y: number;
+  /** Width in PDF points. */
   width: number;
+  /** Height in PDF points. */
   height: number;
+  /** Annotation or field border width in PDF points. */
   borderWidth?: number | undefined;
+  /** Whether the form field is read-only. */
   readOnly?: boolean | undefined;
+  /** Whether the form field is required. */
   required?: boolean | undefined;
+  /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
 
@@ -960,7 +1367,9 @@ export interface SignatureFieldOptions {
  * Options that describe an embedded file attachment.
  */
 export interface AttachmentOptions {
+  /** Human-readable attachment description. */
   description?: string | undefined;
+  /** MIME type associated with the attachment. */
   mimeType?: string | undefined;
 }
 
@@ -978,12 +1387,19 @@ export type LineJoin = "miter" | "round" | "bevel";
  * Stroke styling for vector paths.
  */
 export interface StrokeStyle {
+  /** Color used for drawing, text, or highlighting. */
   color?: PdfColor | undefined;
+  /** Width in PDF points. */
   width?: number | undefined;
+  /** Line cap. */
   lineCap?: LineCap | undefined;
+  /** Line join. */
   lineJoin?: LineJoin | undefined;
+  /** Miter limit. */
   miterLimit?: number | undefined;
+  /** Dash array. */
   dashArray?: number[] | undefined;
+  /** Dash phase. */
   dashPhase?: number | undefined;
 }
 
@@ -991,6 +1407,7 @@ export interface StrokeStyle {
  * Fill styling for vector paths.
  */
 export interface FillStyle {
+  /** Color used for drawing, text, or highlighting. */
   color?: PdfColor | undefined;
 }
 
@@ -998,9 +1415,13 @@ export interface FillStyle {
  * Painting, stroke, fill, transform, and tagging options for vector paths.
  */
 export interface PathStyle {
+  /** Paint. */
   paint: "stroke" | "fill" | "fillStroke";
+  /** Stroke. */
   stroke?: StrokeStyle | undefined;
+  /** Fill. */
   fill?: FillStyle | undefined;
+  /** Structure tag used for tagged PDF output. */
   tag?: "Artifact" | undefined;
 }
 
@@ -1008,11 +1429,17 @@ export interface PathStyle {
  * Affine transform tuple used for graphics and text placement.
  */
 export interface Transform {
+  /** Horizontal scale component of the affine transform matrix. */
   a: number;
+  /** Blue channel value normalized from 0 to 1. */
   b: number;
+  /** Cyan channel value normalized from 0 to 1. */
   c: number;
+  /** Vertical scale component of the affine transform matrix. */
   d: number;
+  /** Horizontal translation component of the affine transform matrix. */
   e: number;
+  /** Vertical translation component of the affine transform matrix. */
   f: number;
 }
 
@@ -1020,8 +1447,11 @@ export interface Transform {
  * Vector path command for moving the current point without drawing.
  */
 export interface MoveToCommand {
+  /** Discriminator identifying this option or command shape. */
   type: "moveTo";
+  /** Horizontal position in PDF points. */
   x: number;
+  /** Vertical position in PDF points. */
   y: number;
 }
 
@@ -1029,8 +1459,11 @@ export interface MoveToCommand {
  * Vector path command for drawing a straight line.
  */
 export interface LineToCommand {
+  /** Discriminator identifying this option or command shape. */
   type: "lineTo";
+  /** Horizontal position in PDF points. */
   x: number;
+  /** Vertical position in PDF points. */
   y: number;
 }
 
@@ -1038,12 +1471,19 @@ export interface LineToCommand {
  * Vector path command for drawing a cubic Bezier curve.
  */
 export interface CurveToCommand {
+  /** Discriminator identifying this option or command shape. */
   type: "curveTo";
+  /** First Bezier control point x-coordinate. */
   x1: number;
+  /** First Bezier control point y-coordinate. */
   y1: number;
+  /** Second Bezier control point x-coordinate. */
   x2: number;
+  /** Second Bezier control point y-coordinate. */
   y2: number;
+  /** Ending point x-coordinate. */
   x3: number;
+  /** Ending point y-coordinate. */
   y3: number;
 }
 
@@ -1051,10 +1491,15 @@ export interface CurveToCommand {
  * Vector path command for adding a rectangle.
  */
 export interface RectCommand {
+  /** Discriminator identifying this option or command shape. */
   type: "rect";
+  /** Horizontal position in PDF points. */
   x: number;
+  /** Vertical position in PDF points. */
   y: number;
+  /** Width in PDF points. */
   width: number;
+  /** Height in PDF points. */
   height: number;
 }
 
@@ -1062,6 +1507,7 @@ export interface RectCommand {
  * Vector path command that closes the current subpath.
  */
 export interface ClosePathCommand {
+  /** Discriminator identifying this option or command shape. */
   type: "closePath";
 }
 
@@ -1108,11 +1554,17 @@ export const PAGE_SIZES: Record<BuiltInPageSize, CustomPageSize> = {
   EnvelopeDL: { width: 311.81, height: 623.62 },
   EnvelopeC5: { width: 459.21, height: 649.13 },
   EnvelopeC6: { width: 323.15, height: 459.21 },
-  EnvelopeMonarch: { width: 279, height: 540 }
+  EnvelopeMonarch: { width: 279, height: 540 },
 };
 
 /**
  * Creates an RGB color object using normalized channel values from 0 to 1.
+ *
+ * @param r Red channel value from 0 to 1.
+ * @param g Green channel value from 0 to 1.
+ * @param b Blue channel value from 0 to 1.
+ *
+ * @returns The RGB color object.
  */
 export function rgb(r: number, g: number, b: number): RgbColor {
   return { kind: "rgb", r, g, b };
@@ -1120,6 +1572,10 @@ export function rgb(r: number, g: number, b: number): RgbColor {
 
 /**
  * Creates a grayscale color object using a normalized value from 0 for black to 1 for white.
+ *
+ * @param value Gray channel value from 0 to 1.
+ *
+ * @returns The grayscale color object.
  */
 export function gray(value: number): GrayColor {
   return { kind: "gray", value };
@@ -1127,6 +1583,13 @@ export function gray(value: number): GrayColor {
 
 /**
  * Creates a CMYK color object using normalized channel values from 0 to 1.
+ *
+ * @param c Cyan channel value from 0 to 1.
+ * @param m Magenta channel value from 0 to 1.
+ * @param y Yellow channel value from 0 to 1.
+ * @param k Key/black channel value from 0 to 1.
+ *
+ * @returns The CMYK color object.
  */
 export function cmyk(c: number, m: number, y: number, k: number): CmykColor {
   return { kind: "cmyk", c, m, y, k };
@@ -1134,12 +1597,19 @@ export function cmyk(c: number, m: number, y: number, k: number): CmykColor {
 
 /**
  * Creates an RGB color object from a CSS-style #RGB or #RRGGBB hex string.
+ *
+ * @param value The #RGB or #RRGGBB color string to parse.
+ *
+ * @returns The RGB color object.
  */
 export function hex(value: string): RgbColor {
   const trimmed = value.trim().replace(/^#/, "");
   const expanded =
     trimmed.length === 3
-      ? trimmed.split("").map((character) => character + character).join("")
+      ? trimmed
+          .split("")
+          .map((character) => character + character)
+          .join("")
       : trimmed;
   if (!/^[0-9a-fA-F]{6}$/.test(expanded)) {
     throw new Error(`Invalid hex color: "${value}". Expected #RGB or #RRGGBB.`);
@@ -1149,6 +1619,6 @@ export function hex(value: string): RgbColor {
     kind: "rgb",
     r: ((intValue >> 16) & 0xff) / 255,
     g: ((intValue >> 8) & 0xff) / 255,
-    b: (intValue & 0xff) / 255
+    b: (intValue & 0xff) / 255,
   };
 }

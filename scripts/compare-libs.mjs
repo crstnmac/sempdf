@@ -232,4 +232,103 @@ await runScenario("Scenario 3: text + PNG image per page", [
   })]
 ]);
 
+// ============== Scenario 4: AES-128 password encryption ==============
+// pdf-lib has no native password encryption; pdfkit supports up to AES-128.
+await runScenario("Scenario 4: AES-128 password encryption (ours vs pdfkit)", [
+  ["ours: aes-128 toUint8Array", () => {
+    const doc = createDocument({
+      info: { title: "Encrypted" },
+      compress: true,
+      encryption: { algorithm: "aes-128", userPassword: "user", ownerPassword: "owner" }
+    });
+    for (let p = 0; p < PAGE_COUNT; p += 1) {
+      const page = doc.addPage({ size: "A4" });
+      page.text(`Encrypted page ${p + 1}`, { x: 48, y: 790, fontSize: 16 });
+      for (let l = 0; l < LINES_PER_PAGE; l += 1) {
+        page.text(buildSampleLine(l), { x: 48, y: 748 - (l * 28), fontSize: 10 });
+      }
+    }
+    return doc.toUint8Array();
+  }],
+  ["pdfkit: aes-128", async () => new Promise((resolve, reject) => {
+    const doc = new PDFDocumentKit({
+      size: "A4",
+      info: { Title: "Encrypted" },
+      autoFirstPage: false,
+      userPassword: "user",
+      ownerPassword: "owner",
+      pdfVersion: "1.7"
+    });
+    const chunks = [];
+    doc.on("data", (c) => chunks.push(c));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+    for (let p = 0; p < PAGE_COUNT; p += 1) {
+      doc.addPage({ size: "A4" });
+      doc.fontSize(16).text(`Encrypted page ${p + 1}`, 48, 790 - 16, { lineBreak: false });
+      doc.fontSize(10);
+      for (let l = 0; l < LINES_PER_PAGE; l += 1) {
+        doc.text(buildSampleLine(l), 48, 748 - (l * 28), { lineBreak: false });
+      }
+    }
+    doc.end();
+  })]
+]);
+
+// ============== Scenario 5: PDF 2.0 AES-256 R=6 (ours only) ==============
+// No competitor library currently emits ISO 32000-2 R=6 encryption.
+console.log("\n=== Scenario 5: PDF 2.0 AES-256 R=6 (ours only — no competitor support) ===");
+const r6Result = await bench("ours: aes-256-r6 toUint8Array", () => {
+  const doc = createDocument({
+    info: { title: "PDF 2.0" },
+    compress: true,
+    encryption: { algorithm: "aes-256-r6", userPassword: "user", ownerPassword: "owner" }
+  });
+  for (let p = 0; p < PAGE_COUNT; p += 1) {
+    const page = doc.addPage({ size: "A4" });
+    page.text(`PDF 2.0 page ${p + 1}`, { x: 48, y: 790, fontSize: 16 });
+    for (let l = 0; l < LINES_PER_PAGE; l += 1) {
+      page.text(buildSampleLine(l), { x: 48, y: 748 - (l * 28), fontSize: 10 });
+    }
+  }
+  return doc.toUint8Array();
+});
+console.log(`${r6Result.name}  median: ${fmt(r6Result.median)}  bytes: ${r6Result.bytes}`);
+
+// ============== Scenario 6: tagged accessible PDF (ours vs pdf-lib) ==============
+// pdfkit has limited tagging support; pdf-lib supports basic tagged PDF via low-level API but no high-level helper.
+await runScenario("Scenario 6: tagged accessible PDF", [
+  ["ours: tagged toUint8Array", () => {
+    const doc = createDocument({
+      info: { title: "Tagged" },
+      tagged: true,
+      language: "en-US",
+      structureRoot: "Document",
+      compress: true
+    });
+    for (let p = 0; p < PAGE_COUNT; p += 1) {
+      const page = doc.addPage({ size: "A4" });
+      page.text(`Heading ${p + 1}`, { x: 48, y: 790, fontSize: 16, tag: "H1" });
+      for (let l = 0; l < LINES_PER_PAGE; l += 1) {
+        page.text(buildSampleLine(l), { x: 48, y: 748 - (l * 28), fontSize: 10, tag: "P" });
+      }
+    }
+    return doc.toUint8Array();
+  }],
+  ["pdf-lib: untagged baseline", async () => {
+    // pdf-lib has no high-level tagging API; this baseline shows the cost of producing equivalent visible output.
+    const doc = await PdfLibDocument.create();
+    doc.setTitle("Tagged");
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    for (let p = 0; p < PAGE_COUNT; p += 1) {
+      const page = doc.addPage([595.28, 841.89]);
+      page.drawText(`Heading ${p + 1}`, { x: 48, y: 790, size: 16, font });
+      for (let l = 0; l < LINES_PER_PAGE; l += 1) {
+        page.drawText(buildSampleLine(l), { x: 48, y: 748 - (l * 28), size: 10, font });
+      }
+    }
+    return doc.save();
+  }]
+]);
+
 console.log();

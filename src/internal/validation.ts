@@ -43,7 +43,7 @@ export interface NormalizedDocumentEncryption {
   permissions: NormalizedDocumentPermissions;
   algorithm: DocumentEncryptionAlgorithm;
   version: 1 | 2 | 4 | 5;
-  revision: 2 | 3 | 4 | 5;
+  revision: 2 | 3 | 4 | 5 | 6;
   keyLengthBytes: 5 | 16 | 32;
 }
 
@@ -406,6 +406,13 @@ function resolveDocumentEncryptionAlgorithm(
         algorithm: "aes-256",
         version: 5,
         revision: 5,
+        keyLengthBytes: 32
+      };
+    case "aes-256-r6":
+      return {
+        algorithm: "aes-256-r6",
+        version: 5,
+        revision: 6,
         keyLengthBytes: 32
       };
     default:

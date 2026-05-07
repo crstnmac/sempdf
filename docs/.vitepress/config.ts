@@ -87,12 +87,36 @@ export default defineConfig({
     sidebar: {
       "/guide/": [
         {
-          text: "Guide",
+          text: "Introduction",
           items: [
             { text: "Getting Started", link: "/guide/getting-started" },
+            { text: "Browser Usage", link: "/guide/browser-usage" },
+            { text: "Streaming and Output", link: "/guide/streaming-and-output" }
+          ]
+        },
+        {
+          text: "Authoring",
+          items: [
+            { text: "Text and Fonts", link: "/guide/text-and-fonts" },
+            { text: "Images", link: "/guide/images" },
+            { text: "Forms and Annotations", link: "/guide/forms-and-annotations" },
+            { text: "Metadata and Navigation", link: "/guide/metadata-and-navigation" },
+            { text: "Report Templates", link: "/guide/report-templates" }
+          ]
+        },
+        {
+          text: "Editing and Assembly",
+          items: [
             { text: "Edit Existing PDFs", link: "/guide/edit-existing-pdfs" },
+            { text: "Page Assembly", link: "/guide/page-assembly" }
+          ]
+        },
+        {
+          text: "Standards and Security",
+          items: [
             { text: "Accessibility and Compliance", link: "/guide/accessibility-and-compliance" },
-            { text: "Browser Usage", link: "/guide/browser-usage" }
+            { text: "PDF Versions and Conformance", link: "/guide/pdf-versions-and-conformance" },
+            { text: "Encryption and Signatures", link: "/guide/encryption-and-signatures" }
           ]
         }
       ],
