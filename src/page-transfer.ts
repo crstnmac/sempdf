@@ -1,12 +1,18 @@
-import { PdfEngineError, PdfErrorCode } from './errors.js';
+import { PdfEngineError, PdfErrorCode } from "./errors.js";
 import {
   parseDocument,
   type ParsedPdfDocument,
   type ParsedPdfPage,
-} from './parser.js';
-import type { BinaryData } from './types.js';
-import { inflateZlib } from './internal/deflate.js';
-import { ByteWriter } from './internal/byte-writer.js';
+} from "./parser.js";
+import type { BinaryData } from "./types.js";
+import { inflateZlib } from "./internal/deflate.js";
+import { ByteWriter } from "./internal/byte-writer.js";
+import {
+  formatHeader,
+  maxVersion,
+  parseVersion,
+  type PdfVersion,
+} from "./internal/pdf-version.js";
 import {
   array,
   dict,
@@ -21,7 +27,7 @@ import {
   type PdfRef,
   type PdfStream,
   type PdfValue,
-} from './internal/pdf-primitives.js';
+} from "./internal/pdf-primitives.js";
 
 interface ImportedPageSpec {
   readonly document: ParsedPdfDocument;
@@ -43,6 +49,11 @@ const encoder = new TextEncoder();
 
 /**
  * Creates a new PDF containing only the selected pages from an existing document.
+ *
+ * @param data The source PDF bytes.
+ * @param pageIndexes Zero-based page indexes to copy into the new document.
+ *
+ * @returns The transferred PDF bytes.
  */
 export function extractPages(
   data: BinaryData,
@@ -54,6 +65,10 @@ export function extractPages(
 
 /**
  * Splits a PDF into one single-page PDF byte array per source page.
+ *
+ * @param data The source PDF bytes.
+ *
+ * @returns One PDF byte array per source page.
  */
 export function splitDocument(data: BinaryData): Uint8Array[] {
   const document = parseDocument(data);
@@ -66,12 +81,16 @@ export function splitDocument(data: BinaryData): Uint8Array[] {
 
 /**
  * Combines multiple PDF documents into a single PDF in the order provided.
+ *
+ * @param documents Source PDF byte arrays to merge.
+ *
+ * @returns The merged PDF bytes.
  */
 export function mergeDocuments(documents: readonly BinaryData[]): Uint8Array {
   if (documents.length === 0) {
     throw new PdfEngineError(
       PdfErrorCode.EMPTY_PAGE,
-      'mergeDocuments() requires at least one source PDF.',
+      "mergeDocuments() requires at least one source PDF.",
     );
   }
 
@@ -85,6 +104,12 @@ export function mergeDocuments(documents: readonly BinaryData[]): Uint8Array {
 
 /**
  * Appends selected pages from one PDF to the end of another PDF and returns the updated document bytes.
+ *
+ * @param target The PDF bytes that receive appended pages.
+ * @param source The PDF bytes to copy pages from.
+ * @param pageIndexes Optional zero-based source page indexes to append.
+ *
+ * @returns The PDF bytes containing the target pages followed by appended source pages.
  */
 export function appendPages(
   target: BinaryData,
@@ -108,7 +133,7 @@ function collectImportedPages(
   if (selectedIndexes.length === 0) {
     throw new PdfEngineError(
       PdfErrorCode.EMPTY_PAGE,
-      'At least one page must be selected for transfer.',
+      "At least one page must be selected for transfer.",
     );
   }
 
@@ -120,7 +145,7 @@ function collectImportedPages(
     ) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_PAGE,
-        'Page index is out of range for transfer.',
+        "Page index is out of range for transfer.",
         {
           pageIndex,
           pageCount: pages.length,
@@ -141,7 +166,7 @@ function buildTransferredPdf(
   if (importedPages.length === 0) {
     throw new PdfEngineError(
       PdfErrorCode.EMPTY_PAGE,
-      'Transferred PDFs must contain at least one page.',
+      "Transferred PDFs must contain at least one page.",
     );
   }
 
@@ -150,6 +175,13 @@ function buildTransferredPdf(
     objects: [],
   };
   const contexts = new Map<ParsedPdfDocument, CloneContext>();
+  let pdfVersion: PdfVersion = "1.4";
+  for (const importedPage of importedPages) {
+    const sourceVersion = parseVersion(
+      importedPage.document.getEffectiveVersion(),
+    );
+    if (sourceVersion) pdfVersion = maxVersion(pdfVersion, sourceVersion);
+  }
   const pageObjects: Array<{
     pageObjectId: number;
     contentObjectId: number;
@@ -162,7 +194,7 @@ function buildTransferredPdf(
     const resources = resolveInheritedPageValue(
       importedPage.document,
       importedPage.page.objectId,
-      'Resources',
+      "Resources",
     );
     const clonedResources = asOptionalPdfDict(
       clonePdfValue(resources, context),
@@ -170,17 +202,17 @@ function buildTransferredPdf(
     const formObjectId = builder.nextObjectId++;
     const contentObjectId = builder.nextObjectId++;
     const pageObjectId = builder.nextObjectId++;
-    const formResourceName = 'ImportedPage';
+    const formResourceName = "ImportedPage";
 
     builder.objects.push(
       {
         id: formObjectId,
         value: stream(
           dict([
-            ['Type', name('XObject')],
-            ['Subtype', name('Form')],
-            ['BBox', array([...mediaBox])],
-            ['Resources', clonedResources],
+            ["Type", name("XObject")],
+            ["Subtype", name("Form")],
+            ["BBox", array([...mediaBox])],
+            ["Resources", clonedResources],
           ]),
           collectDecodedPageContent(
             importedPage.document,
@@ -198,14 +230,14 @@ function buildTransferredPdf(
       {
         id: pageObjectId,
         value: dict([
-          ['Type', name('Page')],
-          ['Parent', ref(2)],
-          ['MediaBox', array([...mediaBox])],
+          ["Type", name("Page")],
+          ["Parent", ref(2)],
+          ["MediaBox", array([...mediaBox])],
           [
-            'Resources',
-            dict([['XObject', dict([[formResourceName, ref(formObjectId)]])]]),
+            "Resources",
+            dict([["XObject", dict([[formResourceName, ref(formObjectId)]])]]),
           ],
-          ['Contents', ref(contentObjectId)],
+          ["Contents", ref(contentObjectId)],
         ]),
       },
     );
@@ -217,26 +249,26 @@ function buildTransferredPdf(
     {
       id: 1,
       value: dict([
-        ['Type', name('Catalog')],
-        ['Pages', ref(2)],
+        ["Type", name("Catalog")],
+        ["Pages", ref(2)],
       ]),
     },
     {
       id: 2,
       value: dict([
-        ['Type', name('Pages')],
-        ['Count', pageObjects.length],
-        ['Kids', array(pageObjects.map((page) => ref(page.pageObjectId)))],
+        ["Type", name("Pages")],
+        ["Count", pageObjects.length],
+        ["Kids", array(pageObjects.map((page) => ref(page.pageObjectId)))],
       ]),
     },
     {
       id: 3,
-      value: dict([['Producer', { kind: 'string', value: 'pdf-editing-lib' }]]),
+      value: dict([["Producer", { kind: "string", value: "pdf-editing-lib" }]]),
     },
     ...builder.objects,
   ];
 
-  return writePdf(objects);
+  return writePdf(objects, pdfVersion);
 }
 
 function getCloneContext(
@@ -265,8 +297,8 @@ function clonePdfValue(
   if (
     value === undefined ||
     value === null ||
-    typeof value === 'boolean' ||
-    typeof value === 'number'
+    typeof value === "boolean" ||
+    typeof value === "number"
   ) {
     return value;
   }
@@ -282,12 +314,12 @@ function clonePdfValue(
     return value.map((entry) => clonePdfValue(entry, context) ?? null);
   }
 
-  if ('kind' in value) {
-    if (value.kind === 'ref') {
+  if ("kind" in value) {
+    if (value.kind === "ref") {
       return clonePdfRef(value, context);
     }
 
-    if (value.kind === 'stream') {
+    if (value.kind === "stream") {
       return stream(clonePdfDict(value.dict, context), value.bytes.slice());
     }
 
@@ -307,7 +339,7 @@ function clonePdfRef(sourceRef: PdfRef, context: CloneContext): PdfRef {
   if (!sourceObject) {
     throw new PdfEngineError(
       PdfErrorCode.INVALID_PDF,
-      'Transferred object reference could not be resolved.',
+      "Transferred object reference could not be resolved.",
       {
         objectId: sourceRef.objectId,
       },
@@ -319,14 +351,14 @@ function clonePdfRef(sourceRef: PdfRef, context: CloneContext): PdfRef {
   const clonedValue = clonePdfValue(sourceObject.value, context);
   if (
     clonedValue === undefined ||
-    (typeof clonedValue === 'object' &&
+    (typeof clonedValue === "object" &&
       clonedValue !== null &&
-      'kind' in clonedValue &&
-      clonedValue.kind === 'ref')
+      "kind" in clonedValue &&
+      clonedValue.kind === "ref")
   ) {
     throw new PdfEngineError(
       PdfErrorCode.INVALID_PDF,
-      'Indirect PDF objects must resolve to a direct value.',
+      "Indirect PDF objects must resolve to a direct value.",
     );
   }
 
@@ -360,14 +392,14 @@ function resolveInheritedPageValue(
 
     const dictValue = asPdfDict(
       document.getObject(currentObjectId)?.value,
-      'Page',
+      "Page",
     );
     const directValue = getPdfDictValue(dictValue, key);
     if (directValue !== undefined) {
       return resolvePdfValue(document, directValue);
     }
 
-    const parentRef = getPdfDictValue(dictValue, 'Parent');
+    const parentRef = getPdfDictValue(dictValue, "Parent");
     currentObjectId = isPdfRefValue(parentRef) ? parentRef.objectId : undefined;
   }
 
@@ -378,10 +410,10 @@ function collectDecodedPageContent(
   document: ParsedPdfDocument,
   pageObjectId: number,
 ): Uint8Array {
-  const pageDict = asPdfDict(document.getObject(pageObjectId)?.value, 'Page');
+  const pageDict = asPdfDict(document.getObject(pageObjectId)?.value, "Page");
   const contents = resolvePdfValue(
     document,
-    getPdfDictValue(pageDict, 'Contents'),
+    getPdfDictValue(pageDict, "Contents"),
   );
   const streams: Uint8Array[] = [];
 
@@ -418,10 +450,10 @@ function decodePdfStreamBytes(streamValue: PdfStream): Uint8Array {
     return streamValue.bytes.slice();
   }
 
-  if (filter !== 'FlateDecode') {
+  if (filter !== "FlateDecode") {
     throw new PdfEngineError(
       PdfErrorCode.UNSUPPORTED_IMAGE_FORMAT,
-      'Unsupported page content stream filter during page transfer.',
+      "Unsupported page content stream filter during page transfer.",
       {
         filter,
       },
@@ -432,12 +464,12 @@ function decodePdfStreamBytes(streamValue: PdfStream): Uint8Array {
 }
 
 function resolveFilterValue(dictValue: PdfDict): string | undefined {
-  const filter = getPdfDictValue(dictValue, 'Filter');
+  const filter = getPdfDictValue(dictValue, "Filter");
   if (
     filter &&
-    typeof filter === 'object' &&
-    'kind' in filter &&
-    filter.kind === 'name'
+    typeof filter === "object" &&
+    "kind" in filter &&
+    filter.kind === "name"
   ) {
     return filter.value;
   }
@@ -445,9 +477,9 @@ function resolveFilterValue(dictValue: PdfDict): string | undefined {
     const first = filter[0];
     if (
       first &&
-      typeof first === 'object' &&
-      'kind' in first &&
-      first.kind === 'name'
+      typeof first === "object" &&
+      "kind" in first &&
+      first.kind === "name"
     ) {
       return first.value;
     }
@@ -507,22 +539,25 @@ function isPdfDict(value: PdfValue[] | PdfDict): value is PdfDict {
     (entry) =>
       Array.isArray(entry) &&
       entry.length === 2 &&
-      typeof entry[0] === 'string',
+      typeof entry[0] === "string",
   );
 }
 
 function isPdfRefValue(value: PdfValue | undefined): value is PdfRef {
   return (
-    typeof value === 'object' &&
+    typeof value === "object" &&
     value !== null &&
-    'kind' in value &&
-    value.kind === 'ref'
+    "kind" in value &&
+    value.kind === "ref"
   );
 }
 
-function writePdf(objects: PdfIndirectObject[]): Uint8Array {
+function writePdf(
+  objects: PdfIndirectObject[],
+  pdfVersion: PdfVersion = "1.4",
+): Uint8Array {
   const writer = new ByteWriter();
-  writer.writeLine('%PDF-1.4');
+  writer.writeLine(formatHeader(pdfVersion));
   writer.writeBytes(new Uint8Array([0x25, 0xff, 0xff, 0xff, 0x0a]));
 
   const offsets = new Map<number, number>();
@@ -531,51 +566,51 @@ function writePdf(objects: PdfIndirectObject[]): Uint8Array {
     writer.writeLine(`${object.id} 0 obj`);
     writeObjectValue(writer, object.value);
     writer.writeLine();
-    writer.writeLine('endobj');
+    writer.writeLine("endobj");
   }
 
   const startXref = writer.size;
   const maxObjectId = Math.max(...objects.map((object) => object.id));
-  writer.writeLine('xref');
+  writer.writeLine("xref");
   writer.writeLine(`0 ${maxObjectId + 1}`);
-  writer.writeLine('0000000000 65535 f ');
+  writer.writeLine("0000000000 65535 f ");
   for (let objectId = 1; objectId <= maxObjectId; objectId += 1) {
     const offset = offsets.get(objectId);
     writer.writeLine(
       offset === undefined
-        ? '0000000000 65535 f '
-        : `${String(offset).padStart(10, '0')} 00000 n `,
+        ? "0000000000 65535 f "
+        : `${String(offset).padStart(10, "0")} 00000 n `,
     );
   }
 
-  writer.writeLine('trailer');
+  writer.writeLine("trailer");
   writer.writeLine(
     serializePdfValue(
       dict([
-        ['Size', maxObjectId + 1],
-        ['Root', ref(1)],
-        ['Info', ref(3)],
+        ["Size", maxObjectId + 1],
+        ["Root", ref(1)],
+        ["Info", ref(3)],
       ]),
     ),
   );
-  writer.writeLine('startxref');
+  writer.writeLine("startxref");
   writer.writeLine(String(startXref));
-  writer.writeLine('%%EOF');
+  writer.writeLine("%%EOF");
   return writer.toUint8Array();
 }
 
 function writeObjectValue(writer: ByteWriter, value: PdfValue): void {
   if (isPdfLazyStream(value)) {
-    throw new Error('Lazy PDF streams require sink serialization.');
+    throw new Error("Lazy PDF streams require sink serialization.");
   }
 
   if (isPdfStream(value)) {
-    const streamDict = dict([...value.dict, ['Length', value.bytes.length]]);
+    const streamDict = dict([...value.dict, ["Length", value.bytes.length]]);
     writer.writeLine(serializePdfValue(streamDict));
-    writer.writeLine('stream');
+    writer.writeLine("stream");
     writer.writeBytes(value.bytes);
     writer.writeLine();
-    writer.write('endstream');
+    writer.write("endstream");
     return;
   }
 

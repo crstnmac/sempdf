@@ -8,6 +8,7 @@ import type { EmbeddedTextGlyph, PdfOp } from "./ops.js";
 import { deflateZlib } from "./deflate.js";
 import { subsetTrueTypeFont } from "./truetype-subset.js";
 import { createCipherForObject, createDocumentFileId, createPdfEncryptionContext, encryptBytesForObject, latin1Bytes, type PdfEncryptionContext } from "./pdf-encryption.js";
+import { detectMinimumVersion, formatHeader, maxVersion, type PdfVersion } from "./pdf-version.js";
 import { array, dict, formatPdfNumber, hexString, isPdfLazyStream, isPdfStream, lazyStream, literalString, name, ref, serializePdfValue, stream, type PdfDict, type PdfIndirectObject, type PdfLazyStream, type PdfStream, type PdfValue } from "./pdf-primitives.js";
 import { getSrgbIccProfileBytes } from "./srgb-icc.js";
 import type { ParsedTrueTypeFont } from "./truetype.js";
@@ -139,6 +140,7 @@ interface WritePdfOptions {
   encryptionObjectId?: number | undefined;
   fileId?: Uint8Array | undefined;
   objectStreams?: boolean | undefined;
+  pdfVersion?: PdfVersion | undefined;
 }
 
 interface PdfObjectEncryptionContext {
@@ -196,6 +198,7 @@ interface TaggedPdfObjectsOptions {
   readonly roleMap?: PdfDocumentModel["roleMap"] | undefined;
   readonly existingTaggedState?: ExistingTaggedState | undefined;
   readonly existingStructTreeRoot?: PdfDict | undefined;
+  readonly namespaceObjectIds?: { readonly pdf2: number; readonly pdf17: number } | undefined;
 }
 
 const encoder = new TextEncoder();
@@ -381,15 +384,33 @@ function* buildTaggedPdfObjects(
           options.existingTaggedState.rootKids,
           parentTreeObjectId,
           allocation,
-          options.roleMap
+          options.roleMap,
+          options.namespaceObjectIds
         )
-      : buildStructTreeRootDictionary(allocation, options.roleMap)
+      : buildStructTreeRootDictionary(allocation, options.roleMap, options.namespaceObjectIds)
   };
+
+  if (options.namespaceObjectIds) {
+    yield {
+      id: options.namespaceObjectIds.pdf17,
+      value: dict([
+        ["Type", name("Namespace")],
+        ["NS", literalString("http://iso.org/pdf/ssn")]
+      ])
+    };
+    yield {
+      id: options.namespaceObjectIds.pdf2,
+      value: dict([
+        ["Type", name("Namespace")],
+        ["NS", literalString("http://iso.org/pdf2/ssn")]
+      ])
+    };
+  }
 
   for (const element of allocation.elements) {
     yield {
       id: element.objectId,
-      value: buildStructElementDictionary(element)
+      value: buildStructElementDictionary(element, options.namespaceObjectIds?.pdf2)
     };
   }
 }
@@ -795,9 +816,14 @@ function prepareDocumentSerialization(
         )
       : value;
 
+  const builtInFontToUnicodeObjectIds = new Map<FontName, number>();
   for (const fontName of builtInFonts) {
     builtInFontObjectIds.set(fontName, nextObjectId);
     nextObjectId += 1;
+    if (model.tagged === true) {
+      builtInFontToUnicodeObjectIds.set(fontName, nextObjectId);
+      nextObjectId += 1;
+    }
   }
   for (const context of embeddedFontContexts.values()) {
     embeddedFontObjectIds.set(context.font.id, {
@@ -843,6 +869,13 @@ function prepareDocumentSerialization(
   if (taggedPdfAllocation) {
     nextObjectId = taggedPdfAllocation.nextObjectId;
   }
+
+  const computedPdfVersion = detectMinimumVersion(model);
+  const namespaceObjectIds: { pdf2: number; pdf17: number } | undefined =
+    taggedPdfAllocation !== undefined && computedPdfVersion === "2.0"
+      ? { pdf17: nextObjectId, pdf2: nextObjectId + 1 }
+      : undefined;
+  if (namespaceObjectIds) nextObjectId += 2;
 
   const pageObjectIdsByModel = new Map<PdfDocumentModel["pages"][number], number>(
     serializedPages.map((page) => [page.modelPage, page.pageObjectId])
@@ -970,18 +1003,29 @@ function prepareDocumentSerialization(
   }
 
   if (taggedPdfAllocation) {
-    documentObjects.push(...buildTaggedPdfObjects(taggedPdfAllocation, { roleMap: model.roleMap }));
+    documentObjects.push(...buildTaggedPdfObjects(taggedPdfAllocation, {
+      roleMap: model.roleMap,
+      ...(namespaceObjectIds ? { namespaceObjectIds } : {})
+    }));
   }
 
   for (const fontName of builtInFonts) {
+    const toUnicodeId = builtInFontToUnicodeObjectIds.get(fontName);
     documentObjects.push({
       id: builtInFontObjectIds.get(fontName)!,
       value: dict([
         ["Type", name("Font")],
         ["Subtype", name("Type1")],
-        ["BaseFont", name(fontName)]
+        ["BaseFont", name(fontName)],
+        ["ToUnicode", toUnicodeId !== undefined ? ref(toUnicodeId) : undefined]
       ])
     });
+    if (toUnicodeId !== undefined) {
+      documentObjects.push({
+        id: toUnicodeId,
+        value: prepareByteStream(stream(dict([]), buildBase14ToUnicodeCMapBytes()))
+      });
+    }
   }
 
   for (const context of embeddedFontContexts.values()) {
@@ -1120,7 +1164,8 @@ function prepareDocumentSerialization(
       ...(encryptionContext !== undefined ? { encryption: encryptionContext } : {}),
       ...(encryptionObjectId !== undefined ? { encryptionObjectId } : {}),
       ...(encryptionFileId !== undefined ? { fileId: encryptionFileId } : {}),
-      ...(model.objectStreams !== undefined ? { objectStreams: model.objectStreams } : {})
+      ...(model.objectStreams !== undefined ? { objectStreams: model.objectStreams } : {}),
+      pdfVersion: computedPdfVersion
     }
   };
 }
@@ -1303,6 +1348,12 @@ function prepareIncrementalUpdateSerialization(
   if (taggedPdfAllocation) {
     nextObjectId = taggedPdfAllocation.nextObjectId;
   }
+
+  const incrementalNamespaceObjectIds: { pdf2: number; pdf17: number } | undefined =
+    taggedPdfAllocation !== undefined && model.base.getEffectiveVersion() === "2.0"
+      ? { pdf17: nextObjectId, pdf2: nextObjectId + 1 }
+      : undefined;
+  if (incrementalNamespaceObjectIds) nextObjectId += 2;
 
   const pageObjectIdsByModel = new Map<PdfDocumentModel["pages"][number], number>(
     serializedPages.map((page) => [page.modelPage, page.pageObjectId])
@@ -1557,7 +1608,8 @@ function prepareIncrementalUpdateSerialization(
 
     suffixObjects.push(...buildTaggedPdfObjects(taggedPdfAllocation, {
       existingTaggedState,
-      existingStructTreeRoot
+      existingStructTreeRoot,
+      ...(incrementalNamespaceObjectIds ? { namespaceObjectIds: incrementalNamespaceObjectIds } : {})
     }));
   }
 
@@ -1618,10 +1670,25 @@ function prepareIncrementalUpdateSerialization(
     });
   }
 
+  const baseEffectiveVersion = model.base.getEffectiveVersion();
+  const incrementalRequiredVersion: PdfVersion = (() => {
+    let v: PdfVersion = "1.4";
+    if (model.signature !== undefined) v = maxVersion(v, "1.7");
+    return v;
+  })();
+  const needsVersionBump =
+    /^\d+\.\d+$/.test(baseEffectiveVersion)
+    && (() => {
+      const [bm, bn] = baseEffectiveVersion.split(".").map(Number);
+      const [rm, rn] = incrementalRequiredVersion.split(".").map(Number);
+      return (rm! > bm!) || (rm === bm && rn! > bn!);
+    })();
+
   const shouldUpdateCatalog =
     (!existingAcroFormRef && shouldUpdateAcroForm && acroFormObjectId !== undefined)
     || hasXmpMetadataChange
-    || (taggedPdfAllocation !== undefined && existingTaggedState === undefined);
+    || (taggedPdfAllocation !== undefined && existingTaggedState === undefined)
+    || needsVersionBump;
   if (shouldUpdateCatalog) {
     suffixObjects.push({
       id: model.base.getRootObjectId(),
@@ -1637,7 +1704,8 @@ function prepareIncrementalUpdateSerialization(
             taggedPdfAllocation !== undefined
               ? ref(existingTaggedState?.structTreeRootObjectId ?? taggedPdfAllocation.structTreeRootObjectId)
               : undefined
-          ]
+          ],
+          ["Version", needsVersionBump ? name(incrementalRequiredVersion) : undefined]
         ]),
         hasXmpMetadataChange && model.xmpMetadata === undefined ? ["Metadata"] : []
       )
@@ -1704,7 +1772,7 @@ function writePdf(objects: PdfIndirectObject[], options: WritePdfOptions = {}): 
   }
 
   const writer = new ByteWriter();
-  writer.writeLine("%PDF-1.4");
+  writer.writeLine(formatHeader(options.pdfVersion ?? "1.4"));
   writer.writeBytes(new Uint8Array([0x25, 0xff, 0xff, 0xff, 0x0a]));
 
   const offsets = new Map<number, number>();
@@ -1763,7 +1831,7 @@ function writePdf(objects: PdfIndirectObject[], options: WritePdfOptions = {}): 
 
 function writePdfWithObjectStreams(objects: PdfIndirectObject[], options: WritePdfOptions = {}): Uint8Array {
   const writer = new ByteWriter();
-  writer.writeLine("%PDF-1.5");
+  writer.writeLine(formatHeader(maxVersion("1.5", options.pdfVersion ?? "1.5")));
   writer.writeBytes(new Uint8Array([0x25, 0xff, 0xff, 0xff, 0x0a]));
 
   const maxOriginalObjectId = getMaxSerializedObjectId(objects);
@@ -1926,7 +1994,7 @@ function buildFullXrefStreamValue(
 
 async function writePdfToSink(objects: Iterable<PdfIndirectObject>, sink: ByteSink, options: WritePdfOptions = {}): Promise<void> {
   const writer = new StreamingByteWriter(sink);
-  await writer.writeLine("%PDF-1.4");
+  await writer.writeLine(formatHeader(options.pdfVersion ?? "1.4"));
   await writer.writeBytes(new Uint8Array([0x25, 0xff, 0xff, 0xff, 0x0a]));
 
   const offsets = new Map<number, number>();
@@ -2830,13 +2898,18 @@ function copyBinaryData(data: Uint8Array | ArrayBuffer): Uint8Array {
     : new Uint8Array(data.slice(0));
 }
 
-function buildStructTreeRootDictionary(allocation: TaggedPdfAllocation, roleMap?: PdfDocumentModel["roleMap"]): PdfDict {
+function buildStructTreeRootDictionary(
+  allocation: TaggedPdfAllocation,
+  roleMap?: PdfDocumentModel["roleMap"],
+  namespaceObjectIds?: { pdf2: number; pdf17: number }
+): PdfDict {
   return dict([
     ["Type", name("StructTreeRoot")],
     ["K", array(allocation.rootElementObjectIds.map((objectId) => ref(objectId)))],
     ["RoleMap", roleMap !== undefined ? buildRoleMapDictionary(roleMap) : undefined],
     ["ParentTree", ref(allocation.parentTreeObjectId)],
-    ["ParentTreeNextKey", getNextParentTreeKey(allocation)]
+    ["ParentTreeNextKey", getNextParentTreeKey(allocation)],
+    ["Namespaces", namespaceObjectIds ? array([ref(namespaceObjectIds.pdf17), ref(namespaceObjectIds.pdf2)]) : undefined]
   ]);
 }
 
@@ -2922,7 +2995,8 @@ function buildMergedStructTreeRootDictionary(
   existingRootKids: readonly PdfValue[] | undefined,
   parentTreeObjectId: number,
   allocation: TaggedPdfAllocation,
-  roleMap?: PdfDocumentModel["roleMap"]
+  roleMap?: PdfDocumentModel["roleMap"],
+  namespaceObjectIds?: { pdf2: number; pdf17: number }
 ): PdfDict {
   const existingKids = existingRootKids ?? [];
   const mergedKids = [
@@ -2941,12 +3015,16 @@ function buildMergedStructTreeRootDictionary(
       ["K", array(mergedKids)],
       ["RoleMap", roleMap !== undefined ? buildRoleMapDictionary(roleMap) : undefined],
       ["ParentTree", ref(parentTreeObjectId)],
-      ["ParentTreeNextKey", nextKey]
+      ["ParentTreeNextKey", nextKey],
+      ["Namespaces", namespaceObjectIds ? array([ref(namespaceObjectIds.pdf17), ref(namespaceObjectIds.pdf2)]) : undefined]
     ])
   );
 }
 
-function buildStructElementDictionary(element: StructElementAllocation): PdfDict {
+function buildStructElementDictionary(
+  element: StructElementAllocation,
+  defaultNamespaceObjectId?: number
+): PdfDict {
   const kids: PdfValue[] = [
     ...element.childObjectIds.map((objectId) => ref(objectId)),
     ...element.mcids,
@@ -2965,7 +3043,8 @@ function buildStructElementDictionary(element: StructElementAllocation): PdfDict
     ["Alt", element.altText !== undefined ? literalString(element.altText) : undefined],
     ["ActualText", element.actualText !== undefined ? literalString(element.actualText) : undefined],
     ["Lang", element.language !== undefined ? literalString(element.language) : undefined],
-    ["A", element.attributes !== undefined ? buildStructureAttributesDictionary(element.attributes) : undefined]
+    ["A", element.attributes !== undefined ? buildStructureAttributesDictionary(element.attributes) : undefined],
+    ["NS", defaultNamespaceObjectId !== undefined ? ref(defaultNamespaceObjectId) : undefined]
   ]);
 }
 
@@ -2999,7 +3078,9 @@ function escapeXml(value: string): string {
 }
 
 function buildEncryptionDictionary(encryption: PdfEncryptionContext): PdfDict {
-  const aes = encryption.algorithm === "aes-128" || encryption.algorithm === "aes-256";
+  const aes = encryption.algorithm === "aes-128" || encryption.algorithm === "aes-256" || encryption.algorithm === "aes-256-r6";
+  const aesV3 = encryption.algorithm === "aes-256" || encryption.algorithm === "aes-256-r6";
+  const isR6 = encryption.revision === 6;
   return dict([
     ["Filter", name("Standard")],
     ["V", encryption.version],
@@ -3007,6 +3088,9 @@ function buildEncryptionDictionary(encryption: PdfEncryptionContext): PdfDict {
     ["Length", encryption.revision >= 3 ? encryption.keyLengthBytes * 8 : undefined],
     ["O", hexString(encryption.ownerKey)],
     ["U", hexString(encryption.userKey)],
+    ["OE", isR6 && encryption.ownerEncryptionKey !== undefined ? hexString(encryption.ownerEncryptionKey) : undefined],
+    ["UE", isR6 && encryption.userEncryptionKey !== undefined ? hexString(encryption.userEncryptionKey) : undefined],
+    ["Perms", isR6 && encryption.permsEncrypted !== undefined ? hexString(encryption.permsEncrypted) : undefined],
     ["P", encryption.permissionsValue],
     ["EncryptMetadata", aes ? true : undefined],
     ["StmF", aes ? name("StdCF") : undefined],
@@ -3014,7 +3098,7 @@ function buildEncryptionDictionary(encryption: PdfEncryptionContext): PdfDict {
     ["CF", aes ? dict([
       ["StdCF", dict([
         ["AuthEvent", name("DocOpen")],
-        ["CFM", name(encryption.algorithm === "aes-256" ? "AESV3" : "AESV2")],
+        ["CFM", name(aesV3 ? "AESV3" : "AESV2")],
         ["Length", encryption.keyLengthBytes]
       ])]
     ]) : undefined]
@@ -4438,6 +4522,30 @@ function buildEmbeddedFontWidths(context: EmbeddedFontContext): PdfValue[] {
     values.push(startCid, array(widths));
   }
   return values;
+}
+
+// Standard ASCII (0x20–0x7E) ToUnicode CMap for built-in (base14) Type1 fonts.
+// Required by PDF 2.0 / PDF/UA tagged conformance for text extraction.
+function buildBase14ToUnicodeCMapBytes(): Uint8Array {
+  const cmap = [
+    "/CIDInit /ProcSet findresource begin",
+    "12 dict begin",
+    "begincmap",
+    "/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def",
+    "/CMapName /Adobe-Identity-UCS def",
+    "/CMapType 2 def",
+    "1 begincodespacerange",
+    "<00> <FF>",
+    "endcodespacerange",
+    "1 beginbfrange",
+    "<20> <7E> <0020>",
+    "endbfrange",
+    "endcmap",
+    "CMapName currentdict /CMap defineresource pop",
+    "end",
+    "end"
+  ].join("\n");
+  return new TextEncoder().encode(cmap);
 }
 
 function buildToUnicodeCMap(context: EmbeddedFontContext): string {

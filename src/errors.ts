@@ -2,47 +2,76 @@
  * Stable error-code enum used by PdfEngineError to classify failures.
  */
 export enum PdfErrorCode {
+  /** Attachment data or metadata is invalid. */
   INVALID_ATTACHMENT = "INVALID_ATTACHMENT",
+  /** Annotation options or geometry are invalid. */
   INVALID_ANNOTATION = "INVALID_ANNOTATION",
+  /** The requested output violates an enabled compliance profile. */
   INVALID_COMPLIANCE = "INVALID_COMPLIANCE",
+  /** A named destination or page target is invalid. */
   INVALID_DESTINATION = "INVALID_DESTINATION",
+  /** Encryption options or encrypted data are invalid. */
   INVALID_ENCRYPTION = "INVALID_ENCRYPTION",
+  /** The operation would create or serialize a document without pages. */
   EMPTY_PAGE = "EMPTY_PAGE",
+  /** A color value is outside the supported range or shape. */
   INVALID_COLOR = "INVALID_COLOR",
+  /** A vector path dash pattern is invalid. */
   INVALID_DASH_PATTERN = "INVALID_DASH_PATTERN",
+  /** A font name, embedded font, or font program is invalid. */
   INVALID_FONT = "INVALID_FONT",
+  /** A form field definition or update is invalid. */
   INVALID_FORM_FIELD = "INVALID_FORM_FIELD",
+  /** Graphics state operations are unbalanced or invalid. */
   INVALID_GRAPHICS_STATE = "INVALID_GRAPHICS_STATE",
+  /** Image data or image placement options are invalid. */
   INVALID_IMAGE = "INVALID_IMAGE",
+  /** A link target or link rectangle is invalid. */
   INVALID_LINK = "INVALID_LINK",
+  /** Document metadata or XMP metadata is invalid. */
   INVALID_METADATA = "INVALID_METADATA",
+  /** A numeric API argument is invalid. */
   INVALID_NUMBER = "INVALID_NUMBER",
+  /** An outline item or outline target is invalid. */
   INVALID_OUTLINE = "INVALID_OUTLINE",
+  /** A page reference, page index, or page edit is invalid. */
   INVALID_PAGE = "INVALID_PAGE",
+  /** A page-label range is invalid. */
   INVALID_PAGE_LABEL = "INVALID_PAGE_LABEL",
+  /** The source PDF is malformed or unsupported for the requested operation. */
   INVALID_PDF = "INVALID_PDF",
+  /** A page size name or custom page dimensions are invalid. */
   INVALID_PAGE_SIZE = "INVALID_PAGE_SIZE",
+  /** Vector path commands or styles are invalid. */
   INVALID_PATH = "INVALID_PATH",
+  /** Text content or text layout options are invalid. */
   INVALID_TEXT = "INVALID_TEXT",
+  /** A graphics transform matrix is invalid. */
   INVALID_TRANSFORM = "INVALID_TRANSFORM",
+  /** Text contains a character unsupported by the selected font set. */
   UNSUPPORTED_CHARACTER = "UNSUPPORTED_CHARACTER",
+  /** Image bit depth is not supported. */
   UNSUPPORTED_IMAGE_BIT_DEPTH = "UNSUPPORTED_IMAGE_BIT_DEPTH",
+  /** Image color space is not supported. */
   UNSUPPORTED_IMAGE_COLOR_SPACE = "UNSUPPORTED_IMAGE_COLOR_SPACE",
+  /** Interlaced image data is not supported. */
   UNSUPPORTED_IMAGE_INTERLACE = "UNSUPPORTED_IMAGE_INTERLACE",
+  /** Image format is not supported. */
   UNSUPPORTED_IMAGE_FORMAT = "UNSUPPORTED_IMAGE_FORMAT",
+  /** Source or output encryption mode is not supported. */
   UNSUPPORTED_ENCRYPTION = "UNSUPPORTED_ENCRYPTION",
-  UNSUPPORTED_XREF_FORMAT = "UNSUPPORTED_XREF_FORMAT"
+  /** Cross-reference format is not supported. */
+  UNSUPPORTED_XREF_FORMAT = "UNSUPPORTED_XREF_FORMAT",
 }
 
 /**
  *
  * A structured error type thrown when PDF generation, parsing, validation, or editing fails. It carries a stable error code and optional diagnostic details.
- *
- * @export
- * @class PdfEngineError
  */
 export class PdfEngineError extends Error {
+  /** Stable machine-readable issue or error code. */
   readonly code: PdfErrorCode;
+  /** Optional diagnostic details supplied with the error. */
   readonly details?: Record<string, unknown> | undefined;
 
   /**
@@ -52,7 +81,11 @@ export class PdfEngineError extends Error {
    * @param message The human-readable error message.
    * @param details Optional diagnostic details for the error.
    */
-  constructor(code: PdfErrorCode, message: string, details?: Record<string, unknown>) {
+  constructor(
+    code: PdfErrorCode,
+    message: string,
+    details?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = "PdfEngineError";
     this.code = code;

@@ -2,7 +2,9 @@
  * Streaming output contract implemented by sinks that receive generated PDF byte chunks.
  */
 export interface ByteSink {
+  /** Writes a generated PDF byte chunk to the sink. */
   write(chunk: Uint8Array): Promise<void>;
+  /** Closes the sink after all chunks have been written. */
   close(): Promise<void>;
 }
 
@@ -10,24 +12,30 @@ export interface ByteSink {
  * Minimal writable-stream shape accepted by NodeStreamSink.
  */
 export interface NodeWritableLike {
+  /** Writes a byte chunk and reports whether the stream is ready for more data. */
   write(chunk: Uint8Array, callback?: (error?: Error | null) => void): boolean;
+  /** Registers a one-time listener for the drain event. */
   once(event: "drain", listener: () => void): unknown;
+  /** Registers a one-time listener for the error event. */
   once(event: "error", listener: (error: Error) => void): unknown;
+  /** Removes a previously registered drain listener. */
   off?(event: "drain", listener: () => void): unknown;
+  /** Removes a previously registered error listener. */
   off?(event: "error", listener: (error: Error) => void): unknown;
+  /** Ends the writable stream. */
   end(callback?: (error?: Error | null) => void): unknown;
 }
 
 /**
  *
  * An in-memory byte sink that collects streamed PDF output chunks and exposes them as a single Uint8Array when needed.
- *
- * @export
- * @class BufferSink
  */
 export class BufferSink implements ByteSink {
+  /** Chunks. */
   private readonly chunks: Uint8Array[] = [];
+  /** Length. */
   private length = 0;
+  /** Closed. */
   private closed = false;
 
   /**
@@ -70,9 +78,6 @@ export class BufferSink implements ByteSink {
 /**
  *
  * A byte sink adapter for writing generated PDF output to a Node.js writable stream while respecting backpressure and stream errors.
- *
- * @export
- * @class NodeStreamSink
  */
 export class NodeStreamSink implements ByteSink {
   /**
@@ -151,11 +156,9 @@ export class NodeStreamSink implements ByteSink {
 /**
  *
  * A byte sink adapter for writing generated PDF output to a Web WritableStream through its default writer.
- *
- * @export
- * @class WebStreamSink
  */
 export class WebStreamSink implements ByteSink {
+  /** Writer. */
   private readonly writer: WritableStreamDefaultWriter<Uint8Array>;
 
   /**
