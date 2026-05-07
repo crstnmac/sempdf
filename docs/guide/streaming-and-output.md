@@ -78,6 +78,16 @@ const doc = createDocument({ objectStreams: true });
 
 The encoder still falls back to classic xref where required (encrypted catalogs, signature dictionaries).
 
+## Linearized output
+
+Linearized output emits the initial Fast Web View metadata at the start of the file:
+
+```ts
+const doc = createDocument({ linearize: true });
+```
+
+The current linearized writer uses classic xref tables, supports single-page generated documents, and is intentionally separate from object streams, encryption, and detached signatures.
+
 ## Deterministic output
 
 Serialization is deterministic when input is deterministic: stable IDs, no timestamps inserted automatically. Provide `info.creationDate` and XMP dates explicitly to keep snapshots reproducible.

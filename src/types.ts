@@ -353,6 +353,8 @@ export interface DocumentOptions {
   compress?: boolean | undefined;
   /** Whether to emit compressed object streams and xref streams. */
   objectStreams?: boolean | undefined;
+  /** Whether to emit a linearization dictionary for Fast Web View style delivery. */
+  linearize?: boolean | undefined;
   /** ICC output intent required by color-managed profiles such as PDF/A. */
   outputIntent?: DocumentOutputIntentOptions | undefined;
   /** Detached digital-signature options for serialized output. */
