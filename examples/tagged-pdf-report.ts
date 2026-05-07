@@ -107,7 +107,9 @@ const pdfIssues: Array<{
   },
 ];
 
-const exampleFontPath = process.env.PDF_EDITING_LIB_EXAMPLE_FONT ?? process.env.PDF_EDITING_LIB_FONT_PATH;
+const exampleFontPath =
+  process.env.PDF_EDITING_LIB_EXAMPLE_FONT ??
+  process.env.PDF_EDITING_LIB_FONT_PATH;
 const fontPath = [
   exampleFontPath,
   '/System/Library/Fonts/SFNS.ttf',
@@ -142,7 +144,7 @@ function issueBlocks(issue: (typeof pdfIssues)[number]): TemplateBlock[] {
     {
       type: 'heading',
       text: `Issue ID ${issue.issue_id}`,
-      options: { level: 2, color: BLUE },
+      options: { level: 3, color: BLUE },
     },
     {
       type: 'table',
@@ -236,6 +238,7 @@ doc.renderTemplate({
     size: 'A4',
     font,
   },
+  autoOutline: { maxLevel: 3, expanded: true },
   blocks: [
     {
       type: 'heading',

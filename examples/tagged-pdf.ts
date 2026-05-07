@@ -83,10 +83,16 @@ metrics.flow({ font })
       fontSize: 11
     }
   )
-  .heading("Product Milestones", { level: 2 })
-  .paragraph("Launch v2.4 with tagged PDF export")
-  .paragraph("Accessibility improvements: screen-reader navigation support and WCAG 2.1 Level AA compliance")
-  .paragraph("Migrate analytics pipeline to streaming");
+  .heading("Product Milestones", { level: 2 });
+
+metrics.list(
+  [
+    "Launch v2.4 with tagged PDF export.",
+    "Accessibility improvements: screen-reader navigation support and WCAG 2.1 Level AA compliance.",
+    "Migrate analytics pipeline to streaming."
+  ],
+  { x: 56, y: 360, width: 480, font, fontSize: 11 }
+);
 
 const compliance = doc.addPage({ size: "A4" });
 compliance.flow({ font })
@@ -123,7 +129,8 @@ compliance.flow({ font })
   .heading("Resources", { level: 2 })
   .link("View full audit reports", "https://example.com/audit-reports", {
     structure: {
-      altText: "Full audit reports"
+      // Match the link text so screen readers and the link description agree.
+      altText: "View full audit reports"
     }
   });
 

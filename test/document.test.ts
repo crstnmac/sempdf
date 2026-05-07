@@ -574,7 +574,9 @@ test("wraps and aligns text blocks across multiple lines", () => {
   const text = new TextDecoder().decode(doc.toUint8Array());
   assert.match(text, /1 0 0 1 48 700 Tm/);
   assert.match(text, /1 0 0 1 48 688 Tm/);
-  assert.match(text, /\(AAAA\) Tj/);
+  // Non-terminal wrapped lines carry a trailing space so PDF reading order
+  // preserves the word boundary for screen readers / copy-paste.
+  assert.match(text, /\(AAAA \) Tj/);
   assert.match(text, /\(BBBB\) Tj/);
 });
 
@@ -1803,8 +1805,9 @@ test("serializes nested tagged lists as structured list elements", () => {
   assert.deepEqual(list?.children?.map((child) => child.role), ["LI", "LI"]);
   assert.deepEqual(list?.children?.[0]?.children?.map((child) => child.role), ["Lbl", "LBody"]);
   assert.equal(list?.children?.[0]?.children?.[0]?.mcids?.length, 1);
-  assert.equal(list?.children?.[0]?.children?.[1]?.children?.[0]?.role, "P");
-  assert.equal(list?.children?.[1]?.children?.[1]?.children?.[1]?.role, "L");
+  // PDF/UA: text inside LBody must NOT be wrapped in a separate P element.
+  assert.equal((list?.children?.[0]?.children?.[1]?.mcids?.length ?? 0) > 0, true);
+  assert.equal(list?.children?.[1]?.children?.[1]?.children?.[0]?.role, "L");
 });
 
 test("serializes tagged containers with nested semantic children", () => {

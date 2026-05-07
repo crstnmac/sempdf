@@ -629,6 +629,13 @@ export type TemplateBlock =
 /**
  * Top-level options for rendering a reusable document template.
  */
+export interface TemplateAutoOutlineOptions {
+  /** Deepest heading level to include (1-6). Default 3. */
+  maxLevel?: 1 | 2 | 3 | 4 | 5 | 6 | undefined;
+  /** Whether outline items render expanded by default. */
+  expanded?: boolean | undefined;
+}
+
 export interface TemplateDocumentOptions {
   info?: DocumentInfo | undefined;
   xmpMetadata?: XmpMetadataInput | undefined;
@@ -637,6 +644,11 @@ export interface TemplateDocumentOptions {
   header?: ((context: TemplateRenderContext) => readonly TemplateBlock[]) | undefined;
   footer?: ((context: TemplateRenderContext) => readonly TemplateBlock[]) | undefined;
   pageNumber?: TemplatePageNumberOptions | undefined;
+  /**
+   * When set, auto-generates a bookmarks/outline tree from heading blocks.
+   * `true` uses defaults (maxLevel=3, collapsed); pass an object to customise.
+   */
+  autoOutline?: boolean | TemplateAutoOutlineOptions | undefined;
 }
 
 /**

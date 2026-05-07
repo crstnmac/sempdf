@@ -58,7 +58,13 @@ export function layoutTextBlock(
       const textLine = wrappedLines[index]!;
       const isLastLine = index === wrappedLines.length - 1;
       const lineOptions = buildLineOptions(textLine, options, embeddedFonts, y, isLastLine);
-      lines.push(...positionTextRuns(textLine, lineOptions, embeddedFonts));
+      // Append a trailing space when the next visual line continues the same
+      // paragraph, so PDF reading order (copy/paste, screen readers) keeps a
+      // word boundary at the wrap point. Skip for RTL where appending past
+      // the visual end would shift the right-edge anchor.
+      const lineDirection = resolveTextDirection(textLine, options.direction);
+      const emitText = isLastLine || lineDirection === "rtl" ? textLine : `${textLine} `;
+      lines.push(...positionTextRuns(emitText, lineOptions, embeddedFonts));
       y -= options.lineHeight;
       remainingLines -= 1;
     }
