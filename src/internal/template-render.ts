@@ -205,10 +205,11 @@ function bodyFlowOptions(
   const page = options.page;
   const m = resolvePageMargins(page, pageSize);
   const x = page?.x ?? m.left;
+  const headerInset = options.header ? resolveHeaderOffset(page) : 0;
   return {
     ...page,
     x,
-    y: page?.y ?? pageSize.height - m.top,
+    y: page?.y ?? pageSize.height - m.top - headerInset,
     width: page?.width ?? pageSize.width - x - m.right,
     marginBottom: page?.marginBottom ?? m.bottom,
   };

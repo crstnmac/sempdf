@@ -91,7 +91,8 @@ export default defineConfig({
           items: [
             { text: "Getting Started", link: "/guide/getting-started" },
             { text: "Browser Usage", link: "/guide/browser-usage" },
-            { text: "Streaming and Output", link: "/guide/streaming-and-output" }
+            { text: "Streaming and Output", link: "/guide/streaming-and-output" },
+            { text: "Performance", link: "/guide/performance" }
           ]
         },
         {
@@ -102,6 +103,15 @@ export default defineConfig({
             { text: "Forms and Annotations", link: "/guide/forms-and-annotations" },
             { text: "Metadata and Navigation", link: "/guide/metadata-and-navigation" },
             { text: "Report Templates", link: "/guide/report-templates" }
+          ]
+        },
+        {
+          text: "Cookbook",
+          items: [
+            { text: "Invoice", link: "/guide/cookbook-invoice" },
+            { text: "Event Ticket", link: "/guide/cookbook-ticket" },
+            { text: "Certificate", link: "/guide/cookbook-certificate" },
+            { text: "Multi-Column Report", link: "/guide/cookbook-multi-column-report" }
           ]
         },
         {
@@ -116,7 +126,14 @@ export default defineConfig({
           items: [
             { text: "Accessibility and Compliance", link: "/guide/accessibility-and-compliance" },
             { text: "PDF Versions and Conformance", link: "/guide/pdf-versions-and-conformance" },
-            { text: "Encryption and Signatures", link: "/guide/encryption-and-signatures" }
+            { text: "Encryption and Signatures", link: "/guide/encryption-and-signatures" },
+            { text: "Security Hardening", link: "/guide/security-hardening" }
+          ]
+        },
+        {
+          text: "Support",
+          items: [
+            { text: "Troubleshooting", link: "/guide/troubleshooting" }
           ]
         }
       ],
