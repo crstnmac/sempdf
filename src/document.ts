@@ -1212,7 +1212,7 @@ export class PdfPage {
       type: 'signatureField',
       name,
       options: normalizedOptions,
-      ...(structureGroupId !== undefined ? { structureGroupId } : {}),
+      ...(structureGroupId === undefined ? {} : { structureGroupId }),
     });
   }
 
