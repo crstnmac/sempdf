@@ -32,10 +32,14 @@ export function layoutTextBlock(
   const paragraphs = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
   const lines: PositionedTextRun[] = [];
   let y = options.y;
-  let remainingLines = options.maxLines ?? Number.POSITIVE_INFINITY;
+  const lineLimit = options.maxLines ?? Number.POSITIVE_INFINITY;
+  let remainingLines = lineLimit;
+  let truncated = false;
 
-  for (const paragraph of paragraphs) {
+  for (let paragraphIndex = 0; paragraphIndex < paragraphs.length; paragraphIndex += 1) {
+    const paragraph = paragraphs[paragraphIndex]!;
     if (remainingLines <= 0) {
+      truncated = true;
       break;
     }
 
@@ -47,6 +51,7 @@ export function layoutTextBlock(
 
     for (let index = 0; index < wrappedLines.length; index += 1) {
       if (remainingLines <= 0) {
+        truncated = true;
         break;
       }
 
@@ -57,6 +62,18 @@ export function layoutTextBlock(
       y -= options.lineHeight;
       remainingLines -= 1;
     }
+
+    if (truncated) {
+      break;
+    }
+  }
+
+  if (truncated && options.tag !== undefined && options.tag !== "Artifact") {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_TEXT,
+      "Tagged text block truncated by maxLines: dropping content from a tagged element breaks the structure tree and PDF/UA compliance.",
+      { tag: options.tag, maxLines: lineLimit }
+    );
   }
 
   return lines;
@@ -394,6 +411,23 @@ function applyJoiningFormSubstitutions(tokens: readonly ShapingToken[], embedded
     return [...tokens];
   }
 
+  let hasJoiningCandidate = false;
+  for (const token of tokens) {
+    if (
+      token.visible
+      && (initial.has(token.glyphId)
+        || medial.has(token.glyphId)
+        || final.has(token.glyphId)
+        || isolated.has(token.glyphId))
+    ) {
+      hasJoiningCandidate = true;
+      break;
+    }
+  }
+  if (!hasJoiningCandidate) {
+    return [...tokens];
+  }
+
   return tokens.map((token, index) => {
     if (!token.visible || token.unicode.length !== 1 || isTransparentShapingToken(token)) {
       return token;
@@ -480,36 +514,46 @@ function wrapParagraph(
 
   const words = normalizedParagraph.split(/\s+/).filter((word) => word.length > 0);
   const lines: string[] = [];
+  const charSpacing = options.characterSpacing ?? 0;
+  const spaceWidth = measureTextWidth(" ", options, embeddedFonts);
   let currentLine = "";
+  let currentWidth = 0;
 
   for (const word of words) {
+    const wordWidth = measureTextWidth(word, options, embeddedFonts);
+
     if (currentLine.length === 0) {
-      if (measureTextWidth(word, options, embeddedFonts) <= options.width) {
+      if (wordWidth <= options.width) {
         currentLine = word;
+        currentWidth = wordWidth;
         continue;
       }
 
       const brokenWord = breakWord(word, options, embeddedFonts);
       lines.push(...brokenWord.slice(0, -1));
       currentLine = brokenWord[brokenWord.length - 1] ?? "";
+      currentWidth = currentLine.length === 0 ? 0 : measureTextWidth(currentLine, options, embeddedFonts);
       continue;
     }
 
-    const candidate = `${currentLine} ${word}`;
-    if (measureTextWidth(candidate, options, embeddedFonts) <= options.width) {
-      currentLine = candidate;
+    const candidateWidth = currentWidth + spaceWidth + wordWidth + charSpacing * 2;
+    if (candidateWidth <= options.width) {
+      currentLine = `${currentLine} ${word}`;
+      currentWidth = candidateWidth;
       continue;
     }
 
     lines.push(currentLine);
-    if (measureTextWidth(word, options, embeddedFonts) <= options.width) {
+    if (wordWidth <= options.width) {
       currentLine = word;
+      currentWidth = wordWidth;
       continue;
     }
 
     const brokenWord = breakWord(word, options, embeddedFonts);
     lines.push(...brokenWord.slice(0, -1));
     currentLine = brokenWord[brokenWord.length - 1] ?? "";
+    currentWidth = currentLine.length === 0 ? 0 : measureTextWidth(currentLine, options, embeddedFonts);
   }
 
   if (currentLine.length > 0) {
@@ -529,10 +573,26 @@ function breakWord(
 
   for (const character of word) {
     const candidate = `${current}${character}`;
-    if (current.length > 0 && measureTextWidth(candidate, options, embeddedFonts) > options.width) {
+    const candidateWidth = measureTextWidth(candidate, options, embeddedFonts);
+    if (current.length > 0 && candidateWidth > options.width) {
       segments.push(current);
       current = character;
+      if (measureTextWidth(current, options, embeddedFonts) > options.width) {
+        throw new PdfEngineError(
+          PdfErrorCode.INVALID_TEXT,
+          "Text block width is too small to fit a single character at the configured font size.",
+          { character, width: options.width, fontSize: options.fontSize }
+        );
+      }
       continue;
+    }
+
+    if (current.length === 0 && candidateWidth > options.width) {
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_TEXT,
+        "Text block width is too small to fit a single character at the configured font size.",
+        { character, width: options.width, fontSize: options.fontSize }
+      );
     }
 
     current = candidate;
@@ -602,7 +662,7 @@ function segmentTextForRtl(text: string): Array<{ text: string; direction: Resol
 
   for (const character of text) {
     const direction = classifyCharacterDirection(character);
-    const lastSegment = segments[segments.length - 1];
+    const lastSegment = segments.at(-1);
     if (lastSegment && (direction === "neutral" || lastSegment.direction === direction)) {
       lastSegment.text += character;
       continue;
@@ -680,7 +740,7 @@ function getBuiltInAdvanceWidth(font: PdfFont & string, character: string): numb
     return 278;
   }
 
-  if ("[](){}\\/".includes(character)) {
+  if (String.raw`[](){}\/`.includes(character)) {
     return 333;
   }
 

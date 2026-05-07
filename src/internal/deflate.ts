@@ -1,5 +1,47 @@
 import { PdfEngineError, PdfErrorCode } from "../errors.js";
 
+let cachedDeflateSync: ((data: Uint8Array) => Uint8Array) | null | undefined;
+
+function loadDeflateSync(): ((data: Uint8Array) => Uint8Array) | null {
+  if (cachedDeflateSync !== undefined) {
+    return cachedDeflateSync;
+  }
+
+  const nodeProcess = (globalThis as { process?: { versions?: { node?: string } } }).process;
+  if (nodeProcess?.versions?.node === undefined) {
+    cachedDeflateSync = null;
+    return null;
+  }
+
+  try {
+    const dynamicRequire = (0, eval)("typeof require === 'function' ? require : null");
+    if (typeof dynamicRequire !== "function") {
+      cachedDeflateSync = null;
+      return null;
+    }
+    const zlib = dynamicRequire("node:zlib") as { deflateSync: (data: Uint8Array) => Uint8Array };
+    cachedDeflateSync = (data: Uint8Array) => {
+      const result = zlib.deflateSync(data);
+      return result instanceof Uint8Array ? result : new Uint8Array(result);
+    };
+    return cachedDeflateSync;
+  } catch {
+    cachedDeflateSync = null;
+    return null;
+  }
+}
+
+export function deflateZlib(data: Uint8Array): Uint8Array {
+  const deflate = loadDeflateSync();
+  if (!deflate) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_PDF,
+      "Stream compression requires a zlib implementation. createDocument({ compress: true }) is only supported on Node.js; disable it for browser builds."
+    );
+  }
+  return deflate(data);
+}
+
 const CODE_LENGTH_ORDER = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15] as const;
 
 const LENGTH_BASES = [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258] as const;

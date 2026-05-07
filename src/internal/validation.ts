@@ -1,7 +1,8 @@
 import { PdfEngineError, PdfErrorCode } from "../errors.js";
-import type { AttachmentOptions, BuiltInPageSize, CheckBoxOptions, ChoiceFieldMode, ChoiceFieldOptions, CustomPageSize, DocumentConformanceProfile, DocumentEncryptionAlgorithm, DocumentEncryptionOptions, DocumentInfo, DocumentPermissions, FillStyle, FontName, FreeTextAnnotationOptions, HighlightAnnotationOptions, JpegImageOptions, LineCap, LineJoin, ListItem, ListOptions, NoteAnnotationOptions, OutlineOptions, PageLabelOptions, PageLabelStyle, PageLinkOptions, PageSize, PathCommand, PathStyle, PdfColor, PdfComplianceIssue, PdfContainerTag, PdfFigureStructureTag, PdfFont, PdfRoleMap, PdfStandardStructureTag, PdfStructureAttributeValue, PdfStructureOptions, PdfStructureTag, PdfTextStructureTag, PushButtonOptions, RadioGroupOptions, SignatureFieldOptions, StrokeStyle, TableCell, TableHeaderScope, TableOptions, TextAlign, TextBlockOptions, TextDirection, TextFieldOptions, TextOptions, Transform, UriLinkOptions } from "../types.js";
+import type { AttachmentOptions, BuiltInPageSize, CheckBoxOptions, ChoiceFieldMode, ChoiceFieldOptions, CustomPageSize, DocumentConformanceProfile, DocumentEncryptionAlgorithm, DocumentEncryptionOptions, DocumentInfo, DocumentPermissions, FillStyle, FontName, FreeTextAnnotationOptions, HighlightAnnotationOptions, JpegImageOptions, LineCap, LineJoin, ListItem, ListOptions, NoteAnnotationOptions, OutlineOptions, PageLabelOptions, PageLabelStyle, PageLinkOptions, PageSize, PathCommand, PathStyle, PdfColor, PdfComplianceIssue, PdfContainerTag, PdfFigureStructureTag, PdfFont, PdfRoleMap, PdfStandardStructureTag, PdfStructureAttributeValue, PdfStructureOptions, PdfStructureTag, PdfTextStructureTag, PushButtonOptions, RadioGroupOptions, SignatureFieldOptions, StrokeStyle, TableCell, TableHeaderScope, TableOptions, TextAlign, TextBlockOptions, TextDirection, TextFieldOptions, TextOptions, Transform, UriLinkOptions, XmpMetadataInput } from "../types.js";
 import { PAGE_SIZES, gray } from "../types.js";
 import type { NormalizedImageOptions, NormalizedPathStyle, NormalizedTextOptions } from "./ops.js";
+import { buildXmpMetadataPacket } from "./xmp.js";
 
 const LINE_CAPS: Record<LineCap, 0 | 1 | 2> = {
   butt: 0,
@@ -319,9 +320,13 @@ export function normalizeDocumentInfo(info: DocumentInfo | undefined): Normalize
   return normalized;
 }
 
-export function normalizeXmpMetadata(metadata: string | undefined): string | undefined {
+export function normalizeXmpMetadata(metadata: XmpMetadataInput | undefined): string | undefined {
   if (metadata === undefined) {
     return undefined;
+  }
+
+  if (typeof metadata !== "string") {
+    return buildXmpMetadataPacket(metadata);
   }
 
   if (metadata.trim().length === 0) {
@@ -429,7 +434,12 @@ export function normalizeStructureOptions(options: PdfStructureOptions | undefin
     ...(options.altText !== undefined ? { altText: normalizeOptionalStructureText(options.altText, "altText") } : {}),
     ...(options.actualText !== undefined ? { actualText: normalizeOptionalStructureText(options.actualText, "actualText") } : {}),
     ...(options.language !== undefined ? { language: normalizeLanguage(options.language) } : {}),
-    ...(options.attributes !== undefined ? { attributes: normalizeStructureAttributes(options.attributes) } : {})
+    ...(options.attributes !== undefined || options.boundingBox !== undefined
+      ? { attributes: normalizeStructureAttributes({
+          ...(options.attributes ?? {}),
+          ...(options.boundingBox !== undefined ? { BBox: options.boundingBox } : {})
+        }) }
+      : {})
   };
   return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
@@ -495,11 +505,15 @@ function normalizeStandardStructureTag(tag: PdfStandardStructureTag, property: s
   return normalizeRoleName(tag, property) as PdfStandardStructureTag;
 }
 
-function normalizeTextStructureTag(tag: PdfTextStructureTag | PdfStructureTag): PdfTextStructureTag {
-  if (tag === "Figure" || tag === "Formula" || tag === "Form" || tag === "Artifact" || (isContainerStructureTag(tag) && tag !== "Lbl" && tag !== "LBody")) {
+function normalizeTextStructureTag(tag: PdfTextStructureTag | "Artifact" | PdfStructureTag): PdfTextStructureTag | "Artifact" {
+  if (tag === "Artifact") {
+    return "Artifact";
+  }
+
+  if (tag === "Figure" || tag === "Formula" || tag === "Form" || (isContainerStructureTag(tag) && tag !== "Lbl" && tag !== "LBody")) {
     throw new PdfEngineError(
       PdfErrorCode.INVALID_COMPLIANCE,
-      "Text content may only use text structure tags such as P, H1-H6, Span, Lbl, or LBody.",
+      "Text content may only use text structure tags such as P, H1-H6, Span, Lbl, LBody, or Artifact.",
       { tag }
     );
   }

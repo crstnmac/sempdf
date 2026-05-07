@@ -12,7 +12,7 @@ export interface NormalizedTextOptions {
   font: PdfFont;
   fontSize: number;
   color: PdfColor;
-  tag?: PdfTextStructureTag | undefined;
+  tag?: PdfTextStructureTag | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;
   structureGroupId?: number | undefined;
   characterSpacing?: number | undefined;

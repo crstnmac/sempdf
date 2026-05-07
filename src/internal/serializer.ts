@@ -1,10 +1,13 @@
 import { ByteWriter } from "./byte-writer.js";
+import type { ByteSink } from "./byte-sink.js";
+import { StreamingByteWriter } from "./streaming-byte-writer.js";
 import type { PdfDocumentModel, PdfIncrementalUpdateModel } from "../document.js";
 import type { FontName, PdfEmbeddedFont, PdfFont, PathCommand, PdfColor, PdfStructureAttributeValue, PdfStructureTag, Transform } from "../types.js";
 import type { EmbeddedImageAsset } from "./image.js";
 import type { EmbeddedTextGlyph, PdfOp } from "./ops.js";
-import { createDocumentFileId, createPdfEncryptionContext, encryptBytesForObject, latin1Bytes, type PdfEncryptionContext } from "./pdf-encryption.js";
-import { array, dict, formatPdfNumber, hexString, isPdfStream, literalString, name, ref, serializePdfValue, stream, type PdfDict, type PdfIndirectObject, type PdfValue } from "./pdf-primitives.js";
+import { deflateZlib } from "./deflate.js";
+import { createCipherForObject, createDocumentFileId, createPdfEncryptionContext, encryptBytesForObject, latin1Bytes, type PdfEncryptionContext } from "./pdf-encryption.js";
+import { array, dict, formatPdfNumber, hexString, isPdfLazyStream, isPdfStream, lazyStream, literalString, name, ref, serializePdfValue, stream, type PdfDict, type PdfIndirectObject, type PdfLazyStream, type PdfStream, type PdfValue } from "./pdf-primitives.js";
 import { getSrgbIccProfileBytes } from "./srgb-icc.js";
 import type { ParsedTrueTypeFont } from "./truetype.js";
 import { makeKerningPairKey } from "./text-layout.js";
@@ -18,7 +21,7 @@ interface TaggedPageContentItem {
   readonly altText?: string | undefined;
 }
 
-interface SerializedPage {
+interface PlannedPage {
   modelPage: PdfDocumentModel["pages"][number];
   pageObjectId: number;
   contentObjectId: number;
@@ -32,7 +35,10 @@ interface SerializedPage {
   annotations: PdfDocumentModel["pages"][number]["annotations"];
   taggedContentItems: TaggedPageContentItem[];
   structParentsKey?: number;
-  contentBytes: Uint8Array;
+}
+
+interface SerializedPage extends PlannedPage {
+  contentBytes?: Uint8Array;
 }
 
 interface SerializedTextField {
@@ -118,7 +124,7 @@ interface ExistingTaggedState {
   readonly structTreeRootObjectId: number;
   readonly parentTreeObjectId: number;
   readonly rootKids: readonly PdfValue[];
-  readonly parentTreeEntries: ReadonlyMap<number, PdfValue[]>;
+  readonly parentTreeEntries: ReadonlyMap<number, PdfValue>;
   readonly nextParentTreeKey: number;
   readonly pageStructParents: ReadonlyMap<number, number>;
   readonly rootParentObjectId: number;
@@ -136,17 +142,245 @@ interface PdfObjectEncryptionContext {
   readonly generation: number;
 }
 
-const encoder = new TextEncoder();
+interface DeferredLengthObject {
+  readonly objectId: number;
+  readonly length: number;
+}
 
-function allocateSerializedPages(
+interface PreparedPdfSerialization {
+  readonly objects: () => Iterable<PdfIndirectObject>;
+  readonly options: WritePdfOptions;
+}
+
+interface PrepareDocumentSerializationOptions {
+  readonly lazyPageContentStreams?: boolean | undefined;
+  readonly lazyByteStreams?: boolean | undefined;
+}
+
+type PreparedIncrementalSerialization =
+  | { readonly kind: "unchanged"; readonly bytes: Uint8Array }
+  | {
+      readonly kind: "changed";
+      readonly objects: () => Iterable<PdfIndirectObject>;
+      readonly infoObjectId?: number | undefined;
+    };
+
+interface PrepareIncrementalSerializationOptions {
+  readonly lazyPageContentStreams?: boolean | undefined;
+  readonly lazyByteStreams?: boolean | undefined;
+}
+
+interface SerializedPageObjectsOptions {
+  readonly pageContainerObjectId: number;
+  readonly pageObjectIdsByModel: ReadonlyMap<PdfDocumentModel["pages"][number], number>;
+  readonly formFontResourceMap: ReadonlyMap<FontName, string>;
+  readonly builtInFontObjectIds: ReadonlyMap<FontName, number>;
+  readonly embeddedFontObjectIds: ReadonlyMap<string, EmbeddedFontObjectIds>;
+  readonly imageObjectIds: ReadonlyMap<string, ImageObjectIds>;
+  readonly embeddedFontContexts: ReadonlyMap<string, EmbeddedFontContext>;
+  readonly lazyPageContentStreams?: boolean | undefined;
+  readonly allocateLazyLengthObjectId: () => number;
+  readonly fixedPageObjectIds?: { has(page: PdfDocumentModel["pages"][number]): boolean } | undefined;
+  readonly taggedAnnotationParentTreeKeys?: ReadonlyMap<number, number> | undefined;
+  readonly conformance?: PdfDocumentModel["conformance"] | undefined;
+  readonly compress?: boolean | undefined;
+}
+
+interface TaggedPdfObjectsOptions {
+  readonly roleMap?: PdfDocumentModel["roleMap"] | undefined;
+  readonly existingTaggedState?: ExistingTaggedState | undefined;
+  readonly existingStructTreeRoot?: PdfDict | undefined;
+}
+
+const encoder = new TextEncoder();
+const STREAM_CHUNK_SIZE = 64 * 1024;
+
+const COMPRESSION_MIN_BYTES = 256;
+
+function compressedStream(dictEntries: PdfDict, bytes: Uint8Array, enabled: boolean | undefined): PdfStream {
+  if (!enabled || bytes.length < COMPRESSION_MIN_BYTES) {
+    return stream(dictEntries, bytes);
+  }
+  const deflated = deflateZlib(bytes);
+  if (deflated.length >= bytes.length) {
+    return stream(dictEntries, bytes);
+  }
+  return stream([["Filter", name("FlateDecode")], ...dictEntries], deflated);
+}
+
+async function* byteChunks(bytes: Uint8Array): AsyncIterable<Uint8Array> {
+  for (let offset = 0; offset < bytes.length; offset += STREAM_CHUNK_SIZE) {
+    yield bytes.subarray(offset, Math.min(offset + STREAM_CHUNK_SIZE, bytes.length));
+  }
+}
+
+function* buildSerializedPageObjects(
+  pages: Iterable<SerializedPage>,
+  options: SerializedPageObjectsOptions
+): Iterable<PdfIndirectObject> {
+  for (const page of pages) {
+    for (const [index, annotation] of page.annotations.entries()) {
+      if (annotation.type === "checkBox") {
+        const annotationObjectId = page.formFieldObjectIdsByAnnotationIndex.get(index);
+        const appearanceObjectIds = page.checkBoxAppearanceObjectIds.get(index);
+        if (annotationObjectId === undefined || !appearanceObjectIds) {
+          throw new Error("Missing checkbox appearance object ids.");
+        }
+
+        yield {
+          id: appearanceObjectIds.off,
+          value: buildCheckBoxAppearanceStream(annotation.options, false)
+        };
+        yield {
+          id: appearanceObjectIds.on,
+          value: buildCheckBoxAppearanceStream(annotation.options, true)
+        };
+        yield {
+          id: annotationObjectId,
+          value: buildAnnotationDictionary(
+            annotation,
+            page.pageObjectId,
+            options.pageObjectIdsByModel,
+            options.formFontResourceMap,
+            page.checkBoxAppearanceObjectIds.get(index),
+            options.taggedAnnotationParentTreeKeys?.get(annotationObjectId)
+          )
+        };
+        continue;
+      }
+
+      if (annotation.type === "radioGroup") {
+        const radioGroupIds = page.radioGroupObjectIds.get(index);
+        if (!radioGroupIds) {
+          throw new Error("Missing radio group object ids.");
+        }
+
+        yield {
+          id: radioGroupIds.field,
+          value: buildRadioGroupFieldDictionary(annotation, radioGroupIds)
+        };
+
+        for (const [itemIndex, widget] of radioGroupIds.widgets.entries()) {
+          const item = annotation.options.items[itemIndex];
+          if (!item) {
+            throw new Error("Missing radio group item.");
+          }
+
+          yield {
+            id: widget.off,
+            value: buildRadioAppearanceStream(item, annotation.options.borderWidth, false)
+          };
+          yield {
+            id: widget.on,
+            value: buildRadioAppearanceStream(item, annotation.options.borderWidth, true)
+          };
+          yield {
+            id: widget.widget,
+            value: buildRadioWidgetDictionary(annotation, item, radioGroupIds.field, widget, page.pageObjectId)
+          };
+        }
+        continue;
+      }
+
+      const annotationObjectId = page.formFieldObjectIdsByAnnotationIndex.get(index);
+      if (annotationObjectId === undefined) {
+        continue;
+      }
+
+      yield {
+        id: annotationObjectId,
+        value: buildAnnotationDictionary(
+          annotation,
+          page.pageObjectId,
+          options.pageObjectIdsByModel,
+          options.formFontResourceMap,
+          page.checkBoxAppearanceObjectIds.get(index),
+          options.taggedAnnotationParentTreeKeys?.get(annotationObjectId)
+        )
+      };
+    }
+
+    const contentStreamValue =
+      options.lazyPageContentStreams === true
+        ? lazyStream(
+            dict([]),
+            options.allocateLazyLengthObjectId(),
+            () => encodePageContentChunks(page.modelPage.ops, {
+              fonts: page.fontResourceMap,
+              images: page.imageResourceMap,
+              embeddedFonts: new Map(options.embeddedFontContexts),
+              taggedContentItems: page.taggedContentItems
+            })
+          )
+        : compressedStream(dict([]), getSerializedPageContentBytes(page), options.compress);
+
+    yield {
+      id: page.contentObjectId,
+      value: contentStreamValue
+    };
+
+    if (options.fixedPageObjectIds?.has(page.modelPage)) {
+      continue;
+    }
+
+    yield {
+      id: page.pageObjectId,
+      value: dict([
+        ["Type", name("Page")],
+        ["Parent", ref(options.pageContainerObjectId)],
+        ["MediaBox", array([0, 0, page.size.width, page.size.height])],
+        ["Resources", buildPageResourcesDictionary(page, options.builtInFontObjectIds, options.embeddedFontObjectIds, options.imageObjectIds)],
+        ["Annots", page.annotationObjectIds.length > 0 ? array(page.annotationObjectIds.map((objectId) => ref(objectId))) : undefined],
+        ["Tabs", page.annotationObjectIds.length > 0 && options.conformance === "pdfua-1" ? name("S") : undefined],
+        ["StructParents", page.structParentsKey],
+        ["Contents", ref(page.contentObjectId)]
+      ])
+    };
+  }
+}
+
+function* buildTaggedPdfObjects(
+  allocation: TaggedPdfAllocation,
+  options: TaggedPdfObjectsOptions = {}
+): Iterable<PdfIndirectObject> {
+  const structTreeRootObjectId = options.existingTaggedState?.structTreeRootObjectId ?? allocation.structTreeRootObjectId;
+  const parentTreeObjectId = options.existingTaggedState?.parentTreeObjectId ?? allocation.parentTreeObjectId;
+
+  yield {
+    id: parentTreeObjectId,
+    value: options.existingTaggedState
+      ? buildMergedParentTreeDictionary(options.existingTaggedState.parentTreeEntries, allocation)
+      : buildParentTreeDictionary(allocation)
+  };
+  yield {
+    id: structTreeRootObjectId,
+    value: options.existingTaggedState
+      ? buildMergedStructTreeRootDictionary(
+          options.existingStructTreeRoot,
+          options.existingTaggedState.rootKids,
+          parentTreeObjectId,
+          allocation,
+          options.roleMap
+        )
+      : buildStructTreeRootDictionary(allocation, options.roleMap)
+  };
+
+  for (const element of allocation.elements) {
+    yield {
+      id: element.objectId,
+      value: buildStructElementDictionary(element)
+    };
+  }
+}
+
+function planSerializedPages(
   pages: readonly PdfDocumentModel["pages"][number][],
   nextObjectId: number,
-  embeddedFontContexts: ReadonlyMap<string, EmbeddedFontContext>,
   fixedPageObjectIds: ReadonlyMap<PdfDocumentModel["pages"][number], number> = new Map(),
   fixedStructParentsKeys: ReadonlyMap<PdfDocumentModel["pages"][number], number> = new Map(),
   mcidStartByPage: ReadonlyMap<PdfDocumentModel["pages"][number], number> = new Map()
-): { pages: SerializedPage[]; nextObjectId: number } {
-  const serializedPages: SerializedPage[] = [];
+): { pages: PlannedPage[]; nextObjectId: number } {
+  const plannedPages: PlannedPage[] = [];
 
   for (const page of pages) {
     const contentObjectId = nextObjectId;
@@ -209,7 +443,7 @@ function allocateSerializedPages(
     const fontResourceMap = buildFontResourceMap(page.ops);
     const imageResourceMap = buildImageResourceMap(page.ops);
     const structParentsKey = fixedStructParentsKeys.get(page);
-    serializedPages.push({
+    plannedPages.push({
       modelPage: page,
       pageObjectId,
       contentObjectId,
@@ -222,17 +456,34 @@ function allocateSerializedPages(
       radioGroupObjectIds,
       annotations: page.annotations,
       taggedContentItems,
-      ...(structParentsKey !== undefined ? { structParentsKey } : {}),
-      contentBytes: encodePageContent(page.ops, {
-        fonts: fontResourceMap,
-        images: imageResourceMap,
-        embeddedFonts: new Map(embeddedFontContexts),
-        taggedContentItems
-      })
+      ...(structParentsKey !== undefined ? { structParentsKey } : {})
     });
   }
 
-  return { pages: serializedPages, nextObjectId };
+  return { pages: plannedPages, nextObjectId };
+}
+
+function attachSerializedPageContentBytes(
+  pages: readonly PlannedPage[],
+  embeddedFontContexts: ReadonlyMap<string, EmbeddedFontContext>
+): SerializedPage[] {
+  return pages.map((page) => ({
+    ...page,
+    contentBytes: encodePageContent(page.modelPage.ops, {
+      fonts: page.fontResourceMap,
+      images: page.imageResourceMap,
+      embeddedFonts: new Map(embeddedFontContexts),
+      taggedContentItems: page.taggedContentItems
+    })
+  }));
+}
+
+function getSerializedPageContentBytes(page: SerializedPage): Uint8Array {
+  if (page.contentBytes === undefined) {
+    throw new Error("Serialized page content bytes are required for non-lazy page streams.");
+  }
+
+  return page.contentBytes;
 }
 
 function collectTaggedPageContent(ops: readonly PdfOp[], mcidStart: number): TaggedPageContentItem[] {
@@ -485,7 +736,10 @@ function resolveAnnotationObjectIds(page: SerializedPage, annotationIndex: numbe
   return objectId !== undefined ? [objectId] : [];
 }
 
-export function serializeDocument(model: PdfDocumentModel): Uint8Array {
+function prepareDocumentSerialization(
+  model: PdfDocumentModel,
+  options: PrepareDocumentSerializationOptions = {}
+): PreparedPdfSerialization {
   const builtInFonts = collectBuiltInFonts(model);
   const images = collectImages(model);
   const embeddedFontContexts = collectEmbeddedFontContexts(model);
@@ -509,6 +763,16 @@ export function serializeDocument(model: PdfDocumentModel): Uint8Array {
       : undefined;
 
   let nextObjectId = reservedObjectId;
+  let nextLazyLengthObjectId = nextObjectId;
+  const prepareByteStream = (value: PdfStream): PdfStream | PdfLazyStream =>
+    options.lazyByteStreams === true
+      ? lazyStream(
+          value.dict,
+          nextLazyLengthObjectId++,
+          () => byteChunks(value.bytes)
+        )
+      : value;
+
   for (const fontName of builtInFonts) {
     builtInFontObjectIds.set(fontName, nextObjectId);
     nextObjectId += 1;
@@ -540,8 +804,16 @@ export function serializeDocument(model: PdfDocumentModel): Uint8Array {
     nextObjectId += 2;
   }
 
-  const allocatedPages = allocateSerializedPages(model.pages, nextObjectId, embeddedFontContexts);
-  const serializedPages = allocatedPages.pages;
+  const allocatedPages = planSerializedPages(
+    model.pages,
+    nextObjectId,
+    new Map(),
+    new Map(),
+    new Map()
+  );
+  const serializedPages = options.lazyPageContentStreams === true
+    ? allocatedPages.pages
+    : attachSerializedPageContentBytes(allocatedPages.pages, embeddedFontContexts);
   nextObjectId = allocatedPages.nextObjectId;
 
   const taggedPdfAllocation = allocateTaggedPdf(serializedPages, nextObjectId, 0, undefined, model.structureRoot);
@@ -577,8 +849,8 @@ export function serializeDocument(model: PdfDocumentModel): Uint8Array {
     nextObjectId += 1;
   }
 
-  const objects: PdfIndirectObject[] = [];
-  objects.push({
+  const documentObjects: PdfIndirectObject[] = [];
+  documentObjects.push({
     id: 1,
     value: dict([
       ["Type", name("Catalog")],
@@ -598,7 +870,7 @@ export function serializeDocument(model: PdfDocumentModel): Uint8Array {
     ])
   });
 
-  objects.push({
+  documentObjects.push({
     id: 2,
     value: dict([
       ["Type", name("Pages")],
@@ -607,48 +879,48 @@ export function serializeDocument(model: PdfDocumentModel): Uint8Array {
     ])
   });
 
-  objects.push({
+  documentObjects.push({
     id: 3,
     value: buildInfoDictionary(model.info)
   });
 
   if (metadataObjectId !== undefined) {
-    objects.push({
+    documentObjects.push({
       id: metadataObjectId,
       value: buildXmpMetadataStream(effectiveXmpMetadata!)
     });
   }
 
   if (encryptionObjectId !== undefined && encryptionContext) {
-    objects.push({
+    documentObjects.push({
       id: encryptionObjectId,
       value: buildEncryptionDictionary(encryptionContext)
     });
   }
 
   if (outputProfileObjectId !== undefined) {
-    objects.push({
+    documentObjects.push({
       id: outputProfileObjectId,
       value: buildSrgbOutputProfileStream()
     });
   }
 
   if (outputIntentObjectId !== undefined && outputProfileObjectId !== undefined) {
-    objects.push({
+    documentObjects.push({
       id: outputIntentObjectId,
       value: buildPdfaOutputIntentDictionary(outputProfileObjectId)
     });
   }
 
   if (outlinesRootObjectId !== undefined && outlineAllocation) {
-    objects.push({
+    documentObjects.push({
       id: outlinesRootObjectId,
       value: buildOutlineRootDictionary(outlineAllocation)
     });
   }
 
   if (acroFormObjectId !== undefined) {
-    objects.push({
+    documentObjects.push({
       id: acroFormObjectId,
       value: buildAcroFormDictionary(
         formFields.map((field) => ref(field.fieldObjectId)),
@@ -659,25 +931,11 @@ export function serializeDocument(model: PdfDocumentModel): Uint8Array {
   }
 
   if (taggedPdfAllocation) {
-    objects.push({
-      id: taggedPdfAllocation.parentTreeObjectId,
-      value: buildParentTreeDictionary(taggedPdfAllocation)
-    });
-    objects.push({
-      id: taggedPdfAllocation.structTreeRootObjectId,
-      value: buildStructTreeRootDictionary(taggedPdfAllocation, model.roleMap)
-    });
-
-    for (const element of taggedPdfAllocation.elements) {
-      objects.push({
-        id: element.objectId,
-        value: buildStructElementDictionary(element)
-      });
-    }
+    documentObjects.push(...buildTaggedPdfObjects(taggedPdfAllocation, { roleMap: model.roleMap }));
   }
 
   for (const fontName of builtInFonts) {
-    objects.push({
+    documentObjects.push({
       id: builtInFontObjectIds.get(fontName)!,
       value: dict([
         ["Type", name("Font")],
@@ -689,17 +947,18 @@ export function serializeDocument(model: PdfDocumentModel): Uint8Array {
 
   for (const context of embeddedFontContexts.values()) {
     const objectIds = embeddedFontObjectIds.get(context.font.id)!;
-    objects.push({
+    documentObjects.push({
       id: objectIds.fontFile,
-      value: stream(
+      value: prepareByteStream(compressedStream(
         dict([
           ["Length1", context.font.bytes.length]
         ]),
-        context.font.bytes
-      )
+        context.font.bytes,
+        "compress" in model ? (model as { compress?: boolean }).compress : undefined
+      ))
     });
 
-    objects.push({
+    documentObjects.push({
       id: objectIds.descriptor,
       value: dict([
         ["Type", name("FontDescriptor")],
@@ -715,7 +974,7 @@ export function serializeDocument(model: PdfDocumentModel): Uint8Array {
       ])
     });
 
-    objects.push({
+    documentObjects.push({
       id: objectIds.descendant,
       value: dict([
         ["Type", name("Font")],
@@ -736,12 +995,12 @@ export function serializeDocument(model: PdfDocumentModel): Uint8Array {
       ])
     });
 
-    objects.push({
+    documentObjects.push({
       id: objectIds.toUnicode,
-      value: stream(dict([]), encoder.encode(buildToUnicodeCMap(context.glyphToUnicode)))
+      value: compressedStream(dict([]), encoder.encode(buildToUnicodeCMap(context.glyphToUnicode)), model.compress)
     });
 
-    objects.push({
+    documentObjects.push({
       id: objectIds.type0,
       value: dict([
         ["Type", name("Font")],
@@ -757,25 +1016,25 @@ export function serializeDocument(model: PdfDocumentModel): Uint8Array {
   for (const image of images) {
     const objectIds = imageObjectIds.get(image.key)!;
     if (image.kind === "png" && objectIds.smask !== undefined) {
-      objects.push({
+      documentObjects.push({
         id: objectIds.smask,
-        value: buildSoftMaskStream(image)
+        value: prepareByteStream(buildSoftMaskStream(image))
       });
     }
 
-    objects.push({
+    documentObjects.push({
       id: objectIds.base,
-      value: buildImageStream(image, objectIds.smask)
+      value: prepareByteStream(buildImageStream(image, objectIds.smask))
     });
   }
 
   for (const attachment of model.attachments) {
     const objectIds = attachmentObjectIds.get(attachment.name)!;
-    objects.push({
+    documentObjects.push({
       id: objectIds.embeddedFile,
-      value: buildEmbeddedFileStream(attachment)
+      value: prepareByteStream(buildEmbeddedFileStream(attachment))
     });
-    objects.push({
+    documentObjects.push({
       id: objectIds.fileSpec,
       value: buildFileSpecDictionary(attachment, objectIds.embeddedFile)
     });
@@ -783,125 +1042,59 @@ export function serializeDocument(model: PdfDocumentModel): Uint8Array {
 
   if (outlineAllocation) {
     for (const node of outlineAllocation.nodes) {
-      objects.push({
+      documentObjects.push({
         id: node.objectId,
         value: buildOutlineItemDictionary(node, pageObjectIdsByModel)
       });
     }
   }
 
-  for (const page of serializedPages) {
-    for (const [index, annotation] of page.annotations.entries()) {
-      if (annotation.type === "checkBox") {
-        const annotationObjectId = page.formFieldObjectIdsByAnnotationIndex.get(index);
-        const appearanceObjectIds = page.checkBoxAppearanceObjectIds.get(index);
-        if (annotationObjectId === undefined || !appearanceObjectIds) {
-          throw new Error("Missing checkbox appearance object ids.");
-        }
+  const firstPageLazyLengthObjectId = nextLazyLengthObjectId;
 
-        objects.push({
-          id: appearanceObjectIds.off,
-          value: buildCheckBoxAppearanceStream(annotation.options, false)
-        });
-        objects.push({
-          id: appearanceObjectIds.on,
-          value: buildCheckBoxAppearanceStream(annotation.options, true)
-        });
-        objects.push({
-          id: annotationObjectId,
-          value: buildAnnotationDictionary(
-            annotation,
-            page.pageObjectId,
-            pageObjectIdsByModel,
-            formFontResourceMap,
-            page.checkBoxAppearanceObjectIds.get(index)
-          )
-        });
-        continue;
-      }
-
-      if (annotation.type === "radioGroup") {
-        const radioGroupIds = page.radioGroupObjectIds.get(index);
-        if (!radioGroupIds) {
-          throw new Error("Missing radio group object ids.");
-        }
-
-        objects.push({
-          id: radioGroupIds.field,
-          value: buildRadioGroupFieldDictionary(annotation, radioGroupIds)
-        });
-
-        for (const [itemIndex, widget] of radioGroupIds.widgets.entries()) {
-          const item = annotation.options.items[itemIndex];
-          if (!item) {
-            throw new Error("Missing radio group item.");
-          }
-
-          objects.push({
-            id: widget.off,
-            value: buildRadioAppearanceStream(item, annotation.options.borderWidth, false)
-          });
-          objects.push({
-            id: widget.on,
-            value: buildRadioAppearanceStream(item, annotation.options.borderWidth, true)
-          });
-          objects.push({
-            id: widget.widget,
-            value: buildRadioWidgetDictionary(annotation, item, radioGroupIds.field, widget, page.pageObjectId)
-          });
-        }
-        continue;
-      }
-
-      const annotationObjectId = page.formFieldObjectIdsByAnnotationIndex.get(index);
-      if (annotationObjectId === undefined) {
-        continue;
-      }
-
-      objects.push({
-        id: annotationObjectId,
-        value: buildAnnotationDictionary(
-          annotation,
-          page.pageObjectId,
-          pageObjectIdsByModel,
-          formFontResourceMap,
-          page.checkBoxAppearanceObjectIds.get(index),
-          taggedPdfAllocation?.annotationParentTreeKeys.get(annotationObjectId)
-        )
+  return {
+    objects: function* () {
+      yield* documentObjects;
+      let nextPageLazyLengthObjectId = firstPageLazyLengthObjectId;
+      yield* buildSerializedPageObjects(serializedPages, {
+        pageContainerObjectId: 2,
+        pageObjectIdsByModel,
+        formFontResourceMap,
+        builtInFontObjectIds,
+        embeddedFontObjectIds,
+        imageObjectIds,
+        embeddedFontContexts,
+        lazyPageContentStreams: options.lazyPageContentStreams,
+        allocateLazyLengthObjectId: () => nextPageLazyLengthObjectId++,
+        taggedAnnotationParentTreeKeys: taggedPdfAllocation?.annotationParentTreeKeys,
+        conformance: model.conformance,
+        compress: model.compress
       });
+    },
+    options: {
+      ...(encryptionContext !== undefined ? { encryption: encryptionContext } : {}),
+      ...(encryptionObjectId !== undefined ? { encryptionObjectId } : {}),
+      ...(encryptionFileId !== undefined ? { fileId: encryptionFileId } : {})
     }
-
-    objects.push({
-      id: page.contentObjectId,
-      value: stream(
-        dict([]),
-        page.contentBytes
-      )
-    });
-
-    objects.push({
-      id: page.pageObjectId,
-      value: dict([
-        ["Type", name("Page")],
-        ["Parent", ref(2)],
-        ["MediaBox", array([0, 0, page.size.width, page.size.height])],
-        ["Resources", buildPageResourcesDictionary(page, builtInFontObjectIds, embeddedFontObjectIds, imageObjectIds)],
-        ["Annots", page.annotationObjectIds.length > 0 ? array(page.annotationObjectIds.map((objectId) => ref(objectId))) : undefined],
-        ["Tabs", page.annotationObjectIds.length > 0 && model.conformance === "pdfua-1" ? name("S") : undefined],
-        ["StructParents", page.structParentsKey],
-        ["Contents", ref(page.contentObjectId)]
-      ])
-    });
-  }
-
-  return writePdf(objects, {
-    ...(encryptionContext !== undefined ? { encryption: encryptionContext } : {}),
-    ...(encryptionObjectId !== undefined ? { encryptionObjectId } : {}),
-    ...(encryptionFileId !== undefined ? { fileId: encryptionFileId } : {})
-  });
+  };
 }
 
-export function serializeIncrementalUpdate(model: PdfIncrementalUpdateModel): Uint8Array {
+export function serializeDocument(model: PdfDocumentModel): Uint8Array {
+  const prepared = prepareDocumentSerialization(model);
+  return writePdf([...prepared.objects()], prepared.options);
+}
+
+export async function serializeDocumentToSink(model: PdfDocumentModel, sink: ByteSink): Promise<void> {
+  const prepared = prepareDocumentSerialization(model, {
+    lazyPageContentStreams: true,
+    lazyByteStreams: true
+  });
+  await writePdfToSink(prepared.objects(), sink, prepared.options);
+}
+
+function prepareIncrementalUpdateSerialization(
+  model: PdfIncrementalUpdateModel,
+  options: PrepareIncrementalSerializationOptions = {}
+): PreparedIncrementalSerialization {
   const basePageObjectIds = model.base.listPages().map((page) => page.objectId);
   const hasPageChanges =
     model.pageOrder.length !== basePageObjectIds.length ||
@@ -920,7 +1113,10 @@ export function serializeIncrementalUpdate(model: PdfIncrementalUpdateModel): Ui
     && model.structureAltTextUpdates.size === 0
     && model.structureChildrenOrderUpdates.size === 0
   ) {
-    return model.base.getSourceBytes();
+    return {
+      kind: "unchanged",
+      bytes: model.base.getSourceBytes()
+    };
   }
 
   const pageContainerObjectId = model.base.getPagesObjectId();
@@ -977,7 +1173,7 @@ export function serializeIncrementalUpdate(model: PdfIncrementalUpdateModel): Ui
         const existingStructParentsKey = existingTaggedState?.pageStructParents.get(existingPageObjectId);
         if (existingStructParentsKey !== undefined) {
           fixedStructParentsKeys.set(page, existingStructParentsKey);
-          mcidStartByPage.set(page, existingTaggedState?.parentTreeEntries.get(existingStructParentsKey)?.length ?? 0);
+          mcidStartByPage.set(page, collectPdfArrayValues(model.base, existingTaggedState?.parentTreeEntries.get(existingStructParentsKey)).length);
           continue;
         }
       }
@@ -1014,15 +1210,16 @@ export function serializeIncrementalUpdate(model: PdfIncrementalUpdateModel): Ui
     imageObjectIds.set(image.key, objectIds);
   }
 
-  const allocatedPages = allocateSerializedPages(
+  const allocatedPages = planSerializedPages(
     mutatedPages,
     nextObjectId,
-    embeddedFontContexts,
     fixedPageObjectIds,
     fixedStructParentsKeys,
     mcidStartByPage
   );
-  const serializedPages = allocatedPages.pages;
+  const serializedPages = options.lazyPageContentStreams === true
+    ? allocatedPages.pages
+    : attachSerializedPageContentBytes(allocatedPages.pages, embeddedFontContexts);
   nextObjectId = allocatedPages.nextObjectId;
   const taggedPdfAllocation = (existingTaggedState || mutatedPages.some((page) => pageHasTaggedContent(page)))
     ? allocateTaggedPdf(
@@ -1074,32 +1271,41 @@ export function serializeIncrementalUpdate(model: PdfIncrementalUpdateModel): Ui
     ? (existingAcroFormRef?.objectId ?? nextObjectId++)
     : existingAcroFormRef?.objectId;
 
-  const objects: PdfIndirectObject[] = [];
+  const prefixObjects: PdfIndirectObject[] = [];
+  let nextLazyLengthObjectId = nextObjectId;
+  const prepareByteStream = (value: PdfStream): PdfStream | PdfLazyStream =>
+    options.lazyByteStreams === true
+      ? lazyStream(
+          value.dict,
+          nextLazyLengthObjectId++,
+          () => byteChunks(value.bytes)
+        )
+      : value;
 
   if (model.info !== undefined && infoObjectId !== undefined) {
     const existingInfo = infoObjectId === model.base.getInfoObjectId() ? asPdfDict(model.base.getObject(infoObjectId)?.value, "Info") : undefined;
-    objects.push({
+    prefixObjects.push({
       id: infoObjectId,
       value: mergePdfDict(existingInfo ?? dict([]), buildInfoDictionary(model.info))
     });
   }
 
   if (hasXmpMetadataChange && xmpMetadataObjectId !== undefined && model.xmpMetadata !== undefined) {
-    objects.push({
+    prefixObjects.push({
       id: xmpMetadataObjectId,
       value: buildXmpMetadataStream(model.xmpMetadata)
     });
   }
 
   for (const update of model.fieldUpdates) {
-    objects.push({
+    prefixObjects.push({
       id: update.objectId,
       value: buildUpdatedExistingFieldDictionary(model.base, update)
     });
   }
 
   for (const fontName of builtInFonts) {
-    objects.push({
+    prefixObjects.push({
       id: builtInFontObjectIds.get(fontName)!,
       value: dict([
         ["Type", name("Font")],
@@ -1111,17 +1317,18 @@ export function serializeIncrementalUpdate(model: PdfIncrementalUpdateModel): Ui
 
   for (const context of embeddedFontContexts.values()) {
     const objectIds = embeddedFontObjectIds.get(context.font.id)!;
-    objects.push({
+    prefixObjects.push({
       id: objectIds.fontFile,
-      value: stream(
+      value: prepareByteStream(compressedStream(
         dict([
           ["Length1", context.font.bytes.length]
         ]),
-        context.font.bytes
-      )
+        context.font.bytes,
+        "compress" in model ? (model as { compress?: boolean }).compress : undefined
+      ))
     });
 
-    objects.push({
+    prefixObjects.push({
       id: objectIds.descriptor,
       value: dict([
         ["Type", name("FontDescriptor")],
@@ -1137,7 +1344,7 @@ export function serializeIncrementalUpdate(model: PdfIncrementalUpdateModel): Ui
       ])
     });
 
-    objects.push({
+    prefixObjects.push({
       id: objectIds.descendant,
       value: dict([
         ["Type", name("Font")],
@@ -1158,12 +1365,12 @@ export function serializeIncrementalUpdate(model: PdfIncrementalUpdateModel): Ui
       ])
     });
 
-    objects.push({
+    prefixObjects.push({
       id: objectIds.toUnicode,
-      value: stream(dict([]), encoder.encode(buildToUnicodeCMap(context.glyphToUnicode)))
+      value: compressedStream(dict([]), encoder.encode(buildToUnicodeCMap(context.glyphToUnicode)), "compress" in model ? (model as { compress?: boolean }).compress : undefined)
     });
 
-    objects.push({
+    prefixObjects.push({
       id: objectIds.type0,
       value: dict([
         ["Type", name("Font")],
@@ -1179,120 +1386,20 @@ export function serializeIncrementalUpdate(model: PdfIncrementalUpdateModel): Ui
   for (const image of images) {
     const objectIds = imageObjectIds.get(image.key)!;
     if (image.kind === "png" && objectIds.smask !== undefined) {
-      objects.push({
+      prefixObjects.push({
         id: objectIds.smask,
-        value: buildSoftMaskStream(image)
+        value: prepareByteStream(buildSoftMaskStream(image))
       });
     }
 
-    objects.push({
+    prefixObjects.push({
       id: objectIds.base,
-      value: buildImageStream(image, objectIds.smask)
+      value: prepareByteStream(buildImageStream(image, objectIds.smask))
     });
   }
 
-  for (const page of serializedPages) {
-    for (const [index, annotation] of page.annotations.entries()) {
-      if (annotation.type === "checkBox") {
-        const annotationObjectId = page.formFieldObjectIdsByAnnotationIndex.get(index);
-        const appearanceObjectIds = page.checkBoxAppearanceObjectIds.get(index);
-        if (annotationObjectId === undefined || !appearanceObjectIds) {
-          throw new Error("Missing checkbox appearance object ids.");
-        }
-
-        objects.push({
-          id: appearanceObjectIds.off,
-          value: buildCheckBoxAppearanceStream(annotation.options, false)
-        });
-        objects.push({
-          id: appearanceObjectIds.on,
-          value: buildCheckBoxAppearanceStream(annotation.options, true)
-        });
-        objects.push({
-          id: annotationObjectId,
-          value: buildAnnotationDictionary(
-            annotation,
-            page.pageObjectId,
-            pageObjectIdsByModel,
-            formFontResourceMap,
-            page.checkBoxAppearanceObjectIds.get(index)
-          )
-        });
-        continue;
-      }
-
-      if (annotation.type === "radioGroup") {
-        const radioGroupIds = page.radioGroupObjectIds.get(index);
-        if (!radioGroupIds) {
-          throw new Error("Missing radio group object ids.");
-        }
-
-        objects.push({
-          id: radioGroupIds.field,
-          value: buildRadioGroupFieldDictionary(annotation, radioGroupIds)
-        });
-
-        for (const [itemIndex, widget] of radioGroupIds.widgets.entries()) {
-          const item = annotation.options.items[itemIndex];
-          if (!item) {
-            throw new Error("Missing radio group item.");
-          }
-
-          objects.push({
-            id: widget.off,
-            value: buildRadioAppearanceStream(item, annotation.options.borderWidth, false)
-          });
-          objects.push({
-            id: widget.on,
-            value: buildRadioAppearanceStream(item, annotation.options.borderWidth, true)
-          });
-          objects.push({
-            id: widget.widget,
-            value: buildRadioWidgetDictionary(annotation, item, radioGroupIds.field, widget, page.pageObjectId)
-          });
-        }
-        continue;
-      }
-
-      const annotationObjectId = page.formFieldObjectIdsByAnnotationIndex.get(index);
-      if (annotationObjectId === undefined) {
-        continue;
-      }
-
-      objects.push({
-        id: annotationObjectId,
-        value: buildAnnotationDictionary(
-          annotation,
-          page.pageObjectId,
-          pageObjectIdsByModel,
-          formFontResourceMap,
-          page.checkBoxAppearanceObjectIds.get(index)
-        )
-      });
-    }
-
-    objects.push({
-      id: page.contentObjectId,
-      value: stream(dict([]), page.contentBytes)
-    });
-
-    if (fixedPageObjectIds.has(page.modelPage)) {
-      continue;
-    }
-
-    objects.push({
-      id: page.pageObjectId,
-      value: dict([
-        ["Type", name("Page")],
-        ["Parent", ref(pageContainerObjectId)],
-        ["MediaBox", array([0, 0, page.size.width, page.size.height])],
-        ["Resources", buildPageResourcesDictionary(page, builtInFontObjectIds, embeddedFontObjectIds, imageObjectIds)],
-        ["Annots", page.annotationObjectIds.length > 0 ? array(page.annotationObjectIds.map((objectId) => ref(objectId))) : undefined],
-        ["StructParents", page.structParentsKey],
-        ["Contents", ref(page.contentObjectId)]
-      ])
-    });
-  }
+  const firstPageLazyLengthObjectId = nextLazyLengthObjectId;
+  const suffixObjects: PdfIndirectObject[] = [];
 
   const existingPageIdsToRewrite = new Set<number>(hasPageChanges ? retainedExistingPageIds : []);
   for (const objectId of editedPagesByObjectId.keys()) {
@@ -1304,7 +1411,7 @@ export function serializeIncrementalUpdate(model: PdfIncrementalUpdateModel): Ui
   for (const objectId of [...existingPageIdsToRewrite].sort((left, right) => left - right)) {
     const existingPageDict = asPdfDict(model.base.getObject(objectId)?.value, "Page");
     const overlay = editedPagesByObjectId.get(objectId);
-    objects.push({
+    suffixObjects.push({
       id: objectId,
       value: buildUpdatedExistingPageDictionary(
         model.base,
@@ -1326,7 +1433,7 @@ export function serializeIncrementalUpdate(model: PdfIncrementalUpdateModel): Ui
     );
 
     const existingPagesDict = asPdfDict(model.base.getObject(pageContainerObjectId)?.value, "Pages");
-    objects.push({
+    suffixObjects.push({
       id: pageContainerObjectId,
       value: mergePdfDict(
         existingPagesDict,
@@ -1340,7 +1447,7 @@ export function serializeIncrementalUpdate(model: PdfIncrementalUpdateModel): Ui
   }
 
   if (shouldUpdateAcroForm && acroFormObjectId !== undefined) {
-    objects.push({
+    suffixObjects.push({
       id: acroFormObjectId,
       value: buildAcroFormDictionary(
         [
@@ -1355,32 +1462,14 @@ export function serializeIncrementalUpdate(model: PdfIncrementalUpdateModel): Ui
   }
 
   if (taggedPdfAllocation) {
-    const structTreeRootObjectId = existingTaggedState?.structTreeRootObjectId ?? taggedPdfAllocation.structTreeRootObjectId;
-    const parentTreeObjectId = existingTaggedState?.parentTreeObjectId ?? taggedPdfAllocation.parentTreeObjectId;
     const existingStructTreeRoot = existingTaggedState
       ? asPdfDict(model.base.getObject(existingTaggedState.structTreeRootObjectId)?.value, "StructTreeRoot")
       : undefined;
 
-    objects.push({
-      id: parentTreeObjectId,
-      value: buildMergedParentTreeDictionary(existingTaggedState?.parentTreeEntries, taggedPdfAllocation)
-    });
-    objects.push({
-      id: structTreeRootObjectId,
-      value: buildMergedStructTreeRootDictionary(
-        existingStructTreeRoot,
-        existingTaggedState?.rootKids,
-        parentTreeObjectId,
-        taggedPdfAllocation
-      )
-    });
-
-    for (const element of taggedPdfAllocation.elements) {
-      objects.push({
-        id: element.objectId,
-        value: buildStructElementDictionary(element)
-      });
-    }
+    suffixObjects.push(...buildTaggedPdfObjects(taggedPdfAllocation, {
+      existingTaggedState,
+      existingStructTreeRoot
+    }));
   }
 
   const structureObjectIdsToPatch = new Set<number>([
@@ -1430,7 +1519,7 @@ export function serializeIncrementalUpdate(model: PdfIncrementalUpdateModel): Ui
       ]);
     }
 
-    objects.push({
+    suffixObjects.push({
       id: objectId,
       value: patchPdfDict(
         sourceDict,
@@ -1445,7 +1534,7 @@ export function serializeIncrementalUpdate(model: PdfIncrementalUpdateModel): Ui
     || hasXmpMetadataChange
     || (taggedPdfAllocation !== undefined && existingTaggedState === undefined);
   if (shouldUpdateCatalog) {
-    objects.push({
+    suffixObjects.push({
       id: model.base.getRootObjectId(),
       value: patchPdfDict(
         existingCatalog,
@@ -1466,7 +1555,50 @@ export function serializeIncrementalUpdate(model: PdfIncrementalUpdateModel): Ui
     });
   }
 
-  return writeIncrementalPdf(model, objects, infoObjectId);
+  return {
+    kind: "changed",
+    objects: function* () {
+      yield* prefixObjects;
+      let nextPageLazyLengthObjectId = firstPageLazyLengthObjectId;
+      yield* buildSerializedPageObjects(serializedPages, {
+        pageContainerObjectId,
+        pageObjectIdsByModel,
+        formFontResourceMap,
+        builtInFontObjectIds,
+        embeddedFontObjectIds,
+        imageObjectIds,
+        embeddedFontContexts,
+        lazyPageContentStreams: options.lazyPageContentStreams,
+        allocateLazyLengthObjectId: () => nextPageLazyLengthObjectId++,
+        fixedPageObjectIds
+      });
+      yield* suffixObjects;
+    },
+    ...(infoObjectId !== undefined ? { infoObjectId } : {})
+  };
+}
+
+export function serializeIncrementalUpdate(model: PdfIncrementalUpdateModel): Uint8Array {
+  const prepared = prepareIncrementalUpdateSerialization(model);
+  if (prepared.kind === "unchanged") {
+    return prepared.bytes;
+  }
+
+  return writeIncrementalPdf(model, [...prepared.objects()], prepared.infoObjectId);
+}
+
+export async function serializeIncrementalUpdateToSink(model: PdfIncrementalUpdateModel, sink: ByteSink): Promise<void> {
+  const prepared = prepareIncrementalUpdateSerialization(model, {
+    lazyPageContentStreams: true,
+    lazyByteStreams: true
+  });
+  if (prepared.kind === "unchanged") {
+    await sink.write(prepared.bytes);
+    await sink.close();
+    return;
+  }
+
+  await writeIncrementalPdfToSink(model, prepared.objects(), sink, prepared.infoObjectId);
 }
 
 function writePdf(objects: PdfIndirectObject[], options: WritePdfOptions = {}): Uint8Array {
@@ -1482,20 +1614,14 @@ function writePdf(objects: PdfIndirectObject[], options: WritePdfOptions = {}): 
     writeObjectValue(
       writer,
       object.value,
-      options.encryption !== undefined && object.id !== options.encryptionObjectId
-        ? {
-            encryption: options.encryption,
-            objectId: object.id,
-            generation: 0
-          }
-        : undefined
+      getObjectEncryptionContext(options.encryption, options.encryptionObjectId, object.id)
     );
     writer.writeLine();
     writer.writeLine("endobj");
   }
 
   const startXref = writer.size;
-  const maxObjectId = Math.max(...objects.map((object) => object.id));
+  const maxObjectId = getMaxSerializedObjectId(objects);
   writer.writeLine("xref");
   writer.writeLine(`0 ${maxObjectId + 1}`);
   writer.writeLine("0000000000 65535 f ");
@@ -1534,6 +1660,65 @@ function writePdf(objects: PdfIndirectObject[], options: WritePdfOptions = {}): 
   return writer.toUint8Array();
 }
 
+async function writePdfToSink(objects: Iterable<PdfIndirectObject>, sink: ByteSink, options: WritePdfOptions = {}): Promise<void> {
+  const writer = new StreamingByteWriter(sink);
+  await writer.writeLine("%PDF-1.4");
+  await writer.writeBytes(new Uint8Array([0x25, 0xff, 0xff, 0xff, 0x0a]));
+
+  const offsets = new Map<number, number>();
+
+  for (const object of objects) {
+    offsets.set(object.id, writer.size);
+    await writer.writeLine(`${object.id} 0 obj`);
+    const deferredLengthObjects = await writeObjectValueToSink(
+      writer,
+      object.value,
+      getObjectEncryptionContext(options.encryption, options.encryptionObjectId, object.id)
+    );
+    await writer.writeLine();
+    await writer.writeLine("endobj");
+    await writeDeferredLengthObjectsToSink(writer, offsets, 0, deferredLengthObjects);
+  }
+
+  const startXref = writer.size;
+  const maxObjectId = getMaxObjectIdFromOffsets(offsets);
+  await writer.writeLine("xref");
+  await writer.writeLine(`0 ${maxObjectId + 1}`);
+  await writer.writeLine("0000000000 65535 f ");
+
+  for (let objectId = 1; objectId <= maxObjectId; objectId += 1) {
+    const offset = offsets.get(objectId);
+    if (offset === undefined) {
+      await writer.writeLine("0000000000 65535 f ");
+      continue;
+    }
+
+    await writer.writeLine(`${String(offset).padStart(10, "0")} 00000 n `);
+  }
+
+  await writer.writeLine("trailer");
+  await writer.writeLine(
+    serializePdfValue(
+      dict([
+        ["Size", maxObjectId + 1],
+        ["Root", ref(1)],
+        ["Info", ref(3)],
+        ["Encrypt", options.encryptionObjectId !== undefined ? ref(options.encryptionObjectId) : undefined],
+        [
+          "ID",
+          options.fileId !== undefined
+            ? array([hexString(options.fileId), hexString(options.fileId)])
+            : undefined
+        ]
+      ])
+    )
+  );
+  await writer.writeLine("startxref");
+  await writer.writeLine(String(startXref));
+  await writer.writeLine("%%EOF");
+  await writer.close();
+}
+
 function writeIncrementalPdf(model: PdfIncrementalUpdateModel, objects: PdfIndirectObject[], infoObjectId: number | undefined): Uint8Array {
   if (isXrefStreamDocument(model.base.trailer)) {
     return writeIncrementalXrefStreamPdf(model, objects, infoObjectId);
@@ -1554,20 +1739,14 @@ function writeIncrementalPdf(model: PdfIncrementalUpdateModel, objects: PdfIndir
     writeObjectValue(
       writer,
       object.value,
-      encryption !== undefined && object.id !== encryption.encryptObjectId
-        ? {
-            encryption: encryption.context,
-            objectId: object.id,
-            generation: 0
-          }
-        : undefined
+      getObjectEncryptionContext(encryption?.context, encryption?.encryptObjectId, object.id)
     );
     writer.writeLine();
     writer.writeLine("endobj");
   }
 
   const startXref = baseBytes.length + writer.size;
-  const maxObjectId = Math.max(model.base.getMaxObjectId(), ...objects.map((object) => object.id));
+  const maxObjectId = getMaxSerializedObjectId(objects, model.base.getMaxObjectId());
   writer.writeLine("xref");
   writer.writeLine(`0 ${maxObjectId + 1}`);
   writer.writeLine("0000000000 65535 f ");
@@ -1602,6 +1781,76 @@ function writeIncrementalPdf(model: PdfIncrementalUpdateModel, objects: PdfIndir
   return concatByteArrays(baseBytes, writer.toUint8Array());
 }
 
+async function writeIncrementalPdfToSink(
+  model: PdfIncrementalUpdateModel,
+  objects: Iterable<PdfIndirectObject>,
+  sink: ByteSink,
+  infoObjectId: number | undefined
+): Promise<void> {
+  if (isXrefStreamDocument(model.base.trailer)) {
+    await writeIncrementalXrefStreamPdfToSink(model, objects, sink, infoObjectId);
+    return;
+  }
+
+  const baseBytes = model.base.getSourceBytes();
+  await sink.write(baseBytes);
+
+  const encryption = getIncrementalEncryption(model);
+  const writer = new StreamingByteWriter(sink);
+  const lastByte = baseBytes[baseBytes.length - 1];
+  if (lastByte !== undefined && lastByte !== 0x0a && lastByte !== 0x0d) {
+    await writer.writeLine();
+  }
+
+  const offsets = new Map(model.base.xrefOffsets);
+  for (const object of objects) {
+    offsets.set(object.id, baseBytes.length + writer.size);
+    await writer.writeLine(`${object.id} 0 obj`);
+    const deferredLengthObjects = await writeObjectValueToSink(
+      writer,
+      object.value,
+      getObjectEncryptionContext(encryption?.context, encryption?.encryptObjectId, object.id)
+    );
+    await writer.writeLine();
+    await writer.writeLine("endobj");
+    await writeDeferredLengthObjectsToSink(writer, offsets, baseBytes.length, deferredLengthObjects);
+  }
+
+  const startXref = baseBytes.length + writer.size;
+  const maxObjectId = getMaxObjectIdFromOffsets(offsets, model.base.getMaxObjectId());
+  await writer.writeLine("xref");
+  await writer.writeLine(`0 ${maxObjectId + 1}`);
+  await writer.writeLine("0000000000 65535 f ");
+
+  for (let objectId = 1; objectId <= maxObjectId; objectId += 1) {
+    const offset = offsets.get(objectId);
+    if (offset === undefined) {
+      await writer.writeLine("0000000000 65535 f ");
+      continue;
+    }
+
+    await writer.writeLine(`${String(offset).padStart(10, "0")} 00000 n `);
+  }
+
+  const trailer = mergePdfDict(
+    model.base.trailer,
+    dict([
+      ["Size", maxObjectId + 1],
+      ["Root", ref(model.base.getRootObjectId())],
+      ["Info", infoObjectId !== undefined ? ref(infoObjectId) : undefined],
+      ["ID", buildIncrementalFileIdValue(model)],
+      ["Prev", model.base.startXrefOffset]
+    ])
+  );
+
+  await writer.writeLine("trailer");
+  await writer.writeLine(serializePdfValue(trailer));
+  await writer.writeLine("startxref");
+  await writer.writeLine(String(startXref));
+  await writer.writeLine("%%EOF");
+  await writer.close();
+}
+
 function writeIncrementalXrefStreamPdf(
   model: PdfIncrementalUpdateModel,
   objects: PdfIndirectObject[],
@@ -1622,19 +1871,13 @@ function writeIncrementalXrefStreamPdf(
     writeObjectValue(
       writer,
       object.value,
-      encryption !== undefined && object.id !== encryption.encryptObjectId
-        ? {
-            encryption: encryption.context,
-            objectId: object.id,
-            generation: 0
-          }
-        : undefined
+      getObjectEncryptionContext(encryption?.context, encryption?.encryptObjectId, object.id)
     );
     writer.writeLine();
     writer.writeLine("endobj");
   }
 
-  const xrefStreamObjectId = Math.max(model.base.getMaxObjectId(), ...objects.map((object) => object.id)) + 1;
+  const xrefStreamObjectId = getMaxSerializedObjectId(objects, model.base.getMaxObjectId()) + 1;
   const xrefStreamOffset = baseBytes.length + writer.size;
   const xrefEntries = new Map<number, { type: 0 | 1 | 2; field2: number; field3: number }>();
   xrefEntries.set(0, { type: 0, field2: 0, field3: 65535 });
@@ -1644,6 +1887,11 @@ function writeIncrementalXrefStreamPdf(
       continue;
     }
     xrefEntries.set(object.id, { type: 1, field2: offset, field3: 0 });
+  }
+  for (const [objectId, offset] of offsets) {
+    if (!xrefEntries.has(objectId)) {
+      xrefEntries.set(objectId, { type: 1, field2: offset, field3: 0 });
+    }
   }
   xrefEntries.set(xrefStreamObjectId, { type: 1, field2: xrefStreamOffset, field3: 0 });
 
@@ -1662,6 +1910,113 @@ function writeIncrementalXrefStreamPdf(
   writer.writeLine("%%EOF");
 
   return concatByteArrays(baseBytes, writer.toUint8Array());
+}
+
+function getObjectEncryptionContext(
+  encryption: PdfEncryptionContext | undefined,
+  excludedObjectId: number | undefined,
+  objectId: number
+): PdfObjectEncryptionContext | undefined {
+  if (encryption === undefined || objectId === excludedObjectId) {
+    return undefined;
+  }
+
+  return {
+    encryption,
+    objectId,
+    generation: 0
+  };
+}
+
+function getMaxSerializedObjectId(objects: Iterable<PdfIndirectObject>, minimum = 0): number {
+  let maxObjectId = minimum;
+  for (const object of objects) {
+    maxObjectId = Math.max(maxObjectId, object.id);
+    if (isPdfLazyStream(object.value)) {
+      maxObjectId = Math.max(maxObjectId, object.value.lengthObjectId);
+    }
+  }
+
+  return maxObjectId;
+}
+
+function getMaxObjectIdFromOffsets(offsets: ReadonlyMap<number, number>, minimum = 0): number {
+  let maxObjectId = minimum;
+  for (const objectId of offsets.keys()) {
+    maxObjectId = Math.max(maxObjectId, objectId);
+  }
+
+  return maxObjectId;
+}
+
+async function writeDeferredLengthObjectsToSink(
+  writer: StreamingByteWriter,
+  offsets: Map<number, number>,
+  baseOffset: number,
+  lengthObjects: readonly DeferredLengthObject[]
+): Promise<void> {
+  for (const lengthObject of lengthObjects) {
+    offsets.set(lengthObject.objectId, baseOffset + writer.size);
+    await writer.writeLine(`${lengthObject.objectId} 0 obj`);
+    await writer.write(String(lengthObject.length));
+    await writer.writeLine();
+    await writer.writeLine("endobj");
+  }
+}
+
+async function writeIncrementalXrefStreamPdfToSink(
+  model: PdfIncrementalUpdateModel,
+  objects: Iterable<PdfIndirectObject>,
+  sink: ByteSink,
+  infoObjectId: number | undefined
+): Promise<void> {
+  const baseBytes = model.base.getSourceBytes();
+  await sink.write(baseBytes);
+
+  const encryption = getIncrementalEncryption(model);
+  const writer = new StreamingByteWriter(sink);
+  const lastByte = baseBytes[baseBytes.length - 1];
+  if (lastByte !== undefined && lastByte !== 0x0a && lastByte !== 0x0d) {
+    await writer.writeLine();
+  }
+
+  const offsets = new Map<number, number>();
+  for (const object of objects) {
+    offsets.set(object.id, baseBytes.length + writer.size);
+    await writer.writeLine(`${object.id} 0 obj`);
+    const deferredLengthObjects = await writeObjectValueToSink(
+      writer,
+      object.value,
+      getObjectEncryptionContext(encryption?.context, encryption?.encryptObjectId, object.id)
+    );
+    await writer.writeLine();
+    await writer.writeLine("endobj");
+    await writeDeferredLengthObjectsToSink(writer, offsets, baseBytes.length, deferredLengthObjects);
+  }
+
+  const xrefStreamObjectId = getMaxObjectIdFromOffsets(offsets, model.base.getMaxObjectId()) + 1;
+  const xrefStreamOffset = baseBytes.length + writer.size;
+  const xrefEntries = new Map<number, { type: 0 | 1 | 2; field2: number; field3: number }>();
+  xrefEntries.set(0, { type: 0, field2: 0, field3: 65535 });
+  for (const [objectId, offset] of offsets) {
+    xrefEntries.set(objectId, { type: 1, field2: offset, field3: 0 });
+  }
+  xrefEntries.set(xrefStreamObjectId, { type: 1, field2: xrefStreamOffset, field3: 0 });
+
+  const xrefStreamValue = buildIncrementalXrefStreamValue(
+    model,
+    xrefEntries,
+    xrefStreamObjectId,
+    infoObjectId
+  );
+  await writer.writeLine(`${xrefStreamObjectId} 0 obj`);
+  await writeObjectValueToSink(writer, xrefStreamValue);
+  await writer.writeLine();
+  await writer.writeLine("endobj");
+  await writer.writeLine("startxref");
+  await writer.writeLine(String(xrefStreamOffset));
+  await writer.writeLine("%%EOF");
+  await writer.close();
 }
 
 function isXrefStreamDocument(trailer: PdfDict): boolean {
@@ -1769,6 +2124,10 @@ function writeBigEndian(buffer: Uint8Array, offset: number, width: number, value
 }
 
 function writeObjectValue(writer: ByteWriter, value: PdfValue, encryption: PdfObjectEncryptionContext | undefined = undefined): void {
+  if (isPdfLazyStream(value)) {
+    throw new Error("Lazy PDF streams require sink serialization.");
+  }
+
   const prepared = encryption ? encryptPdfValueForObject(value, encryption) : value;
   if (isPdfStream(prepared)) {
     const streamDict = dict([...prepared.dict, ["Length", prepared.bytes.length]]);
@@ -1780,7 +2139,61 @@ function writeObjectValue(writer: ByteWriter, value: PdfValue, encryption: PdfOb
     return;
   }
 
+  if (isPdfLazyStream(prepared)) {
+    throw new Error("Lazy PDF streams require sink serialization.");
+  }
+
   writer.write(serializePdfValue(prepared));
+}
+
+async function writeObjectValueToSink(
+  writer: StreamingByteWriter,
+  value: PdfValue,
+  encryption: PdfObjectEncryptionContext | undefined = undefined
+): Promise<DeferredLengthObject[]> {
+  if (isPdfLazyStream(value)) {
+    const encryptedDict =
+      encryption !== undefined
+        ? encryptPdfValueForObject(value.dict, encryption)
+        : value.dict;
+    if (!Array.isArray(encryptedDict) || !isPdfDictEntries(encryptedDict)) {
+      throw new Error("Lazy PDF stream dictionary could not be encrypted.");
+    }
+
+    const streamDict = dict([...encryptedDict, ["Length", ref(value.lengthObjectId)]]);
+    await writer.writeLine(serializePdfValue(streamDict));
+    await writer.writeLine("stream");
+    const startOfData = writer.size;
+    const cipher =
+      encryption !== undefined
+        ? createCipherForObject(encryption.encryption, encryption.objectId, encryption.generation)
+        : undefined;
+    for await (const chunk of value.data()) {
+      await writer.writeBytes(cipher ? cipher.update(chunk) : chunk);
+    }
+    const endOfData = writer.size;
+    await writer.writeLine();
+    await writer.write("endstream");
+    return [{ objectId: value.lengthObjectId, length: endOfData - startOfData }];
+  }
+
+  const prepared = encryption ? encryptPdfValueForObject(value, encryption) : value;
+  if (isPdfStream(prepared)) {
+    const streamDict = dict([...prepared.dict, ["Length", prepared.bytes.length]]);
+    await writer.writeLine(serializePdfValue(streamDict));
+    await writer.writeLine("stream");
+    await writer.writeBytes(prepared.bytes);
+    await writer.writeLine();
+    await writer.write("endstream");
+    return [];
+  }
+
+  if (isPdfLazyStream(prepared)) {
+    throw new Error("Lazy PDF streams require sink serialization.");
+  }
+
+  await writer.write(serializePdfValue(prepared));
+  return [];
 }
 
 function encryptPdfValueForObject(value: PdfValue, encryption: PdfObjectEncryptionContext): PdfValue {
@@ -1802,6 +2215,10 @@ function encryptPdfValueForObject(value: PdfValue, encryption: PdfObjectEncrypti
       dict: value.dict.map(([key, entryValue]) => [key, encryptPdfValueForObject(entryValue, encryption)] as [string, PdfValue]),
       bytes: encryptBytesForObject(encryption.encryption, encryption.objectId, encryption.generation, value.bytes)
     };
+  }
+
+  if (isPdfLazyStream(value)) {
+    throw new Error("Lazy PDF streams cannot be encrypted yet.");
   }
 
   switch (value.kind) {
@@ -2076,49 +2493,35 @@ function buildRoleMapDictionary(roleMap: NonNullable<PdfDocumentModel["roleMap"]
 }
 
 function buildParentTreeDictionary(allocation: TaggedPdfAllocation): PdfDict {
-  const entriesByKey = new Map<number, PdfValue[]>();
-  for (const element of allocation.elements) {
-    if (element.parentTreeKey === undefined) {
-      continue;
-    }
-
-    const existing = entriesByKey.get(element.parentTreeKey) ?? [];
-    for (const mcid of element.mcids) {
-      existing[mcid] = ref(element.objectId);
-    }
-    entriesByKey.set(element.parentTreeKey, existing);
-  }
-
-  const nums: PdfValue[] = [];
-  for (const key of [...entriesByKey.keys()].sort((left, right) => left - right)) {
-    nums.push(key);
-    nums.push(array(entriesByKey.get(key)!));
-  }
-  for (const element of allocation.elements) {
-    for (const key of element.annotationParentTreeKeys) {
-      nums.push(key);
-      nums.push(ref(element.objectId));
-    }
-  }
-
   return dict([
-    ["Nums", array(sortNumberTreeNums(nums))]
+    ["Nums", array(buildParentTreeNums(undefined, allocation))]
   ]);
 }
 
 function buildMergedParentTreeDictionary(
-  existingEntries: ReadonlyMap<number, PdfValue[]> | undefined,
+  existingEntries: ReadonlyMap<number, PdfValue> | undefined,
   allocation: TaggedPdfAllocation
 ): PdfDict {
-  const entriesByKey = new Map<number, PdfValue[]>(
-    [...(existingEntries?.entries() ?? [])].map(([key, value]) => [key, [...value]])
-  );
+  return dict([
+    ["Nums", array(buildParentTreeNums(existingEntries, allocation))]
+  ]);
+}
+
+function buildParentTreeNums(
+  existingEntries: ReadonlyMap<number, PdfValue> | undefined,
+  allocation: TaggedPdfAllocation
+): PdfValue[] {
+  const entriesByKey = new Map<number, PdfValue>();
+  for (const [key, value] of existingEntries?.entries() ?? []) {
+    entriesByKey.set(key, Array.isArray(value) && !isPdfDictValue(value) ? [...value] : value);
+  }
   for (const element of allocation.elements) {
     if (element.parentTreeKey === undefined) {
       continue;
     }
 
-    const existing = entriesByKey.get(element.parentTreeKey) ?? [];
+    const existingValue = entriesByKey.get(element.parentTreeKey);
+    const existing = Array.isArray(existingValue) && !isPdfDictValue(existingValue) ? [...existingValue] : [];
     for (const mcid of element.mcids) {
       existing[mcid] = ref(element.objectId);
     }
@@ -2128,7 +2531,8 @@ function buildMergedParentTreeDictionary(
   const nums: PdfValue[] = [];
   for (const key of [...entriesByKey.keys()].sort((left, right) => left - right)) {
     nums.push(key);
-    nums.push(array(entriesByKey.get(key)!));
+    const value = entriesByKey.get(key)!;
+    nums.push(Array.isArray(value) && !isPdfDictValue(value) ? array(value) : value);
   }
   for (const element of allocation.elements) {
     for (const key of element.annotationParentTreeKeys) {
@@ -2137,9 +2541,7 @@ function buildMergedParentTreeDictionary(
     }
   }
 
-  return dict([
-    ["Nums", array(sortNumberTreeNums(nums))]
-  ]);
+  return sortNumberTreeNums(nums);
 }
 
 function getNextParentTreeKey(allocation: TaggedPdfAllocation): number {
@@ -3287,7 +3689,32 @@ function encodePageContent(
     taggedContentItems: readonly TaggedPageContentItem[];
   }
 ): Uint8Array {
-  const lines: string[] = [];
+  return encoder.encode(`${[...serializePageContentLines(ops, resources)].join("\n")}\n`);
+}
+
+async function* encodePageContentChunks(
+  ops: readonly PdfOp[],
+  resources: {
+    fonts: Map<string, string>;
+    images: Map<string, string>;
+    embeddedFonts: Map<string, EmbeddedFontContext>;
+    taggedContentItems: readonly TaggedPageContentItem[];
+  }
+): AsyncIterable<Uint8Array> {
+  for (const line of serializePageContentLines(ops, resources)) {
+    yield encoder.encode(`${line}\n`);
+  }
+}
+
+function* serializePageContentLines(
+  ops: readonly PdfOp[],
+  resources: {
+    fonts: Map<string, string>;
+    images: Map<string, string>;
+    embeddedFonts: Map<string, EmbeddedFontContext>;
+    taggedContentItems: readonly TaggedPageContentItem[];
+  }
+): Iterable<string> {
   const taggedContentByOpIndex = new Map(resources.taggedContentItems.map((item) => [item.opIndex, item]));
 
   for (const [opIndex, op] of ops.entries()) {
@@ -3336,19 +3763,21 @@ function encodePageContent(
 
     const taggedItem = taggedContentByOpIndex.get(opIndex);
     if (taggedItem?.kind === "artifact") {
-      lines.push("/Artifact BMC", ...opLines, "EMC");
+      yield "/Artifact BMC";
+      yield* opLines;
+      yield "EMC";
       continue;
     }
 
     if (taggedItem?.kind === "struct" && taggedItem.role !== undefined && taggedItem.mcid !== undefined) {
-      lines.push(`/${taggedItem.role} <</MCID ${taggedItem.mcid}>> BDC`, ...opLines, "EMC");
+      yield `/${taggedItem.role} <</MCID ${taggedItem.mcid}>> BDC`;
+      yield* opLines;
+      yield "EMC";
       continue;
     }
 
-    lines.push(...opLines);
+    yield* opLines;
   }
-
-  return encoder.encode(`${lines.join("\n")}\n`);
 }
 
 function serializePath(commands: PathCommand[], style: Extract<PdfOp, { type: "path" }>["style"]): string[] {
@@ -3811,8 +4240,8 @@ function collectExistingTaggedState(base: PdfIncrementalUpdateModel["base"]): Ex
     return undefined;
   }
 
-  const rootKids = collectPdfArrayValues(base, getPdfDictValue(structTreeRoot, "K"));
-  const parentTreeEntries = new Map<number, PdfValue[]>();
+  const rootKids = collectPdfChildValues(base, getPdfDictValue(structTreeRoot, "K"));
+  const parentTreeEntries = new Map<number, PdfValue>();
   collectExistingParentTreeEntries(base, parentTree, parentTreeEntries, new Set<number>());
   const nextParentTreeKey = getNumericPdfDictValue(structTreeRoot, "ParentTreeNextKey")
     ?? (parentTreeEntries.size > 0 ? Math.max(...parentTreeEntries.keys()) + 1 : 0);
@@ -3831,7 +4260,7 @@ function collectExistingTaggedState(base: PdfIncrementalUpdateModel["base"]): Ex
 function collectExistingParentTreeEntries(
   base: PdfIncrementalUpdateModel["base"],
   node: PdfDict,
-  output: Map<number, PdfValue[]>,
+  output: Map<number, PdfValue>,
   seen: Set<number>
 ): void {
   const nums = collectPdfArrayValues(base, getPdfDictValue(node, "Nums"));
@@ -3841,7 +4270,7 @@ function collectExistingParentTreeEntries(
     if (typeof key !== "number" || value === undefined) {
       continue;
     }
-    output.set(key, collectPdfArrayValues(base, value));
+    output.set(key, collectParentTreeEntryValue(base, value));
   }
 
   const kids = collectPdfArrayValues(base, getPdfDictValue(node, "Kids"));
@@ -3911,6 +4340,20 @@ function reorderStructElementRefs(
 function collectPdfArrayValues(base: PdfIncrementalUpdateModel["base"], value: PdfValue | undefined): PdfValue[] {
   const resolved = resolvePdfValue(base, value);
   return Array.isArray(resolved) && !isPdfDictValue(resolved) ? [...resolved] : [];
+}
+
+function collectPdfChildValues(base: PdfIncrementalUpdateModel["base"], value: PdfValue | undefined): PdfValue[] {
+  if (value === undefined) {
+    return [];
+  }
+
+  const resolved = resolvePdfValue(base, value);
+  return Array.isArray(resolved) && !isPdfDictValue(resolved) ? [...resolved] : [value];
+}
+
+function collectParentTreeEntryValue(base: PdfIncrementalUpdateModel["base"], value: PdfValue): PdfValue {
+  const resolved = resolvePdfValue(base, value);
+  return Array.isArray(resolved) && !isPdfDictValue(resolved) ? [...resolved] : value;
 }
 
 function getNumericPdfDictValue(source: PdfDict | undefined, key: string): number | undefined {

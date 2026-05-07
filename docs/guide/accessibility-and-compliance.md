@@ -1,32 +1,144 @@
 # Accessibility and Compliance
 
-`pdf-editing-lib` can create tagged PDFs with document language, semantic structure, role maps, alt text, and validation warnings.
+`pdf-editing-lib` can create tagged PDFs with document language, semantic structure, role maps, alt text, and validation warnings. For output that is intended to validate as PDF/UA-1, enable the PDF/UA profile, embed fonts for all visible text, use semantic flow helpers for meaningful content, mark decorative drawing as artifacts when you use low-level drawing, and write the serialized bytes to your target.
 
 ```ts
+import { readFile, writeFile } from "node:fs/promises";
 import { createDocument } from "pdf-editing-lib";
 
+const fontBytes = await readFile("fonts/SourceSans3-Regular.ttf");
+
 const doc = createDocument({
+  conformance: "pdfua-1",
   tagged: true,
-  language: "en-US"
+  language: "en-US",
+  structureRoot: "Document",
+  info: {
+    title: "Quarterly Report",
+    author: "pdf-editing-lib"
+  },
+  xmpMetadata: {
+    title: "Quarterly Report",
+    creator: "pdf-editing-lib",
+    createDate: "2026-05-05T00:00:00Z",
+    modifyDate: "2026-05-05T00:00:00Z",
+    metadataDate: "2026-05-05T00:00:00Z"
+  }
 });
 
-const page = doc.addPage();
+const font = doc.embedTrueTypeFont(fontBytes, { family: "SourceSans3" });
+const page = doc.addPage({ size: "Letter" });
 
-page.text("Quarterly Report", {
-  x: 56,
-  y: 760,
-  tag: "H1"
-});
-
-page.png(logoBytes, {
-  x: 56,
-  y: 700,
-  width: 32,
-  height: 32,
-  altText: "Company logo"
-});
+page.flow({ font })
+  .heading("Quarterly Report")
+  .paragraph("Revenue, support volume, and accessibility work completed during Q1.")
+  .table(
+    [
+      [
+        { text: "Metric", header: true },
+        { text: "Result", header: true }
+      ],
+      [
+        { text: "Revenue", header: true, scope: "row" },
+        "$2.6M"
+      ],
+      [
+        { text: "Open tickets", header: true, scope: "row" },
+        "38"
+      ]
+    ],
+    {
+      headerRows: 1,
+      headerColumns: 1,
+      fontSize: 10
+    }
+  )
+  .png(logoBytes, {
+    width: 32,
+    altText: "Company logo"
+  });
 
 const issues = doc.validateCompliance();
+if (issues.some((issue) => issue.severity === "error")) {
+  throw new Error(issues.map((issue) => issue.message).join("\n"));
+}
+
+await writeFile("quarterly-report.pdf", doc.toUint8Array());
+```
+
+`flow()` keeps a cursor, assigns standard tags for headings and paragraphs, lays out tables and images, applies standard report spacing, and infers structure bounding boxes from the generated placement. Use `structure.boundingBox` only when you need to override the inferred box for a specific element.
+
+The default spacing scale is designed around readable PDF reports: body paragraphs have compact after-spacing, headings have stronger before-spacing and tighter after-spacing, tables and figures get object spacing, and headings at the top of a page do not receive unnecessary leading space. For special cases, set `spaceBefore` or `spaceAfter` on a block. For a whole report, set `page.spacing`.
+
+For longer reports, use `renderTemplate()` to render a reusable block tree with automatic page creation:
+
+```ts
+doc.renderTemplate({
+  info: {
+    title: "Accessibility Audit Report",
+    author: "BarrierBreak"
+  },
+  xmpMetadata: {
+    title: "Accessibility Audit Report",
+    creator: "BarrierBreak",
+    createDate: "2026-05-05T00:00:00Z",
+    modifyDate: "2026-05-05T00:00:00Z",
+    metadataDate: "2026-05-05T00:00:00Z"
+  },
+  page: {
+    size: "A4",
+    font,
+    margin: 56,
+    spacing: {
+      paragraphAfter: 8,
+      headingBefore: { 2: 18, 3: 14 },
+      headingAfter: { 1: 14, 2: 10, 3: 8 },
+      tableBefore: 6,
+      tableAfter: 14
+    }
+  },
+  blocks: [
+    { type: "heading", text: "Accessibility Audit Report" },
+    { type: "paragraph", text: "Executive summary and scope." },
+    {
+      type: "table",
+      rows: [
+        [{ text: "Criterion", header: true }, { text: "Result", header: true }],
+        ["Language metadata", "Present"]
+      ],
+      options: { headerRows: 1 }
+    },
+    { type: "pageBreak" },
+    { type: "heading", text: "References", options: { level: 2 } },
+    { type: "link", text: "WCAG 2.2", url: "https://www.w3.org/TR/WCAG22/" }
+  ],
+  header: ({ title, pageNumber, totalPages }) => [
+    {
+      type: "paragraph",
+      text: `${title ?? "Report"} - page ${pageNumber} of ${totalPages}`,
+      options: { fontSize: 8, tag: "Artifact" }
+    }
+  ],
+  pageNumber: {
+    region: "footer",
+    align: "center"
+  }
+});
+```
+
+Use `{ type: "pageBreak" }` when the next block should start on a fresh page. A page break before any body content on the current page is ignored, so templates can include defensive breaks without creating empty pages.
+
+Headers and footers are rendered after the body pages are known, so callbacks receive `title`, `author`, `pageNumber`, and `totalPages`. Use `pageNumber` for standard running page labels without hand-authoring a footer; set `region` to `"header"` or `"footer"` and `align` to `"left"`, `"center"`, or `"right"`.
+
+`conformance: "pdfua-1"` makes serialization fail when required PDF/UA inputs are missing, such as document language, tags, alt text for figures, or embedded fonts for visible text. `validateCompliance()` is still useful before writing because it returns all current warnings and errors instead of throwing on the first blocking issue.
+
+You can also stream the same tagged document to a sink:
+
+```ts
+import { NodeStreamSink } from "pdf-editing-lib";
+import { createWriteStream } from "node:fs";
+
+await doc.writeTo(new NodeStreamSink(createWriteStream("quarterly-report.pdf")));
 ```
 
 ## Structure containers
@@ -36,11 +148,22 @@ Use containers when content has semantic relationships that should be preserved 
 ```ts
 const page = doc.addPage();
 
-page.container("Table", (table) => {
-  table.container("TR", (row) => {
-    row.text("Criterion", { x: 56, y: 720, tag: "TH" });
-    row.text("Result", { x: 180, y: 720, tag: "TH" });
-  });
+page.container("Sect", (section) => {
+  section.flow()
+    .heading("Audit details", { level: 2 })
+    .paragraph("Grouped content remains nested under the section element.")
+    .table(
+      [
+        [
+          { text: "Criterion", header: true },
+          { text: "Result", header: true }
+        ],
+        ["Language metadata", "Present"]
+      ],
+      {
+        headerRows: 1
+      }
+    );
 });
 ```
 

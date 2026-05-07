@@ -27,6 +27,13 @@ export interface PdfStream {
   bytes: Uint8Array;
 }
 
+export interface PdfLazyStream {
+  kind: "lazyStream";
+  dict: PdfDict;
+  lengthObjectId: number;
+  data: () => AsyncIterable<Uint8Array>;
+}
+
 export type PdfValue =
   | null
   | boolean
@@ -36,6 +43,7 @@ export type PdfValue =
   | PdfHexString
   | PdfRef
   | PdfStream
+  | PdfLazyStream
   | PdfArray
   | PdfDict;
 
@@ -75,6 +83,14 @@ export function stream(dictEntries: PdfDict, bytes: Uint8Array): PdfStream {
   return { kind: "stream", dict: dictEntries, bytes };
 }
 
+export function lazyStream(
+  dictEntries: PdfDict,
+  lengthObjectId: number,
+  data: () => AsyncIterable<Uint8Array>
+): PdfLazyStream {
+  return { kind: "lazyStream", dict: dictEntries, lengthObjectId, data };
+}
+
 export function formatPdfNumber(value: number): string {
   if (!Number.isFinite(value)) {
     throw new PdfEngineError(PdfErrorCode.INVALID_NUMBER, "PDF numbers must be finite.", { value });
@@ -92,7 +108,7 @@ export function formatPdfNumber(value: number): string {
   return normalized === "-0" ? "0" : normalized;
 }
 
-export function serializePdfValue(value: Exclude<PdfValue, PdfStream>): string {
+export function serializePdfValue(value: Exclude<PdfValue, PdfStream | PdfLazyStream>): string {
   if (value === null) {
     return "null";
   }
@@ -107,11 +123,11 @@ export function serializePdfValue(value: Exclude<PdfValue, PdfStream>): string {
 
   if (Array.isArray(value)) {
     if (isPdfDict(value)) {
-      const entries = value.map(([key, entryValue]) => `/${escapeName(key)} ${serializePdfValue(entryValue as Exclude<PdfValue, PdfStream>)}`);
+      const entries = value.map(([key, entryValue]) => `/${escapeName(key)} ${serializePdfValue(entryValue as Exclude<PdfValue, PdfStream | PdfLazyStream>)}`);
       return `<< ${entries.join(" ")} >>`;
     }
 
-    const items = value.map((entry) => serializePdfValue(entry as Exclude<PdfValue, PdfStream>));
+    const items = value.map((entry) => serializePdfValue(entry as Exclude<PdfValue, PdfStream | PdfLazyStream>));
     return `[${items.join(" ")}]`;
   }
 
@@ -131,6 +147,10 @@ export function serializePdfValue(value: Exclude<PdfValue, PdfStream>): string {
 
 export function isPdfStream(value: PdfValue): value is PdfStream {
   return typeof value === "object" && value !== null && "kind" in value && value.kind === "stream";
+}
+
+export function isPdfLazyStream(value: PdfValue): value is PdfLazyStream {
+  return typeof value === "object" && value !== null && "kind" in value && value.kind === "lazyStream";
 }
 
 function isPdfDict(value: PdfArray | PdfDict): value is PdfDict {
