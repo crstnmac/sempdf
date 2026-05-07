@@ -466,13 +466,28 @@ function parseCmap(bytes: Uint8Array, offset: number): TrueTypeCmap {
 
   const format = readUint16(bytes, chosenOffset);
   if (format === 4) {
-    return parseFormat4Cmap(bytes, chosenOffset);
+    return memoizeCmap(parseFormat4Cmap(bytes, chosenOffset));
   }
   if (format === 12) {
-    return parseFormat12Cmap(bytes, chosenOffset);
+    return memoizeCmap(parseFormat12Cmap(bytes, chosenOffset));
   }
 
   throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Unsupported cmap format for embedded font.", { format });
+}
+
+function memoizeCmap(cmap: TrueTypeCmap): TrueTypeCmap {
+  const cache = new Map<number, number>();
+  return {
+    getGlyphId(codePoint: number): number {
+      const cached = cache.get(codePoint);
+      if (cached !== undefined) {
+        return cached;
+      }
+      const glyphId = cmap.getGlyphId(codePoint);
+      cache.set(codePoint, glyphId);
+      return glyphId;
+    }
+  };
 }
 
 function parseFormat4Cmap(bytes: Uint8Array, offset: number): TrueTypeCmap {

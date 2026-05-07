@@ -3,7 +3,7 @@ import { parseDocument, type ParsedPdfDocument, type ParsedPdfPage } from "./par
 import type { BinaryData } from "./types.js";
 import { inflateZlib } from "./internal/deflate.js";
 import { ByteWriter } from "./internal/byte-writer.js";
-import { array, dict, formatPdfNumber, isPdfStream, name, ref, serializePdfValue, stream, type PdfDict, type PdfIndirectObject, type PdfRef, type PdfStream, type PdfValue } from "./internal/pdf-primitives.js";
+import { array, dict, formatPdfNumber, isPdfLazyStream, isPdfStream, name, ref, serializePdfValue, stream, type PdfDict, type PdfIndirectObject, type PdfRef, type PdfStream, type PdfValue } from "./internal/pdf-primitives.js";
 
 interface ImportedPageSpec {
   readonly document: ParsedPdfDocument;
@@ -411,6 +411,10 @@ function writePdf(objects: PdfIndirectObject[]): Uint8Array {
 }
 
 function writeObjectValue(writer: ByteWriter, value: PdfValue): void {
+  if (isPdfLazyStream(value)) {
+    throw new Error("Lazy PDF streams require sink serialization.");
+  }
+
   if (isPdfStream(value)) {
     const streamDict = dict([...value.dict, ["Length", value.bytes.length]]);
     writer.writeLine(serializePdfValue(streamDict));

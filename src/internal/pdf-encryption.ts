@@ -30,6 +30,10 @@ export interface PdfEncryptionContext {
   readonly documentKey: Uint8Array;
 }
 
+export interface PdfObjectCipher {
+  update(bytes: Uint8Array): Uint8Array;
+}
+
 export interface OpenPdfEncryptionContextOptions {
   readonly password: string;
   readonly fileId: Uint8Array;
@@ -140,6 +144,14 @@ export function encryptBytesForObject(
     return bytes;
   }
 
+  return createCipherForObject(context, objectId, generation).update(bytes);
+}
+
+export function createCipherForObject(
+  context: PdfEncryptionContext,
+  objectId: number,
+  generation: number
+): PdfObjectCipher {
   const keyMaterial = concatBytes(
     context.documentKey,
     Uint8Array.from([
@@ -151,7 +163,7 @@ export function encryptBytesForObject(
     ])
   );
   const objectKey = md5(keyMaterial).subarray(0, Math.min(context.documentKey.length + 5, 16));
-  return rc4(objectKey, bytes);
+  return createRc4Cipher(objectKey);
 }
 
 export function latin1Bytes(value: string): Uint8Array {
@@ -335,6 +347,10 @@ function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
 }
 
 function rc4(key: Uint8Array, data: Uint8Array): Uint8Array {
+  return createRc4Cipher(key).update(data);
+}
+
+function createRc4Cipher(key: Uint8Array): PdfObjectCipher {
   const state = new Uint8Array(256);
   for (let index = 0; index < 256; index += 1) {
     state[index] = index;
@@ -346,18 +362,23 @@ function rc4(key: Uint8Array, data: Uint8Array): Uint8Array {
     swap(state, index, j);
   }
 
-  const output = new Uint8Array(data.length);
   let i = 0;
   j = 0;
-  for (let index = 0; index < data.length; index += 1) {
-    i = (i + 1) & 0xff;
-    j = (j + state[i]!) & 0xff;
-    swap(state, i, j);
-    const keyByte = state[(state[i]! + state[j]!) & 0xff]!;
-    output[index] = data[index]! ^ keyByte;
-  }
 
-  return output;
+  return {
+    update(data: Uint8Array): Uint8Array {
+      const output = new Uint8Array(data.length);
+      for (let index = 0; index < data.length; index += 1) {
+        i = (i + 1) & 0xff;
+        j = (j + state[i]!) & 0xff;
+        swap(state, i, j);
+        const keyByte = state[(state[i]! + state[j]!) & 0xff]!;
+        output[index] = data[index]! ^ keyByte;
+      }
+
+      return output;
+    }
+  };
 }
 
 function swap(state: Uint8Array, left: number, right: number): void {

@@ -133,6 +133,8 @@ interface ParsedDocumentEncryption {
   readonly encryptObjectId?: number | undefined;
 }
 
+type StreamLengthResolver = (refValue: PdfRef) => number | undefined;
+
 export interface ParseDocumentOptions {
   readonly password?: string | undefined;
 }
@@ -380,10 +382,11 @@ export function parseDocument(data: BinaryData, options: ParseDocumentOptions = 
   const version = parseHeaderVersion(bytes);
   const startXref = findStartXref(bytes);
   const { offsets, compressed, trailer } = parseXrefChain(bytes, startXref);
+  const resolveStreamLength = createStreamLengthResolver(bytes, offsets);
 
   let objects = new Map<number, ParsedPdfIndirectObject>();
   for (const [objectId, offset] of [...offsets.entries()].sort((left, right) => left[0] - right[0])) {
-    objects.set(objectId, parseIndirectObject(bytes, offset));
+    objects.set(objectId, parseIndirectObject(bytes, offset, resolveStreamLength));
   }
 
   const encryption = resolveDocumentEncryption(trailer, objects, options);
@@ -825,7 +828,47 @@ function parseXrefChain(bytes: Uint8Array, offset: number): { offsets: Map<numbe
   };
 }
 
-function parseIndirectObject(bytes: Uint8Array, offset: number): ParsedPdfIndirectObject {
+function createStreamLengthResolver(
+  bytes: Uint8Array,
+  offsets: ReadonlyMap<number, number>
+): StreamLengthResolver {
+  const cache = new Map<number, number | undefined>();
+  const resolving = new Set<number>();
+
+  return (refValue: PdfRef): number | undefined => {
+    if (refValue.generation !== 0) {
+      return undefined;
+    }
+
+    if (cache.has(refValue.objectId)) {
+      return cache.get(refValue.objectId);
+    }
+
+    const offset = offsets.get(refValue.objectId);
+    if (offset === undefined || resolving.has(refValue.objectId)) {
+      cache.set(refValue.objectId, undefined);
+      return undefined;
+    }
+
+    resolving.add(refValue.objectId);
+    try {
+      const object = parseIndirectObject(bytes, offset);
+      const length = typeof object.value === "number" && Number.isInteger(object.value) && object.value >= 0
+        ? object.value
+        : undefined;
+      cache.set(refValue.objectId, length);
+      return length;
+    } finally {
+      resolving.delete(refValue.objectId);
+    }
+  };
+}
+
+function parseIndirectObject(
+  bytes: Uint8Array,
+  offset: number,
+  resolveStreamLength?: StreamLengthResolver
+): ParsedPdfIndirectObject {
   const parser = new ValueParser(bytes, offset);
   const id = parser.parseInteger();
   parser.skipWhitespaceAndComments();
@@ -842,9 +885,10 @@ function parseIndirectObject(bytes: Uint8Array, offset: number): ParsedPdfIndire
 
     const lengthValue = getDictValue(value, "Length");
     let streamBytes: Uint8Array;
-    if (typeof lengthValue === "number") {
-      streamBytes = bytes.slice(parser.position, parser.position + lengthValue);
-      parser.position += lengthValue;
+    const resolvedLength = resolveStreamLengthValue(lengthValue, resolveStreamLength);
+    if (resolvedLength !== undefined) {
+      streamBytes = bytes.slice(parser.position, parser.position + resolvedLength);
+      parser.position += resolvedLength;
     } else {
       const endstream = findKeyword(bytes, parser.position, "endstream");
       if (endstream === -1) {
@@ -872,6 +916,21 @@ function parseIndirectObject(bytes: Uint8Array, offset: number): ParsedPdfIndire
     offset,
     value: finalValue
   };
+}
+
+function resolveStreamLengthValue(
+  lengthValue: PdfValue | undefined,
+  resolveStreamLength: StreamLengthResolver | undefined
+): number | undefined {
+  if (typeof lengthValue === "number" && Number.isInteger(lengthValue) && lengthValue >= 0) {
+    return lengthValue;
+  }
+
+  if (isPdfRef(lengthValue) && resolveStreamLength) {
+    return resolveStreamLength(lengthValue);
+  }
+
+  return undefined;
 }
 
 function parseObjectStream(

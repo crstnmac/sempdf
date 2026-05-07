@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 
-import { appendPages, createDocument, editDocument, extractPages, mergeDocuments, parseDocument, PdfEngineError, PdfErrorCode, rgb, splitDocument } from "../src/index.js";
+import { appendPages, BufferSink, createDocument, editDocument, extractPages, mergeDocuments, parseDocument, PdfEngineError, PdfErrorCode, rgb, splitDocument } from "../src/index.js";
+import { StreamingByteWriter } from "../src/internal/streaming-byte-writer.js";
 import { inspectPdf } from "../src/internal/inspect.js";
 import { makeKerningPairKey, measureTextWidth } from "../src/internal/text-layout.js";
 import type { PdfValue } from "../src/internal/pdf-primitives.js";
@@ -26,6 +27,23 @@ function tinyPngBytes(): Uint8Array {
 
 function transparentTinyPngBytes(): Uint8Array {
   return Uint8Array.from(Buffer.from(TRANSPARENT_TINY_PNG_BASE64, "base64"));
+}
+
+class CountingSink {
+  chunks = 0;
+  bytes = 0;
+  maxChunkBytes = 0;
+  closed = false;
+
+  async write(chunk: Uint8Array): Promise<void> {
+    this.chunks += 1;
+    this.bytes += chunk.length;
+    this.maxChunkBytes = Math.max(this.maxChunkBytes, chunk.length);
+  }
+
+  async close(): Promise<void> {
+    this.closed = true;
+  }
 }
 
 function alphaTinyPngBytes(): Uint8Array {
@@ -102,6 +120,34 @@ function xrefStreamFixtureBytes(): Uint8Array {
 
   const footer = encoder.encode(`startxref\n${offset6}\n%%EOF`);
   return joinBytes([header, object1, object5, object6, footer]);
+}
+
+function indirectLengthStreamFixtureBytes(): Uint8Array {
+  const encoder = new TextEncoder();
+  const header = "%PDF-1.7\n";
+  const streamBody = "BT /F1 12 Tf (alpha endstream omega) Tj ET";
+  const objects = [
+    "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+    "2 0 obj\n<< /Type /Pages /Count 1 /Kids [3 0 R] >>\nendobj\n",
+    "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>\nendobj\n",
+    `4 0 obj\n<< /Length 5 0 R >>\nstream\n${streamBody}\nendstream\nendobj\n`,
+    `5 0 obj\n${encoder.encode(streamBody).length}\nendobj\n`
+  ];
+  const offsets: number[] = [];
+  let cursor = encoder.encode(header).length;
+  for (const object of objects) {
+    offsets.push(cursor);
+    cursor += encoder.encode(object).length;
+  }
+
+  const xrefOffset = cursor;
+  const xrefEntries = [
+    "0000000000 65535 f \n",
+    ...offsets.map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`)
+  ].join("");
+  const trailer = `xref\n0 6\n${xrefEntries}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+
+  return encoder.encode(`${header}${objects.join("")}${trailer}`);
 }
 
 function findTrueTypeFixturePath(): string | undefined {
@@ -242,6 +288,198 @@ test("creates a single page hello world PDF", () => {
   assert.match(text, /xref/);
   assert.equal(inspection.objects.size, 6);
   assert.equal(inspection.xrefOffsets.get(1)! > 0, true);
+});
+
+test("writes generated documents to byte sinks", async () => {
+  const doc = createDocument({
+    info: {
+      title: "Sink Output",
+      creationDate: "D:20260413213000Z",
+      modificationDate: "D:20260413213000Z"
+    }
+  });
+  doc.addPage({ size: "A4" }).text("Hello sink", { x: 48, y: 780 });
+
+  const sink = new BufferSink();
+  await doc.writeTo(sink);
+  const bytes = sink.collect();
+  const text = new TextDecoder().decode(bytes);
+  const parsed = parseDocument(bytes);
+
+  assert.equal(parsed.getMetadata().title, "Sink Output");
+  assert.equal(parsed.getPageCount(), 1);
+  assert.match(text, /\/Length \d+ 0 R/);
+});
+
+test("streams generated documents as multiple sink writes", async () => {
+  const doc = createDocument({
+    info: {
+      title: "Streaming Output",
+      creationDate: "D:20260413213000Z",
+      modificationDate: "D:20260413213000Z"
+    }
+  });
+  doc.addPage({ size: "A4" }).text("Hello streaming sink", { x: 48, y: 780 });
+
+  const sink = new CountingSink();
+  await doc.writeTo(sink);
+
+  assert.equal(sink.closed, true);
+  assert.equal(sink.bytes > doc.toUint8Array().length, true);
+  assert.equal(sink.chunks > 1, true);
+});
+
+test("streams large generated documents without collecting output bytes", async () => {
+  const pageCount = 400;
+  const doc = createDocument({
+    info: {
+      title: "Large Sink Output",
+      creationDate: "D:20260413213000Z",
+      modificationDate: "D:20260413213000Z"
+    }
+  });
+
+  for (let index = 0; index < pageCount; index += 1) {
+    doc.addPage({ size: "A4" }).text(`Streaming page ${index + 1}`, { x: 48, y: 780 });
+  }
+
+  const sink = new CountingSink();
+  const heapBeforeWrite = process.memoryUsage().heapUsed;
+  await doc.writeTo(sink);
+  const heapGrowth = process.memoryUsage().heapUsed - heapBeforeWrite;
+
+  assert.equal(sink.closed, true);
+  assert.equal(sink.bytes > pageCount * 100, true);
+  assert.equal(sink.chunks > pageCount, true);
+  assert.equal(sink.maxChunkBytes < sink.bytes, true);
+  assert.equal(heapGrowth < 32 * 1024 * 1024, true);
+});
+
+test("streams generated image and attachment payloads with lazy lengths", async () => {
+  const doc = createDocument({
+    info: {
+      title: "Payload Sink Output",
+      creationDate: "D:20260413213000Z",
+      modificationDate: "D:20260413213000Z"
+    }
+  });
+  const page = doc.addPage({ size: "A4" });
+  page.text("Payloads", { x: 48, y: 780 });
+  page.png(tinyPngBytes(), { x: 48, y: 720, width: 16, height: 16 });
+  doc.attachFile("payload.txt", new TextEncoder().encode("attached payload"), {
+    description: "Payload attachment",
+    mimeType: "text/plain"
+  });
+
+  const sink = new BufferSink();
+  await doc.writeTo(sink);
+  const bytes = sink.collect();
+  const text = new TextDecoder().decode(bytes);
+  const parsed = parseDocument(bytes);
+
+  assert.equal(parsed.getMetadata().title, "Payload Sink Output");
+  assert.equal(parsed.listAttachments()[0]?.name, "payload.txt");
+  assert.equal((text.match(/\/Length \d+ 0 R/g) ?? []).length >= 3, true);
+});
+
+test("streams encrypted generated documents with lazy encrypted streams", async () => {
+  const doc = createDocument({
+    info: {
+      title: "Encrypted Sink Output",
+      creationDate: "D:20260413213000Z",
+      modificationDate: "D:20260413213000Z"
+    },
+    encryption: {
+      userPassword: "reader",
+      ownerPassword: "owner"
+    }
+  });
+  doc.addPage({ size: "A4" }).text("Secret sink", { x: 48, y: 780 });
+
+  const sink = new BufferSink();
+  await doc.writeTo(sink);
+  const bytes = sink.collect();
+  const text = new TextDecoder().decode(bytes);
+  const parsed = parseDocument(bytes, { password: "reader" });
+
+  assert.equal(parsed.getMetadata().title, "Encrypted Sink Output");
+  assert.equal(parsed.getPageCount(), 1);
+  assert.equal(text.includes("Secret sink"), false);
+  assert.match(text, /\/Length \d+ 0 R/);
+});
+
+test("streams incremental edits with lazy content lengths", async () => {
+  const base = createDocument({
+    info: {
+      title: "Editable Sink Base",
+      creationDate: "D:20260413213000Z",
+      modificationDate: "D:20260413213000Z"
+    }
+  });
+  base.addPage({ size: "A4" }).text("Base page", { x: 48, y: 780 });
+
+  const editable = editDocument(base.toUint8Array());
+  editable.addPage({ size: "A4" }).text("Appended page", { x: 48, y: 780 });
+
+  const sink = new BufferSink();
+  await editable.writeTo(sink);
+  const bytes = sink.collect();
+  const text = new TextDecoder().decode(bytes);
+  const parsed = parseDocument(bytes);
+
+  assert.equal(parsed.getPageCount(), 2);
+  assert.match(text, /\/Length \d+ 0 R/);
+});
+
+test("streams unchanged editable documents as source bytes", async () => {
+  const base = createDocument({
+    info: {
+      title: "Unchanged Editable Sink",
+      creationDate: "D:20260413213000Z",
+      modificationDate: "D:20260413213000Z"
+    }
+  });
+  base.addPage({ size: "A4" }).text("Base page", { x: 48, y: 780 });
+  const baseBytes = base.toUint8Array();
+  const editable = editDocument(baseBytes);
+
+  const sink = new CountingSink();
+  await editable.writeTo(sink);
+
+  assert.equal(sink.closed, true);
+  assert.equal(sink.bytes, baseBytes.length);
+  assert.equal(sink.chunks, 1);
+});
+
+test("streams incremental xref-stream edits with lazy content lengths", async () => {
+  const editable = editDocument(xrefStreamFixtureBytes());
+  editable.addPage({ size: "A4" }).text("Appended from xref stream sink", { x: 36, y: 700 });
+
+  const sink = new BufferSink();
+  await editable.writeTo(sink);
+  const bytes = sink.collect();
+  const text = new TextDecoder().decode(bytes);
+  const parsed = parseDocument(bytes);
+
+  assert.equal(parsed.getPageCount(), 2);
+  assert.match(text, /\/Length \d+ 0 R/);
+});
+
+test("streaming byte writer tracks sink offsets", async () => {
+  const sink = new BufferSink();
+  const writer = new StreamingByteWriter(sink);
+
+  await writer.writeLine("%PDF-1.4");
+  assert.equal(writer.size, 9);
+
+  await writer.writeBytes(Uint8Array.from([0x25, 0xff, 0x0a]));
+  assert.equal(writer.size, 12);
+
+  await writer.close();
+  assert.deepEqual(sink.collect(), Uint8Array.from([
+    0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0x0a,
+    0x25, 0xff, 0x0a
+  ]));
 });
 
 test("reuses built-in font objects across multiple pages", () => {
@@ -779,6 +1017,44 @@ test("serializes and parses XMP metadata streams", () => {
   assert.equal(parsed.getXmpMetadata(), xmpMetadata);
 });
 
+test("generates XMP metadata from structured options", () => {
+  const fontPath = findTrueTypeFixturePath();
+  if (!fontPath) {
+    return;
+  }
+
+  const doc = createDocument({
+    conformance: "pdfua-1",
+    tagged: true,
+    language: "en-US",
+    structureRoot: "Document",
+    info: {
+      title: "Structured XMP",
+      author: "Codex"
+    },
+    xmpMetadata: {
+      title: "Structured <XMP>",
+      creators: ["Codex", "sempdf"],
+      createDate: new Date("2026-05-05T00:00:00Z"),
+      modifyDate: "2026-05-06T00:00:00Z",
+      metadataDate: "2026-05-07T00:00:00Z"
+    }
+  });
+
+  const font = doc.embedTrueTypeFont(readFileSync(fontPath), { family: "StructuredXmp" });
+  const page = doc.addPage({ size: "Letter" });
+  page.text("Tagged", { x: 24, y: 700, font, tag: "P" });
+
+  const parsed = parseDocument(doc.toUint8Array());
+  const xmp = parsed.getXmpMetadata() ?? "";
+  assert.match(xmp, /Structured &lt;XMP&gt;/);
+  assert.match(xmp, /<rdf:li>Codex<\/rdf:li><rdf:li>sempdf<\/rdf:li>/);
+  assert.match(xmp, /<xmp:CreateDate>2026-05-05T00:00:00Z<\/xmp:CreateDate>/);
+  assert.match(xmp, /<xmp:ModifyDate>2026-05-06T00:00:00Z<\/xmp:ModifyDate>/);
+  assert.match(xmp, /<xmp:MetadataDate>2026-05-07T00:00:00Z<\/xmp:MetadataDate>/);
+  assert.match(xmp, /pdfuaid:part>\s*1\s*</);
+});
+
 test("rejects empty XMP metadata", () => {
   assert.throws(
     () => createDocument({ xmpMetadata: "   " }),
@@ -924,9 +1200,9 @@ test("serializes tagged page links, annotations, form widgets, attributes, and p
 
   const bytes = doc.toUint8Array();
   const text = new TextDecoder().decode(bytes);
-  assert.match(text, /\/Artifact BMC/);
+  assert.match(text, /\/Artifact(?: BMC| <<)/);
   assert.match(text, /\/Type \/OBJR/);
-  assert.match(text, /\/A <<\s*\/O \/Layout\s*\/RowSpan 1\s*\/Headers \[\(name-header\)\]\s*>>/);
+  assert.match(text, /\/A <<\s*\/O \/Layout\s*\/RowSpan 1\s*\/Headers \[\(name-header\)\]\s*\/BBox \[36 590 156 614\]\s*>>/);
 
   const [root] = parseDocument(bytes).listStructureElements();
   assert.equal(root?.role, "Document");
@@ -934,6 +1210,222 @@ test("serializes tagged page links, annotations, form widgets, attributes, and p
   assert.equal(root?.children?.[0]?.actualText, "Go to details");
   assert.equal(root?.children?.[1]?.altText, "Important highlight");
   assert.equal(root?.children?.[2]?.altText, "Name field");
+});
+
+test("infers structure bounding boxes and supports flow-authored tagged content", () => {
+  const doc = createDocument({
+    tagged: true,
+    language: "en-US",
+    structureRoot: "Document"
+  });
+  const page = doc.addPage({ size: "Letter" });
+
+  page.flow({ margin: 48, width: 300 })
+    .heading("Flow Report")
+    .paragraph("This paragraph is tagged and laid out without caller supplied coordinates.")
+    .link("Read more", "https://example.com/report")
+    .png(tinyPngBytes(), {
+      width: 24,
+      altText: "Status icon"
+    });
+
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/S \/H1/);
+  assert.match(text, /\/S \/P/);
+  assert.match(text, /\/S \/Link/);
+  assert.match(text, /\/S \/Figure/);
+  assert.match(text, /\/BBox \[48 [0-9.]+ 72 [0-9.]+\]/);
+
+  const [root] = parseDocument(doc.toUint8Array()).listStructureElements();
+  assert.deepEqual(root?.children?.map((element) => element.role), ["H1", "P", "Link", "Figure"]);
+});
+
+test("renders template blocks across pages with semantic tags", () => {
+  const doc = createDocument({
+    tagged: true,
+    language: "en-US",
+    structureRoot: "Document"
+  });
+
+  doc.renderTemplate({
+    page: {
+      size: { width: 240, height: 220 },
+      margin: 24,
+      marginBottom: 24
+    },
+    blocks: [
+      { type: "heading", text: "Template report" },
+      ...Array.from({ length: 14 }, (_, index) => ({
+        type: "paragraph" as const,
+        text: `Paragraph ${index + 1} in an automatically paginated template document.`
+      })),
+      {
+        type: "table",
+        rows: [
+          [{ text: "Metric", header: true }, { text: "Result", header: true }],
+          [{ text: "Tagged", header: true, scope: "row" }, "Yes"]
+        ],
+        options: { headerRows: 1, headerColumns: 1 }
+      }
+    ],
+    header: ({ pageNumber }) => [
+      { type: "paragraph", text: `Page ${pageNumber}`, options: { fontSize: 8 } }
+    ]
+  });
+
+  assert.ok(doc.toUint8Array().length > 0);
+  const parsed = parseDocument(doc.toUint8Array());
+  assert.ok(parsed.getPageCount() > 1);
+
+  const [root] = parsed.listStructureElements();
+  const roles = root?.children?.map((element) => element.role) ?? [];
+  assert.ok(roles.includes("H1"));
+  assert.ok(roles.includes("P"));
+  assert.ok(roles.includes("Table"));
+});
+
+test("flow advances past wrapped table cell content", () => {
+  const doc = createDocument({
+    tagged: true,
+    language: "en-US",
+    structureRoot: "Document"
+  });
+  const page = doc.addPage({ size: { width: 220, height: 260 } });
+  const flow = page.flow({ margin: 24, width: 120, fontSize: 10, gap: 8 });
+  const startY = flow.cursorY;
+
+  flow.table(
+    [
+      ["Label", "Value"],
+      [
+        "Long",
+        "This table cell wraps across multiple lines so the flow cursor must advance by the measured row height."
+      ]
+    ],
+    { fontSize: 10 }
+  );
+
+  assert.ok(
+    flow.cursorY < startY - 50,
+    `expected wrapped table to consume more than a fixed two-row height, got ${startY - flow.cursorY}`
+  );
+});
+
+test("template pageBreak starts following content on a new page", () => {
+  const doc = createDocument({
+    tagged: true,
+    language: "en-US",
+    structureRoot: "Document"
+  });
+
+  doc.renderTemplate({
+    page: {
+      size: { width: 240, height: 220 },
+      margin: 24
+    },
+    blocks: [
+      { type: "pageBreak" },
+      { type: "heading", text: "First section" },
+      { type: "paragraph", text: "This content stays on the first non-empty page." },
+      { type: "pageBreak" },
+      { type: "heading", text: "Second section" },
+      { type: "paragraph", text: "This content starts after the forced break." }
+    ]
+  });
+
+  const parsed = parseDocument(doc.toUint8Array());
+  assert.equal(parsed.getPageCount(), 2);
+
+  const [root] = parsed.listStructureElements();
+  assert.deepEqual(
+    root?.children?.map((element) => element.role),
+    ["H1", "P", "H1", "P"]
+  );
+});
+
+test("template headers, footers, and page numbers receive total page count", () => {
+  const doc = createDocument({
+    tagged: true,
+    language: "en-US",
+    structureRoot: "Document"
+  });
+
+  doc.renderTemplate({
+    info: {
+      title: "Running Report",
+      author: "Template Author"
+    },
+    page: {
+      size: { width: 260, height: 220 },
+      margin: 24,
+      headerHeight: 24,
+      footerHeight: 24
+    },
+    blocks: [
+      { type: "heading", text: "First page" },
+      { type: "pageBreak" },
+      { type: "heading", text: "Second page" }
+    ],
+    header: ({ title, pageNumber, totalPages }) => [
+      {
+        type: "paragraph",
+        text: `${title} ${pageNumber}/${totalPages}`,
+        options: { fontSize: 8, tag: "Artifact" }
+      }
+    ],
+    footer: ({ author, pageNumber, totalPages }) => [
+      {
+        type: "paragraph",
+        text: `${author} ${pageNumber}/${totalPages}`,
+        options: { fontSize: 8, tag: "Artifact" }
+      }
+    ],
+    pageNumber: {
+      align: "right",
+      format: ({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`
+    }
+  });
+
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /Running Report 1\/2/);
+  assert.match(text, /Template Author 2\/2/);
+  assert.match(text, /Page 1 of 2/);
+  assert.match(text, /Page 2 of 2/);
+  assert.match(text, /\/Artifact(?: BMC| <<)/);
+
+  const [root] = parseDocument(doc.toUint8Array()).listStructureElements();
+  assert.deepEqual(root?.children?.map((element) => element.role), ["H1", "H1"]);
+});
+
+test("renderTemplate applies document info and structured XMP metadata", () => {
+  const doc = createDocument();
+
+  doc.renderTemplate({
+    info: {
+      title: "Template Metadata",
+      author: "sempdf"
+    },
+    xmpMetadata: {
+      title: "Template <Metadata>",
+      creator: "sempdf",
+      createDate: "2026-05-05T00:00:00Z",
+      modifyDate: "2026-05-06T00:00:00Z",
+      metadataDate: "2026-05-07T00:00:00Z"
+    },
+    blocks: [
+      { type: "heading", text: "Template Metadata" },
+      { type: "paragraph", text: "Metadata can live with the report template." }
+    ]
+  });
+
+  const parsed = parseDocument(doc.toUint8Array());
+  const xmp = parsed.getXmpMetadata() ?? "";
+
+  assert.equal(parsed.getMetadata().title, "Template Metadata");
+  assert.equal(parsed.getMetadata().author, "sempdf");
+  assert.match(xmp, /Template &lt;Metadata&gt;/);
+  assert.match(xmp, /<rdf:li>sempdf<\/rdf:li>/);
+  assert.match(xmp, /<xmp:MetadataDate>2026-05-07T00:00:00Z<\/xmp:MetadataDate>/);
 });
 
 test("serializes tagged table helpers with header scopes and spans", () => {
@@ -1323,6 +1815,47 @@ test("incrementally edits tagged PDFs while preserving the structure tree", () =
   assert.equal(parsed.getLanguage(), "en-US");
   assert.equal(parsed.getPageCount(), 2);
   assert.deepEqual(parsed.listStructureElements().map((element) => element.role), ["H1", "P", "Sect"]);
+});
+
+test("incrementally preserves existing annotation parent tree references", () => {
+  const doc = createDocument({ tagged: true, language: "en-US" });
+  const page = doc.addPage({ size: "Letter" });
+  page.link("https://example.com", {
+    x: 36,
+    y: 680,
+    width: 120,
+    height: 16,
+    tag: "Link"
+  });
+
+  const baseBytes = doc.toUint8Array();
+  const baseParentTreeEntries = collectParentTreeEntries(parseDocument(baseBytes));
+  const annotationEntries = [...baseParentTreeEntries.entries()].filter((entry): entry is [number, Extract<PdfValue, { kind: "ref" }>] =>
+    isRefValue(entry[1])
+  );
+  assert.ok(annotationEntries.length > 0);
+
+  const editable = editDocument(baseBytes);
+  editable.addPage({ size: "Letter" }).text("Appended tagged paragraph", { x: 36, y: 720, tag: "P" });
+
+  const updatedParentTreeEntries = collectParentTreeEntries(parseDocument(editable.toUint8Array()));
+  for (const [key, value] of annotationEntries) {
+    assert.deepEqual(updatedParentTreeEntries.get(key), value);
+  }
+});
+
+test("incrementally preserves existing direct StructTreeRoot K child", () => {
+  const doc = createDocument({ tagged: true, language: "en-US" });
+  doc.addPage({ size: "Letter" }).text("Single root heading", { x: 36, y: 720, tag: "H1" });
+
+  const baseBytes = forceDirectStructTreeRootKid(doc.toUint8Array());
+  assert.deepEqual(parseDocument(baseBytes).listStructureElements().map((element) => element.role), ["H1"]);
+
+  const editable = editDocument(baseBytes);
+  editable.addPage({ size: "Letter" }).text("Appended paragraph", { x: 36, y: 720, tag: "P" });
+
+  const parsed = parseDocument(editable.toUint8Array());
+  assert.deepEqual(parsed.listStructureElements().map((element) => element.role), ["H1", "P"]);
 });
 
 test("retags existing tagged headings through editable structure handles", () => {
@@ -1727,6 +2260,37 @@ test("incrementally edits encrypted PDFs and preserves encryption", () => {
   assert.equal(ownerParsed.getPageCount(), 2);
 });
 
+test("streams encrypted incremental edits with lazy encrypted streams", async () => {
+  const base = createDocument({
+    info: {
+      title: "Encrypted Stream Base"
+    },
+    encryption: {
+      algorithm: "rc4-128",
+      userPassword: "reader",
+      ownerPassword: "owner-secret"
+    }
+  });
+  base.addPage({ size: "Letter" }).text("Base secret", { x: 36, y: 720 });
+
+  const editable = editDocument(base.toUint8Array(), { password: "reader" });
+  editable.updateInfo({ title: "Encrypted Stream Revision" });
+  editable.addPage({ size: "Letter" }).text("Streamed revision page", { x: 36, y: 720 });
+
+  const sink = new BufferSink();
+  await editable.writeTo(sink);
+  const bytes = sink.collect();
+  const text = new TextDecoder().decode(bytes);
+
+  assert.match(text, /\/Length \d+ 0 R/);
+  assert.equal(text.includes("Encrypted Stream Revision"), false);
+  assert.equal(text.includes("Streamed revision page"), false);
+
+  const parsed = parseDocument(bytes, { password: "reader" });
+  assert.equal(parsed.getMetadata().title, "Encrypted Stream Revision");
+  assert.equal(parsed.getPageCount(), 2);
+});
+
 test("rejects invalid encryption definitions", () => {
   assert.throws(
     () => createDocument({ encryption: {} }),
@@ -1764,6 +2328,14 @@ test("parses image stream objects from generated PDFs", () => {
     ),
     true
   );
+});
+
+test("parses stream objects with indirect Length references exactly", () => {
+  const parsed = parseDocument(indirectLengthStreamFixtureBytes());
+  const streamValue = parsed.getObject(4)?.value;
+
+  assert.ok(streamValue && isStreamValue(streamValue));
+  assert.equal(new TextDecoder().decode(streamValue.bytes), "BT /F1 12 Tf (alpha endstream omega) Tj ET");
 });
 
 test("serializes URI link annotations and exposes them through the parser", () => {
@@ -2874,6 +3446,75 @@ function isDictValue(value: PdfValue | undefined): value is Array<[string, PdfVa
 
 function isNameValue(value: PdfValue, expected: string): boolean {
   return typeof value === "object" && value !== null && "kind" in value && value.kind === "name" && value.value === expected;
+}
+
+function isRefValue(value: PdfValue | undefined): value is Extract<PdfValue, { kind: "ref" }> {
+  return typeof value === "object" && value !== null && "kind" in value && value.kind === "ref";
+}
+
+function getDictEntry(dict: PdfValue | undefined, key: string): PdfValue | undefined {
+  return isDictValue(dict) ? dict.find(([entryKey]) => entryKey === key)?.[1] : undefined;
+}
+
+function resolveTestValue(parsed: ReturnType<typeof parseDocument>, value: PdfValue | undefined): PdfValue | undefined {
+  return isRefValue(value) ? parsed.getObject(value.objectId)?.value : value;
+}
+
+function collectParentTreeEntries(parsed: ReturnType<typeof parseDocument>): Map<number, PdfValue> {
+  const catalog = parsed.getObject(parsed.getRootObjectId())?.value;
+  const structTreeRoot = resolveTestValue(parsed, getDictEntry(catalog, "StructTreeRoot"));
+  const parentTree = resolveTestValue(parsed, getDictEntry(structTreeRoot, "ParentTree"));
+  const entries = new Map<number, PdfValue>();
+  collectParentTreeEntriesFromNode(parsed, parentTree, entries);
+  return entries;
+}
+
+function collectParentTreeEntriesFromNode(
+  parsed: ReturnType<typeof parseDocument>,
+  node: PdfValue | undefined,
+  entries: Map<number, PdfValue>
+): void {
+  const resolvedNode = resolveTestValue(parsed, node);
+  const nums = getDictEntry(resolvedNode, "Nums");
+  if (Array.isArray(nums) && !isDictValue(nums)) {
+    for (let index = 0; index < nums.length; index += 2) {
+      const key = nums[index];
+      const value = nums[index + 1];
+      if (typeof key === "number" && value !== undefined) {
+        entries.set(key, value);
+      }
+    }
+  }
+
+  const kids = getDictEntry(resolvedNode, "Kids");
+  if (Array.isArray(kids) && !isDictValue(kids)) {
+    for (const kid of kids) {
+      collectParentTreeEntriesFromNode(parsed, kid, entries);
+    }
+  }
+}
+
+function forceDirectStructTreeRootKid(bytes: Uint8Array): Uint8Array {
+  const parsed = parseDocument(bytes);
+  const catalog = parsed.getObject(parsed.getRootObjectId())?.value;
+  const structTreeRootRef = getDictEntry(catalog, "StructTreeRoot");
+  assert.ok(isRefValue(structTreeRootRef));
+
+  const objectOffset = parsed.xrefOffsets.get(structTreeRootRef.objectId);
+  assert.notEqual(objectOffset, undefined);
+
+  const text = Buffer.from(bytes).toString("latin1");
+  const objectEnd = text.indexOf("endobj", objectOffset);
+  assert.notEqual(objectEnd, -1);
+
+  const objectText = text.slice(objectOffset, objectEnd);
+  const updatedObjectText = objectText.replace(/\/K \[(\d+ 0 R)\]/, (_match, kid: string) => `/K ${kid}  `);
+  assert.notEqual(updatedObjectText, objectText);
+  assert.equal(updatedObjectText.length, objectText.length);
+
+  const output = new Uint8Array(bytes);
+  output.set(Buffer.from(updatedObjectText, "latin1"), objectOffset);
+  return output;
 }
 
 function pngChunk(type: string, data: Uint8Array): Uint8Array {
