@@ -125,7 +125,7 @@ export interface DocumentPermissions {
 /**
  * Supported password-encryption algorithms for generated PDFs.
  */
-export type DocumentEncryptionAlgorithm = "rc4-40" | "rc4-128";
+export type DocumentEncryptionAlgorithm = "rc4-40" | "rc4-128" | "aes-128" | "aes-256";
 /**
  * Supported document conformance profiles for PDF/A and PDF/UA output.
  */
@@ -239,6 +239,31 @@ export interface DocumentEncryptionOptions {
 }
 
 /**
+ * ICC output profile options for generated documents.
+ */
+export interface DocumentOutputIntentOptions {
+  profile: BinaryData;
+  outputConditionIdentifier?: string | undefined;
+  info?: string | undefined;
+  registryName?: string | undefined;
+  alternate?: "DeviceRGB" | "DeviceCMYK" | "DeviceGray" | undefined;
+  channels?: 1 | 3 | 4 | undefined;
+}
+
+/**
+ * Detached digital-signature options for generated documents.
+ */
+export interface DocumentSignatureOptions {
+  fieldName?: string | undefined;
+  reason?: string | undefined;
+  location?: string | undefined;
+  contactInfo?: string | undefined;
+  name?: string | undefined;
+  placeholderBytes?: number | undefined;
+  sign: (bytes: Uint8Array) => Uint8Array;
+}
+
+/**
  * Top-level options for creating a new PDF document.
  */
 export interface DocumentOptions {
@@ -252,6 +277,9 @@ export interface DocumentOptions {
   structureRoot?: PdfContainerTag | false | undefined;
   conformance?: DocumentConformanceProfile | undefined;
   compress?: boolean | undefined;
+  objectStreams?: boolean | undefined;
+  outputIntent?: DocumentOutputIntentOptions | undefined;
+  signature?: DocumentSignatureOptions | undefined;
 }
 
 /**
@@ -313,9 +341,20 @@ export interface RgbColor {
 }
 
 /**
+ * CMYK color representation used by drawing and text APIs.
+ */
+export interface CmykColor {
+  kind: "cmyk";
+  c: number;
+  m: number;
+  y: number;
+  k: number;
+}
+
+/**
  * Union of supported color representations.
  */
-export type PdfColor = GrayColor | RgbColor;
+export type PdfColor = GrayColor | RgbColor | CmykColor;
 
 /**
  * Text direction options, including automatic RTL detection.
@@ -1072,6 +1111,13 @@ export function rgb(r: number, g: number, b: number): RgbColor {
  */
 export function gray(value: number): GrayColor {
   return { kind: "gray", value };
+}
+
+/**
+ * Creates a CMYK color object using normalized channel values from 0 to 1.
+ */
+export function cmyk(c: number, m: number, y: number, k: number): CmykColor {
+  return { kind: "cmyk", c, m, y, k };
 }
 
 /**

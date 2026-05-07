@@ -21,8 +21,9 @@ const MD5_CONSTANTS = Int32Array.from(
 
 export interface PdfEncryptionContext {
   readonly fileId: Uint8Array;
-  readonly version: 1 | 2;
-  readonly revision: 2 | 3;
+  readonly algorithm: NormalizedDocumentEncryption["algorithm"];
+  readonly version: 1 | 2 | 4 | 5;
+  readonly revision: 2 | 3 | 4 | 5;
   readonly keyLengthBytes: number;
   readonly permissionsValue: number;
   readonly ownerKey: Uint8Array;
@@ -37,8 +38,9 @@ export interface PdfObjectCipher {
 export interface OpenPdfEncryptionContextOptions {
   readonly password: string;
   readonly fileId: Uint8Array;
-  readonly version: 1 | 2;
-  readonly revision: 2 | 3;
+  readonly algorithm?: NormalizedDocumentEncryption["algorithm"] | undefined;
+  readonly version: 1 | 2 | 4 | 5;
+  readonly revision: 2 | 3 | 4 | 5;
   readonly keyLengthBytes: number;
   readonly permissionsValue: number;
   readonly ownerKey: Uint8Array;
@@ -72,6 +74,7 @@ export function createPdfEncryptionContext(
 
   return {
     fileId,
+    algorithm: encryption.algorithm,
     version: encryption.version,
     revision: encryption.revision,
     keyLengthBytes: encryption.keyLengthBytes,
@@ -94,6 +97,7 @@ export function openPdfEncryptionContext(options: OpenPdfEncryptionContextOption
   if (matchesUserKey(computeUserKey(userPasswordDocumentKey, options.fileId, options.revision), options.userKey, options.revision)) {
     return {
       fileId: options.fileId,
+      algorithm: options.algorithm ?? (options.revision >= 4 ? "aes-128" : options.revision === 2 ? "rc4-40" : "rc4-128"),
       version: options.version,
       revision: options.revision,
       keyLengthBytes: options.keyLengthBytes,
@@ -124,6 +128,7 @@ export function openPdfEncryptionContext(options: OpenPdfEncryptionContextOption
 
   return {
     fileId: options.fileId,
+    algorithm: options.algorithm ?? (options.revision >= 4 ? "aes-128" : options.revision === 2 ? "rc4-40" : "rc4-128"),
     version: options.version,
     revision: options.revision,
     keyLengthBytes: options.keyLengthBytes,
@@ -163,7 +168,44 @@ export function createCipherForObject(
     ])
   );
   const objectKey = md5(keyMaterial).subarray(0, Math.min(context.documentKey.length + 5, 16));
+  if (context.algorithm === "aes-128" || context.algorithm === "aes-256") {
+    const aesKeyMaterial = concatBytes(keyMaterial, latin1Bytes("sAlT"));
+    const aesObjectKey = context.algorithm === "aes-256"
+      ? context.documentKey.subarray(0, 32)
+      : md5(aesKeyMaterial).subarray(0, 16);
+    return createAesCbcCipher(aesObjectKey);
+  }
   return createRc4Cipher(objectKey);
+}
+
+export function decryptBytesForObject(
+  context: PdfEncryptionContext,
+  objectId: number,
+  generation: number,
+  bytes: Uint8Array
+): Uint8Array {
+  if (bytes.length === 0) {
+    return bytes;
+  }
+
+  if (context.algorithm !== "aes-128" && context.algorithm !== "aes-256") {
+    return encryptBytesForObject(context, objectId, generation, bytes);
+  }
+
+  const keyMaterial = concatBytes(
+    context.documentKey,
+    Uint8Array.from([
+      objectId & 0xff,
+      (objectId >>> 8) & 0xff,
+      (objectId >>> 16) & 0xff,
+      generation & 0xff,
+      (generation >>> 8) & 0xff
+    ])
+  );
+  const aesObjectKey = context.algorithm === "aes-256"
+    ? context.documentKey.subarray(0, 32)
+    : md5(concatBytes(keyMaterial, latin1Bytes("sAlT"))).subarray(0, 16);
+  return aesCbcDecrypt(aesObjectKey, bytes);
 }
 
 export function latin1Bytes(value: string): Uint8Array {
@@ -189,7 +231,7 @@ function computeDocumentKey(
   ownerKey: Uint8Array,
   permissionsValue: number,
   fileId: Uint8Array,
-  revision: 2 | 3,
+  revision: 2 | 3 | 4 | 5,
   keyLengthBytes: number
 ): Uint8Array {
   let hash = md5(concatBytes(
@@ -201,13 +243,13 @@ function computeDocumentKey(
   if (revision >= 3) {
     hash = iterateMd5(hash, keyLengthBytes, 50);
   }
-  return hash.subarray(0, keyLengthBytes);
+  return stretchKey(hash, keyLengthBytes);
 }
 
 function computeUserKey(
   documentKey: Uint8Array,
   fileId: Uint8Array,
-  revision: 2 | 3
+  revision: 2 | 3 | 4 | 5
 ): Uint8Array {
   if (revision === 2) {
     return rc4(documentKey, PASSWORD_PADDING);
@@ -224,7 +266,7 @@ function computeUserKey(
 function computeOwnerKey(
   ownerPassword: string,
   userPassword: string,
-  revision: 2 | 3,
+  revision: 2 | 3 | 4 | 5,
   keyLengthBytes: number
 ): Uint8Array {
   const ownerPasswordKey = computeOwnerPasswordKey(ownerPassword, revision, keyLengthBytes);
@@ -242,7 +284,7 @@ function computeOwnerKey(
 function recoverPaddedUserPassword(
   ownerPassword: string,
   ownerKey: Uint8Array,
-  revision: 2 | 3,
+  revision: 2 | 3 | 4 | 5,
   keyLengthBytes: number
 ): Uint8Array {
   const ownerPasswordKey = computeOwnerPasswordKey(ownerPassword, revision, keyLengthBytes);
@@ -259,7 +301,7 @@ function recoverPaddedUserPassword(
 
 function computeOwnerPasswordKey(
   ownerPassword: string,
-  revision: 2 | 3,
+  revision: 2 | 3 | 4 | 5,
   keyLengthBytes: number
 ): Uint8Array {
   let hash = md5(padPassword(ownerPassword));
@@ -280,11 +322,27 @@ function iterateMd5(input: Uint8Array, length: number, rounds: number): Uint8Arr
 function matchesUserKey(
   expected: Uint8Array,
   actual: Uint8Array,
-  revision: 2 | 3
+  revision: 2 | 3 | 4 | 5
 ): boolean {
   return revision === 2
     ? bytesEqual(expected, actual)
     : bytesEqual(expected.subarray(0, 16), actual.subarray(0, 16));
+}
+
+function stretchKey(seed: Uint8Array, length: number): Uint8Array {
+  if (seed.length >= length) {
+    return seed.subarray(0, length);
+  }
+
+  const chunks: Uint8Array[] = [seed];
+  let total = seed.length;
+  let round = 0;
+  while (total < length) {
+    const chunk = md5(concatBytes(seed, Uint8Array.from([round++])));
+    chunks.push(chunk);
+    total += chunk.length;
+  }
+  return concatBytes(...chunks).subarray(0, length);
 }
 
 function xorWithByte(bytes: Uint8Array, value: number): Uint8Array {
@@ -379,6 +437,55 @@ function createRc4Cipher(key: Uint8Array): PdfObjectCipher {
       return output;
     }
   };
+}
+
+function createAesCbcCipher(key: Uint8Array): PdfObjectCipher {
+  let used = false;
+  return {
+    update(data: Uint8Array): Uint8Array {
+      if (used) {
+        throw new Error("AES PDF object ciphers must be used with a single update call.");
+      }
+      used = true;
+      const crypto = getNodeCrypto();
+      const iv = randomBytes(16);
+      const cipher = crypto.createCipheriv(key.length === 32 ? "aes-256-cbc" : "aes-128-cbc", key, iv);
+      const encrypted = concatBytes(cipher.update(data), cipher.final());
+      return concatBytes(iv, encrypted);
+    }
+  };
+}
+
+function aesCbcDecrypt(key: Uint8Array, data: Uint8Array): Uint8Array {
+  if (data.length < 16 || data.length % 16 !== 0) {
+    return data;
+  }
+  const iv = data.subarray(0, 16);
+  const encrypted = data.subarray(16);
+  const crypto = getNodeCrypto();
+  const decipher = crypto.createDecipheriv(key.length === 32 ? "aes-256-cbc" : "aes-128-cbc", key, iv);
+  return concatBytes(decipher.update(encrypted), decipher.final());
+}
+
+function getNodeCrypto(): {
+  createCipheriv(algorithm: string, key: Uint8Array, iv: Uint8Array): { update(data: Uint8Array): Uint8Array; final(): Uint8Array };
+  createDecipheriv(algorithm: string, key: Uint8Array, iv: Uint8Array): { update(data: Uint8Array): Uint8Array; final(): Uint8Array };
+  randomBytes(size: number): Uint8Array;
+} {
+  const getBuiltinModule = (globalThis as { process?: { getBuiltinModule?: (name: string) => unknown } }).process?.getBuiltinModule;
+  const crypto = getBuiltinModule?.("node:crypto") as ReturnType<typeof getNodeCrypto> | undefined;
+  if (!crypto) {
+    throw new Error("AES PDF encryption requires Node.js crypto support in this build.");
+  }
+  return crypto;
+}
+
+function randomBytes(size: number): Uint8Array {
+  const webCrypto = globalThis.crypto;
+  if (webCrypto?.getRandomValues) {
+    return webCrypto.getRandomValues(new Uint8Array(size));
+  }
+  return getNodeCrypto().randomBytes(size);
 }
 
 function swap(state: Uint8Array, left: number, right: number): void {

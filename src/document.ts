@@ -101,6 +101,8 @@ import type {
   CheckBoxOptions,
   ChoiceFieldOptions,
   CustomPageSize,
+  DocumentOutputIntentOptions,
+  DocumentSignatureOptions,
   DocumentInfo,
   DocumentOptions,
   EmbedTrueTypeFontOptions,
@@ -172,6 +174,9 @@ export interface PdfDocumentModel {
   readonly structureRoot?: PdfContainerTag | false | undefined;
   readonly conformance?: 'pdfa-1b' | 'pdfua-1' | undefined;
   readonly compress?: boolean | undefined;
+  readonly objectStreams?: boolean | undefined;
+  readonly outputIntent?: DocumentOutputIntentOptions | undefined;
+  readonly signature?: DocumentSignatureOptions | undefined;
   readonly embeddedFonts: readonly ParsedTrueTypeFont[];
   readonly namedDestinations: readonly InternalNamedDestinationModel[];
   readonly pageLabels: readonly InternalPageLabelModel[];
@@ -200,6 +205,7 @@ export interface PdfIncrementalUpdateModel {
   readonly hasXmpMetadataUpdate: boolean;
   readonly xmpMetadata?: string | undefined;
   readonly info?: NormalizedDocumentInfo | undefined;
+  readonly signature?: DocumentSignatureOptions | undefined;
 }
 
 export interface ExistingPageEdit {
@@ -1918,6 +1924,9 @@ export class PdfDocument {
   private readonly encryption?: NormalizedDocumentEncryption | undefined;
   private xmpMetadata?: string | undefined;
   private readonly compress?: boolean | undefined;
+  private readonly objectStreams?: boolean | undefined;
+  private readonly outputIntent?: DocumentOutputIntentOptions | undefined;
+  private readonly signature?: DocumentSignatureOptions | undefined;
 
   /**
    * Creates a new mutable PDF document builder.
@@ -1931,6 +1940,9 @@ export class PdfDocument {
     this.encryption = normalizeDocumentEncryption(options.encryption);
     this.xmpMetadata = normalizeXmpMetadata(options.xmpMetadata);
     this.compress = options.compress;
+    this.objectStreams = options.objectStreams;
+    this.outputIntent = options.outputIntent;
+    this.signature = options.signature;
   }
 
   /**
@@ -2254,6 +2266,9 @@ export class PdfDocument {
         ? {}
         : { conformance: this.accessibility.conformance }),
       ...(this.compress === undefined ? {} : { compress: this.compress }),
+      ...(this.objectStreams === undefined ? {} : { objectStreams: this.objectStreams }),
+      ...(this.outputIntent === undefined ? {} : { outputIntent: this.outputIntent }),
+      ...(this.signature === undefined ? {} : { signature: this.signature }),
       embeddedFonts: [...this.embeddedFonts.values()],
       namedDestinations: this.namedDestinations,
       pageLabels,
@@ -2304,6 +2319,7 @@ export class PdfEditableDocument {
   private updatedInfo: NormalizedDocumentInfo | undefined;
   private updatedXmpMetadata?: string | undefined;
   private hasUpdatedXmpMetadata = false;
+  private signature?: DocumentSignatureOptions | undefined;
   private readonly taggedBase: boolean;
   private readonly conformanceBase: 'pdfa-1b' | 'pdfua-1' | undefined;
 
@@ -2981,6 +2997,15 @@ export class PdfEditableDocument {
   }
 
   /**
+   * Adds a detached digital signature as an incremental update.
+   *
+   * @param options Signature options, including the CMS/PKCS#7 signer callback.
+   */
+  sign(options: DocumentSignatureOptions): void {
+    this.signature = options;
+  }
+
+  /**
    * Serializes the incremental update into PDF bytes.
    *
    * @returns The serialized or collected bytes.
@@ -2995,7 +3020,8 @@ export class PdfEditableDocument {
       this.flattenedFieldObjectIds.size === 0 &&
       this.structureRoleUpdates.size === 0 &&
       this.structureAltTextUpdates.size === 0 &&
-      this.structureChildrenOrderUpdates.size === 0
+      this.structureChildrenOrderUpdates.size === 0 &&
+      this.signature === undefined
     ) {
       return this.base.getSourceBytes();
     }
@@ -3018,7 +3044,8 @@ export class PdfEditableDocument {
       this.flattenedFieldObjectIds.size === 0 &&
       this.structureRoleUpdates.size === 0 &&
       this.structureAltTextUpdates.size === 0 &&
-      this.structureChildrenOrderUpdates.size === 0
+      this.structureChildrenOrderUpdates.size === 0 &&
+      this.signature === undefined
     ) {
       await sink.write(this.base.getSourceBytes());
       await sink.close();
@@ -3176,6 +3203,7 @@ export class PdfEditableDocument {
         ? { xmpMetadata: this.updatedXmpMetadata }
         : {}),
       ...(this.updatedInfo ? { info: this.updatedInfo } : {}),
+      ...(this.signature ? { signature: this.signature } : {}),
     };
   }
 }

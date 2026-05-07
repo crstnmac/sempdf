@@ -60,11 +60,14 @@ interface EmbeddedFontObjectIds {
   descriptor: number;
   fontFile: number;
   toUnicode: number;
+  cidToGid: number;
 }
 
 interface EmbeddedFontContext {
   font: ParsedTrueTypeFont;
   glyphToUnicode: Map<number, string>;
+  glyphIdToCid: Map<number, number>;
+  cidToGlyphId: number[];
 }
 
 interface ImageObjectIds {
@@ -135,6 +138,7 @@ interface WritePdfOptions {
   encryption?: PdfEncryptionContext | undefined;
   encryptionObjectId?: number | undefined;
   fileId?: Uint8Array | undefined;
+  objectStreams?: boolean | undefined;
 }
 
 interface PdfObjectEncryptionContext {
@@ -764,8 +768,9 @@ function prepareDocumentSerialization(
   let reservedObjectId = 4;
   const metadataObjectId = effectiveXmpMetadata !== undefined ? reservedObjectId++ : undefined;
   const encryptionObjectId = model.encryption !== undefined ? reservedObjectId++ : undefined;
-  const outputProfileObjectId = model.conformance === "pdfa-1b" ? reservedObjectId++ : undefined;
-  const outputIntentObjectId = model.conformance === "pdfa-1b" ? reservedObjectId++ : undefined;
+  const hasOutputIntent = model.conformance === "pdfa-1b" || model.outputIntent !== undefined;
+  const outputProfileObjectId = hasOutputIntent ? reservedObjectId++ : undefined;
+  const outputIntentObjectId = hasOutputIntent ? reservedObjectId++ : undefined;
   const encryptionFileId =
     model.encryption !== undefined
       ? createDocumentFileId(buildEncryptionFileIdSeed(model))
@@ -796,9 +801,10 @@ function prepareDocumentSerialization(
       descendant: nextObjectId + 1,
       descriptor: nextObjectId + 2,
       fontFile: nextObjectId + 3,
-      toUnicode: nextObjectId + 4
+      toUnicode: nextObjectId + 4,
+      cidToGid: nextObjectId + 5
     });
-    nextObjectId += 5;
+    nextObjectId += 6;
   }
   for (const image of images) {
     const objectIds: ImageObjectIds = { base: nextObjectId };
@@ -857,7 +863,9 @@ function prepareDocumentSerialization(
 
   const formFields = collectFormFieldAnnotations(serializedPages);
   const formFontResourceMap = buildFormFontResourceMap(collectFormFontNames(serializedPages));
-  const acroFormObjectId = formFields.length > 0 ? nextObjectId : undefined;
+  const signatureFieldObjectId = model.signature !== undefined ? nextObjectId++ : undefined;
+  const signatureDictionaryObjectId = model.signature !== undefined ? nextObjectId++ : undefined;
+  const acroFormObjectId = formFields.length > 0 || signatureFieldObjectId !== undefined ? nextObjectId : undefined;
   if (acroFormObjectId !== undefined) {
     nextObjectId += 1;
   }
@@ -914,14 +922,14 @@ function prepareDocumentSerialization(
   if (outputProfileObjectId !== undefined) {
     documentObjects.push({
       id: outputProfileObjectId,
-      value: buildSrgbOutputProfileStream()
+      value: buildOutputProfileStream(model)
     });
   }
 
   if (outputIntentObjectId !== undefined && outputProfileObjectId !== undefined) {
     documentObjects.push({
       id: outputIntentObjectId,
-      value: buildPdfaOutputIntentDictionary(outputProfileObjectId)
+      value: buildOutputIntentDictionary(outputProfileObjectId, model)
     });
   }
 
@@ -936,10 +944,24 @@ function prepareDocumentSerialization(
     documentObjects.push({
       id: acroFormObjectId,
       value: buildAcroFormDictionary(
-        formFields.map((field) => ref(field.fieldObjectId)),
+        [
+          ...formFields.map((field) => ref(field.fieldObjectId)),
+          ...(signatureFieldObjectId !== undefined ? [ref(signatureFieldObjectId)] : [])
+        ],
         formFontResourceMap,
         builtInFontObjectIds
       )
+    });
+  }
+
+  if (signatureFieldObjectId !== undefined && signatureDictionaryObjectId !== undefined && model.signature !== undefined) {
+    documentObjects.push({
+      id: signatureFieldObjectId,
+      value: buildDetachedSignatureFieldDictionary(model.signature, signatureDictionaryObjectId)
+    });
+    documentObjects.push({
+      id: signatureDictionaryObjectId,
+      value: buildDetachedSignatureDictionary(model.signature)
     });
   }
 
@@ -1003,15 +1025,20 @@ function prepareDocumentSerialization(
           ])
         ],
         ["FontDescriptor", ref(objectIds.descriptor)],
-        ["CIDToGIDMap", name("Identity")],
+        ["CIDToGIDMap", ref(objectIds.cidToGid)],
         ["DW", 1000],
-        ["W", buildEmbeddedFontWidths(context.font, context.glyphToUnicode)]
+        ["W", buildEmbeddedFontWidths(context)]
       ])
     });
 
     documentObjects.push({
       id: objectIds.toUnicode,
-      value: compressedStream(dict([]), encoder.encode(buildToUnicodeCMap(context.glyphToUnicode)), model.compress)
+      value: compressedStream(dict([]), encoder.encode(buildToUnicodeCMap(context)), model.compress)
+    });
+
+    documentObjects.push({
+      id: objectIds.cidToGid,
+      value: compressedStream(dict([]), buildCidToGidMapBytes(context), model.compress)
     });
 
     documentObjects.push({
@@ -1087,17 +1114,34 @@ function prepareDocumentSerialization(
     options: {
       ...(encryptionContext !== undefined ? { encryption: encryptionContext } : {}),
       ...(encryptionObjectId !== undefined ? { encryptionObjectId } : {}),
-      ...(encryptionFileId !== undefined ? { fileId: encryptionFileId } : {})
+      ...(encryptionFileId !== undefined ? { fileId: encryptionFileId } : {}),
+      ...(model.objectStreams !== undefined ? { objectStreams: model.objectStreams } : {})
     }
   };
 }
 
 export function serializeDocument(model: PdfDocumentModel): Uint8Array {
   const prepared = prepareDocumentSerialization(model);
-  return writePdf([...prepared.objects()], prepared.options);
+  const bytes = writePdf([...prepared.objects()], prepared.options);
+  return model.signature !== undefined ? applyDetachedSignature(bytes, model.signature) : bytes;
 }
 
 export async function serializeDocumentToSink(model: PdfDocumentModel, sink: ByteSink): Promise<void> {
+  if (model.objectStreams === true) {
+    const prepared = prepareDocumentSerialization(model);
+    const bytes = writePdf([...prepared.objects()], prepared.options);
+    await sink.write(model.signature !== undefined ? applyDetachedSignature(bytes, model.signature) : bytes);
+    await sink.close();
+    return;
+  }
+
+  if (model.signature !== undefined) {
+    const prepared = prepareDocumentSerialization(model);
+    await sink.write(applyDetachedSignature(writePdf([...prepared.objects()], prepared.options), model.signature));
+    await sink.close();
+    return;
+  }
+
   const prepared = prepareDocumentSerialization(model, {
     lazyPageContentStreams: true,
     lazyByteStreams: true
@@ -1126,6 +1170,7 @@ function prepareIncrementalUpdateSerialization(
     && model.structureRoleUpdates.size === 0
     && model.structureAltTextUpdates.size === 0
     && model.structureChildrenOrderUpdates.size === 0
+    && model.signature === undefined
   ) {
     return {
       kind: "unchanged",
@@ -1209,9 +1254,10 @@ function prepareIncrementalUpdateSerialization(
       descendant: nextObjectId + 1,
       descriptor: nextObjectId + 2,
       fontFile: nextObjectId + 3,
-      toUnicode: nextObjectId + 4
+      toUnicode: nextObjectId + 4,
+      cidToGid: nextObjectId + 5
     });
-    nextObjectId += 5;
+    nextObjectId += 6;
   }
 
   for (const image of images) {
@@ -1280,7 +1326,13 @@ function prepareIncrementalUpdateSerialization(
     collectFormFontNames(serializedPages),
     collectExistingFormResourceNames(existingAcroFormDict)
   );
-  const shouldUpdateAcroForm = formFields.length > 0 || retainedExistingFieldRefs.changed || model.flattenedFieldObjectIds.length > 0;
+  const signatureFieldObjectId = model.signature !== undefined ? nextObjectId++ : undefined;
+  const signatureDictionaryObjectId = model.signature !== undefined ? nextObjectId++ : undefined;
+  const shouldUpdateAcroForm =
+    formFields.length > 0
+    || retainedExistingFieldRefs.changed
+    || model.flattenedFieldObjectIds.length > 0
+    || signatureFieldObjectId !== undefined;
   const acroFormObjectId = shouldUpdateAcroForm
     ? (existingAcroFormRef?.objectId ?? nextObjectId++)
     : existingAcroFormRef?.objectId;
@@ -1374,15 +1426,20 @@ function prepareIncrementalUpdateSerialization(
           ])
         ],
         ["FontDescriptor", ref(objectIds.descriptor)],
-        ["CIDToGIDMap", name("Identity")],
+        ["CIDToGIDMap", ref(objectIds.cidToGid)],
         ["DW", 1000],
-        ["W", buildEmbeddedFontWidths(context.font, context.glyphToUnicode)]
+        ["W", buildEmbeddedFontWidths(context)]
       ])
     });
 
     prefixObjects.push({
       id: objectIds.toUnicode,
-      value: compressedStream(dict([]), encoder.encode(buildToUnicodeCMap(context.glyphToUnicode)), "compress" in model ? (model as { compress?: boolean }).compress : undefined)
+      value: compressedStream(dict([]), encoder.encode(buildToUnicodeCMap(context)), "compress" in model ? (model as { compress?: boolean }).compress : undefined)
+    });
+
+    prefixObjects.push({
+      id: objectIds.cidToGid,
+      value: compressedStream(dict([]), buildCidToGidMapBytes(context), "compress" in model ? (model as { compress?: boolean }).compress : undefined)
     });
 
     prefixObjects.push({
@@ -1467,12 +1524,24 @@ function prepareIncrementalUpdateSerialization(
       value: buildAcroFormDictionary(
         [
           ...retainedExistingFieldRefs.refs,
-          ...formFields.map((field) => ref(field.fieldObjectId))
+          ...formFields.map((field) => ref(field.fieldObjectId)),
+          ...(signatureFieldObjectId !== undefined ? [ref(signatureFieldObjectId)] : [])
         ],
         formFontResourceMap,
         builtInFontObjectIds,
         existingAcroFormDict
       )
+    });
+  }
+
+  if (signatureFieldObjectId !== undefined && signatureDictionaryObjectId !== undefined && model.signature !== undefined) {
+    suffixObjects.push({
+      id: signatureFieldObjectId,
+      value: buildDetachedSignatureFieldDictionary(model.signature, signatureDictionaryObjectId)
+    });
+    suffixObjects.push({
+      id: signatureDictionaryObjectId,
+      value: buildDetachedSignatureDictionary(model.signature)
     });
   }
 
@@ -1599,10 +1668,18 @@ export function serializeIncrementalUpdate(model: PdfIncrementalUpdateModel): Ui
     return prepared.bytes;
   }
 
-  return writeIncrementalPdf(model, [...prepared.objects()], prepared.infoObjectId);
+  const bytes = writeIncrementalPdf(model, [...prepared.objects()], prepared.infoObjectId);
+  return model.signature !== undefined ? applyDetachedSignature(bytes, model.signature) : bytes;
 }
 
 export async function serializeIncrementalUpdateToSink(model: PdfIncrementalUpdateModel, sink: ByteSink): Promise<void> {
+  if (model.signature !== undefined) {
+    const bytes = serializeIncrementalUpdate(model);
+    await sink.write(bytes);
+    await sink.close();
+    return;
+  }
+
   const prepared = prepareIncrementalUpdateSerialization(model, {
     lazyPageContentStreams: true,
     lazyByteStreams: true
@@ -1617,6 +1694,10 @@ export async function serializeIncrementalUpdateToSink(model: PdfIncrementalUpda
 }
 
 function writePdf(objects: PdfIndirectObject[], options: WritePdfOptions = {}): Uint8Array {
+  if (options.objectStreams === true) {
+    return writePdfWithObjectStreams(objects, options);
+  }
+
   const writer = new ByteWriter();
   writer.writeLine("%PDF-1.4");
   writer.writeBytes(new Uint8Array([0x25, 0xff, 0xff, 0xff, 0x0a]));
@@ -1673,6 +1754,169 @@ function writePdf(objects: PdfIndirectObject[], options: WritePdfOptions = {}): 
   writer.writeLine("%%EOF");
 
   return writer.toUint8Array();
+}
+
+function writePdfWithObjectStreams(objects: PdfIndirectObject[], options: WritePdfOptions = {}): Uint8Array {
+  const writer = new ByteWriter();
+  writer.writeLine("%PDF-1.5");
+  writer.writeBytes(new Uint8Array([0x25, 0xff, 0xff, 0xff, 0x0a]));
+
+  const maxOriginalObjectId = getMaxSerializedObjectId(objects);
+  const objectStreamObjectId = maxOriginalObjectId + 1;
+  const xrefStreamObjectId = maxOriginalObjectId + 2;
+  const eligible = new Set(
+    objects
+      .filter((object) => canPackObjectInObjectStream(object, options.encryptionObjectId))
+      .map((object) => object.id)
+  );
+  const objectStreamObjects = objects.filter((object) => eligible.has(object.id)).sort((left, right) => left.id - right.id);
+
+  const offsets = new Map<number, number>();
+  const xrefEntries = new Map<number, { type: 0 | 1 | 2; field2: number; field3: number }>();
+  xrefEntries.set(0, { type: 0, field2: 0, field3: 65535 });
+
+  for (const object of objects) {
+    if (eligible.has(object.id)) {
+      continue;
+    }
+    offsets.set(object.id, writer.size);
+    xrefEntries.set(object.id, { type: 1, field2: writer.size, field3: 0 });
+    writer.writeLine(`${object.id} 0 obj`);
+    writeObjectValue(
+      writer,
+      object.value,
+      getObjectEncryptionContext(options.encryption, options.encryptionObjectId, object.id)
+    );
+    writer.writeLine();
+    writer.writeLine("endobj");
+  }
+
+  if (objectStreamObjects.length > 0) {
+    offsets.set(objectStreamObjectId, writer.size);
+    xrefEntries.set(objectStreamObjectId, { type: 1, field2: writer.size, field3: 0 });
+    objectStreamObjects.forEach((object, index) => {
+      xrefEntries.set(object.id, { type: 2, field2: objectStreamObjectId, field3: index });
+    });
+    writer.writeLine(`${objectStreamObjectId} 0 obj`);
+    writeObjectValue(
+      writer,
+      buildObjectStream(objectStreamObjects, options),
+      getObjectEncryptionContext(options.encryption, options.encryptionObjectId, objectStreamObjectId)
+    );
+    writer.writeLine();
+    writer.writeLine("endobj");
+  }
+
+  const xrefStreamOffset = writer.size;
+  xrefEntries.set(xrefStreamObjectId, { type: 1, field2: xrefStreamOffset, field3: 0 });
+  writer.writeLine(`${xrefStreamObjectId} 0 obj`);
+  writeObjectValue(writer, buildFullXrefStreamValue(xrefEntries, xrefStreamObjectId, options));
+  writer.writeLine();
+  writer.writeLine("endobj");
+  writer.writeLine("startxref");
+  writer.writeLine(String(xrefStreamOffset));
+  writer.writeLine("%%EOF");
+
+  return writer.toUint8Array();
+}
+
+function canPackObjectInObjectStream(object: PdfIndirectObject, encryptionObjectId: number | undefined): boolean {
+  if (
+    object.id <= 3
+    || object.id === encryptionObjectId
+    || isPdfStream(object.value)
+    || isPdfLazyStream(object.value)
+    || isSignatureRelatedObject(object.value)
+  ) {
+    return false;
+  }
+  return serializePdfValue(object.value).length <= 4096;
+}
+
+function isSignatureRelatedObject(value: PdfIndirectObject["value"]): boolean {
+  if (!Array.isArray(value) || !isPdfDictEntries(value)) {
+    return false;
+  }
+  const type = getPdfDictValue(value, "Type");
+  const fieldType = getPdfDictValue(value, "FT");
+  return (typeof type === "object" && type !== null && "kind" in type && type.kind === "name" && type.value === "Sig")
+    || (typeof fieldType === "object" && fieldType !== null && "kind" in fieldType && fieldType.kind === "name" && fieldType.value === "Sig");
+}
+
+function buildObjectStream(objects: readonly PdfIndirectObject[], options: WritePdfOptions): PdfStream {
+  const serializedObjects = objects.map((object) => serializePdfValue(object.value as Exclude<PdfValue, PdfStream | PdfLazyStream>));
+  const encoder = new TextEncoder();
+  const bodyChunks = serializedObjects.map((value) => encoder.encode(value));
+  let bodyLength = 0;
+  for (const chunk of bodyChunks) {
+    bodyLength += chunk.length + 1;
+  }
+
+  const entries: string[] = [];
+  let bodyOffset = 0;
+  for (let index = 0; index < objects.length; index += 1) {
+    entries.push(`${objects[index]!.id} ${bodyOffset}`);
+    bodyOffset += bodyChunks[index]!.length + 1;
+  }
+
+  const header = encoder.encode(`${entries.join(" ")} `);
+  const bytes = new Uint8Array(header.length + bodyLength);
+  bytes.set(header, 0);
+  let cursor = header.length;
+  for (const chunk of bodyChunks) {
+    bytes.set(chunk, cursor);
+    cursor += chunk.length;
+    bytes[cursor++] = 0x20;
+  }
+
+  return compressedStream(
+    dict([
+      ["Type", name("ObjStm")],
+      ["N", objects.length],
+      ["First", header.length]
+    ]),
+    bytes,
+    options.objectStreams
+  );
+}
+
+function buildFullXrefStreamValue(
+  xrefEntries: ReadonlyMap<number, { type: 0 | 1 | 2; field2: number; field3: number }>,
+  xrefStreamObjectId: number,
+  options: WritePdfOptions
+): PdfStream {
+  const sortedObjectIds = [...xrefEntries.keys()].sort((left, right) => left - right);
+  const widths = [1, 8, 2] as const;
+  const bytes = new Uint8Array(sortedObjectIds.length * (widths[0] + widths[1] + widths[2]));
+  let cursor = 0;
+  for (const objectId of sortedObjectIds) {
+    const entry = xrefEntries.get(objectId)!;
+    writeBigEndian(bytes, cursor, widths[0], entry.type);
+    cursor += widths[0];
+    writeBigEndian(bytes, cursor, widths[1], entry.field2);
+    cursor += widths[1];
+    writeBigEndian(bytes, cursor, widths[2], entry.field3);
+    cursor += widths[2];
+  }
+
+  return stream(
+    dict([
+      ["Type", name("XRef")],
+      ["Size", xrefStreamObjectId + 1],
+      ["Root", ref(1)],
+      ["Info", ref(3)],
+      ["Encrypt", options.encryptionObjectId !== undefined ? ref(options.encryptionObjectId) : undefined],
+      [
+        "ID",
+        options.fileId !== undefined
+          ? array([hexString(options.fileId), hexString(options.fileId)])
+          : undefined
+      ],
+      ["W", array([...widths])],
+      ["Index", array([0, xrefStreamObjectId + 1])]
+    ]),
+    bytes
+  );
 }
 
 async function writePdfToSink(objects: Iterable<PdfIndirectObject>, sink: ByteSink, options: WritePdfOptions = {}): Promise<void> {
@@ -2179,12 +2423,22 @@ async function writeObjectValueToSink(
     await writer.writeLine(serializePdfValue(streamDict));
     await writer.writeLine("stream");
     const startOfData = writer.size;
-    const cipher =
-      encryption !== undefined
-        ? createCipherForObject(encryption.encryption, encryption.objectId, encryption.generation)
-        : undefined;
-    for await (const chunk of value.data()) {
-      await writer.writeBytes(cipher ? cipher.update(chunk) : chunk);
+    if (encryption !== undefined && (encryption.encryption.algorithm === "aes-128" || encryption.encryption.algorithm === "aes-256")) {
+      const chunks: Uint8Array[] = [];
+      let totalLength = 0;
+      for await (const chunk of value.data()) {
+        chunks.push(chunk);
+        totalLength += chunk.length;
+      }
+      await writer.writeBytes(encryptBytesForObject(encryption.encryption, encryption.objectId, encryption.generation, concatChunks(chunks, totalLength)));
+    } else {
+      const cipher =
+        encryption !== undefined
+          ? createCipherForObject(encryption.encryption, encryption.objectId, encryption.generation)
+          : undefined;
+      for await (const chunk of value.data()) {
+        await writer.writeBytes(cipher ? cipher.update(chunk) : chunk);
+      }
     }
     const endOfData = writer.size;
     await writer.writeLine();
@@ -2300,6 +2554,61 @@ function concatByteArrays(left: Uint8Array, right: Uint8Array): Uint8Array {
   output.set(left, 0);
   output.set(right, left.length);
   return output;
+}
+
+function concatChunks(chunks: readonly Uint8Array[], totalLength: number): Uint8Array {
+  const output = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return output;
+}
+
+function applyDetachedSignature(
+  bytes: Uint8Array,
+  signature: NonNullable<PdfDocumentModel["signature"]>
+): Uint8Array {
+  const text = new TextDecoder("latin1").decode(bytes);
+  const byteRangeMatch = /\/ByteRange \[0 9999999999 9999999999 9999999999\]/.exec(text);
+  const contentsMatch = /\/Contents <(0{128,})>/.exec(text);
+  if (!byteRangeMatch || !contentsMatch || contentsMatch.index === undefined) {
+    throw new Error("Unable to locate reserved signature ByteRange and Contents placeholders.");
+  }
+
+  const contentsHexStart = contentsMatch.index + "/Contents ".length;
+  const contentsHexEnd = contentsHexStart + contentsMatch[0].slice("/Contents ".length).length;
+  const rangeStart = 0;
+  const rangeLength = contentsHexStart;
+  const rangeResume = contentsHexEnd;
+  const rangeResumeLength = bytes.length - rangeResume;
+  const byteRange = `/ByteRange [0 ${padByteRangeNumber(rangeLength)} ${padByteRangeNumber(rangeResume)} ${padByteRangeNumber(rangeResumeLength)}]`;
+  const output = bytes.slice();
+  output.set(latin1Bytes(byteRange), byteRangeMatch.index);
+
+  const signedBytes = concatByteArrays(
+    output.subarray(rangeStart, rangeStart + rangeLength),
+    output.subarray(rangeResume, rangeResume + rangeResumeLength)
+  );
+  const cms = signature.sign(signedBytes);
+  const signatureHex = bytesToHex(cms);
+  const placeholderHexLength = contentsMatch[1]!.length;
+  if (signatureHex.length > placeholderHexLength) {
+    throw new Error(`Detached signature is ${cms.length} bytes, which exceeds the reserved ${placeholderHexLength / 2} byte placeholder.`);
+  }
+
+  const paddedSignatureHex = signatureHex.padEnd(placeholderHexLength, "0");
+  output.set(latin1Bytes(paddedSignatureHex), contentsHexStart + 1);
+  return output;
+}
+
+function padByteRangeNumber(value: number): string {
+  return String(value).padStart(10, "0");
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return [...bytes].map((byte) => byte.toString(16).toUpperCase().padStart(2, "0")).join("");
 }
 
 function isPdfDictValue(value: PdfValue | undefined): value is PdfDict {
@@ -2472,7 +2781,19 @@ function buildBaseXmpPacket(info: PdfDocumentModel["info"], identification: stri
   ].join("");
 }
 
-function buildSrgbOutputProfileStream(): ReturnType<typeof stream> {
+function buildOutputProfileStream(model: PdfDocumentModel): ReturnType<typeof stream> {
+  if (model.outputIntent !== undefined) {
+    const alternate = model.outputIntent.alternate ?? "DeviceCMYK";
+    const channels = model.outputIntent.channels ?? (alternate === "DeviceCMYK" ? 4 : alternate === "DeviceGray" ? 1 : 3);
+    return stream(
+      dict([
+        ["N", channels],
+        ["Alternate", name(alternate)]
+      ]),
+      copyBinaryData(model.outputIntent.profile)
+    );
+  }
+
   return stream(
     dict([
       ["N", 3],
@@ -2482,15 +2803,26 @@ function buildSrgbOutputProfileStream(): ReturnType<typeof stream> {
   );
 }
 
-function buildPdfaOutputIntentDictionary(profileObjectId: number): PdfDict {
+function buildOutputIntentDictionary(profileObjectId: number, model: PdfDocumentModel): PdfDict {
+  const custom = model.outputIntent;
+  const outputConditionIdentifier = custom?.outputConditionIdentifier ?? "sRGB IEC61966-2.1";
+  const info = custom?.info ?? outputConditionIdentifier;
+  const registryName = custom?.registryName ?? "http://www.color.org";
+
   return dict([
     ["Type", name("OutputIntent")],
-    ["S", name("GTS_PDFA1")],
-    ["OutputConditionIdentifier", literalString("sRGB IEC61966-2.1")],
-    ["Info", literalString("sRGB IEC61966-2.1")],
-    ["RegistryName", literalString("http://www.color.org")],
+    ["S", name(model.conformance === "pdfa-1b" ? "GTS_PDFA1" : "GTS_PDFX")],
+    ["OutputConditionIdentifier", literalString(outputConditionIdentifier)],
+    ["Info", literalString(info)],
+    ["RegistryName", literalString(registryName)],
     ["DestOutputProfile", ref(profileObjectId)]
   ]);
+}
+
+function copyBinaryData(data: Uint8Array | ArrayBuffer): Uint8Array {
+  return data instanceof Uint8Array
+    ? data.slice()
+    : new Uint8Array(data.slice(0));
 }
 
 function buildStructTreeRootDictionary(allocation: TaggedPdfAllocation, roleMap?: PdfDocumentModel["roleMap"]): PdfDict {
@@ -2662,6 +2994,7 @@ function escapeXml(value: string): string {
 }
 
 function buildEncryptionDictionary(encryption: PdfEncryptionContext): PdfDict {
+  const aes = encryption.algorithm === "aes-128" || encryption.algorithm === "aes-256";
   return dict([
     ["Filter", name("Standard")],
     ["V", encryption.version],
@@ -2669,7 +3002,17 @@ function buildEncryptionDictionary(encryption: PdfEncryptionContext): PdfDict {
     ["Length", encryption.revision >= 3 ? encryption.keyLengthBytes * 8 : undefined],
     ["O", hexString(encryption.ownerKey)],
     ["U", hexString(encryption.userKey)],
-    ["P", encryption.permissionsValue]
+    ["P", encryption.permissionsValue],
+    ["EncryptMetadata", aes ? true : undefined],
+    ["StmF", aes ? name("StdCF") : undefined],
+    ["StrF", aes ? name("StdCF") : undefined],
+    ["CF", aes ? dict([
+      ["StdCF", dict([
+        ["AuthEvent", name("DocOpen")],
+        ["CFM", name(encryption.algorithm === "aes-256" ? "AESV3" : "AESV2")],
+        ["Length", encryption.keyLengthBytes]
+      ])]
+    ]) : undefined]
   ]);
 }
 
@@ -3165,7 +3508,50 @@ function buildAnnotationColorArray(color: PdfColor | undefined): PdfValue | unde
 
   return color.kind === "gray"
     ? array([color.value])
-    : array([color.r, color.g, color.b]);
+    : color.kind === "rgb"
+      ? array([color.r, color.g, color.b])
+      : array([color.c, color.m, color.y, color.k]);
+}
+
+function buildDetachedSignatureFieldDictionary(
+  signature: NonNullable<PdfDocumentModel["signature"]>,
+  signatureDictionaryObjectId: number
+): PdfDict {
+  return dict([
+    ["FT", name("Sig")],
+    ["T", literalString(signature.fieldName ?? "Signature1")],
+    ["V", ref(signatureDictionaryObjectId)],
+    ["Ff", 1]
+  ]);
+}
+
+function buildDetachedSignatureDictionary(signature: NonNullable<PdfDocumentModel["signature"]>): PdfDict {
+  const placeholderBytes = normalizeSignaturePlaceholderBytes(signature.placeholderBytes);
+  return dict([
+    ["Type", name("Sig")],
+    ["Filter", name("Adobe.PPKLite")],
+    ["SubFilter", name("adbe.pkcs7.detached")],
+    ["ByteRange", array([0, 9999999999, 9999999999, 9999999999])],
+    ["Contents", hexString(new Uint8Array(placeholderBytes))],
+    ["Reason", signature.reason !== undefined ? literalString(signature.reason) : undefined],
+    ["Location", signature.location !== undefined ? literalString(signature.location) : undefined],
+    ["ContactInfo", signature.contactInfo !== undefined ? literalString(signature.contactInfo) : undefined],
+    ["Name", signature.name !== undefined ? literalString(signature.name) : undefined],
+    ["M", literalString(formatPdfDate(new Date()))]
+  ]);
+}
+
+function normalizeSignaturePlaceholderBytes(value: number | undefined): number {
+  const size = value ?? 8192;
+  if (!Number.isInteger(size) || size <= 0) {
+    throw new Error("Signature placeholderBytes must be a positive integer.");
+  }
+  return size;
+}
+
+function formatPdfDate(date: Date): string {
+  const pad = (value: number): string => String(value).padStart(2, "0");
+  return `D:${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}Z`;
 }
 
 function buildPageResourcesDictionary(
@@ -3906,7 +4292,16 @@ function collectEmbeddedFontContexts(model: PdfDocumentModel): Map<string, Embed
       }
     }
 
-    contexts.set(font.id, { font, glyphToUnicode });
+    const glyphIds = [...glyphToUnicode.keys()].sort((left, right) => left - right);
+    const glyphIdToCid = new Map<number, number>();
+    const cidToGlyphId: number[] = [];
+    for (const glyphId of glyphIds) {
+      const cid = cidToGlyphId.length;
+      glyphIdToCid.set(glyphId, cid);
+      cidToGlyphId.push(glyphId);
+    }
+
+    contexts.set(font.id, { font, glyphToUnicode, glyphIdToCid, cidToGlyphId });
   }
   return contexts;
 }
@@ -3930,9 +4325,16 @@ function serializeTextDrawOperation(
   const glyphIds = glyphs
     ? glyphs.map((glyph) => glyph.glyphId)
     : serializeTextToGlyphIds(text, context.font);
+  const cids = glyphIds.map((glyphId) => {
+    const cid = context.glyphIdToCid.get(glyphId);
+    if (cid === undefined) {
+      throw new Error(`Missing compact CID mapping for glyph ${glyphId}.`);
+    }
+    return cid;
+  });
 
-  if (!kerning || glyphIds.length < 2) {
-    return `${serializeEmbeddedGlyphRun(glyphIds)} Tj`;
+  if (!kerning || cids.length < 2) {
+    return `${serializeEmbeddedGlyphRun(cids)} Tj`;
   }
 
   const parts: string[] = [];
@@ -3941,7 +4343,7 @@ function serializeTextDrawOperation(
 
   for (let index = 0; index < glyphIds.length; index += 1) {
     const glyphId = glyphIds[index]!;
-    currentRun.push(glyphId);
+    currentRun.push(cids[index]!);
 
     if (index >= glyphIds.length - 1) {
       continue;
@@ -3964,7 +4366,7 @@ function serializeTextDrawOperation(
   }
 
   if (!hasKerningAdjustments) {
-    return `${serializeEmbeddedGlyphRun(glyphIds)} Tj`;
+    return `${serializeEmbeddedGlyphRun(cids)} Tj`;
   }
 
   return `[${parts.join(" ")}] TJ`;
@@ -4014,27 +4416,29 @@ function resolveFontReference(
   return ref(embedded.type0);
 }
 
-function buildEmbeddedFontWidths(font: ParsedTrueTypeFont, glyphToUnicode: ReadonlyMap<number, string>): PdfValue[] {
-  const glyphIds = [...glyphToUnicode.keys()].filter((glyphId) => glyphId !== 0).sort((left, right) => left - right);
+function buildEmbeddedFontWidths(context: EmbeddedFontContext): PdfValue[] {
+  const cids = context.cidToGlyphId.map((glyphId, cid) => ({ cid, glyphId })).filter((entry) => entry.glyphId !== 0);
   const values: PdfValue[] = [];
   let index = 0;
-  while (index < glyphIds.length) {
-    const startGlyphId = glyphIds[index]!;
+  while (index < cids.length) {
+    const startCid = cids[index]!.cid;
     const widths: number[] = [];
-    let currentGlyphId = startGlyphId;
-    while (index < glyphIds.length && glyphIds[index] === currentGlyphId) {
-      widths.push(scaleMetric(font.widths[currentGlyphId] ?? font.widths[0] ?? font.unitsPerEm, font.unitsPerEm));
-      currentGlyphId += 1;
+    let currentCid = startCid;
+    while (index < cids.length && cids[index]!.cid === currentCid) {
+      const glyphId = cids[index]!.glyphId;
+      widths.push(scaleMetric(context.font.widths[glyphId] ?? context.font.widths[0] ?? context.font.unitsPerEm, context.font.unitsPerEm));
+      currentCid += 1;
       index += 1;
     }
-    values.push(startGlyphId, array(widths));
+    values.push(startCid, array(widths));
   }
   return values;
 }
 
-function buildToUnicodeCMap(glyphToUnicode: ReadonlyMap<number, string>): string {
-  const pairs = [...glyphToUnicode.entries()]
+function buildToUnicodeCMap(context: EmbeddedFontContext): string {
+  const pairs = [...context.glyphToUnicode.entries()]
     .filter(([glyphId]) => glyphId !== 0)
+    .map(([glyphId, unicode]) => [context.glyphIdToCid.get(glyphId)!, unicode] as [number, string])
     .sort((left, right) => left[0] - right[0]);
 
   const lines = [
@@ -4052,14 +4456,24 @@ function buildToUnicodeCMap(glyphToUnicode: ReadonlyMap<number, string>): string
   for (let index = 0; index < pairs.length; index += 100) {
     const chunk = pairs.slice(index, index + 100);
     lines.push(`${chunk.length} beginbfchar`);
-    for (const [glyphId, unicode] of chunk) {
-      lines.push(`<${glyphId.toString(16).toUpperCase().padStart(4, "0")}> <${encodeUnicodeString(unicode)}>`);
+    for (const [cid, unicode] of chunk) {
+      lines.push(`<${cid.toString(16).toUpperCase().padStart(4, "0")}> <${encodeUnicodeString(unicode)}>`);
     }
     lines.push("endbfchar");
   }
 
   lines.push("endcmap", "CMapName currentdict /CMap defineresource pop", "end", "end");
   return `${lines.join("\n")}\n`;
+}
+
+function buildCidToGidMapBytes(context: EmbeddedFontContext): Uint8Array {
+  const bytes = new Uint8Array(context.cidToGlyphId.length * 2);
+  for (let cid = 0; cid < context.cidToGlyphId.length; cid += 1) {
+    const glyphId = context.cidToGlyphId[cid] ?? 0;
+    bytes[cid * 2] = (glyphId >>> 8) & 0xff;
+    bytes[cid * 2 + 1] = glyphId & 0xff;
+  }
+  return bytes;
 }
 
 function encodeUnicodeString(text: string): string {
@@ -4149,21 +4563,42 @@ function buildTextFieldAppearance(resourceName: string, fontSize: number, color:
 }
 
 function serializeTextColor(color: PdfColor): string {
-  return color.kind === "gray"
-    ? `${formatPdfNumber(color.value)} g`
-    : `${formatPdfNumber(color.r)} ${formatPdfNumber(color.g)} ${formatPdfNumber(color.b)} rg`;
+  switch (color.kind) {
+    case "gray":
+      return `${formatPdfNumber(color.value)} g`;
+    case "rgb":
+      return `${formatPdfNumber(color.r)} ${formatPdfNumber(color.g)} ${formatPdfNumber(color.b)} rg`;
+    case "cmyk":
+      return `${formatPdfNumber(color.c)} ${formatPdfNumber(color.m)} ${formatPdfNumber(color.y)} ${formatPdfNumber(color.k)} k`;
+    default:
+      return assertNever(color);
+  }
 }
 
 function serializeFillColor(color: PdfColor): string {
-  return color.kind === "gray"
-    ? `${formatPdfNumber(color.value)} g`
-    : `${formatPdfNumber(color.r)} ${formatPdfNumber(color.g)} ${formatPdfNumber(color.b)} rg`;
+  switch (color.kind) {
+    case "gray":
+      return `${formatPdfNumber(color.value)} g`;
+    case "rgb":
+      return `${formatPdfNumber(color.r)} ${formatPdfNumber(color.g)} ${formatPdfNumber(color.b)} rg`;
+    case "cmyk":
+      return `${formatPdfNumber(color.c)} ${formatPdfNumber(color.m)} ${formatPdfNumber(color.y)} ${formatPdfNumber(color.k)} k`;
+    default:
+      return assertNever(color);
+  }
 }
 
 function serializeStrokeColor(color: PdfColor): string {
-  return color.kind === "gray"
-    ? `${formatPdfNumber(color.value)} G`
-    : `${formatPdfNumber(color.r)} ${formatPdfNumber(color.g)} ${formatPdfNumber(color.b)} RG`;
+  switch (color.kind) {
+    case "gray":
+      return `${formatPdfNumber(color.value)} G`;
+    case "rgb":
+      return `${formatPdfNumber(color.r)} ${formatPdfNumber(color.g)} ${formatPdfNumber(color.b)} RG`;
+    case "cmyk":
+      return `${formatPdfNumber(color.c)} ${formatPdfNumber(color.m)} ${formatPdfNumber(color.y)} ${formatPdfNumber(color.k)} K`;
+    default:
+      return assertNever(color);
+  }
 }
 
 function formatMatrix(matrix: Transform): string {
