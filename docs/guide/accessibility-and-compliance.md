@@ -68,7 +68,7 @@ await writeFile("quarterly-report.pdf", doc.toUint8Array());
 
 `flow()` keeps a cursor, assigns standard tags for headings and paragraphs, lays out tables and images, applies standard report spacing, and infers structure bounding boxes from the generated placement. Use `structure.boundingBox` only when you need to override the inferred box for a specific element.
 
-The default spacing scale is designed around readable PDF reports: body paragraphs have compact after-spacing, headings have stronger before-spacing and tighter after-spacing, tables and figures get object spacing, and headings at the top of a page do not receive unnecessary leading space. For special cases, set `spaceBefore` or `spaceAfter` on a block. For a whole report, set `page.spacing`.
+The default spacing scale is designed around readable PDF reports: body paragraphs have compact after-spacing, headings have stronger before-spacing and tighter after-spacing, tables and figures get object spacing, and headings at the top of a page do not receive unnecessary leading space. For special cases, set `marginTop` or `marginBottom` on a block. For a whole report, set `page.spacing`.
 
 For longer reports, use `renderTemplate()` to render a reusable block tree with automatic page creation:
 

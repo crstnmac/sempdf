@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises";
 
-import { createDocument, rgb } from "../src/index.js";
+import { createDocument, hex } from "../src/index.js";
 
 const doc = createDocument({
   info: {
@@ -16,7 +16,7 @@ page.text("Hello from pdf-editing-lib", {
   x: 56,
   y: 780,
   fontSize: 20,
-  color: rgb(0.11, 0.2, 0.42)
+  color: hex("1c2f6b")
 });
 page.path(
   [{ type: "rect", x: 48, y: 740, width: 220, height: 36 }],
@@ -24,7 +24,7 @@ page.path(
     paint: "stroke",
     stroke: {
       width: 1.5,
-      color: rgb(0.11, 0.2, 0.42)
+      color: hex("1c2f6b")
     }
   }
 );

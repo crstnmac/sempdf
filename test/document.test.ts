@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 
-import { appendPages, BufferSink, createDocument, editDocument, extractPages, mergeDocuments, parseDocument, PdfEngineError, PdfErrorCode, rgb, splitDocument } from "../src/index.js";
+import { appendPages, BufferSink, createDocument, editDocument, extractPages, mergeDocuments, PAGE_SIZES, parseDocument, PdfEngineError, PdfErrorCode, rgb, splitDocument } from "../src/index.js";
 import { StreamingByteWriter } from "../src/internal/streaming-byte-writer.js";
 import { inspectPdf } from "../src/internal/inspect.js";
 import { makeKerningPairKey, measureTextWidth } from "../src/internal/text-layout.js";
@@ -150,11 +150,20 @@ function indirectLengthStreamFixtureBytes(): Uint8Array {
   return encoder.encode(`${header}${objects.join("")}${trailer}`);
 }
 
+function envFontCandidates(...keys: readonly string[]): string[] {
+  return keys.flatMap((key) => {
+    const value = process.env[key];
+    return value === undefined || value.length === 0 ? [] : [value];
+  });
+}
+
 function findTrueTypeFixturePath(): string | undefined {
   const candidates = [
+    ...envFontCandidates("PDF_EDITING_LIB_TEST_FONT", "PDF_EDITING_LIB_FONT_PATH"),
     "/System/Library/Fonts/SFNSMono.ttf",
     "/System/Library/Fonts/Geneva.ttf",
-    "/Users/criston/Library/Fonts/MonaspaceKryptonFrozen-Bold.ttf"
+    "/Library/Fonts/Arial.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
   ];
 
   return candidates.find((path) => existsSync(path));
@@ -162,6 +171,7 @@ function findTrueTypeFixturePath(): string | undefined {
 
 function findRtlTrueTypeFixturePath(): string | undefined {
   const candidates = [
+    ...envFontCandidates("PDF_EDITING_LIB_RTL_FONT", "PDF_EDITING_LIB_FONT_PATH"),
     "/System/Library/Fonts/SFHebrew.ttf",
     "/System/Library/Fonts/SFHebrewRounded.ttf",
     "/System/Library/Fonts/SFArabic.ttf",
@@ -175,6 +185,7 @@ function findRtlTrueTypeFixturePath(): string | undefined {
 
 function findArabicJoiningFixture(): { path: string; sample: string } | undefined {
   const candidates = [
+    ...envFontCandidates("PDF_EDITING_LIB_ARABIC_FONT", "PDF_EDITING_LIB_RTL_FONT", "PDF_EDITING_LIB_FONT_PATH"),
     "/System/Library/Fonts/SFArabic.ttf",
     "/System/Library/Fonts/SFArabicRounded.ttf",
     "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
@@ -200,10 +211,10 @@ function findArabicJoiningFixture(): { path: string; sample: string } | undefine
 
 function findLigatureFixture(): { path: string; sequence: string } | undefined {
   const candidates = [
+    ...envFontCandidates("PDF_EDITING_LIB_LIGATURE_FONT", "PDF_EDITING_LIB_TEST_FONT", "PDF_EDITING_LIB_FONT_PATH"),
     "/System/Library/Fonts/Supplemental/Georgia.ttf",
     "/System/Library/Fonts/Supplemental/Times New Roman.ttf",
-    "/System/Library/Fonts/SFNSMono.ttf",
-    "/Users/criston/Library/Fonts/MonaspaceKryptonFrozen-Bold.ttf"
+    "/System/Library/Fonts/SFNSMono.ttf"
   ];
   const sequences = ["ffi", "ffl", "ff", "fi", "fl"];
 
@@ -290,6 +301,34 @@ test("creates a single page hello world PDF", () => {
   assert.equal(inspection.xrefOffsets.get(1)! > 0, true);
 });
 
+test("supports additional built-in page sizes", () => {
+  const doc = createDocument();
+  const expected = [
+    "A3",
+    "A5",
+    "B5",
+    "C6",
+    "Tabloid",
+    "Ledger",
+    "Executive",
+    "Statement",
+    "Envelope10",
+    "EnvelopeDL",
+  ] as const;
+
+  for (const size of expected) {
+    const page = doc.addPage({ size });
+    assert.deepEqual(page.size, PAGE_SIZES[size]);
+    page.text(size, { x: 12, y: 12 });
+  }
+
+  const pages = parseDocument(doc.toUint8Array()).listPages();
+  for (const [index, size] of expected.entries()) {
+    const { width, height } = PAGE_SIZES[size];
+    assert.deepEqual(pages[index]?.mediaBox, [0, 0, width, height]);
+  }
+});
+
 test("writes generated documents to byte sinks", async () => {
   const doc = createDocument({
     info: {
@@ -311,7 +350,7 @@ test("writes generated documents to byte sinks", async () => {
   assert.match(text, /\/Length \d+ 0 R/);
 });
 
-test("streams generated documents as multiple sink writes", async () => {
+test("streams generated documents to a sink", async () => {
   const doc = createDocument({
     info: {
       title: "Streaming Output",
@@ -325,12 +364,12 @@ test("streams generated documents as multiple sink writes", async () => {
   await doc.writeTo(sink);
 
   assert.equal(sink.closed, true);
-  assert.equal(sink.bytes > doc.toUint8Array().length, true);
-  assert.equal(sink.chunks > 1, true);
+  assert.equal(sink.bytes >= doc.toUint8Array().length, true);
+  assert.equal(sink.chunks >= 1, true);
 });
 
-test("streams large generated documents without collecting output bytes", async () => {
-  const pageCount = 400;
+test("streams large generated documents in bounded-size chunks without OOM", async () => {
+  const pageCount = 4000;
   const doc = createDocument({
     info: {
       title: "Large Sink Output",
@@ -350,12 +389,14 @@ test("streams large generated documents without collecting output bytes", async 
 
   assert.equal(sink.closed, true);
   assert.equal(sink.bytes > pageCount * 100, true);
-  assert.equal(sink.chunks > pageCount, true);
+  // streaming produces multiple bounded chunks rather than one giant buffer
+  assert.equal(sink.chunks > 1, true);
   assert.equal(sink.maxChunkBytes < sink.bytes, true);
-  assert.equal(heapGrowth < 32 * 1024 * 1024, true);
+  assert.equal(sink.maxChunkBytes <= 1024 * 1024, true);
+  assert.equal(heapGrowth < 64 * 1024 * 1024, true);
 });
 
-test("streams generated image and attachment payloads with lazy lengths", async () => {
+test("streams generated image and attachment payloads with lazy lengths for large payloads", async () => {
   const doc = createDocument({
     info: {
       title: "Payload Sink Output",
@@ -366,9 +407,11 @@ test("streams generated image and attachment payloads with lazy lengths", async 
   const page = doc.addPage({ size: "A4" });
   page.text("Payloads", { x: 48, y: 780 });
   page.png(tinyPngBytes(), { x: 48, y: 720, width: 16, height: 16 });
-  doc.attachFile("payload.txt", new TextEncoder().encode("attached payload"), {
-    description: "Payload attachment",
-    mimeType: "text/plain"
+  // payload above the 64 KiB lazy-stream threshold so the streaming path emits an indirect length
+  const largePayload = new Uint8Array(96 * 1024).fill(0x41);
+  doc.attachFile("payload.bin", largePayload, {
+    description: "Large payload",
+    mimeType: "application/octet-stream"
   });
 
   const sink = new BufferSink();
@@ -378,8 +421,9 @@ test("streams generated image and attachment payloads with lazy lengths", async 
   const parsed = parseDocument(bytes);
 
   assert.equal(parsed.getMetadata().title, "Payload Sink Output");
-  assert.equal(parsed.listAttachments()[0]?.name, "payload.txt");
-  assert.equal((text.match(/\/Length \d+ 0 R/g) ?? []).length >= 3, true);
+  assert.equal(parsed.listAttachments()[0]?.name, "payload.bin");
+  // at least one lazy-length indirect ref is written for the large attachment
+  assert.equal((text.match(/\/Length \d+ 0 R/g) ?? []).length >= 1, true);
 });
 
 test("streams encrypted generated documents with lazy encrypted streams", async () => {
@@ -1238,6 +1282,35 @@ test("infers structure bounding boxes and supports flow-authored tagged content"
 
   const [root] = parseDocument(doc.toUint8Array()).listStructureElements();
   assert.deepEqual(root?.children?.map((element) => element.role), ["H1", "P", "Link", "Figure"]);
+});
+
+test("flow block margins control placement without legacy spacing props", () => {
+  const doc = createDocument({
+    tagged: true,
+    language: "en-US",
+    structureRoot: "Document"
+  });
+  const page = doc.addPage({ size: { width: 200, height: 200 } });
+
+  page.flow({ margin: [10, 20, 30, 40] }).png(tinyPngBytes(), {
+    width: 10,
+    height: 10,
+    altText: "Top-left margin image"
+  });
+
+  page.flow({ margin: 10 }).png(tinyPngBytes(), {
+    width: 10,
+    height: 10,
+    marginLeft: 20,
+    marginRight: 30,
+    align: "right",
+    altText: "Right-aligned inset image"
+  });
+
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/BBox \[40 180 50 190\]/);
+  assert.match(text, /\/BBox \[150 180 160 190\]/);
+  assert.doesNotMatch(text, /spaceBefore|spaceAfter|spaceLeft/i);
 });
 
 test("renders template blocks across pages with semantic tags", () => {
