@@ -1,7 +1,9 @@
-export { createDocument, editDocument, PdfDocument, PdfEditableDocument, PdfOutlineItem, PdfPage, PdfStructureContainer } from "./document.js";
+export { createDocument, editDocument, PdfDocument, PdfEditableDocument, PdfFlow, PdfOutlineItem, PdfPage, PdfStructureContainer } from "./document.js";
 export type { PdfEditableStructureElement, PdfEditableStructureQuery, PdfEditableStructureSimilarityOptions } from "./document.js";
 export { PdfEngineError, PdfErrorCode } from "./errors.js";
 export { appendPages, extractPages, mergeDocuments, splitDocument } from "./page-transfer.js";
+export { BufferSink, NodeStreamSink, WebStreamSink } from "./internal/byte-sink.js";
+export type { ByteSink, NodeWritableLike } from "./internal/byte-sink.js";
 export { parseDocument, ParsedPdfDocument } from "./parser.js";
 export { gray, PAGE_SIZES, rgb } from "./types.js";
 export type {
@@ -20,11 +22,20 @@ export type {
   DocumentOptions,
   DocumentPermissions,
   EmbedTrueTypeFontOptions,
+  FlowBlockSpacingOptions,
   FillStyle,
+  FlowHeadingOptions,
+  FlowImageOptions,
+  FlowLinkOptions,
+  FlowOptions,
+  FlowSpacingScale,
+  FlowTableOptions,
+  FlowTextOptions,
   FontName,
   FreeTextAnnotationOptions,
   GrayColor,
   HighlightAnnotationOptions,
+  HeadingLevel,
   JpegImageOptions,
   ListItem,
   ListItemDefinition,
@@ -43,6 +54,7 @@ export type {
   PageSize,
   PathCommand,
   PathStyle,
+  PdfBoundingBox,
   PngImageOptions,
   PdfColor,
   PdfComplianceIssue,
@@ -68,13 +80,28 @@ export type {
   TableHeaderScope,
   TableOptions,
   TableRow,
+  TemplateBlock,
+  TemplateDocumentOptions,
+  TemplateImageBlock,
+  TemplateLinkBlock,
+  TemplatePageBreakBlock,
+  TemplatePageNumberAlign,
+  TemplatePageNumberOptions,
+  TemplatePageOptions,
+  TemplateRenderContext,
+  TemplateRunningRegion,
+  TemplateSectionBlock,
+  TemplateTableBlock,
+  TemplateTextBlock,
   TextAlign,
   TextBlockOptions,
   TextDirection,
   TextFieldOptions,
   TextOptions,
   Transform,
-  UriLinkOptions
+  UriLinkOptions,
+  XmpMetadataInput,
+  XmpMetadataOptions
 } from "./types.js";
 export type {
   ParseDocumentOptions,

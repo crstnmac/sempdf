@@ -64,6 +64,7 @@ This repo includes executable examples:
 npm run example:hello
 npm run example:image
 npm run example:png
+npm run example:tagged
 npm run example:web
 ```
 

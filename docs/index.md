@@ -19,7 +19,7 @@ features:
   - title: Edit existing documents
     details: Parse classic and xref-stream PDFs, update metadata and form fields, append overlays, reorder pages, and preserve incremental history.
   - title: Build accessible output
-    details: Create tagged PDFs with structure trees, image alt text, role maps, language metadata, table helpers, and validation warnings.
+    details: Create tagged PDFs with semantic flow helpers, scalable report templates, structure trees, image alt text, role maps, language metadata, inferred structure bounding boxes, table helpers, and validation warnings.
 ---
 
 ## Designed for library authors and product code

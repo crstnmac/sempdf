@@ -42,6 +42,19 @@ export interface DocumentInfo {
   modificationDate?: Date | string | undefined;
 }
 
+export interface XmpMetadataOptions {
+  title?: string | undefined;
+  creator?: string | undefined;
+  creators?: readonly string[] | undefined;
+  creatorTool?: string | undefined;
+  producer?: string | undefined;
+  createDate?: Date | string | undefined;
+  modifyDate?: Date | string | undefined;
+  metadataDate?: Date | string | undefined;
+}
+
+export type XmpMetadataInput = string | XmpMetadataOptions;
+
 export interface DocumentPermissions {
   printing?: boolean | undefined;
   modifying?: boolean | undefined;
@@ -103,11 +116,13 @@ export type PdfStructureAttributeValue =
   | boolean
   | { readonly name: string }
   | readonly PdfStructureAttributeValue[];
+export type PdfBoundingBox = readonly [number, number, number, number];
 
 export interface PdfStructureOptions {
   altText?: string | undefined;
   actualText?: string | undefined;
   language?: string | undefined;
+  boundingBox?: PdfBoundingBox | undefined;
   attributes?: Record<string, PdfStructureAttributeValue> | undefined;
 }
 
@@ -127,13 +142,14 @@ export interface DocumentEncryptionOptions {
 export interface DocumentOptions {
   defaultPageSize?: PageSize;
   info?: DocumentInfo;
-  xmpMetadata?: string | undefined;
+  xmpMetadata?: XmpMetadataInput | undefined;
   encryption?: DocumentEncryptionOptions | undefined;
   language?: string | undefined;
   tagged?: boolean | undefined;
   roleMap?: PdfRoleMap | undefined;
   structureRoot?: PdfContainerTag | false | undefined;
   conformance?: DocumentConformanceProfile | undefined;
+  compress?: boolean | undefined;
 }
 
 export interface EmbedTrueTypeFontOptions {
@@ -186,7 +202,7 @@ export interface TextOptions {
   wordSpacing?: number | undefined;
   leading?: number | undefined;
   kerning?: boolean | undefined;
-  tag?: PdfTextStructureTag | undefined;
+  tag?: PdfTextStructureTag | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;
 }
 
@@ -207,8 +223,155 @@ export interface TextBlockOptions {
   align?: TextAlign | undefined;
   maxLines?: number | undefined;
   kerning?: boolean | undefined;
-  tag?: PdfTextStructureTag | undefined;
+  tag?: PdfTextStructureTag | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;
+}
+
+export interface FlowOptions {
+  x?: number | undefined;
+  y?: number | undefined;
+  width?: number | undefined;
+  margin?: number | undefined;
+  marginBottom?: number | undefined;
+  gap?: number | undefined;
+  spacing?: FlowSpacingScale | undefined;
+  font?: PdfFont | undefined;
+  fallbackFonts?: PdfFont[] | undefined;
+  direction?: TextDirection | undefined;
+  fontSize?: number | undefined;
+  color?: PdfColor | undefined;
+  lineHeight?: number | undefined;
+  align?: TextAlign | undefined;
+  kerning?: boolean | undefined;
+}
+
+export type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
+
+export interface FlowSpacingScale {
+  paragraphBefore?: number | undefined;
+  paragraphAfter?: number | undefined;
+  headingBefore?: number | Partial<Record<HeadingLevel, number>> | undefined;
+  headingAfter?: number | Partial<Record<HeadingLevel, number>> | undefined;
+  tableBefore?: number | undefined;
+  tableAfter?: number | undefined;
+  imageBefore?: number | undefined;
+  imageAfter?: number | undefined;
+  linkBefore?: number | undefined;
+  linkAfter?: number | undefined;
+}
+
+export interface FlowBlockSpacingOptions {
+  spaceBefore?: number | undefined;
+  spaceAfter?: number | undefined;
+}
+
+export interface FlowTextOptions extends Omit<TextBlockOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {}
+
+export interface FlowHeadingOptions extends FlowTextOptions {
+  level?: HeadingLevel | undefined;
+}
+
+export interface FlowImageOptions extends Omit<JpegImageOptions, "x" | "y" | "width" | "height">, FlowBlockSpacingOptions {
+  width?: number | undefined;
+  height?: number | undefined;
+  maxWidth?: number | undefined;
+}
+
+export interface FlowLinkOptions extends Omit<UriLinkOptions, "x" | "y" | "width" | "height" | "tag">, FlowBlockSpacingOptions {
+  font?: PdfFont | undefined;
+  fallbackFonts?: PdfFont[] | undefined;
+  direction?: TextDirection | undefined;
+  fontSize?: number | undefined;
+  color?: PdfColor | undefined;
+  lineHeight?: number | undefined;
+  kerning?: boolean | undefined;
+  tag?: "Link" | undefined;
+}
+
+export interface FlowTableOptions extends Omit<TableOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+  width?: number | undefined;
+}
+
+export interface TemplatePageOptions extends FlowOptions {
+  size?: PageSize | undefined;
+  headerHeight?: number | undefined;
+  footerHeight?: number | undefined;
+}
+
+export interface TemplateRenderContext {
+  readonly pageNumber: number;
+  readonly totalPages: number;
+  readonly title?: string | undefined;
+  readonly author?: string | undefined;
+}
+
+export type TemplateRunningRegion = "header" | "footer";
+export type TemplatePageNumberAlign = "left" | "center" | "right";
+
+export interface TemplatePageNumberOptions {
+  region?: TemplateRunningRegion | undefined;
+  align?: TemplatePageNumberAlign | undefined;
+  format?: ((context: TemplateRenderContext) => string) | undefined;
+  options?: FlowTextOptions | undefined;
+}
+
+export interface TemplateTextBlock {
+  type: "heading" | "paragraph";
+  text: string;
+  options?: FlowHeadingOptions | FlowTextOptions | undefined;
+  keepWithNext?: boolean | undefined;
+}
+
+export interface TemplateTableBlock {
+  type: "table";
+  rows: readonly TableRow[];
+  options?: FlowTableOptions | undefined;
+  keepWithNext?: boolean | undefined;
+}
+
+export interface TemplateImageBlock {
+  type: "png" | "jpeg";
+  data: BinaryData;
+  options?: FlowImageOptions | undefined;
+  keepWithNext?: boolean | undefined;
+}
+
+export interface TemplateLinkBlock {
+  type: "link";
+  text: string;
+  url: string;
+  options?: FlowLinkOptions | undefined;
+  keepWithNext?: boolean | undefined;
+}
+
+export interface TemplateSectionBlock {
+  type: "section";
+  role?: PdfContainerTag | undefined;
+  structure?: PdfStructureOptions | undefined;
+  blocks: readonly TemplateBlock[];
+  keepWithNext?: boolean | undefined;
+}
+
+export interface TemplatePageBreakBlock {
+  type: "pageBreak";
+}
+
+export type TemplateBlock =
+  | TemplateTextBlock
+  | TemplateTableBlock
+  | TemplateImageBlock
+  | TemplateLinkBlock
+  | TemplateSectionBlock
+  | TemplatePageBreakBlock;
+
+export interface TemplateDocumentOptions {
+  info?: DocumentInfo | undefined;
+  xmpMetadata?: XmpMetadataInput | undefined;
+  page?: TemplatePageOptions | undefined;
+  blocks: readonly TemplateBlock[];
+  header?: ((context: TemplateRenderContext) => readonly TemplateBlock[]) | undefined;
+  footer?: ((context: TemplateRenderContext) => readonly TemplateBlock[]) | undefined;
+  pageNumber?: TemplatePageNumberOptions | undefined;
 }
 
 export interface ListItemDefinition {
