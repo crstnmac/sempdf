@@ -4,6 +4,9 @@ import { encryptBytesForObject, latin1Bytes, openPdfEncryptionContext, type PdfE
 import type { BinaryData } from "./types.js";
 import { isPdfStream, type PdfDict, type PdfRef, type PdfStream, type PdfValue } from "./internal/pdf-primitives.js";
 
+/**
+ * Low-level parsed indirect object record.
+ */
 export interface ParsedPdfIndirectObject {
   readonly id: number;
   readonly generation: number;
@@ -11,12 +14,18 @@ export interface ParsedPdfIndirectObject {
   readonly value: PdfValue;
 }
 
+/**
+ * Page metadata discovered while parsing an existing PDF.
+ */
 export interface ParsedPdfPage {
   readonly objectId: number;
   readonly mediaBox?: readonly number[] | undefined;
   readonly contentObjectIds: readonly number[];
 }
 
+/**
+ * Document metadata discovered while parsing an existing PDF.
+ */
 export interface ParsedPdfMetadata {
   readonly title?: string | undefined;
   readonly author?: string | undefined;
@@ -28,12 +37,18 @@ export interface ParsedPdfMetadata {
   readonly modificationDate?: string | undefined;
 }
 
+/**
+ * Named destination discovered while parsing an existing PDF.
+ */
 export interface ParsedPdfNamedDestination {
   readonly name: string;
   readonly pageObjectId?: number | undefined;
   readonly mode?: string | undefined;
 }
 
+/**
+ * Outline item discovered while parsing an existing PDF.
+ */
 export interface ParsedPdfOutlineItem {
   readonly title: string;
   readonly targetName?: string | undefined;
@@ -41,6 +56,9 @@ export interface ParsedPdfOutlineItem {
   readonly children: readonly ParsedPdfOutlineItem[];
 }
 
+/**
+ * Page-label range discovered while parsing an existing PDF.
+ */
 export interface ParsedPdfPageLabelRange {
   readonly startPageIndex: number;
   readonly style?: "decimal" | "romanUpper" | "romanLower" | "lettersUpper" | "lettersLower" | undefined;
@@ -48,6 +66,9 @@ export interface ParsedPdfPageLabelRange {
   readonly startAt: number;
 }
 
+/**
+ * Attachment metadata discovered while parsing an existing PDF.
+ */
 export interface ParsedPdfAttachment {
   readonly name: string;
   readonly description?: string | undefined;
@@ -56,6 +77,9 @@ export interface ParsedPdfAttachment {
   readonly objectId?: number | undefined;
 }
 
+/**
+ * Tagged structure element discovered while parsing an existing PDF.
+ */
 export interface ParsedPdfStructureElement {
   readonly role: string;
   readonly pageObjectId?: number | undefined;
@@ -87,6 +111,9 @@ export interface ParsedPdfInspectedStructureElement extends ParsedPdfStructureEl
   readonly children?: readonly ParsedPdfInspectedStructureElement[] | undefined;
 }
 
+/**
+ * Editable structure element handle returned by editable-document queries.
+ */
 export interface ParsedPdfEditableStructureElement {
   readonly objectId: number;
   readonly role: string;
@@ -100,6 +127,9 @@ export interface ParsedPdfEditableStructureElement {
   readonly children?: readonly ParsedPdfEditableStructureElement[] | undefined;
 }
 
+/**
+ * Form field metadata discovered while parsing an existing PDF.
+ */
 export interface ParsedPdfFormField {
   readonly objectId: number;
   readonly name: string;
@@ -135,11 +165,32 @@ interface ParsedDocumentEncryption {
 
 type StreamLengthResolver = (refValue: PdfRef) => number | undefined;
 
+/**
+ * Options that control parsing behavior for existing PDFs.
+ */
 export interface ParseDocumentOptions {
   readonly password?: string | undefined;
 }
 
+/**
+ *
+ * A read-only parsed representation of a PDF document. It provides helpers for inspecting document-level metadata, object references, pages, forms, outlines, structure trees, and source bytes.
+ *
+ * @export
+ * @class ParsedPdfDocument
+ */
 export class ParsedPdfDocument {
+  /**
+   * Creates a parsed PDF document wrapper around the trailer, cross-reference data, object table, source bytes, and optional encryption context.
+   *
+   * @param version The parsed PDF header version.
+   * @param xrefOffsets The parsed cross-reference offsets by object id.
+   * @param trailer The parsed trailer dictionary.
+   * @param objects The parsed indirect objects by object id.
+   * @param sourceBytes The original source PDF bytes.
+   * @param startXrefOffset The byte offset of the startxref pointer.
+   * @param encryption The optional parsed encryption context.
+   */
   constructor(
     readonly version: string,
     readonly xrefOffsets: ReadonlyMap<number, number>,
@@ -150,23 +201,50 @@ export class ParsedPdfDocument {
     private readonly encryption?: ParsedDocumentEncryption | undefined
   ) {}
 
+  /**
+   * Returns a parsed indirect object by object id.
+   *
+   * @param id The object id to look up.
+   *
+   * @returns The parsed object, if present.
+   */
   getObject(id: number): ParsedPdfIndirectObject | undefined {
     return this.objects.get(id);
   }
 
+  /**
+   * Returns all parsed object ids sorted in ascending order.
+   *
+   * @returns The sorted object ids.
+   */
   getObjectIds(): readonly number[] {
     return [...this.objects.keys()].sort((left, right) => left - right);
   }
 
+  /**
+   * Returns the highest parsed object id, or zero for an empty object table.
+   *
+   * @returns The highest object id.
+   */
   getMaxObjectId(): number {
     return Math.max(0, ...this.objects.keys());
   }
 
+  /**
+   * Returns the document information dictionary object id when one is present.
+   *
+   * @returns The information dictionary object id, if present.
+   */
   getInfoObjectId(): number | undefined {
     const infoRef = getDictValue(this.trailer, "Info");
     return isPdfRef(infoRef) ? infoRef.objectId : undefined;
   }
 
+  /**
+   * Returns the catalog object id from the trailer root entry.
+   *
+   * @returns The catalog object id.
+   */
   getRootObjectId(): number {
     const rootRef = getDictValue(this.trailer, "Root");
     if (!isPdfRef(rootRef)) {
@@ -176,22 +254,47 @@ export class ParsedPdfDocument {
     return rootRef.objectId;
   }
 
+  /**
+   * Returns the root Pages tree object id.
+   *
+   * @returns The Pages tree object id.
+   */
   getPagesObjectId(): number {
     return getPagesRef(this).objectId;
   }
 
+  /**
+   * Returns a defensive copy of the original source bytes.
+   *
+   * @returns A copy of the source bytes.
+   */
   getSourceBytes(): Uint8Array {
     return this.sourceBytes.slice();
   }
 
+  /**
+   * Returns the parsed encryption context when the source PDF is encrypted.
+   *
+   * @returns The encryption context, if present.
+   */
   getEncryptionContext(): PdfEncryptionContext | undefined {
     return this.encryption?.context;
   }
 
+  /**
+   * Returns the Encrypt dictionary object id when one was parsed.
+   *
+   * @returns The encryption dictionary object id, if present.
+   */
   getEncryptionObjectId(): number | undefined {
     return this.encryption?.encryptObjectId;
   }
 
+  /**
+   * Returns document information dictionary metadata.
+   *
+   * @returns The parsed document metadata.
+   */
   getMetadata(): ParsedPdfMetadata {
     const infoRef = getDictValue(this.trailer, "Info");
     const infoDict = resolveDict(this, infoRef);
@@ -211,6 +314,11 @@ export class ParsedPdfDocument {
     };
   }
 
+  /**
+   * Returns decoded XMP metadata from the catalog metadata stream when present.
+   *
+   * @returns The decoded XMP metadata, if present.
+   */
   getXmpMetadata(): string | undefined {
     const catalog = getCatalogDict(this);
     const metadataValue = resolveValue(this, getDictValue(catalog, "Metadata"));
@@ -221,10 +329,20 @@ export class ParsedPdfDocument {
     return new TextDecoder().decode(decodePdfStreamBytes(metadataValue, "metadata stream"));
   }
 
+  /**
+   * Returns the catalog language value when present.
+   *
+   * @returns The document language, if present.
+   */
   getLanguage(): string | undefined {
     return readString(getCatalogDict(this), "Lang");
   }
 
+  /**
+   * Reports whether the document declares tagged PDF structure.
+   *
+   * @returns True when the document is tagged.
+   */
   isTagged(): boolean {
     const catalog = getCatalogDict(this);
     const markInfo = resolveDict(this, getDictValue(catalog, "MarkInfo"));
@@ -235,6 +353,11 @@ export class ParsedPdfDocument {
     return resolveDict(this, getDictValue(catalog, "StructTreeRoot")) !== undefined;
   }
 
+  /**
+   * Detects the supported PDF/A or PDF/UA conformance profile from catalog and XMP metadata.
+   *
+   * @returns The detected supported conformance profile, if any.
+   */
   getConformanceProfile(): "pdfa-1b" | "pdfua-1" | undefined {
     const catalog = getCatalogDict(this);
     const outputIntents = resolveValue(this, getDictValue(catalog, "OutputIntents"));
@@ -259,6 +382,11 @@ export class ParsedPdfDocument {
     return undefined;
   }
 
+  /**
+   * Returns the number of pages in the document.
+   *
+   * @returns The page count.
+   */
   getPageCount(): number {
     const pagesRef = getPagesRef(this);
     const pagesDict = resolveDict(this, pagesRef);
@@ -266,6 +394,11 @@ export class ParsedPdfDocument {
     return typeof count === "number" ? count : this.listPages().length;
   }
 
+  /**
+   * Returns parsed page records discovered from the page tree.
+   *
+   * @returns The parsed page records.
+   */
   listPages(): readonly ParsedPdfPage[] {
     const pagesRef = getPagesRef(this);
     const output: ParsedPdfPage[] = [];
@@ -273,6 +406,11 @@ export class ParsedPdfDocument {
     return output;
   }
 
+  /**
+   * Returns named destinations discovered from the document name tree.
+   *
+   * @returns The named destinations.
+   */
   listNamedDestinations(): readonly ParsedPdfNamedDestination[] {
     const catalog = getCatalogDict(this);
     const names = resolveDict(this, getDictValue(catalog, "Names"));
@@ -286,6 +424,11 @@ export class ParsedPdfDocument {
     return [...destinations.values()].sort((left, right) => left.name.localeCompare(right.name));
   }
 
+  /**
+   * Returns the document outline tree.
+   *
+   * @returns The outline items.
+   */
   listOutlines(): readonly ParsedPdfOutlineItem[] {
     const catalog = getCatalogDict(this);
     const outlinesRef = getDictValue(catalog, "Outlines");
@@ -298,6 +441,11 @@ export class ParsedPdfDocument {
     return readOutlineChain(this, getDictValue(outlinesDict, "First"), namedDestinations, new Set<number>());
   }
 
+  /**
+   * Returns page-label ranges discovered from the page labels number tree.
+   *
+   * @returns The page-label ranges.
+   */
   listPageLabels(): readonly ParsedPdfPageLabelRange[] {
     const catalog = getCatalogDict(this);
     const pageLabels = resolveDict(this, getDictValue(catalog, "PageLabels"));
@@ -312,6 +460,11 @@ export class ParsedPdfDocument {
       .map(([startPageIndex, labelDict]) => compactPageLabelRange(startPageIndex, labelDict));
   }
 
+  /**
+   * Returns embedded file attachment metadata.
+   *
+   * @returns The attachment metadata records.
+   */
   listAttachments(): readonly ParsedPdfAttachment[] {
     const catalog = getCatalogDict(this);
     const names = resolveDict(this, getDictValue(catalog, "Names"));
@@ -325,6 +478,11 @@ export class ParsedPdfDocument {
     return [...attachments.values()].sort((left, right) => left.name.localeCompare(right.name));
   }
 
+  /**
+   * Returns AcroForm field metadata.
+   *
+   * @returns The parsed form fields.
+   */
   listFormFields(): readonly ParsedPdfFormField[] {
     const catalog = getCatalogDict(this);
     const acroForm = resolveDict(this, getDictValue(catalog, "AcroForm"));
@@ -346,6 +504,11 @@ export class ParsedPdfDocument {
     return output;
   }
 
+  /**
+   * Returns a flat list of tagged structure elements.
+   *
+   * @returns The parsed structure elements.
+   */
   listStructureElements(): readonly ParsedPdfStructureElement[] {
     const catalog = getCatalogDict(this);
     const structTreeRoot = resolveDict(this, getDictValue(catalog, "StructTreeRoot"));
@@ -356,6 +519,11 @@ export class ParsedPdfDocument {
     return collectStructureElements(this, getDictValue(structTreeRoot, "K"), new Set<number>());
   }
 
+  /**
+   * Returns a nested inspection view of tagged structure elements.
+   *
+   * @returns The nested structure inspection records.
+   */
   inspectStructureElements(): readonly ParsedPdfInspectedStructureElement[] {
     const catalog = getCatalogDict(this);
     const structTreeRoot = resolveDict(this, getDictValue(catalog, "StructTreeRoot"));
@@ -366,6 +534,11 @@ export class ParsedPdfDocument {
     return collectInspectedStructureElements(this, getDictValue(structTreeRoot, "K"), new Set<number>(), new Map<string, string>());
   }
 
+  /**
+   * Returns editable handles for tagged structure elements.
+   *
+   * @returns The editable structure element handles.
+   */
   listEditableStructureElements(): readonly ParsedPdfEditableStructureElement[] {
     const catalog = getCatalogDict(this);
     const structTreeRoot = resolveDict(this, getDictValue(catalog, "StructTreeRoot"));
@@ -377,6 +550,9 @@ export class ParsedPdfDocument {
   }
 }
 
+/**
+ * Parses PDF bytes into an inspection object for metadata, pages, forms, outlines, attachments, and structure information.
+ */
 export function parseDocument(data: BinaryData, options: ParseDocumentOptions = {}): ParsedPdfDocument {
   const bytes = toBytes(data);
   const version = parseHeaderVersion(bytes);
@@ -1149,9 +1325,24 @@ function readBigEndian(bytes: Uint8Array, offset: number, width: number): number
   return value;
 }
 
+/**
+ *
+ * An internal parser for reading individual PDF primitive values from a byte buffer. It handles whitespace, comments, dictionaries, arrays, names, strings, numbers, booleans, nulls, and references.
+ *
+ * @class ValueParser
+ */
 class ValueParser {
+  /**
+   * Creates a primitive value parser starting at the supplied byte position.
+   *
+   * @param bytes The source bytes to read.
+   * @param position The starting byte position.
+   */
   constructor(private readonly bytes: Uint8Array, public position: number) {}
 
+  /**
+   * Moves the cursor past PDF whitespace and comment lines.
+   */
   skipWhitespaceAndComments(): void {
     while (this.position < this.bytes.length) {
       const byte = this.bytes[this.position];
@@ -1173,6 +1364,11 @@ class ValueParser {
     }
   }
 
+  /**
+   * Parses the next PDF primitive value at the current cursor.
+   *
+   * @returns The parsed PDF value.
+   */
   parseValue(): PdfValue {
     this.skipWhitespaceAndComments();
     const byte = this.bytes[this.position];
@@ -1222,6 +1418,11 @@ class ValueParser {
     });
   }
 
+  /**
+   * Parses the next token as an integer.
+   *
+   * @returns The parsed integer.
+   */
   parseInteger(): number {
     const token = this.parseNumberToken();
     if (!/^[+-]?\d+$/.test(token)) {
@@ -1231,6 +1432,13 @@ class ValueParser {
     return Number(token);
   }
 
+  /**
+   * Consumes a keyword at the current cursor when it matches.
+   *
+   * @param keyword The keyword to consume.
+   *
+   * @returns True when the keyword was consumed.
+   */
   consumeKeyword(keyword: string): boolean {
     this.skipWhitespaceAndComments();
     const bytes = encodeAscii(keyword);
@@ -1244,6 +1452,11 @@ class ValueParser {
     return true;
   }
 
+  /**
+   * Consumes a required keyword or throws when it is absent.
+   *
+   * @param keyword The keyword to consume.
+   */
   expectKeyword(keyword: string): void {
     if (!this.consumeKeyword(keyword)) {
       throw new PdfEngineError(PdfErrorCode.INVALID_PDF, `Expected keyword "${keyword}".`, {
@@ -1252,6 +1465,11 @@ class ValueParser {
     }
   }
 
+  /**
+   * Reads a line of Latin-1 text and consumes one trailing end-of-line marker.
+   *
+   * @returns The decoded line.
+   */
   readLine(): string {
     const start = this.position;
     while (this.position < this.bytes.length) {
@@ -1267,6 +1485,9 @@ class ValueParser {
     return line;
   }
 
+  /**
+   * Consumes a single CR, LF, or CRLF sequence at the current cursor.
+   */
   consumeSingleEol(): void {
     const first = this.bytes[this.position];
     const second = this.bytes[this.position + 1];
@@ -1277,6 +1498,11 @@ class ValueParser {
     }
   }
 
+  /**
+   * Parses a PDF dictionary.
+   *
+   * @returns The parsed dictionary.
+   */
   private parseDict(): PdfDict {
     this.position += 2;
     const entries: PdfDict = [];
@@ -1300,6 +1526,11 @@ class ValueParser {
     }
   }
 
+  /**
+   * Parses a PDF array.
+   *
+   * @returns The parsed array.
+   */
   private parseArray(): PdfValue[] {
     this.position += 1;
     const items: PdfValue[] = [];
@@ -1315,6 +1546,11 @@ class ValueParser {
     }
   }
 
+  /**
+   * Parses a PDF name object and decodes hexadecimal name escapes.
+   *
+   * @returns The parsed name.
+   */
   private parseName(): string {
     this.position += 1;
     const start = this.position;
@@ -1340,6 +1576,11 @@ class ValueParser {
     return raw.replace(/#([0-9A-Fa-f]{2})/g, (_match, hex: string) => String.fromCharCode(parseInt(hex, 16)));
   }
 
+  /**
+   * Parses a parenthesized PDF literal string.
+   *
+   * @returns The parsed string.
+   */
   private parseLiteralString(): string {
     this.position += 1;
     let depth = 1;
@@ -1374,6 +1615,11 @@ class ValueParser {
     throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Unterminated literal string.");
   }
 
+  /**
+   * Parses a hexadecimal PDF string.
+   *
+   * @returns The parsed string.
+   */
   private parseHexString(): string {
     this.position += 1;
     const start = this.position;
@@ -1396,6 +1642,11 @@ class ValueParser {
     return output;
   }
 
+  /**
+   * Parses a number token and upgrades it to an indirect reference when followed by generation and R tokens.
+   *
+   * @returns The parsed number or reference.
+   */
   private parseNumberOrRef(): PdfValue {
     const start = this.position;
     const firstToken = this.parseNumberToken();
@@ -1423,6 +1674,11 @@ class ValueParser {
     return first;
   }
 
+  /**
+   * Parses a PDF numeric token.
+   *
+   * @returns The parsed number token.
+   */
   private parseNumberToken(): string {
     const start = this.position;
     while (this.position < this.bytes.length) {
@@ -1446,6 +1702,11 @@ class ValueParser {
     return decodeLatin1(this.bytes.slice(start, this.position));
   }
 
+  /**
+   * Reads a numeric token from the current cursor without advancing the parser.
+   *
+   * @returns The peeked number token, if present.
+   */
   private peekNumberToken(): string | undefined {
     const saved = this.position;
     try {

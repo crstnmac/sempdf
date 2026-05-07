@@ -169,7 +169,7 @@ Spacing is semantic by default instead of one fixed gap after every element:
 - tables and figures: object spacing before and after
 - links: paragraph-like spacing after the link
 
-Use `spaceBefore` and `spaceAfter` on any flow/template block for one-off adjustments, or set `page.spacing` in `renderTemplate()` for a document-wide scale.
+Use `marginTop` and `marginBottom` on any flow/template block for one-off adjustments, or set `page.spacing` in `renderTemplate()` for a document-wide scale.
 
 For production report templates, render a reusable block tree and let the document create pages as content flows:
 
@@ -539,12 +539,14 @@ npm run example:png
 npm run example:web
 ```
 
+The tagged PDF examples embed a TrueType font for PDF/UA output. They try common system fonts by default; set `PDF_EDITING_LIB_EXAMPLE_FONT=/path/to/font.ttf` or `PDF_EDITING_LIB_FONT_PATH=/path/to/font.ttf` to choose a specific local font.
+
 `npm run docs` generates TypeDoc API Markdown and builds the VitePress site in `docs/.vitepress/dist`.
 Use `npm run docs:dev` to work on the docs locally, then open the printed localhost URL.
 
 ## Website Example
 
-This repo also includes a browser demo in [examples/website/index.html](/Users/criston/Documents/learning/pdf-editing-lib/examples/website/index.html) that imports the built library from `dist/`, previews PDFs in an iframe, creates a new PDF from form input, and incrementally edits uploaded PDFs.
+This repo also includes a browser demo in `examples/website/index.html` that imports the built library from `dist/`, previews PDFs in an iframe, creates a new PDF from form input, and incrementally edits uploaded PDFs.
 
 Run it locally with:
 

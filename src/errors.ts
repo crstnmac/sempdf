@@ -1,3 +1,6 @@
+/**
+ * Stable error-code enum used by PdfEngineError to classify failures.
+ */
 export enum PdfErrorCode {
   INVALID_ATTACHMENT = "INVALID_ATTACHMENT",
   INVALID_ANNOTATION = "INVALID_ANNOTATION",
@@ -31,10 +34,24 @@ export enum PdfErrorCode {
   UNSUPPORTED_XREF_FORMAT = "UNSUPPORTED_XREF_FORMAT"
 }
 
+/**
+ *
+ * A structured error type thrown when PDF generation, parsing, validation, or editing fails. It carries a stable error code and optional diagnostic details.
+ *
+ * @export
+ * @class PdfEngineError
+ */
 export class PdfEngineError extends Error {
   readonly code: PdfErrorCode;
   readonly details?: Record<string, unknown> | undefined;
 
+  /**
+   * Creates a structured PDF engine error with a stable code and optional details.
+   *
+   * @param code The stable error code for the failure.
+   * @param message The human-readable error message.
+   * @param details Optional diagnostic details for the error.
+   */
   constructor(code: PdfErrorCode, message: string, details?: Record<string, unknown>) {
     super(message);
     this.name = "PdfEngineError";

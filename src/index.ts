@@ -5,7 +5,7 @@ export { appendPages, extractPages, mergeDocuments, splitDocument } from "./page
 export { BufferSink, NodeStreamSink, WebStreamSink } from "./internal/byte-sink.js";
 export type { ByteSink, NodeWritableLike } from "./internal/byte-sink.js";
 export { parseDocument, ParsedPdfDocument } from "./parser.js";
-export { gray, PAGE_SIZES, rgb } from "./types.js";
+export { gray, hex, PAGE_SIZES, rgb } from "./types.js";
 export type {
   BinaryData,
   BuiltInPageSize,
@@ -23,6 +23,7 @@ export type {
   DocumentPermissions,
   EmbedTrueTypeFontOptions,
   FlowBlockSpacingOptions,
+  FlowMarginShorthand,
   FillStyle,
   FlowHeadingOptions,
   FlowImageOptions,

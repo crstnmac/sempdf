@@ -3,16 +3,18 @@ import { existsSync, readFileSync } from "node:fs";
 
 import { createDocument, parseDocument } from "../src/index.js";
 
+const exampleFontPath = process.env.PDF_EDITING_LIB_EXAMPLE_FONT ?? process.env.PDF_EDITING_LIB_FONT_PATH;
 const fontPath = [
+  exampleFontPath,
   "/System/Library/Fonts/SFNS.ttf",
   "/System/Library/Fonts/SFNSMono.ttf",
   "/System/Library/Fonts/Geneva.ttf",
   "/Library/Fonts/Arial.ttf",
   "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-].find((path) => existsSync(path));
+].find((path): path is string => path !== undefined && existsSync(path));
 
 if (!fontPath) {
-  throw new Error("examples/tagged-pdf.ts needs a local TrueType font to generate PDF/UA-1 compliant embedded-font output.");
+  throw new Error("examples/tagged-pdf.ts needs a local TrueType font to generate PDF/UA-1 compliant embedded-font output. Set PDF_EDITING_LIB_EXAMPLE_FONT=/path/to/font.ttf to choose one.");
 }
 
 const doc = createDocument({

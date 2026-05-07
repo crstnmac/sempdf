@@ -13,22 +13,39 @@ function loadDeflateSync(): ((data: Uint8Array) => Uint8Array) | null {
     return null;
   }
 
-  try {
-    const dynamicRequire = (0, eval)("typeof require === 'function' ? require : null");
-    if (typeof dynamicRequire !== "function") {
-      cachedDeflateSync = null;
-      return null;
+  const getBuiltin = (nodeProcess as unknown as { getBuiltinModule?: (id: string) => unknown }).getBuiltinModule;
+  let zlib: { deflateSync: (data: Uint8Array) => Uint8Array } | undefined;
+
+  if (typeof getBuiltin === "function") {
+    try {
+      zlib = getBuiltin.call(nodeProcess, "node:zlib") as typeof zlib;
+    } catch {
+      zlib = undefined;
     }
-    const zlib = dynamicRequire("node:zlib") as { deflateSync: (data: Uint8Array) => Uint8Array };
-    cachedDeflateSync = (data: Uint8Array) => {
-      const result = zlib.deflateSync(data);
-      return result instanceof Uint8Array ? result : new Uint8Array(result);
-    };
-    return cachedDeflateSync;
-  } catch {
+  }
+
+  if (!zlib) {
+    try {
+      const dynamicRequire = (0, eval)("typeof require === 'function' ? require : null");
+      if (typeof dynamicRequire === "function") {
+        zlib = dynamicRequire("node:zlib") as typeof zlib;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!zlib) {
     cachedDeflateSync = null;
     return null;
   }
+
+  const deflateSync = zlib.deflateSync;
+  cachedDeflateSync = (data: Uint8Array) => {
+    const result = deflateSync(data);
+    return result instanceof Uint8Array ? result : new Uint8Array(result);
+  };
+  return cachedDeflateSync;
 }
 
 export function deflateZlib(data: Uint8Array): Uint8Array {
@@ -114,12 +131,30 @@ export function inflateZlib(data: Uint8Array): Uint8Array {
   return inflated;
 }
 
+/**
+ *
+ * An internal bit-level reader for deflate streams. It reads least-significant-bit-first values, aligns to byte boundaries, and reports malformed compressed input.
+ *
+ * @class BitReader
+ */
 class BitReader {
   private byteOffset = 0;
   private bitOffset = 0;
 
+  /**
+   * Creates a bit reader over the compressed byte buffer.
+   *
+   * @param bytes The source bytes to read.
+   */
   constructor(private readonly bytes: Uint8Array) {}
 
+  /**
+   * Reads a little-endian bit sequence from the current bit position.
+   *
+   * @param count The number of bits to read.
+   *
+   * @returns The decoded bit value.
+   */
   readBits(count: number): number {
     let value = 0;
     for (let index = 0; index < count; index += 1) {
@@ -140,6 +175,9 @@ class BitReader {
     return value;
   }
 
+  /**
+   * Advances the cursor to the next byte boundary.
+   */
   alignToByte(): void {
     if (this.bitOffset !== 0) {
       this.bitOffset = 0;
@@ -147,6 +185,11 @@ class BitReader {
     }
   }
 
+  /**
+   * Reads the next byte after aligning to a byte boundary.
+   *
+   * @returns The decoded byte value.
+   */
   readByte(): number {
     this.alignToByte();
     const byte = this.bytes[this.byteOffset];
