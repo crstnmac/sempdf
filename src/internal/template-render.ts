@@ -75,6 +75,12 @@ function expandMarginShorthand(
   return { top, right, bottom, left };
 }
 
+interface CollectedHeading {
+  level: 1 | 2 | 3 | 4 | 5 | 6;
+  text: string;
+  page: PdfPage;
+}
+
 export function renderTemplateDocument(
   doc: PdfDocument,
   options: TemplateDocumentOptions,
@@ -83,6 +89,7 @@ export function renderTemplateDocument(
   const pages: Array<{ pageNumber: number; page: PdfPage }> = [];
   let current = createTemplatePage(doc, options, 1);
   pages.push({ pageNumber: current.pageNumber, page: current.page });
+  const headings: CollectedHeading[] = [];
 
   for (let index = 0; index < options.blocks.length; index += 1) {
     const block = options.blocks[index]!;
@@ -109,10 +116,41 @@ export function renderTemplateDocument(
       pages.push({ pageNumber: current.pageNumber, page: current.page });
     }
 
+    if (block.type === 'heading' && options.autoOutline) {
+      const level = (block.options as { level?: 1 | 2 | 3 | 4 | 5 | 6 } | undefined)?.level ?? 1;
+      headings.push({ level, text: block.text, page: current.page });
+    }
+
     renderTemplateBlockToFlow(current.flow, block);
   }
 
   renderTemplateRunningRegions(pages, options, metadata);
+
+  if (options.autoOutline && headings.length > 0) {
+    buildOutlineFromHeadings(doc, headings, options.autoOutline);
+  }
+}
+
+function buildOutlineFromHeadings(
+  doc: PdfDocument,
+  headings: readonly CollectedHeading[],
+  config: TemplateDocumentOptions['autoOutline'],
+): void {
+  const maxLevel = typeof config === 'object' && config?.maxLevel ? config.maxLevel : 3;
+  const expanded = typeof config === 'object' && config?.expanded === true;
+  // Stack of [level, item] where item is a PdfOutlineItem; index 0 = doc root.
+  const stack: Array<{ level: number; item: { addChild: (title: string, target: PdfPage, options?: { expanded?: boolean }) => unknown } }> = [];
+  for (const heading of headings) {
+    if (heading.level > maxLevel) continue;
+    while (stack.length > 0 && stack[stack.length - 1]!.level >= heading.level) {
+      stack.pop();
+    }
+    const parent = stack[stack.length - 1]?.item;
+    const item = parent
+      ? parent.addChild(heading.text, heading.page, { expanded })
+      : doc.addOutline(heading.text, heading.page, { expanded });
+    stack.push({ level: heading.level, item: item as never });
+  }
 }
 
 function createTemplatePage(

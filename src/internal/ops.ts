@@ -1,4 +1,4 @@
-import type { JpegImageOptions, PathCommand, PathStyle, PdfColor, PdfFigureStructureTag, PdfFont, PdfStructureOptions, PdfTextStructureTag, PngImageOptions, Transform } from "../types.js";
+import type { JpegImageOptions, PathCommand, PathStyle, PdfColor, PdfFigureStructureTag, PdfFont, PdfStructureOptions, PdfStructureTag, PngImageOptions, Transform } from "../types.js";
 import type { EmbeddedImageAsset } from "./image.js";
 
 export interface EmbeddedTextGlyph {
@@ -12,7 +12,7 @@ export interface NormalizedTextOptions {
   font: PdfFont;
   fontSize: number;
   color: PdfColor;
-  tag?: PdfTextStructureTag | "Artifact" | undefined;
+  tag?: PdfStructureTag | undefined;
   structure?: PdfStructureOptions | undefined;
   structureGroupId?: number | undefined;
   characterSpacing?: number | undefined;

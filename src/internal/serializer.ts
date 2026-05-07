@@ -188,6 +188,7 @@ interface SerializedPageObjectsOptions {
   readonly fixedPageObjectIds?: { has(page: PdfDocumentModel["pages"][number]): boolean } | undefined;
   readonly taggedAnnotationParentTreeKeys?: ReadonlyMap<number, number> | undefined;
   readonly conformance?: PdfDocumentModel["conformance"] | undefined;
+  readonly tagged?: boolean | undefined;
   readonly compress?: boolean | undefined;
 }
 
@@ -348,7 +349,10 @@ function* buildSerializedPageObjects(
         ["MediaBox", array([0, 0, page.size.width, page.size.height])],
         ["Resources", buildPageResourcesDictionary(page, options.builtInFontObjectIds, options.embeddedFontObjectIds, options.imageObjectIds)],
         ["Annots", page.annotationObjectIds.length > 0 ? array(page.annotationObjectIds.map((objectId) => ref(objectId))) : undefined],
-        ["Tabs", page.annotationObjectIds.length > 0 && options.conformance === "pdfua-1" ? name("S") : undefined],
+        // PDF/UA-1 7.18.3: every page in a tagged document must declare a tab
+        // order (struct order) so assistive tech can navigate annotations and
+        // form fields in reading order.
+        ["Tabs", options.tagged === true || options.conformance === "pdfua-1" ? name("S") : undefined],
         ["StructParents", page.structParentsKey],
         ["Contents", ref(page.contentObjectId)]
       ])
@@ -1108,6 +1112,7 @@ function prepareDocumentSerialization(
         allocateLazyLengthObjectId: () => nextPageLazyLengthObjectId++,
         taggedAnnotationParentTreeKeys: taggedPdfAllocation?.annotationParentTreeKeys,
         conformance: model.conformance,
+        tagged: model.tagged,
         compress: model.compress
       });
     },
@@ -4436,8 +4441,11 @@ function buildEmbeddedFontWidths(context: EmbeddedFontContext): PdfValue[] {
 }
 
 function buildToUnicodeCMap(context: EmbeddedFontContext): string {
+  // Skip glyph 0 (.notdef) and any entry whose Unicode is empty or contains a
+  // NUL — PDF/UA validators flag <0000> or empty mappings as failed character
+  // encoding.
   const pairs = [...context.glyphToUnicode.entries()]
-    .filter(([glyphId]) => glyphId !== 0)
+    .filter(([glyphId, unicode]) => glyphId !== 0 && unicode.length > 0 && !unicode.includes("\u0000"))
     .map(([glyphId, unicode]) => [context.glyphIdToCid.get(glyphId)!, unicode] as [number, string])
     .sort((left, right) => left[0] - right[0]);
 

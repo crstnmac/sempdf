@@ -196,6 +196,10 @@ export function addImageToPage(
             ...normalizedOptions.structure,
             attributes: {
               ...(normalizedOptions.structure?.attributes ?? {}),
+              // PDF/UA WCAG 1.4.10-1: Figure / Formula / Form structure
+              // elements that fit on a single page require a Layout-owned
+              // BBox so AT can announce the figure's location.
+              O: normalizedOptions.structure?.attributes?.O ?? { name: "Layout" },
               BBox:
                 normalizedOptions.structure?.attributes?.BBox
                 ?? placementBoundingBox(normalizedOptions)
@@ -371,7 +375,6 @@ export function layoutList(
     let bodyHeight = 0;
 
     if (item.body.length > 0) {
-      const paragraphNode = createStructureNode(page, "P", undefined, bodyNode);
       const bodyRuns = layoutTextBlock(
         item.body,
         {
@@ -379,11 +382,11 @@ export function layoutList(
           x: bodyX,
           y,
           width: bodyWidth,
-          tag: "P"
+          tag: "LBody"
         },
         embeddedFonts
       );
-      pushPositionedTextRuns(page, bodyRuns, paragraphNode.id);
+      pushPositionedTextRuns(page, bodyRuns, bodyNode.id);
       bodyHeight = measurePositionedRunHeight(bodyRuns, options.lineHeight);
     }
 
@@ -456,7 +459,6 @@ export function layoutTable(
       const cellX = options.x + sumNumbers(options.columnWidths.slice(0, startColumn));
       const cellWidth = sumNumbers(options.columnWidths.slice(startColumn, endColumn));
       const textWidth = Math.max(1, cellWidth - options.cellPadding * 2);
-      const paragraphNode = createStructureNode(page, "P", undefined, cellNode);
       const runs = layoutTextBlock(
         cell.text,
         {
@@ -464,11 +466,11 @@ export function layoutTable(
           x: cellX + options.cellPadding,
           y: y - options.cellPadding,
           width: textWidth,
-          tag: "P"
+          tag: role
         },
         embeddedFonts
       );
-      placedCells.push({ cell, node: paragraphNode, x: cellX, width: cellWidth, runs });
+      placedCells.push({ cell, node: cellNode, x: cellX, width: cellWidth, runs });
 
       if (cell.rowSpan > 1) {
         for (
@@ -535,11 +537,13 @@ function inferTableHeaderScope(
   columnIndex: number,
   options: NormalizedTableOptions
 ): "row" | "column" | "both" | undefined {
-  const rowHeader = columnIndex < options.headerColumns;
-  const columnHeader = rowIndex < options.headerRows;
-  if (rowHeader && columnHeader) return "both";
-  if (rowHeader) return "row";
-  if (columnHeader) return "column";
+  const inHeaderColumn = columnIndex < options.headerColumns;
+  const inHeaderRow = rowIndex < options.headerRows;
+  // Corner cell sits in both a header row and a header column. PDF/UA auditors
+  // typically expect Column scope here (header rows dominate visually for AT
+  // navigation). Authors can still override via cell.scope.
+  if (inHeaderRow) return "column";
+  if (inHeaderColumn) return "row";
   return undefined;
 }
 
