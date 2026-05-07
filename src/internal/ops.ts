@@ -1,4 +1,4 @@
-import type { JpegImageOptions, PathCommand, PathStyle, PdfColor, PdfFigureStructureTag, PdfFont, PdfStructureOptions, PdfStructureTag, PdfTextStructureTag, PngImageOptions, Transform } from "../types.js";
+import type { JpegImageOptions, PathCommand, PathStyle, PdfColor, PdfFigureStructureTag, PdfFont, PdfStructureOptions, PdfTextStructureTag, PngImageOptions, Transform } from "../types.js";
 import type { EmbeddedImageAsset } from "./image.js";
 
 export interface EmbeddedTextGlyph {
