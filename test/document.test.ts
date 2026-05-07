@@ -301,6 +301,46 @@ test("creates a single page hello world PDF", () => {
   assert.equal(inspection.xrefOffsets.get(1)! > 0, true);
 });
 
+test("emits an opt-in linearization dictionary", async () => {
+  const doc = createDocument({
+    linearize: true,
+    info: {
+      title: "Linearized",
+      creationDate: "D:20260413213000Z",
+      modificationDate: "D:20260413213000Z"
+    }
+  });
+  const page = doc.addPage({ size: "Letter" });
+  page.text("Fast Web View", { x: 72, y: 720, fontSize: 16 });
+
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+  const firstObject = /(\d+) 0 obj\n([\s\S]*?)\nendobj/.exec(text);
+
+  assert.ok(firstObject);
+  assert.match(firstObject[2]!, /\/Linearized 1/);
+  assert.match(firstObject[2]!, new RegExp(`/L ${String(bytes.length).padStart(10, "0")}`));
+  assert.match(firstObject[2]!, /\/O \d+/);
+  assert.match(firstObject[2]!, /\/N 1/);
+  assert.match(firstObject[2]!, /\/T \d+/);
+  assert.equal(parseDocument(bytes).getPageCount(), 1);
+
+  const sink = new BufferSink();
+  await doc.writeTo(sink);
+  assert.deepEqual(sink.collect(), bytes);
+});
+
+test("rejects multi-page linearization until page hint tables are complete", () => {
+  const doc = createDocument({ linearize: true });
+  doc.addPage().text("One", { x: 72, y: 720 });
+  doc.addPage().text("Two", { x: 72, y: 720 });
+
+  assert.throws(
+    () => doc.toUint8Array(),
+    /single-page generated documents/
+  );
+});
+
 test("supports additional built-in page sizes", () => {
   const doc = createDocument();
   const expected = [

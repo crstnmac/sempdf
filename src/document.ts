@@ -182,6 +182,8 @@ export interface PdfDocumentModel {
   readonly compress?: boolean | undefined;
   /** Whether to emit compressed object streams and xref streams. */
   readonly objectStreams?: boolean | undefined;
+  /** Whether to emit a linearization dictionary for Fast Web View style delivery. */
+  readonly linearize?: boolean | undefined;
   /** ICC output intent required by color-managed profiles such as PDF/A. */
   readonly outputIntent?: DocumentOutputIntentOptions | undefined;
   /** Detached digital-signature options for serialized output. */
@@ -2063,6 +2065,9 @@ export class PdfDocument {
   /** When true, emits PDF 1.5 cross-reference and object streams (auto-bumps header to `%PDF-1.5`). */
   private readonly objectStreams?: boolean | undefined;
 
+  /** When true, emits a linearization dictionary for Fast Web View style delivery. */
+  private readonly linearize?: boolean | undefined;
+
   /** OutputIntent dictionary settings (ICC profile + condition). Required for PDF/A-1b conformance. */
   private readonly outputIntent?: DocumentOutputIntentOptions | undefined;
 
@@ -2082,6 +2087,7 @@ export class PdfDocument {
     this.xmpMetadata = normalizeXmpMetadata(options.xmpMetadata);
     this.compress = options.compress;
     this.objectStreams = options.objectStreams;
+    this.linearize = options.linearize;
     this.outputIntent = options.outputIntent;
     this.signature = options.signature;
   }
@@ -2410,6 +2416,7 @@ export class PdfDocument {
       ...(this.objectStreams === undefined
         ? {}
         : { objectStreams: this.objectStreams }),
+      ...(this.linearize === undefined ? {} : { linearize: this.linearize }),
       ...(this.outputIntent === undefined
         ? {}
         : { outputIntent: this.outputIntent }),
