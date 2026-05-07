@@ -1,10 +1,34 @@
-export { createDocument, editDocument, PdfDocument, PdfEditableDocument, PdfFlow, PdfOutlineItem, PdfPage, PdfStructureContainer } from "./document.js";
-export type { PdfEditableStructureElement, PdfEditableStructureQuery, PdfEditableStructureSimilarityOptions } from "./document.js";
+export {
+  createDocument,
+  editDocument,
+  PdfDocument,
+  PdfEditableDocument,
+  PdfFlow,
+  PdfOutlineItem,
+  PdfPage,
+  PdfStructureContainer,
+} from "./document.js";
+export type {
+  PdfEditableStructureElement,
+  PdfEditableStructureQuery,
+  PdfEditableStructureSimilarityOptions,
+} from "./document.js";
 export { PdfEngineError, PdfErrorCode } from "./errors.js";
-export { appendPages, extractPages, mergeDocuments, splitDocument } from "./page-transfer.js";
-export { BufferSink, NodeStreamSink, WebStreamSink } from "./internal/byte-sink.js";
+export {
+  appendPages,
+  extractPages,
+  mergeDocuments,
+  splitDocument,
+} from "./page-transfer.js";
+export {
+  BufferSink,
+  NodeStreamSink,
+  WebStreamSink,
+} from "./internal/byte-sink.js";
 export type { ByteSink, NodeWritableLike } from "./internal/byte-sink.js";
 export { parseDocument, ParsedPdfDocument } from "./parser.js";
+export { validatePdf2Conformance } from "./internal/pdf2-validation.js";
+export type { Pdf2ComplianceIssue } from "./internal/pdf2-validation.js";
 export { cmyk, gray, hex, PAGE_SIZES, rgb } from "./types.js";
 export type {
   BinaryData,
@@ -85,6 +109,7 @@ export type {
   TableOptions,
   TableRow,
   TemplateBlock,
+  TemplateAutoOutlineOptions,
   TemplateDocumentOptions,
   TemplateImageBlock,
   TemplateLinkBlock,
@@ -105,7 +130,7 @@ export type {
   Transform,
   UriLinkOptions,
   XmpMetadataInput,
-  XmpMetadataOptions
+  XmpMetadataOptions,
 } from "./types.js";
 export type {
   ParseDocumentOptions,
@@ -118,5 +143,5 @@ export type {
   ParsedPdfOutlineItem,
   ParsedPdfPage,
   ParsedPdfPageLabelRange,
-  ParsedPdfStructureElement
+  ParsedPdfStructureElement,
 } from "./parser.js";

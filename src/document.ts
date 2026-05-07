@@ -1,4 +1,4 @@
-import { PdfEngineError, PdfErrorCode } from './errors.js';
+import { PdfEngineError, PdfErrorCode } from "./errors.js";
 import {
   parseDocument,
   ParsedPdfDocument,
@@ -6,16 +6,13 @@ import {
   type ParsedPdfEditableStructureElement,
   type ParsedPdfFormField,
   type ParsedPdfMetadata,
-} from './parser.js';
-import { parseImage } from './internal/image.js';
-import {
-  layoutTextBlock,
-  measureTextWidth,
-} from './internal/text-layout.js';
+} from "./parser.js";
+import { parseImage } from "./internal/image.js";
+import { layoutTextBlock, measureTextWidth } from "./internal/text-layout.js";
 import {
   parseTrueTypeFont,
   type ParsedTrueTypeFont,
-} from './internal/truetype.js';
+} from "./internal/truetype.js";
 import {
   arrayEquals,
   decrementRowSpanOccupancy,
@@ -23,15 +20,15 @@ import {
   normalizeEditableAltText,
   sumNumbers,
   toBytes,
-} from './internal/document-helpers.js';
+} from "./internal/document-helpers.js";
 import {
   appendFlattenedParsedFieldOps,
   flattenFormsOnPages,
-} from './internal/form-flatten.js';
+} from "./internal/form-flatten.js";
 import {
   renderTemplateBlocksToFlow,
   renderTemplateDocument,
-} from './internal/template-render.js';
+} from "./internal/template-render.js";
 import {
   addAnnotationStructureNode,
   addFlowTextBlockToPage,
@@ -45,7 +42,7 @@ import {
   measurePositionedRunHeight,
   placementBoundingBox,
   radioGroupBoundingBox,
-} from './internal/page-helpers.js';
+} from "./internal/page-helpers.js";
 import {
   collectComplianceIssues,
   normalizeAttachmentOptions,
@@ -87,14 +84,14 @@ import {
   type NormalizedDocumentInfo,
   type NormalizedPageLabelOptions,
   type ResolvedPageSize,
-} from './internal/validation.js';
+} from "./internal/validation.js";
 import {
   serializeDocument,
   serializeDocumentToSink,
   serializeIncrementalUpdate,
   serializeIncrementalUpdateToSink,
-} from './internal/serializer.js';
-import type { ByteSink } from './internal/byte-sink.js';
+} from "./internal/serializer.js";
+import type { ByteSink } from "./internal/byte-sink.js";
 import type {
   AttachmentOptions,
   BinaryData,
@@ -148,7 +145,7 @@ import type {
   Transform,
   UriLinkOptions,
   XmpMetadataInput,
-} from './types.js';
+} from "./types.js";
 
 import type {
   CheckBoxAnnotation,
@@ -161,55 +158,89 @@ import type {
   InternalStructureNode,
   RadioGroupAnnotation,
   TextFieldAnnotation,
-} from './internal/page-types.js';
-import { createPageModel } from './internal/page-types.js';
+} from "./internal/page-types.js";
+import { createPageModel } from "./internal/page-types.js";
 
 export interface PdfDocumentModel {
+  /** Document information dictionary values. */
   readonly info: NormalizedDocumentInfo;
+  /** XMP metadata packet or structured XMP metadata input. */
   readonly xmpMetadata?: string | undefined;
+  /** Password encryption settings for serialized output. */
   readonly encryption?: NormalizedDocumentEncryption | undefined;
+  /** BCP 47 language tag for document or structure content. */
   readonly language?: string | undefined;
+  /** Whether to emit tagged PDF structure metadata. */
   readonly tagged: boolean;
+  /** Mapping from custom structure roles to standard PDF roles. */
   readonly roleMap?: PdfRoleMap | undefined;
+  /** Root structure tag to emit, or false to suppress a custom root. */
   readonly structureRoot?: PdfContainerTag | false | undefined;
-  readonly conformance?: 'pdfa-1b' | 'pdfua-1' | undefined;
+  /** PDF/A or PDF/UA conformance profile to validate and emit. */
+  readonly conformance?: "pdfa-1b" | "pdfua-1" | undefined;
+  /** Whether eligible streams are compressed with FlateDecode. */
   readonly compress?: boolean | undefined;
+  /** Whether to emit compressed object streams and xref streams. */
   readonly objectStreams?: boolean | undefined;
+  /** ICC output intent required by color-managed profiles such as PDF/A. */
   readonly outputIntent?: DocumentOutputIntentOptions | undefined;
+  /** Detached digital-signature options for serialized output. */
   readonly signature?: DocumentSignatureOptions | undefined;
+  /** Embedded fonts. */
   readonly embeddedFonts: readonly ParsedTrueTypeFont[];
+  /** Named destinations. */
   readonly namedDestinations: readonly InternalNamedDestinationModel[];
+  /** Page labels. */
   readonly pageLabels: readonly InternalPageLabelModel[];
+  /** Attachments. */
   readonly attachments: readonly InternalAttachmentModel[];
+  /** Outlines. */
   readonly outlines: readonly InternalOutlineModel[];
+  /** Pages. */
   readonly pages: readonly InternalPageModel[];
 }
 
 export interface PdfIncrementalUpdateModel {
+  /** Base. */
   readonly base: ParsedPdfDocument;
+  /** Appended pages. */
   readonly appendedPages: readonly InternalPageModel[];
+  /** Edited pages. */
   readonly editedPages: readonly ExistingPageEdit[];
+  /** Embedded fonts. */
   readonly embeddedFonts: readonly ParsedTrueTypeFont[];
+  /** Page order. */
   readonly pageOrder: readonly EditablePageEntry[];
+  /** Field updates. */
   readonly fieldUpdates: readonly ExistingFieldUpdate[];
+  /** Flattened field object ids. */
   readonly flattenedFieldObjectIds: readonly number[];
+  /** Structure role updates. */
   readonly structureRoleUpdates: ReadonlyMap<
     number,
-    Exclude<PdfStructureTag, 'Artifact'>
+    Exclude<PdfStructureTag, "Artifact">
   >;
+  /** Structure alt text updates. */
   readonly structureAltTextUpdates: ReadonlyMap<number, string | undefined>;
+  /** Structure children order updates. */
   readonly structureChildrenOrderUpdates: ReadonlyMap<
     number,
     readonly number[]
   >;
+  /** Has xmp metadata update. */
   readonly hasXmpMetadataUpdate: boolean;
+  /** XMP metadata packet or structured XMP metadata input. */
   readonly xmpMetadata?: string | undefined;
+  /** Document information dictionary values. */
   readonly info?: NormalizedDocumentInfo | undefined;
+  /** Detached digital-signature options for serialized output. */
   readonly signature?: DocumentSignatureOptions | undefined;
 }
 
 export interface ExistingPageEdit {
+  /** PDF indirect object number for the parsed item. */
   readonly objectId: number;
+  /** Page. */
   readonly page: InternalPageModel;
 }
 
@@ -222,10 +253,15 @@ export type PdfEditableStructureElement = ParsedPdfEditableStructureElement;
  * Query criteria for finding editable structure elements.
  */
 export interface PdfEditableStructureQuery {
+  /** Structure role used to tag this content. */
   readonly role?: string | undefined;
+  /** Object id of the page associated with this item. */
   readonly pageObjectId?: number | undefined;
+  /** Object id of the parent structure element. */
   readonly parentObjectId?: number | undefined;
+  /** Whether matched structure elements must have alternate text. */
   readonly hasAltText?: boolean | undefined;
+  /** Specific structure element object ids to match. */
   readonly objectIds?: readonly number[] | undefined;
 }
 
@@ -233,31 +269,45 @@ export interface PdfEditableStructureQuery {
  * Options for finding structurally similar tagged elements.
  */
 export interface PdfEditableStructureSimilarityOptions {
-  readonly scope?: 'document' | 'page' | 'siblings' | undefined;
+  /** Search scope used when finding related structure elements. */
+  readonly scope?: "document" | "page" | "siblings" | undefined;
 }
 
 export interface ExistingTextFieldUpdate {
+  /** PDF indirect object number for the parsed item. */
   readonly objectId: number;
-  readonly fieldType: 'Tx';
+  /** Raw AcroForm field type name. */
+  readonly fieldType: "Tx";
+  /** Current or default value for the option. */
   readonly value: string;
 }
 
 export interface ExistingCheckBoxFieldUpdate {
+  /** PDF indirect object number for the parsed item. */
   readonly objectId: number;
-  readonly fieldType: 'Btn';
+  /** Raw AcroForm field type name. */
+  readonly fieldType: "Btn";
+  /** Current or default value for the option. */
   readonly value: boolean;
+  /** On state name. */
   readonly onStateName?: string | undefined;
 }
 
 export interface ExistingChoiceFieldUpdate {
+  /** PDF indirect object number for the parsed item. */
   readonly objectId: number;
-  readonly fieldType: 'Ch';
+  /** Raw AcroForm field type name. */
+  readonly fieldType: "Ch";
+  /** Current or default value for the option. */
   readonly value: string;
 }
 
 export interface ExistingRadioFieldUpdate {
+  /** PDF indirect object number for the parsed item. */
   readonly objectId: number;
-  readonly fieldType: 'Radio';
+  /** Raw AcroForm field type name. */
+  readonly fieldType: "Radio";
+  /** Current or default value for the option. */
   readonly value: string;
 }
 
@@ -268,12 +318,16 @@ export type ExistingFieldUpdate =
   | ExistingRadioFieldUpdate;
 
 interface EditableExistingPageEntry {
-  readonly kind: 'existing';
+  /** Discriminator identifying this value shape. */
+  readonly kind: "existing";
+  /** PDF indirect object number for the parsed item. */
   readonly objectId: number;
 }
 
 interface EditableAppendedPageEntry {
-  readonly kind: 'appended';
+  /** Discriminator identifying this value shape. */
+  readonly kind: "appended";
+  /** Page. */
   readonly page: InternalPageModel;
 }
 
@@ -282,9 +336,6 @@ type EditablePageEntry = EditableExistingPageEntry | EditableAppendedPageEntry;
 /**
  *
  * A builder for grouping tagged PDF content under a shared structure element. It can add text, blocks, lists, tables, images, and nested sections to the same semantic container.
- *
- * @export
- * @class PdfStructureContainer
  */
 export class PdfStructureContainer {
   /**
@@ -307,7 +358,7 @@ export class PdfStructureContainer {
    * @param options Options that control the operation.
    */
   text(text: string, options: TextOptions): void {
-    addTextToPage(this.page, this.embeddedFonts, text, options, this.node, 'P');
+    addTextToPage(this.page, this.embeddedFonts, text, options, this.node, "P");
   }
 
   /**
@@ -323,7 +374,7 @@ export class PdfStructureContainer {
       text,
       options,
       this.node,
-      'P',
+      "P",
     );
   }
 
@@ -336,7 +387,7 @@ export class PdfStructureContainer {
   list(items: readonly ListItem[], options: ListOptions): void {
     const normalizedItems = normalizeListItems(items);
     const normalizedOptions = normalizeListOptions(normalizedItems, options);
-    const listNode = createStructureNode(this.page, 'L', undefined, this.node);
+    const listNode = createStructureNode(this.page, "L", undefined, this.node);
     layoutList(
       this.page,
       listNode,
@@ -359,7 +410,7 @@ export class PdfStructureContainer {
       this.page,
       createStructureNode(
         this.page,
-        'Table',
+        "Table",
         normalizedOptions.structure,
         this.node,
       ),
@@ -376,7 +427,7 @@ export class PdfStructureContainer {
    * @param options Options that control the operation.
    */
   jpeg(data: BinaryData, options: JpegImageOptions): void {
-    addImageToPage(this.page, 'jpeg', data, options, this.node, 'Figure');
+    addImageToPage(this.page, "jpeg", data, options, this.node, "Figure");
   }
 
   /**
@@ -386,7 +437,7 @@ export class PdfStructureContainer {
    * @param options Options that control the operation.
    */
   png(data: BinaryData, options: PngImageOptions): void {
-    addImageToPage(this.page, 'png', data, options, this.node, 'Figure');
+    addImageToPage(this.page, "png", data, options, this.node, "Figure");
   }
 
   /**
@@ -442,9 +493,9 @@ export class PdfStructureContainer {
     maybeBuild?: (container: PdfStructureContainer) => void,
   ): PdfStructureContainer {
     const options =
-      typeof optionsOrBuild === 'function' ? undefined : optionsOrBuild;
+      typeof optionsOrBuild === "function" ? undefined : optionsOrBuild;
     const build =
-      typeof optionsOrBuild === 'function' ? optionsOrBuild : maybeBuild;
+      typeof optionsOrBuild === "function" ? optionsOrBuild : maybeBuild;
     const child = new PdfStructureContainer(
       this.page,
       this.embeddedFonts,
@@ -470,7 +521,7 @@ export class PdfStructureContainer {
    * @returns The created structure container.
    */
   structure(
-    role: Exclude<PdfStructureTag, 'Artifact'>,
+    role: Exclude<PdfStructureTag, "Artifact">,
     build?: (container: PdfStructureContainer) => void,
   ): PdfStructureContainer;
   /**
@@ -483,7 +534,7 @@ export class PdfStructureContainer {
    * @returns The created structure container.
    */
   structure(
-    role: Exclude<PdfStructureTag, 'Artifact'>,
+    role: Exclude<PdfStructureTag, "Artifact">,
     options?: PdfStructureOptions,
     build?: (container: PdfStructureContainer) => void,
   ): PdfStructureContainer;
@@ -497,16 +548,16 @@ export class PdfStructureContainer {
    * @returns The created structure container.
    */
   structure(
-    role: Exclude<PdfStructureTag, 'Artifact'>,
+    role: Exclude<PdfStructureTag, "Artifact">,
     optionsOrBuild?:
       | PdfStructureOptions
       | ((container: PdfStructureContainer) => void),
     maybeBuild?: (container: PdfStructureContainer) => void,
   ): PdfStructureContainer {
     const options =
-      typeof optionsOrBuild === 'function' ? undefined : optionsOrBuild;
+      typeof optionsOrBuild === "function" ? undefined : optionsOrBuild;
     const build =
-      typeof optionsOrBuild === 'function' ? optionsOrBuild : maybeBuild;
+      typeof optionsOrBuild === "function" ? optionsOrBuild : maybeBuild;
     const child = new PdfStructureContainer(
       this.page,
       this.embeddedFonts,
@@ -541,52 +592,90 @@ export class PdfStructureContainer {
 }
 
 interface FlowState {
+  /** Horizontal position in PDF points. */
   x: number;
+  /** Vertical position in PDF points. */
   y: number;
+  /** Start y. */
   startY: number;
+  /** Width in PDF points. */
   width: number;
+  /** Default vertical gap between flow blocks in PDF points. */
   gap: number;
+  /** Bottom margin in PDF points. */
   marginBottom: number;
+  /** Semantic spacing scale used by flow layout. */
   spacing: RequiredFlowSpacingScale;
+  /** Font used to render text. */
   font?: PdfFont | undefined;
+  /** Fallback fonts used when the primary font lacks a glyph. */
   fallbackFonts?: PdfFont[] | undefined;
-  direction?: FlowOptions['direction'] | undefined;
+  /** Text direction used for shaping and layout. */
+  direction?: FlowOptions["direction"] | undefined;
+  /** Font size in PDF points. */
   fontSize?: number | undefined;
+  /** Color used for drawing, text, or highlighting. */
   color?: PdfColor | undefined;
+  /** Line height in PDF points. */
   lineHeight?: number | undefined;
-  align?: FlowOptions['align'] | undefined;
+  /** Horizontal alignment for laid-out content. */
+  align?: FlowOptions["align"] | undefined;
+  /** Whether kerning should be applied where supported. */
   kerning?: boolean | undefined;
 }
 
 interface RequiredFlowSpacingScale {
+  /** Default spacing before paragraph blocks. */
   paragraphBefore: number;
+  /** Default spacing after paragraph blocks. */
   paragraphAfter: number;
+  /** Default spacing before heading blocks. */
   headingBefore: Record<1 | 2 | 3 | 4 | 5 | 6, number>;
+  /** Default spacing after heading blocks. */
   headingAfter: Record<1 | 2 | 3 | 4 | 5 | 6, number>;
+  /** Default spacing before table blocks. */
   tableBefore: number;
+  /** Default spacing after table blocks. */
   tableAfter: number;
+  /** Default spacing before image blocks. */
   imageBefore: number;
+  /** Default spacing after image blocks. */
   imageAfter: number;
+  /** Default spacing before link blocks. */
   linkBefore: number;
+  /** Default spacing after link blocks. */
   linkAfter: number;
 }
 
 interface ResolvedBlockSpacing {
+  /** Before. */
   before: number;
+  /** After. */
   after: number;
+  /** Left. */
   left: number;
+  /** Right. */
   right: number;
 }
 
 interface FlowMarginOptions {
+  /** CSS-like margin shorthand in PDF points. */
   margin?: FlowMarginShorthand | undefined;
+  /** Top margin in PDF points. */
   marginTop?: number | undefined;
+  /** Right margin in PDF points. */
   marginRight?: number | undefined;
+  /** Bottom margin in PDF points. */
   marginBottom?: number | undefined;
+  /** Left margin in PDF points. */
   marginLeft?: number | undefined;
 }
 
-function defaultFlowMargin(size: { width: number; height: number }): number {
+function defaultFlowMargin(size: {
+  /** Width in PDF points. */
+  width: number; /** Height in PDF points. */
+  height: number;
+}): number {
   const presets: Array<[number, number, number]> = [
     [595.28, 841.89, 72],
     [612, 792, 72],
@@ -601,18 +690,27 @@ function defaultFlowMargin(size: { width: number; height: number }): number {
   return Math.max(24, Math.min(72, Math.round(shorter * 0.1)));
 }
 
-function resolveMarginShorthand(
-  margin: FlowMarginShorthand | undefined,
-): { top: number; right: number; bottom: number; left: number } {
+function resolveMarginShorthand(margin: FlowMarginShorthand | undefined): {
+  /** Top. */
+  top: number; /** Right. */
+  right: number; /** Bottom. */
+  bottom: number; /** Left. */
+  left: number;
+} {
   if (margin === undefined) {
     return { top: 0, right: 0, bottom: 0, left: 0 };
   }
-  if (typeof margin === 'number') {
+  if (typeof margin === "number") {
     return { top: margin, right: margin, bottom: margin, left: margin };
   }
   if (margin.length === 2) {
     const [vertical, horizontal] = margin;
-    return { top: vertical, right: horizontal, bottom: vertical, left: horizontal };
+    return {
+      top: vertical,
+      right: horizontal,
+      bottom: vertical,
+      left: horizontal,
+    };
   }
   const [top, right, bottom, left] = margin;
   return { top, right, bottom, left };
@@ -648,9 +746,6 @@ const STANDARD_FLOW_SPACING: RequiredFlowSpacingScale = {
 /**
  *
  * A cursor-based layout helper for writing report-style content. It manages vertical flow, spacing, page breaks, headings, paragraphs, links, images, and tables.
- *
- * @export
- * @class PdfFlow
  */
 export class PdfFlow {
   /**
@@ -696,16 +791,21 @@ export class PdfFlow {
    */
   heading(text: string, options: FlowHeadingOptions = {}): this {
     const level = options.level ?? 1;
-    const tag = options.tag ?? (`H${level}` as FlowTextOptions['tag']);
+    const tag = options.tag ?? (`H${level}` as FlowTextOptions["tag"]);
     const fontSize = options.fontSize ?? headingFontSize(level);
-    const spacing = this.resolveSpacing('heading', options, level);
+    const spacing = this.resolveSpacing("heading", options, level);
     this.applyMarginTop(spacing.before);
-    const consumedHeight = this.writeTextBlock(text, {
-      ...options,
-      fontSize,
-      lineHeight: options.lineHeight ?? Math.round(fontSize * 1.25),
-      tag,
-    }, spacing.left, spacing.right);
+    const consumedHeight = this.writeTextBlock(
+      text,
+      {
+        ...options,
+        fontSize,
+        lineHeight: options.lineHeight ?? Math.round(fontSize * 1.25),
+        tag,
+      },
+      spacing.left,
+      spacing.right,
+    );
     this.state.y -= consumedHeight + spacing.after;
     return this;
   }
@@ -731,39 +831,39 @@ export class PdfFlow {
    */
   estimate(block: TemplateBlock): number {
     switch (block.type) {
-      case 'heading': {
+      case "heading": {
         const options = block.options as FlowHeadingOptions | undefined;
         const level = options?.level ?? 1;
         const fontSize = options?.fontSize ?? headingFontSize(level);
-        const spacing = this.resolveSpacing('heading', options ?? {}, level);
+        const spacing = this.resolveSpacing("heading", options ?? {}, level);
         return this.estimateTextBlockHeight(block.text, {
           ...options,
           fontSize,
           lineHeight: options?.lineHeight ?? Math.round(fontSize * 1.25),
-          tag: options?.tag ?? (`H${level}` as FlowTextOptions['tag']),
+          tag: options?.tag ?? (`H${level}` as FlowTextOptions["tag"]),
           marginTop: spacing.before,
           marginBottom: spacing.after,
         });
       }
-      case 'paragraph':
+      case "paragraph":
         return this.estimateTextBlockHeight(
           block.text,
           block.options as FlowTextOptions | undefined,
         );
-      case 'table':
+      case "table":
         return this.estimateTableHeight(block.rows, block.options);
-      case 'png':
-        return this.estimateImageHeight('png', block.data, block.options);
-      case 'jpeg':
-        return this.estimateImageHeight('jpeg', block.data, block.options);
-      case 'link':
+      case "png":
+        return this.estimateImageHeight("png", block.data, block.options);
+      case "jpeg":
+        return this.estimateImageHeight("jpeg", block.data, block.options);
+      case "link":
         return this.estimateLinkHeight(block.options);
-      case 'section':
+      case "section":
         return block.blocks.reduce(
           (sum, child) => sum + this.estimate(child),
           0,
         );
-      case 'pageBreak':
+      case "pageBreak":
         return this.remainingHeight;
     }
   }
@@ -777,7 +877,7 @@ export class PdfFlow {
    * @returns This flow helper for chaining.
    */
   paragraph(text: string, options: FlowTextOptions = {}): this {
-    this.textBlock(text, { ...options, tag: options.tag ?? 'P' });
+    this.textBlock(text, { ...options, tag: options.tag ?? "P" });
     return this;
   }
 
@@ -790,9 +890,14 @@ export class PdfFlow {
    * @returns This flow helper for chaining.
    */
   textBlock(text: string, options: FlowTextOptions = {}): this {
-    const spacing = this.resolveSpacing('paragraph', options);
+    const spacing = this.resolveSpacing("paragraph", options);
     this.applyMarginTop(spacing.before);
-    const consumedHeight = this.writeTextBlock(text, options, spacing.left, spacing.right);
+    const consumedHeight = this.writeTextBlock(
+      text,
+      options,
+      spacing.left,
+      spacing.right,
+    );
     this.state.y -= consumedHeight + spacing.after;
     return this;
   }
@@ -806,7 +911,7 @@ export class PdfFlow {
    * @returns This flow helper for chaining.
    */
   png(data: BinaryData, options: FlowImageOptions = {}): this {
-    return this.image('png', data, options);
+    return this.image("png", data, options);
   }
 
   /**
@@ -818,7 +923,7 @@ export class PdfFlow {
    * @returns This flow helper for chaining.
    */
   jpeg(data: BinaryData, options: FlowImageOptions = {}): this {
-    return this.image('jpeg', data, options);
+    return this.image("jpeg", data, options);
   }
 
   /**
@@ -831,19 +936,19 @@ export class PdfFlow {
    * @returns This flow helper for chaining.
    */
   link(text: string, url: string, options: FlowLinkOptions = {}): this {
-    const spacing = this.resolveSpacing('link', options);
+    const spacing = this.resolveSpacing("link", options);
     this.applyMarginTop(spacing.before);
-    const font = options.font ?? this.state.font ?? 'Helvetica';
+    const font = options.font ?? this.state.font ?? "Helvetica";
     const fallbackFonts =
       options.fallbackFonts ?? this.state.fallbackFonts ?? [];
-    const direction = options.direction ?? this.state.direction ?? 'ltr';
+    const direction = options.direction ?? this.state.direction ?? "ltr";
     const fontSize = options.fontSize ?? this.state.fontSize ?? 12;
     const lineHeight =
       options.lineHeight ??
       this.state.lineHeight ??
       Math.round(fontSize * 1.35);
     const color = options.color ??
-      this.state.color ?? { kind: 'rgb', r: 0, g: 0, b: 1 };
+      this.state.color ?? { kind: "rgb", r: 0, g: 0, b: 1 };
     const kerning = options.kerning ?? this.state.kerning ?? true;
     const textWidth = Math.max(
       measureTextWidth(
@@ -853,18 +958,21 @@ export class PdfFlow {
       ),
       1,
     );
-    const align = options.align ?? 'left';
-    const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
+    const align = options.align ?? "left";
+    const innerWidth = Math.max(
+      this.state.width - spacing.left - spacing.right,
+      1,
+    );
     const baseX = this.state.x + spacing.left;
     const linkX =
-      align === 'center'
+      align === "center"
         ? baseX + Math.max((innerWidth - textWidth) / 2, 0)
-        : align === 'right'
+        : align === "right"
           ? baseX + Math.max(innerWidth - textWidth, 0)
           : baseX;
     const linkNode = createStructureNode(
       this.page,
-      'Link',
+      "Link",
       normalizeStructureOptions(options.structure),
       this.parent,
     );
@@ -881,7 +989,7 @@ export class PdfFlow {
         fontSize,
         color,
         kerning,
-        tag: 'Span',
+        tag: "Span",
       },
       linkNode,
     );
@@ -894,7 +1002,7 @@ export class PdfFlow {
         width: textWidth,
         height: lineHeight,
         borderWidth: options.borderWidth,
-        tag: options.tag ?? 'Link',
+        tag: options.tag ?? "Link",
         structure: options.structure,
       },
       linkNode,
@@ -912,10 +1020,13 @@ export class PdfFlow {
    * @returns This flow helper for chaining.
    */
   table(rows: readonly TableRow[], options: FlowTableOptions = {}): this {
-    const spacing = this.resolveSpacing('table', options);
+    const spacing = this.resolveSpacing("table", options);
     this.applyMarginTop(spacing.before);
     const normalizedRows = normalizeTableRows(rows);
-    const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
+    const innerWidth = Math.max(
+      this.state.width - spacing.left - spacing.right,
+      1,
+    );
     const width = options.width ?? innerWidth;
     const normalizedOptions = normalizeTableOptions(normalizedRows, {
       ...flowTextDefaults(this.state),
@@ -928,7 +1039,7 @@ export class PdfFlow {
       this.page,
       createStructureNode(
         this.page,
-        'Table',
+        "Table",
         normalizedOptions.structure,
         this.parent,
       ),
@@ -962,24 +1073,27 @@ export class PdfFlow {
    * @returns The result of the operation.
    */
   private image(
-    format: 'jpeg' | 'png',
+    format: "jpeg" | "png",
     data: BinaryData,
     options: FlowImageOptions,
   ): this {
-    const spacing = this.resolveSpacing('image', options);
+    const spacing = this.resolveSpacing("image", options);
     this.applyMarginTop(spacing.before);
     const image = parseImage(format, data);
-    const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
+    const innerWidth = Math.max(
+      this.state.width - spacing.left - spacing.right,
+      1,
+    );
     const maxWidth = options.maxWidth ?? innerWidth;
     const width = options.width ?? Math.min(image.pixelWidth, maxWidth);
     const height =
       options.height ?? width * (image.pixelHeight / image.pixelWidth);
-    const align = options.align ?? 'left';
+    const align = options.align ?? "left";
     const baseX = this.state.x + spacing.left;
     const x =
-      align === 'center'
+      align === "center"
         ? baseX + Math.max((innerWidth - width) / 2, 0)
-        : align === 'right'
+        : align === "right"
           ? baseX + Math.max(innerWidth - width, 0)
           : baseX;
     addImageToPage(
@@ -994,7 +1108,7 @@ export class PdfFlow {
         height,
       },
       this.parent,
-      'Figure',
+      "Figure",
     );
     this.state.y -= height + spacing.after;
     return this;
@@ -1012,7 +1126,7 @@ export class PdfFlow {
     text: string,
     options: FlowTextOptions = {},
   ): number {
-    const spacing = this.resolveSpacing('paragraph', options);
+    const spacing = this.resolveSpacing("paragraph", options);
     const normalized = normalizeTextBlockOptions(text, {
       ...flowTextDefaults(this.state),
       ...options,
@@ -1037,7 +1151,7 @@ export class PdfFlow {
     rows: readonly TableRow[],
     options: FlowTableOptions = {},
   ): number {
-    const spacing = this.resolveSpacing('table', options);
+    const spacing = this.resolveSpacing("table", options);
     const normalizedRows = normalizeTableRows(rows);
     const width = options.width ?? this.state.width;
     const normalizedOptions = normalizeTableOptions(normalizedRows, {
@@ -1078,7 +1192,7 @@ export class PdfFlow {
             x: this.state.x + normalizedOptions.cellPadding,
             y: this.state.y - normalizedOptions.cellPadding,
             width: textWidth,
-            tag: 'P',
+            tag: "P",
           },
           this.embeddedFonts,
         );
@@ -1126,11 +1240,11 @@ export class PdfFlow {
    * @returns The estimated image height.
    */
   private estimateImageHeight(
-    format: 'jpeg' | 'png',
+    format: "jpeg" | "png",
     data: BinaryData,
     options: FlowImageOptions = {},
   ): number {
-    const spacing = this.resolveSpacing('image', options);
+    const spacing = this.resolveSpacing("image", options);
     const image = parseImage(format, data);
     const maxWidth = options.maxWidth ?? this.state.width;
     const width = options.width ?? Math.min(image.pixelWidth, maxWidth);
@@ -1147,7 +1261,7 @@ export class PdfFlow {
    * @returns The estimated link height.
    */
   private estimateLinkHeight(options: FlowLinkOptions = {}): number {
-    const spacing = this.resolveSpacing('link', options);
+    const spacing = this.resolveSpacing("link", options);
     const fontSize = options.fontSize ?? this.state.fontSize ?? 12;
     const lineHeight =
       options.lineHeight ??
@@ -1166,14 +1280,19 @@ export class PdfFlow {
    *
    * @returns The result of the operation.
    */
-  private writeTextBlock(text: string, options: FlowTextOptions = {}, marginLeft = 0, marginRight = 0): number {
+  private writeTextBlock(
+    text: string,
+    options: FlowTextOptions = {},
+    marginLeft = 0,
+    marginRight = 0,
+  ): number {
     const innerWidth = Math.max(this.state.width - marginLeft - marginRight, 1);
     const blockWidth = Math.min(options.blockWidth ?? innerWidth, innerWidth);
-    const blockAlign = options.blockAlign ?? 'left';
+    const blockAlign = options.blockAlign ?? "left";
     const blockX =
-      blockAlign === 'center'
+      blockAlign === "center"
         ? this.state.x + marginLeft + (innerWidth - blockWidth) / 2
-        : blockAlign === 'right'
+        : blockAlign === "right"
           ? this.state.x + marginLeft + (innerWidth - blockWidth)
           : this.state.x + marginLeft;
     return addFlowTextBlockToPage(
@@ -1211,7 +1330,7 @@ export class PdfFlow {
    * @returns The result of the operation.
    */
   private resolveSpacing(
-    kind: 'paragraph' | 'table' | 'image' | 'link',
+    kind: "paragraph" | "table" | "image" | "link",
     options: FlowMarginOptions,
   ): ResolvedBlockSpacing;
   /**
@@ -1224,7 +1343,7 @@ export class PdfFlow {
    * @returns The result of the operation.
    */
   private resolveSpacing(
-    kind: 'heading',
+    kind: "heading",
     options: FlowMarginOptions,
     level: 1 | 2 | 3 | 4 | 5 | 6,
   ): ResolvedBlockSpacing;
@@ -1238,7 +1357,7 @@ export class PdfFlow {
    * @returns The result of the operation.
    */
   private resolveSpacing(
-    kind: 'paragraph' | 'heading' | 'table' | 'image' | 'link',
+    kind: "paragraph" | "heading" | "table" | "image" | "link",
     options: FlowMarginOptions,
     level: 1 | 2 | 3 | 4 | 5 | 6 = 1,
   ): ResolvedBlockSpacing {
@@ -1248,29 +1367,31 @@ export class PdfFlow {
     const left = options.marginLeft ?? (hasShorthand ? shorthand.left : 0);
     const right = options.marginRight ?? (hasShorthand ? shorthand.right : 0);
     const defaultBefore =
-      kind === 'heading'
+      kind === "heading"
         ? defaults.headingBefore[level]
-        : kind === 'table'
+        : kind === "table"
           ? defaults.tableBefore
-          : kind === 'image'
+          : kind === "image"
             ? defaults.imageBefore
-            : kind === 'link'
+            : kind === "link"
               ? defaults.linkBefore
               : defaults.paragraphBefore;
     const defaultAfter =
-      kind === 'heading'
+      kind === "heading"
         ? defaults.headingAfter[level]
-        : kind === 'table'
+        : kind === "table"
           ? defaults.tableAfter
-          : kind === 'image'
+          : kind === "image"
             ? defaults.imageAfter
-            : kind === 'link'
+            : kind === "link"
               ? defaults.linkAfter
               : defaults.paragraphAfter;
     const explicitTop = options.marginTop;
     const explicitBottom = options.marginBottom;
-    const before = explicitTop ?? (hasShorthand ? shorthand.top : defaultBefore);
-    const after = explicitBottom ?? (hasShorthand ? shorthand.bottom : defaultAfter);
+    const before =
+      explicitTop ?? (hasShorthand ? shorthand.top : defaultBefore);
+    const after =
+      explicitBottom ?? (hasShorthand ? shorthand.bottom : defaultAfter);
     return { before, after, left, right };
   }
 }
@@ -1278,9 +1399,6 @@ export class PdfFlow {
 /**
  *
  * A mutable page builder for placing text, graphics, images, links, annotations, form fields, and structured content on a PDF page.
- *
- * @export
- * @class PdfPage
  */
 export class PdfPage {
   /**
@@ -1332,7 +1450,7 @@ export class PdfPage {
   list(items: readonly ListItem[], options: ListOptions): void {
     const normalizedItems = normalizeListItems(items);
     const normalizedOptions = normalizeListOptions(normalizedItems, options);
-    const listNode = createStructureNode(this.page, 'L');
+    const listNode = createStructureNode(this.page, "L");
     layoutList(
       this.page,
       listNode,
@@ -1353,7 +1471,7 @@ export class PdfPage {
     const normalizedOptions = normalizeTableOptions(normalizedRows, options);
     layoutTable(
       this.page,
-      createStructureNode(this.page, 'Table', normalizedOptions.structure),
+      createStructureNode(this.page, "Table", normalizedOptions.structure),
       normalizedRows,
       normalizedOptions,
       this.embeddedFonts,
@@ -1403,9 +1521,9 @@ export class PdfPage {
     maybeBuild?: (container: PdfStructureContainer) => void,
   ): PdfStructureContainer {
     const options =
-      typeof optionsOrBuild === 'function' ? undefined : optionsOrBuild;
+      typeof optionsOrBuild === "function" ? undefined : optionsOrBuild;
     const build =
-      typeof optionsOrBuild === 'function' ? optionsOrBuild : maybeBuild;
+      typeof optionsOrBuild === "function" ? optionsOrBuild : maybeBuild;
     const container = new PdfStructureContainer(
       this.page,
       this.embeddedFonts,
@@ -1430,7 +1548,7 @@ export class PdfPage {
    * @returns The created structure container.
    */
   structure(
-    role: Exclude<PdfStructureTag, 'Artifact'>,
+    role: Exclude<PdfStructureTag, "Artifact">,
     build?: (container: PdfStructureContainer) => void,
   ): PdfStructureContainer;
   /**
@@ -1443,7 +1561,7 @@ export class PdfPage {
    * @returns The created structure container.
    */
   structure(
-    role: Exclude<PdfStructureTag, 'Artifact'>,
+    role: Exclude<PdfStructureTag, "Artifact">,
     options?: PdfStructureOptions,
     build?: (container: PdfStructureContainer) => void,
   ): PdfStructureContainer;
@@ -1457,16 +1575,16 @@ export class PdfPage {
    * @returns The created structure container.
    */
   structure(
-    role: Exclude<PdfStructureTag, 'Artifact'>,
+    role: Exclude<PdfStructureTag, "Artifact">,
     optionsOrBuild?:
       | PdfStructureOptions
       | ((container: PdfStructureContainer) => void),
     maybeBuild?: (container: PdfStructureContainer) => void,
   ): PdfStructureContainer {
     const options =
-      typeof optionsOrBuild === 'function' ? undefined : optionsOrBuild;
+      typeof optionsOrBuild === "function" ? undefined : optionsOrBuild;
     const build =
-      typeof optionsOrBuild === 'function' ? optionsOrBuild : maybeBuild;
+      typeof optionsOrBuild === "function" ? optionsOrBuild : maybeBuild;
     const container = new PdfStructureContainer(
       this.page,
       this.embeddedFonts,
@@ -1506,7 +1624,7 @@ export class PdfPage {
   path(commands: PathCommand[], style: PathStyle): void {
     validatePathCommands(commands);
     this.page.ops.push({
-      type: 'path',
+      type: "path",
       commands,
       style: normalizePathStyle(style),
     });
@@ -1519,7 +1637,7 @@ export class PdfPage {
    * @param options Options that control the operation.
    */
   jpeg(data: BinaryData, options: JpegImageOptions): void {
-    addImageToPage(this.page, 'jpeg', data, options);
+    addImageToPage(this.page, "jpeg", data, options);
   }
 
   /**
@@ -1529,7 +1647,7 @@ export class PdfPage {
    * @param options Options that control the operation.
    */
   png(data: BinaryData, options: PngImageOptions): void {
-    addImageToPage(this.page, 'png', data, options);
+    addImageToPage(this.page, "png", data, options);
   }
 
   /**
@@ -1553,14 +1671,14 @@ export class PdfPage {
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
       this.page,
-      'Link',
+      "Link",
       annotationIndex,
       normalizedOptions.tag,
       normalizedOptions.structure,
       placementBoundingBox(normalizedOptions),
     );
     this.page.annotations.push({
-      type: 'page',
+      type: "page",
       target: target.page,
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
@@ -1577,14 +1695,14 @@ export class PdfPage {
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
       this.page,
-      'Annot',
+      "Annot",
       annotationIndex,
       normalizedOptions.tag,
       normalizedOptions.structure,
       placementBoundingBox(normalizedOptions),
     );
     this.page.annotations.push({
-      type: 'highlight',
+      type: "highlight",
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
     });
@@ -1600,14 +1718,14 @@ export class PdfPage {
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
       this.page,
-      'Annot',
+      "Annot",
       annotationIndex,
       normalizedOptions.tag,
       normalizedOptions.structure,
       placementBoundingBox(normalizedOptions),
     );
     this.page.annotations.push({
-      type: 'note',
+      type: "note",
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
     });
@@ -1623,14 +1741,14 @@ export class PdfPage {
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
       this.page,
-      'Annot',
+      "Annot",
       annotationIndex,
       normalizedOptions.tag,
       normalizedOptions.structure,
       placementBoundingBox(normalizedOptions),
     );
     this.page.annotations.push({
-      type: 'freeText',
+      type: "freeText",
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
     });
@@ -1647,14 +1765,14 @@ export class PdfPage {
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
       this.page,
-      'Annot',
+      "Annot",
       annotationIndex,
       normalizedOptions.tag,
       normalizedOptions.structure,
       placementBoundingBox(normalizedOptions),
     );
     this.page.annotations.push({
-      type: 'textField',
+      type: "textField",
       name,
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
@@ -1672,14 +1790,14 @@ export class PdfPage {
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
       this.page,
-      'Annot',
+      "Annot",
       annotationIndex,
       normalizedOptions.tag,
       normalizedOptions.structure,
       placementBoundingBox(normalizedOptions),
     );
     this.page.annotations.push({
-      type: 'checkBox',
+      type: "checkBox",
       name,
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
@@ -1697,14 +1815,14 @@ export class PdfPage {
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
       this.page,
-      'Annot',
+      "Annot",
       annotationIndex,
       normalizedOptions.tag,
       normalizedOptions.structure,
       placementBoundingBox(normalizedOptions),
     );
     this.page.annotations.push({
-      type: 'choiceField',
+      type: "choiceField",
       name,
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
@@ -1722,14 +1840,14 @@ export class PdfPage {
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
       this.page,
-      'Annot',
+      "Annot",
       annotationIndex,
       normalizedOptions.tag,
       normalizedOptions.structure,
       radioGroupBoundingBox(normalizedOptions),
     );
     this.page.annotations.push({
-      type: 'radioGroup',
+      type: "radioGroup",
       name,
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
@@ -1747,14 +1865,14 @@ export class PdfPage {
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
       this.page,
-      'Annot',
+      "Annot",
       annotationIndex,
       normalizedOptions.tag,
       normalizedOptions.structure,
       placementBoundingBox(normalizedOptions),
     );
     this.page.annotations.push({
-      type: 'pushButton',
+      type: "pushButton",
       name,
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
@@ -1772,14 +1890,14 @@ export class PdfPage {
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
       this.page,
-      'Annot',
+      "Annot",
       annotationIndex,
       normalizedOptions.tag,
       normalizedOptions.structure,
       placementBoundingBox(normalizedOptions),
     );
     this.page.annotations.push({
-      type: 'signatureField',
+      type: "signatureField",
       name,
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
@@ -1791,7 +1909,7 @@ export class PdfPage {
    */
   saveState(): void {
     this.page.graphicsDepth += 1;
-    this.page.ops.push({ type: 'saveState' });
+    this.page.ops.push({ type: "saveState" });
   }
 
   /**
@@ -1801,12 +1919,12 @@ export class PdfPage {
     if (this.page.graphicsDepth === 0) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_GRAPHICS_STATE,
-        'restoreState() must be paired with saveState().',
+        "restoreState() must be paired with saveState().",
       );
     }
 
     this.page.graphicsDepth -= 1;
-    this.page.ops.push({ type: 'restoreState' });
+    this.page.ops.push({ type: "restoreState" });
   }
 
   /**
@@ -1853,7 +1971,7 @@ export class PdfPage {
    */
   transform(matrix: Transform): void {
     validateTransform(matrix);
-    this.page.ops.push({ type: 'transform', matrix });
+    this.page.ops.push({ type: "transform", matrix });
   }
 
   /**
@@ -1869,9 +1987,6 @@ export class PdfPage {
 /**
  *
  * A handle for an outline entry in a PDF document. It can receive nested child outline items that point to pages or named destinations.
- *
- * @export
- * @class PdfOutlineItem
  */
 export class PdfOutlineItem {
   /**
@@ -1904,28 +2019,54 @@ export class PdfOutlineItem {
 /**
  *
  * A mutable builder for creating new PDF documents from scratch. It manages pages, fonts, metadata, outlines, attachments, accessibility data, encryption, and serialization.
- *
- * @export
- * @class PdfDocument
  */
 export class PdfDocument {
+  /** Pages added to the document, in insertion order. Each entry is the internal model populated by {@link PdfPage} builders. */
   private readonly pages: InternalPageModel[] = [];
+
+  /** TrueType fonts embedded in the document, keyed by their internal font id ({@link ParsedTrueTypeFont.id}). */
   private readonly embeddedFonts = new Map<string, ParsedTrueTypeFont>();
+
+  /** Named destinations registered on the document. Used to populate the Names tree on serialization. */
   private readonly namedDestinations: InternalNamedDestinationModel[] = [];
+
+  /** Per-page label overrides (e.g. roman numerals for front matter). Keyed by the page model the label applies to. */
   private readonly pageLabels = new Map<
     InternalPageModel,
     NormalizedPageLabelOptions
   >();
+
+  /** File attachments registered on the document. Emitted as the Catalog `/AF` array and Names `/EmbeddedFiles` tree. */
   private readonly attachments: InternalAttachmentModel[] = [];
+
+  /** Outline (bookmark) tree nodes in document order. */
   private readonly outlines: InternalOutlineModel[] = [];
+
+  /** Document Info dictionary in its normalized form. Mutable so {@link updateInfo} can patch fields. */
   private info: NormalizedDocumentInfo;
+
+  /** Page size used by {@link addPage} when no explicit `size` is given. Resolved at construction time. */
   private readonly defaultPageSize: ResolvedPageSize;
+
+  /** Tagging, language, role-map, structure-root, and conformance settings. Drives StructTreeRoot emission. */
   private readonly accessibility: NormalizedDocumentAccessibility;
+
+  /** Password encryption settings, if any. Triggers Encrypt dictionary emission and (for AES-256 R=6) `%PDF-2.0` header. */
   private readonly encryption?: NormalizedDocumentEncryption | undefined;
+
+  /** Pre-built XMP metadata packet. Mutable via {@link setXmpMetadata}; auto-generated from {@link info} when undefined. */
   private xmpMetadata?: string | undefined;
+
+  /** When true, content streams and large byte streams are compressed with FlateDecode. Auto-on for embedded fonts/images. */
   private readonly compress?: boolean | undefined;
+
+  /** When true, emits PDF 1.5 cross-reference and object streams (auto-bumps header to `%PDF-1.5`). */
   private readonly objectStreams?: boolean | undefined;
+
+  /** OutputIntent dictionary settings (ICC profile + condition). Required for PDF/A-1b conformance. */
   private readonly outputIntent?: DocumentOutputIntentOptions | undefined;
+
+  /** Detached signature settings. When set, an empty signature placeholder is reserved and `/ByteRange`/`/Contents` filled at serialize. */
   private readonly signature?: DocumentSignatureOptions | undefined;
 
   /**
@@ -1967,7 +2108,7 @@ export class PdfDocument {
     if (options.info !== undefined) {
       this.updateInfo(options.info);
     }
-    if ('xmpMetadata' in options) {
+    if ("xmpMetadata" in options) {
       this.setXmpMetadata(options.xmpMetadata);
     }
     renderTemplateDocument(this, options, {
@@ -2035,7 +2176,7 @@ export class PdfDocument {
     if (bytes.length === 0) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_ATTACHMENT,
-        'Attachment data must not be empty.',
+        "Attachment data must not be empty.",
         {
           name,
         },
@@ -2155,7 +2296,7 @@ export class PdfDocument {
    */
   toBlob(): Blob {
     return new Blob([new Uint8Array(this.toArrayBuffer())], {
-      type: 'application/pdf',
+      type: "application/pdf",
     });
   }
 
@@ -2168,7 +2309,7 @@ export class PdfDocument {
     if (this.pages.length === 0) {
       throw new PdfEngineError(
         PdfErrorCode.EMPTY_PAGE,
-        'A PDF document must contain at least one page.',
+        "A PDF document must contain at least one page.",
       );
     }
 
@@ -2181,7 +2322,7 @@ export class PdfDocument {
       if (!pageSet.has(destination.target)) {
         throw new PdfEngineError(
           PdfErrorCode.INVALID_DESTINATION,
-          'Named destinations must target a page from the same document.',
+          "Named destinations must target a page from the same document.",
           { name: destination.name },
         );
       }
@@ -2189,7 +2330,7 @@ export class PdfDocument {
       if (seenDestinations.has(destination.name)) {
         throw new PdfEngineError(
           PdfErrorCode.INVALID_DESTINATION,
-          'Named destination names must be unique.',
+          "Named destination names must be unique.",
           {
             name: destination.name,
           },
@@ -2208,7 +2349,7 @@ export class PdfDocument {
       if (!pageSet.has(target)) {
         throw new PdfEngineError(
           PdfErrorCode.INVALID_PAGE_LABEL,
-          'Page labels must target a page from the same document.',
+          "Page labels must target a page from the same document.",
         );
       }
 
@@ -2220,7 +2361,7 @@ export class PdfDocument {
       if (attachmentNames.has(attachment.name)) {
         throw new PdfEngineError(
           PdfErrorCode.INVALID_ATTACHMENT,
-          'Attachment names must be unique within a document.',
+          "Attachment names must be unique within a document.",
           {
             name: attachment.name,
           },
@@ -2231,7 +2372,7 @@ export class PdfDocument {
 
     const complianceIssues = this.validateCompliance();
     const complianceErrors = complianceIssues.filter(
-      (issue) => issue.severity === 'error',
+      (issue) => issue.severity === "error",
     );
     if (complianceErrors.length > 0) {
       throw new PdfEngineError(
@@ -2266,8 +2407,12 @@ export class PdfDocument {
         ? {}
         : { conformance: this.accessibility.conformance }),
       ...(this.compress === undefined ? {} : { compress: this.compress }),
-      ...(this.objectStreams === undefined ? {} : { objectStreams: this.objectStreams }),
-      ...(this.outputIntent === undefined ? {} : { outputIntent: this.outputIntent }),
+      ...(this.objectStreams === undefined
+        ? {}
+        : { objectStreams: this.objectStreams }),
+      ...(this.outputIntent === undefined
+        ? {}
+        : { outputIntent: this.outputIntent }),
       ...(this.signature === undefined ? {} : { signature: this.signature }),
       embeddedFonts: [...this.embeddedFonts.values()],
       namedDestinations: this.namedDestinations,
@@ -2282,46 +2427,63 @@ export class PdfDocument {
 /**
  *
  * A mutable editor for applying incremental updates to an existing PDF document. It supports page edits, appended pages, form updates, structure changes, embedded resources, and incremental serialization.
- *
- * @export
- * @class PdfEditableDocument
  */
 export class PdfEditableDocument {
+  /** Appended pages. */
   private readonly appendedPages: InternalPageModel[] = [];
+  /** Edited pages. */
   private readonly editedPages = new Map<number, InternalPageModel>();
+  /** Embedded fonts. */
   private readonly embeddedFonts = new Map<string, ParsedTrueTypeFont>();
+  /** Page size used when a page does not specify its own size. */
   private readonly defaultPageSize: ResolvedPageSize;
+  /** Page order. */
   private readonly pageOrder: EditablePageEntry[];
+  /** Field updates. */
   private readonly fieldUpdates = new Map<number, ExistingFieldUpdate>();
+  /** Flattened field object ids. */
   private readonly flattenedFieldObjectIds = new Set<number>();
+  /** Editable structure elements. */
   private readonly editableStructureElements: readonly ParsedPdfEditableStructureElement[];
+  /** Editable structure element handles. */
   private readonly editableStructureElementHandles = new WeakSet<object>();
+  /** Editable structure elements by object id. */
   private readonly editableStructureElementsByObjectId = new Map<
     number,
     ParsedPdfEditableStructureElement
   >();
+  /** Editable structure child ids by parent object id. */
   private readonly editableStructureChildIdsByParentObjectId = new Map<
     number,
     readonly number[]
   >();
+  /** Structure role updates. */
   private readonly structureRoleUpdates = new Map<
     number,
-    Exclude<PdfStructureTag, 'Artifact'>
+    Exclude<PdfStructureTag, "Artifact">
   >();
+  /** Structure alt text updates. */
   private readonly structureAltTextUpdates = new Map<
     number,
     string | undefined
   >();
+  /** Structure children order updates. */
   private readonly structureChildrenOrderUpdates = new Map<
     number,
     readonly number[]
   >();
+  /** Updated info. */
   private updatedInfo: NormalizedDocumentInfo | undefined;
+  /** Updated xmp metadata. */
   private updatedXmpMetadata?: string | undefined;
+  /** Has updated xmp metadata. */
   private hasUpdatedXmpMetadata = false;
+  /** Detached digital-signature options for serialized output. */
   private signature?: DocumentSignatureOptions | undefined;
+  /** Tagged base. */
   private readonly taggedBase: boolean;
-  private readonly conformanceBase: 'pdfa-1b' | 'pdfua-1' | undefined;
+  /** Conformance base. */
+  private readonly conformanceBase: "pdfa-1b" | "pdfua-1" | undefined;
 
   /**
    * Creates an editor around a parsed source PDF.
@@ -2335,7 +2497,7 @@ export class PdfEditableDocument {
       resolveDefaultEditablePageSize(base),
     );
     this.pageOrder = base.listPages().map((page) => ({
-      kind: 'existing',
+      kind: "existing",
       objectId: page.objectId,
     }));
     this.editableStructureElements = base.listEditableStructureElements();
@@ -2378,15 +2540,15 @@ export class PdfEditableDocument {
     ) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_COMPLIANCE,
-        'Tagged or PDF/A incremental editing currently supports appending pages only.',
+        "Tagged or PDF/A incremental editing currently supports appending pages only.",
       );
     }
 
-    assertEditablePageIndex(index, this.pageOrder.length, 'insert');
+    assertEditablePageIndex(index, this.pageOrder.length, "insert");
     const page = createPageModel(options.size ?? this.defaultPageSize);
     this.appendedPages.push(page);
     this.pageOrder.splice(index, 0, {
-      kind: 'appended',
+      kind: "appended",
       page,
     });
     return new PdfPage(page, this.embeddedFonts);
@@ -2410,13 +2572,13 @@ export class PdfEditableDocument {
     if (this.taggedBase || this.conformanceBase !== undefined) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_COMPLIANCE,
-        'Tagged or PDF/A incremental editing does not support removing pages yet.',
+        "Tagged or PDF/A incremental editing does not support removing pages yet.",
       );
     }
 
-    assertEditablePageIndex(index, this.pageOrder.length - 1, 'remove');
+    assertEditablePageIndex(index, this.pageOrder.length - 1, "remove");
     const [removed] = this.pageOrder.splice(index, 1);
-    if (removed?.kind === 'appended') {
+    if (removed?.kind === "appended") {
       const appendedIndex = this.appendedPages.indexOf(removed.page);
       if (appendedIndex >= 0) {
         this.appendedPages.splice(appendedIndex, 1);
@@ -2434,12 +2596,12 @@ export class PdfEditableDocument {
     if (this.taggedBase || this.conformanceBase !== undefined) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_COMPLIANCE,
-        'Tagged or PDF/A incremental editing does not support reordering pages yet.',
+        "Tagged or PDF/A incremental editing does not support reordering pages yet.",
       );
     }
 
-    assertEditablePageIndex(fromIndex, this.pageOrder.length - 1, 'move');
-    assertEditablePageIndex(toIndex, this.pageOrder.length - 1, 'move');
+    assertEditablePageIndex(fromIndex, this.pageOrder.length - 1, "move");
+    assertEditablePageIndex(toIndex, this.pageOrder.length - 1, "move");
     if (fromIndex === toIndex) {
       return;
     }
@@ -2448,7 +2610,7 @@ export class PdfEditableDocument {
     if (!entry) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_PAGE,
-        'Page move index could not be resolved.',
+        "Page move index could not be resolved.",
         {
           fromIndex,
           toIndex,
@@ -2467,19 +2629,19 @@ export class PdfEditableDocument {
    * @returns The editable page builder.
    */
   editPage(index: number): PdfPage {
-    assertEditablePageIndex(index, this.pageOrder.length - 1, 'edit');
+    assertEditablePageIndex(index, this.pageOrder.length - 1, "edit");
     const entry = this.pageOrder[index];
     if (!entry) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_PAGE,
-        'Editable page could not be resolved.',
+        "Editable page could not be resolved.",
         {
           index,
         },
       );
     }
 
-    if (entry.kind === 'appended') {
+    if (entry.kind === "appended") {
       return new PdfPage(entry.page, this.embeddedFonts);
     }
 
@@ -2558,12 +2720,12 @@ export class PdfEditableDocument {
       this.appendedPages,
       name,
     );
-    if (match.source === 'appended') {
-      if (match.annotation.type === 'textField') {
-        if (typeof value !== 'string') {
+    if (match.source === "appended") {
+      if (match.annotation.type === "textField") {
+        if (typeof value !== "string") {
           throw new PdfEngineError(
             PdfErrorCode.INVALID_FORM_FIELD,
-            'Text fields can only be updated with string values.',
+            "Text fields can only be updated with string values.",
             {
               name,
             },
@@ -2575,11 +2737,11 @@ export class PdfEditableDocument {
         return;
       }
 
-      if (match.annotation.type === 'checkBox') {
-        if (typeof value !== 'boolean') {
+      if (match.annotation.type === "checkBox") {
+        if (typeof value !== "boolean") {
           throw new PdfEngineError(
             PdfErrorCode.INVALID_FORM_FIELD,
-            'Check boxes can only be updated with boolean values.',
+            "Check boxes can only be updated with boolean values.",
             {
               name,
             },
@@ -2590,11 +2752,11 @@ export class PdfEditableDocument {
         return;
       }
 
-      if (match.annotation.type === 'radioGroup') {
-        if (typeof value !== 'string') {
+      if (match.annotation.type === "radioGroup") {
+        if (typeof value !== "string") {
           throw new PdfEngineError(
             PdfErrorCode.INVALID_FORM_FIELD,
-            'Radio groups can only be updated with string values.',
+            "Radio groups can only be updated with string values.",
             {
               name,
             },
@@ -2609,10 +2771,10 @@ export class PdfEditableDocument {
         return;
       }
 
-      if (typeof value !== 'string') {
+      if (typeof value !== "string") {
         throw new PdfEngineError(
           PdfErrorCode.INVALID_FORM_FIELD,
-          'Choice fields can only be updated with string values.',
+          "Choice fields can only be updated with string values.",
           {
             name,
           },
@@ -2624,11 +2786,11 @@ export class PdfEditableDocument {
       return;
     }
 
-    if (match.field.fieldType === 'Tx') {
-      if (typeof value !== 'string') {
+    if (match.field.fieldType === "Tx") {
+      if (typeof value !== "string") {
         throw new PdfEngineError(
           PdfErrorCode.INVALID_FORM_FIELD,
-          'Text fields can only be updated with string values.',
+          "Text fields can only be updated with string values.",
           {
             name,
           },
@@ -2638,17 +2800,17 @@ export class PdfEditableDocument {
       validateTextFieldValue(value);
       this.fieldUpdates.set(match.field.objectId, {
         objectId: match.field.objectId,
-        fieldType: 'Tx',
+        fieldType: "Tx",
         value,
       });
       return;
     }
 
-    if (match.field.fieldType === 'Btn' && match.field.buttonKind !== 'radio') {
-      if (typeof value !== 'boolean') {
+    if (match.field.fieldType === "Btn" && match.field.buttonKind !== "radio") {
+      if (typeof value !== "boolean") {
         throw new PdfEngineError(
           PdfErrorCode.INVALID_FORM_FIELD,
-          'Check boxes can only be updated with boolean values.',
+          "Check boxes can only be updated with boolean values.",
           {
             name,
           },
@@ -2657,18 +2819,18 @@ export class PdfEditableDocument {
 
       this.fieldUpdates.set(match.field.objectId, {
         objectId: match.field.objectId,
-        fieldType: 'Btn',
+        fieldType: "Btn",
         value,
         ...(match.onStateName ? { onStateName: match.onStateName } : {}),
       });
       return;
     }
 
-    if (match.field.buttonKind === 'radio') {
-      if (typeof value !== 'string') {
+    if (match.field.buttonKind === "radio") {
+      if (typeof value !== "string") {
         throw new PdfEngineError(
           PdfErrorCode.INVALID_FORM_FIELD,
-          'Radio groups can only be updated with string values.',
+          "Radio groups can only be updated with string values.",
           {
             name,
           },
@@ -2678,17 +2840,17 @@ export class PdfEditableDocument {
       validateChoiceFieldValue(value, match.field.options);
       this.fieldUpdates.set(match.field.objectId, {
         objectId: match.field.objectId,
-        fieldType: 'Radio',
+        fieldType: "Radio",
         value,
       });
       return;
     }
 
-    if (match.field.fieldType === 'Ch') {
-      if (typeof value !== 'string') {
+    if (match.field.fieldType === "Ch") {
+      if (typeof value !== "string") {
         throw new PdfEngineError(
           PdfErrorCode.INVALID_FORM_FIELD,
-          'Choice fields can only be updated with string values.',
+          "Choice fields can only be updated with string values.",
           {
             name,
           },
@@ -2698,7 +2860,7 @@ export class PdfEditableDocument {
       validateChoiceFieldValue(value, match.field.options);
       this.fieldUpdates.set(match.field.objectId, {
         objectId: match.field.objectId,
-        fieldType: 'Ch',
+        fieldType: "Ch",
         value,
       });
       return;
@@ -2706,7 +2868,7 @@ export class PdfEditableDocument {
 
     throw new PdfEngineError(
       PdfErrorCode.INVALID_FORM_FIELD,
-      'Only text fields, choice fields, check boxes, and radio groups can be incrementally updated.',
+      "Only text fields, choice fields, check boxes, and radio groups can be incrementally updated.",
       {
         name,
         fieldType: match.field.fieldType,
@@ -2786,11 +2948,11 @@ export class PdfEditableDocument {
     options: PdfEditableStructureSimilarityOptions = {},
   ): readonly PdfEditableStructureElement[] {
     const known = this.requireEditableStructureHandle(target);
-    const scope = options.scope ?? 'document';
+    const scope = options.scope ?? "document";
     return this.findEditableStructureElements({
       role: known.role,
-      ...(scope === 'page' ? { pageObjectId: known.pageObjectId } : {}),
-      ...(scope === 'siblings' ? { parentObjectId: known.parentObjectId } : {}),
+      ...(scope === "page" ? { pageObjectId: known.pageObjectId } : {}),
+      ...(scope === "siblings" ? { parentObjectId: known.parentObjectId } : {}),
     });
   }
 
@@ -2802,12 +2964,12 @@ export class PdfEditableDocument {
    */
   setStructureRole(
     target: PdfEditableStructureElement,
-    role: Exclude<PdfStructureTag, 'Artifact'>,
+    role: Exclude<PdfStructureTag, "Artifact">,
   ): void {
     if (!this.taggedBase) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_COMPLIANCE,
-        'Structure role updates require a tagged PDF.',
+        "Structure role updates require a tagged PDF.",
       );
     }
 
@@ -2830,7 +2992,7 @@ export class PdfEditableDocument {
    */
   setStructureRoles(
     targets: readonly PdfEditableStructureElement[],
-    role: Exclude<PdfStructureTag, 'Artifact'>,
+    role: Exclude<PdfStructureTag, "Artifact">,
   ): void {
     for (const target of targets) {
       this.setStructureRole(target, role);
@@ -2850,7 +3012,7 @@ export class PdfEditableDocument {
     if (!this.taggedBase) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_COMPLIANCE,
-        'Structure alt-text updates require a tagged PDF.',
+        "Structure alt-text updates require a tagged PDF.",
       );
     }
 
@@ -2876,13 +3038,13 @@ export class PdfEditableDocument {
     if (!this.taggedBase) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_COMPLIANCE,
-        'Structure reading-order updates require a tagged PDF.',
+        "Structure reading-order updates require a tagged PDF.",
       );
     }
     if (orderedChildren.length < 2) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_COMPLIANCE,
-        'Structure reading-order updates require at least two sibling elements.',
+        "Structure reading-order updates require at least two sibling elements.",
       );
     }
 
@@ -2893,7 +3055,7 @@ export class PdfEditableDocument {
     if (parentObjectId === undefined) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_PDF,
-        'Structure reading order requires sibling elements with a resolvable parent.',
+        "Structure reading order requires sibling elements with a resolvable parent.",
         {
           objectIds: resolved.map((element) => element.objectId),
         },
@@ -2902,7 +3064,7 @@ export class PdfEditableDocument {
     if (resolved.some((child) => child.parentObjectId !== parentObjectId)) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_COMPLIANCE,
-        'Structure reading-order updates require sibling elements that share the same parent.',
+        "Structure reading-order updates require sibling elements that share the same parent.",
         {
           objectIds: resolved.map((element) => element.objectId),
         },
@@ -2914,7 +3076,7 @@ export class PdfEditableDocument {
     if (!siblingIds) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_PDF,
-        'Structure reading-order parent could not be resolved.',
+        "Structure reading-order parent could not be resolved.",
         {
           parentObjectId,
         },
@@ -2925,7 +3087,7 @@ export class PdfEditableDocument {
     if (new Set(orderedIds).size !== orderedIds.length) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_COMPLIANCE,
-        'Structure reading-order updates cannot contain duplicate elements.',
+        "Structure reading-order updates cannot contain duplicate elements.",
         {
           objectIds: orderedIds,
         },
@@ -2934,7 +3096,7 @@ export class PdfEditableDocument {
     if (orderedIds.some((objectId) => !siblingIds.includes(objectId))) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_COMPLIANCE,
-        'Structure reading-order updates must target sibling elements from the same parent.',
+        "Structure reading-order updates must target sibling elements from the same parent.",
         {
           parentObjectId,
           expectedObjectIds: siblingIds,
@@ -2947,7 +3109,7 @@ export class PdfEditableDocument {
     if (parent && (parent.mcids?.length ?? 0) > 0) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_COMPLIANCE,
-        'Structure reading-order updates are not supported for parents with direct MCID content.',
+        "Structure reading-order updates are not supported for parents with direct MCID content.",
         {
           parentObjectId,
         },
@@ -2975,7 +3137,7 @@ export class PdfEditableDocument {
     if (!this.editableStructureElementHandles.has(target)) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_PDF,
-        'Editable structure element handle could not be resolved.',
+        "Editable structure element handle could not be resolved.",
         {
           objectId: target.objectId,
         },
@@ -2986,7 +3148,7 @@ export class PdfEditableDocument {
     if (!known || !matchesEditableStructureElementHandle(known, target)) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_PDF,
-        'Editable structure element handle could not be resolved.',
+        "Editable structure element handle could not be resolved.",
         {
           objectId: target.objectId,
         },
@@ -3074,7 +3236,7 @@ export class PdfEditableDocument {
    */
   toBlob(): Blob {
     return new Blob([new Uint8Array(this.toArrayBuffer())], {
-      type: 'application/pdf',
+      type: "application/pdf",
     });
   }
 
@@ -3085,13 +3247,13 @@ export class PdfEditableDocument {
     if (this.taggedBase || this.conformanceBase !== undefined) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_COMPLIANCE,
-        'Tagged or PDF/A incremental editing does not support form flattening yet.',
+        "Tagged or PDF/A incremental editing does not support form flattening yet.",
       );
     }
 
     flattenFormsOnPages(this.appendedPages);
     for (const entry of this.pageOrder) {
-      if (entry.kind !== 'existing') {
+      if (entry.kind !== "existing") {
         continue;
       }
 
@@ -3117,7 +3279,7 @@ export class PdfEditableDocument {
       this.pageOrder
         .filter(
           (entry): entry is EditableExistingPageEntry =>
-            entry.kind === 'existing',
+            entry.kind === "existing",
         )
         .map((entry) => entry.objectId),
     );
@@ -3140,15 +3302,20 @@ export class PdfEditableDocument {
     const retainedEditedPages = this.pageOrder
       .filter(
         (entry): entry is EditableExistingPageEntry =>
-          entry.kind === 'existing',
+          entry.kind === "existing",
       )
       .map((entry) => ({
         objectId: entry.objectId,
         page: this.editedPages.get(entry.objectId),
       }))
       .filter(
-        (entry): entry is { objectId: number; page: InternalPageModel } =>
-          entry.page !== undefined,
+        (
+          entry,
+        ): entry is {
+          /** PDF indirect object number for the parsed item. */
+          objectId: number; /** Page. */
+          page: InternalPageModel;
+        } => entry.page !== undefined,
       );
 
     validateManagedPages(
@@ -3171,7 +3338,7 @@ export class PdfEditableDocument {
     if (this.pageOrder.length === 0) {
       throw new PdfEngineError(
         PdfErrorCode.EMPTY_PAGE,
-        'An edited PDF document must contain at least one page.',
+        "An edited PDF document must contain at least one page.",
       );
     }
 
@@ -3210,6 +3377,10 @@ export class PdfEditableDocument {
 
 /**
  * Creates a new PDF document builder for generating pages, text, graphics, forms, metadata, tagging, and attachments.
+ *
+ * @param options Document creation options.
+ *
+ * @returns The new mutable PDF document builder.
  */
 export function createDocument(options: DocumentOptions = {}): PdfDocument {
   return new PdfDocument(options);
@@ -3217,6 +3388,11 @@ export function createDocument(options: DocumentOptions = {}): PdfDocument {
 
 /**
  * Opens an existing PDF for incremental edits such as appending pages, updating fields, changing structure metadata, and preserving existing bytes when possible.
+ *
+ * @param data The source PDF bytes to edit.
+ * @param options Parsing options, including the password for encrypted sources.
+ *
+ * @returns The mutable incremental editor.
  */
 export function editDocument(
   data: BinaryData,
@@ -3224,7 +3400,6 @@ export function editDocument(
 ): PdfEditableDocument {
   return new PdfEditableDocument(parseDocument(data, options));
 }
-
 
 function createOutlineModel(
   title: string,
@@ -3234,13 +3409,13 @@ function createOutlineModel(
   return {
     title: normalizeOutlineTitle(title),
     target:
-      typeof target === 'string'
+      typeof target === "string"
         ? {
-            type: 'named',
+            type: "named",
             name: normalizeDestinationName(target),
           }
         : {
-            type: 'page',
+            type: "page",
             target: target.toInternalModel(),
           },
     options: normalizeOutlineOptions(options),
@@ -3253,10 +3428,10 @@ function validateOutline(
   pageSet: ReadonlySet<InternalPageModel>,
   namedDestinations: ReadonlySet<string>,
 ): void {
-  if (outline.target.type === 'page' && !pageSet.has(outline.target.target)) {
+  if (outline.target.type === "page" && !pageSet.has(outline.target.target)) {
     throw new PdfEngineError(
       PdfErrorCode.INVALID_OUTLINE,
-      'Outline entries must target a page from the same document.',
+      "Outline entries must target a page from the same document.",
       {
         title: outline.title,
       },
@@ -3264,12 +3439,12 @@ function validateOutline(
   }
 
   if (
-    outline.target.type === 'named' &&
+    outline.target.type === "named" &&
     !namedDestinations.has(outline.target.name)
   ) {
     throw new PdfEngineError(
       PdfErrorCode.INVALID_OUTLINE,
-      'Outline entries must target an existing named destination.',
+      "Outline entries must target an existing named destination.",
       {
         title: outline.title,
         destination: outline.target.name,
@@ -3282,48 +3457,48 @@ function validateOutline(
   }
 }
 
-const EDITABLE_STRUCTURE_ROLES = new Set<Exclude<PdfStructureTag, 'Artifact'>>([
-  'P',
-  'H1',
-  'H2',
-  'H3',
-  'H4',
-  'H5',
-  'H6',
-  'Span',
-  'Quote',
-  'Note',
-  'Reference',
-  'BibEntry',
-  'Code',
-  'Lbl',
-  'LBody',
-  'Document',
-  'Part',
-  'Art',
-  'Sect',
-  'Div',
-  'BlockQuote',
-  'Caption',
-  'TOC',
-  'TOCI',
-  'Index',
-  'NonStruct',
-  'Private',
-  'L',
-  'LI',
-  'Table',
-  'THead',
-  'TBody',
-  'TFoot',
-  'TR',
-  'TH',
-  'TD',
-  'Link',
-  'Annot',
-  'Figure',
-  'Formula',
-  'Form',
+const EDITABLE_STRUCTURE_ROLES = new Set<Exclude<PdfStructureTag, "Artifact">>([
+  "P",
+  "H1",
+  "H2",
+  "H3",
+  "H4",
+  "H5",
+  "H6",
+  "Span",
+  "Quote",
+  "Note",
+  "Reference",
+  "BibEntry",
+  "Code",
+  "Lbl",
+  "LBody",
+  "Document",
+  "Part",
+  "Art",
+  "Sect",
+  "Div",
+  "BlockQuote",
+  "Caption",
+  "TOC",
+  "TOCI",
+  "Index",
+  "NonStruct",
+  "Private",
+  "L",
+  "LI",
+  "Table",
+  "THead",
+  "TBody",
+  "TFoot",
+  "TR",
+  "TH",
+  "TD",
+  "Link",
+  "Annot",
+  "Figure",
+  "Formula",
+  "Form",
 ]);
 
 function indexEditableStructureElement(
@@ -3353,13 +3528,13 @@ function indexEditableStructureChildOrder(
 
 function validateEditableStructureRole(
   role: string,
-): asserts role is Exclude<PdfStructureTag, 'Artifact'> {
+): asserts role is Exclude<PdfStructureTag, "Artifact"> {
   if (
-    !EDITABLE_STRUCTURE_ROLES.has(role as Exclude<PdfStructureTag, 'Artifact'>)
+    !EDITABLE_STRUCTURE_ROLES.has(role as Exclude<PdfStructureTag, "Artifact">)
   ) {
     throw new PdfEngineError(
       PdfErrorCode.INVALID_COMPLIANCE,
-      'Unsupported editable structure role.',
+      "Unsupported editable structure role.",
       {
         role,
       },
@@ -3392,9 +3567,12 @@ function createFlowState(
   const shorthand = resolveMarginShorthand(options.margin);
   const hasShorthand = options.margin !== undefined;
   const top = options.marginTop ?? (hasShorthand ? shorthand.top : fallback);
-  const right = options.marginRight ?? (hasShorthand ? shorthand.right : fallback);
-  const bottomMargin = options.marginBottom ?? (hasShorthand ? shorthand.bottom : fallback);
-  const leftMargin = options.marginLeft ?? (hasShorthand ? shorthand.left : fallback);
+  const right =
+    options.marginRight ?? (hasShorthand ? shorthand.right : fallback);
+  const bottomMargin =
+    options.marginBottom ?? (hasShorthand ? shorthand.bottom : fallback);
+  const leftMargin =
+    options.marginLeft ?? (hasShorthand ? shorthand.left : fallback);
   const x = options.x ?? leftMargin;
   const y = options.y ?? page.size.height - top;
   const width = options.width ?? page.size.width - x - right;
@@ -3459,7 +3637,9 @@ function resolveFlowSpacing(options: FlowOptions): RequiredFlowSpacingScale {
     paragraphBefore:
       spacing?.paragraphBefore ?? STANDARD_FLOW_SPACING.paragraphBefore,
     paragraphAfter:
-      spacing?.paragraphAfter ?? options.gap ?? STANDARD_FLOW_SPACING.paragraphAfter,
+      spacing?.paragraphAfter ??
+      options.gap ??
+      STANDARD_FLOW_SPACING.paragraphAfter,
     headingBefore: resolveHeadingSpacing(
       spacing?.headingBefore,
       STANDARD_FLOW_SPACING.headingBefore,
@@ -3471,20 +3651,23 @@ function resolveFlowSpacing(options: FlowOptions): RequiredFlowSpacingScale {
       options.gap,
     ),
     tableBefore: spacing?.tableBefore ?? STANDARD_FLOW_SPACING.tableBefore,
-    tableAfter: spacing?.tableAfter ?? options.gap ?? STANDARD_FLOW_SPACING.tableAfter,
+    tableAfter:
+      spacing?.tableAfter ?? options.gap ?? STANDARD_FLOW_SPACING.tableAfter,
     imageBefore: spacing?.imageBefore ?? STANDARD_FLOW_SPACING.imageBefore,
-    imageAfter: spacing?.imageAfter ?? options.gap ?? STANDARD_FLOW_SPACING.imageAfter,
+    imageAfter:
+      spacing?.imageAfter ?? options.gap ?? STANDARD_FLOW_SPACING.imageAfter,
     linkBefore: spacing?.linkBefore ?? STANDARD_FLOW_SPACING.linkBefore,
-    linkAfter: spacing?.linkAfter ?? options.gap ?? STANDARD_FLOW_SPACING.linkAfter,
+    linkAfter:
+      spacing?.linkAfter ?? options.gap ?? STANDARD_FLOW_SPACING.linkAfter,
   };
 }
 
 function resolveHeadingSpacing(
-  value: FlowSpacingScale['headingBefore'],
+  value: FlowSpacingScale["headingBefore"],
   defaults: Record<1 | 2 | 3 | 4 | 5 | 6, number>,
   legacyGap: number | undefined,
 ): Record<1 | 2 | 3 | 4 | 5 | 6, number> {
-  if (typeof value === 'number') {
+  if (typeof value === "number") {
     return {
       1: value,
       2: value,
@@ -3533,7 +3716,6 @@ function headingFontSize(level: 1 | 2 | 3 | 4 | 5 | 6): number {
   }
 }
 
-
 function validateManagedPages(
   pages: readonly InternalPageModel[],
   embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>,
@@ -3545,7 +3727,7 @@ function validateManagedPages(
     if (page.ops.length === 0 && page.annotations.length === 0) {
       throw new PdfEngineError(
         PdfErrorCode.EMPTY_PAGE,
-        'Each page must contain at least one drawing operation or annotation.',
+        "Each page must contain at least one drawing operation or annotation.",
         {
           pageIndex: index,
         },
@@ -3555,7 +3737,7 @@ function validateManagedPages(
     if (page.graphicsDepth !== 0) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_GRAPHICS_STATE,
-        'Every saveState() call must be balanced by restoreState().',
+        "Every saveState() call must be balanced by restoreState().",
         {
           pageIndex: index,
           depth: page.graphicsDepth,
@@ -3565,13 +3747,13 @@ function validateManagedPages(
 
     for (const op of page.ops) {
       if (
-        op.type === 'text' &&
-        typeof op.options.font !== 'string' &&
+        op.type === "text" &&
+        typeof op.options.font !== "string" &&
         !embeddedFonts.has(op.options.font.id)
       ) {
         throw new PdfEngineError(
           PdfErrorCode.INVALID_FONT,
-          'Embedded font must be registered with the same document via embedTrueTypeFont().',
+          "Embedded font must be registered with the same document via embedTrueTypeFont().",
           {
             fontId: op.options.font.id,
           },
@@ -3581,12 +3763,12 @@ function validateManagedPages(
 
     for (const annotation of page.annotations) {
       if (
-        annotation.type !== 'textField' &&
-        annotation.type !== 'checkBox' &&
-        annotation.type !== 'choiceField' &&
-        annotation.type !== 'radioGroup' &&
-        annotation.type !== 'pushButton' &&
-        annotation.type !== 'signatureField'
+        annotation.type !== "textField" &&
+        annotation.type !== "checkBox" &&
+        annotation.type !== "choiceField" &&
+        annotation.type !== "radioGroup" &&
+        annotation.type !== "pushButton" &&
+        annotation.type !== "signatureField"
       ) {
         continue;
       }
@@ -3594,7 +3776,7 @@ function validateManagedPages(
       if (fieldNames.has(annotation.name)) {
         throw new PdfEngineError(
           PdfErrorCode.INVALID_FORM_FIELD,
-          'Form field names must be unique within a document.',
+          "Form field names must be unique within a document.",
           {
             name: annotation.name,
           },
@@ -3636,7 +3818,7 @@ function validateEditableCompliance(
     return;
   }
 
-  if (conformance === 'pdfa-1b' && hasUpdatedXmpMetadata) {
+  if (conformance === "pdfa-1b" && hasUpdatedXmpMetadata) {
     if (
       updatedXmpMetadata === undefined ||
       !/pdfaid:part>\s*1\s*</.test(updatedXmpMetadata) ||
@@ -3644,7 +3826,7 @@ function validateEditableCompliance(
     ) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_COMPLIANCE,
-        'Incremental PDF/A-1b edits must retain PDF/A identification metadata in the XMP packet.',
+        "Incremental PDF/A-1b edits must retain PDF/A identification metadata in the XMP packet.",
       );
     }
   }
@@ -3659,7 +3841,7 @@ function validateEditableCompliance(
     hasFigureWithoutAltText: hasTaggedFiguresWithoutAltText(mutatedPages),
     hasTransparency: hasTransparentImageContent(mutatedPages),
   });
-  const errors = issues.filter((issue) => issue.severity === 'error');
+  const errors = issues.filter((issue) => issue.severity === "error");
   if (errors.length > 0) {
     throw new PdfEngineError(
       PdfErrorCode.INVALID_COMPLIANCE,
@@ -3676,8 +3858,8 @@ function hasTaggedPageContent(pages: readonly InternalPageModel[]): boolean {
     (page) =>
       page.ops.some(
         (op) =>
-          (op.type === 'text' && op.options.tag !== undefined) ||
-          (op.type === 'image' &&
+          (op.type === "text" && op.options.tag !== undefined) ||
+          (op.type === "image" &&
             (op.options.altText !== undefined || op.options.tag !== undefined)),
       ) ||
       page.annotations.some(
@@ -3690,14 +3872,14 @@ function usesBuiltInFonts(pages: readonly InternalPageModel[]): boolean {
   return pages.some(
     (page) =>
       page.ops.some(
-        (op) => op.type === 'text' && typeof op.options.font === 'string',
+        (op) => op.type === "text" && typeof op.options.font === "string",
       ) ||
       page.annotations.some(
         (annotation) =>
-          annotation.type === 'textField' ||
-          annotation.type === 'choiceField' ||
-          annotation.type === 'freeText' ||
-          annotation.type === 'pushButton',
+          annotation.type === "textField" ||
+          annotation.type === "choiceField" ||
+          annotation.type === "freeText" ||
+          annotation.type === "pushButton",
       ),
   );
 }
@@ -3708,8 +3890,8 @@ function hasTaggedFiguresWithoutAltText(
   return pages.some((page) =>
     page.ops.some(
       (op) =>
-        op.type === 'image' &&
-        (op.options.tag === 'Figure' || op.options.altText !== undefined) &&
+        op.type === "image" &&
+        (op.options.tag === "Figure" || op.options.altText !== undefined) &&
         op.options.altText === undefined,
     ),
   );
@@ -3721,24 +3903,28 @@ function hasTransparentImageContent(
   return pages.some((page) =>
     page.ops.some(
       (op) =>
-        op.type === 'image' &&
-        op.image.kind === 'png' &&
+        op.type === "image" &&
+        op.image.kind === "png" &&
         (op.image.alphaBytes !== undefined || op.image.mask !== undefined),
     ),
   );
 }
 
-function resolveDefaultEditablePageSize(
-  base: ParsedPdfDocument,
-): { width: number; height: number } | 'A4' {
+function resolveDefaultEditablePageSize(base: ParsedPdfDocument):
+  | {
+      /** Width in PDF points. */
+      width: number; /** Height in PDF points. */
+      height: number;
+    }
+  | "A4" {
   const lastPage = base.listPages()[base.listPages().length - 1];
   if (lastPage?.mediaBox?.length !== 4) {
-    return 'A4';
+    return "A4";
   }
 
   const [, , width, height] = lastPage.mediaBox;
   if (width === undefined || height === undefined) {
-    return 'A4';
+    return "A4";
   }
 
   return { width, height };
@@ -3747,15 +3933,21 @@ function resolveDefaultEditablePageSize(
 function resolveEditablePageSize(
   base: ParsedPdfDocument,
   objectId: number,
-): { width: number; height: number } | 'A4' {
+):
+  | {
+      /** Width in PDF points. */
+      width: number; /** Height in PDF points. */
+      height: number;
+    }
+  | "A4" {
   const page = base.listPages().find((entry) => entry.objectId === objectId);
   if (page?.mediaBox?.length !== 4) {
-    return 'A4';
+    return "A4";
   }
 
   const [, , width, height] = page.mediaBox;
   if (width === undefined || height === undefined) {
-    return 'A4';
+    return "A4";
   }
 
   return { width, height };
@@ -3806,7 +3998,7 @@ function hasEditablePageChanges(
     pageOrder.length !== basePageObjectIds.length ||
     pageOrder.some(
       (entry, index) =>
-        entry.kind !== 'existing' ||
+        entry.kind !== "existing" ||
         entry.objectId !== basePageObjectIds[index],
     )
   );
@@ -3829,7 +4021,7 @@ function listRetainedBaseFields(
     pageOrder
       .filter(
         (entry): entry is EditableExistingPageEntry =>
-          entry.kind === 'existing',
+          entry.kind === "existing",
       )
       .map((entry) => entry.objectId),
   );
@@ -3850,12 +4042,17 @@ function resolveEditableFieldTarget(
   name: string,
 ):
   | {
-      source: 'existing';
+      /** Source. */
+      source: "existing";
+      /** Field. */
       field: ReturnType<typeof listRetainedBaseFields>[number];
+      /** On state name. */
       onStateName?: string | undefined;
     }
   | {
-      source: 'appended';
+      /** Source. */
+      source: "appended";
+      /** Annotation. */
       annotation:
         | TextFieldAnnotation
         | CheckBoxAnnotation
@@ -3864,12 +4061,17 @@ function resolveEditableFieldTarget(
     } {
   const matches: Array<
     | {
-        source: 'existing';
+        /** Source. */
+        source: "existing";
+        /** Field. */
         field: ReturnType<typeof listRetainedBaseFields>[number];
+        /** On state name. */
         onStateName?: string | undefined;
       }
     | {
-        source: 'appended';
+        /** Source. */
+        source: "appended";
+        /** Annotation. */
         annotation:
           | TextFieldAnnotation
           | CheckBoxAnnotation
@@ -3884,9 +4086,9 @@ function resolveEditableFieldTarget(
     }
 
     matches.push({
-      source: 'existing',
+      source: "existing",
       field,
-      ...(field.fieldType === 'Btn'
+      ...(field.fieldType === "Btn"
         ? {
             onStateName: resolveExistingCheckBoxOnStateName(
               base,
@@ -3900,14 +4102,14 @@ function resolveEditableFieldTarget(
   for (const page of appendedPages) {
     for (const annotation of page.annotations) {
       if (
-        (annotation.type === 'textField' ||
-          annotation.type === 'checkBox' ||
-          annotation.type === 'choiceField' ||
-          annotation.type === 'radioGroup') &&
+        (annotation.type === "textField" ||
+          annotation.type === "checkBox" ||
+          annotation.type === "choiceField" ||
+          annotation.type === "radioGroup") &&
         annotation.name === name
       ) {
         matches.push({
-          source: 'appended',
+          source: "appended",
           annotation,
         });
       }
@@ -3917,7 +4119,7 @@ function resolveEditableFieldTarget(
   if (matches.length === 0) {
     throw new PdfEngineError(
       PdfErrorCode.INVALID_FORM_FIELD,
-      'Form field could not be found in the edited document.',
+      "Form field could not be found in the edited document.",
       {
         name,
       },
@@ -3927,7 +4129,7 @@ function resolveEditableFieldTarget(
   if (matches.length > 1) {
     throw new PdfEngineError(
       PdfErrorCode.INVALID_FORM_FIELD,
-      'Form field names must be unique when updating by name.',
+      "Form field names must be unique when updating by name.",
       {
         name,
       },
@@ -3938,7 +4140,7 @@ function resolveEditableFieldTarget(
   if (!match) {
     throw new PdfEngineError(
       PdfErrorCode.INVALID_FORM_FIELD,
-      'Form field match could not be resolved.',
+      "Form field match could not be resolved.",
       {
         name,
       },
@@ -3957,16 +4159,16 @@ function resolveExistingCheckBoxOnStateName(
     return undefined;
   }
 
-  const apEntry = fieldValue.find(([key]) => key === 'AP')?.[1];
+  const apEntry = fieldValue.find(([key]) => key === "AP")?.[1];
   if (!isPdfDictEntries(apEntry)) {
     return undefined;
   }
 
-  const normalAppearance = apEntry.find(([key]) => key === 'N')?.[1];
+  const normalAppearance = apEntry.find(([key]) => key === "N")?.[1];
   if (!isPdfDictEntries(normalAppearance)) {
     return undefined;
   }
 
-  const onState = normalAppearance.find(([key]) => key !== 'Off')?.[0];
+  const onState = normalAppearance.find(([key]) => key !== "Off")?.[0];
   return onState;
 }

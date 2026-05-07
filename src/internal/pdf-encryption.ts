@@ -23,12 +23,15 @@ export interface PdfEncryptionContext {
   readonly fileId: Uint8Array;
   readonly algorithm: NormalizedDocumentEncryption["algorithm"];
   readonly version: 1 | 2 | 4 | 5;
-  readonly revision: 2 | 3 | 4 | 5;
+  readonly revision: 2 | 3 | 4 | 5 | 6;
   readonly keyLengthBytes: number;
   readonly permissionsValue: number;
   readonly ownerKey: Uint8Array;
   readonly userKey: Uint8Array;
   readonly documentKey: Uint8Array;
+  readonly ownerEncryptionKey?: Uint8Array | undefined;
+  readonly userEncryptionKey?: Uint8Array | undefined;
+  readonly permsEncrypted?: Uint8Array | undefined;
 }
 
 export interface PdfObjectCipher {
@@ -40,11 +43,14 @@ export interface OpenPdfEncryptionContextOptions {
   readonly fileId: Uint8Array;
   readonly algorithm?: NormalizedDocumentEncryption["algorithm"] | undefined;
   readonly version: 1 | 2 | 4 | 5;
-  readonly revision: 2 | 3 | 4 | 5;
+  readonly revision: 2 | 3 | 4 | 5 | 6;
   readonly keyLengthBytes: number;
   readonly permissionsValue: number;
   readonly ownerKey: Uint8Array;
   readonly userKey: Uint8Array;
+  readonly ownerEncryptionKey?: Uint8Array | undefined;
+  readonly userEncryptionKey?: Uint8Array | undefined;
+  readonly permsEncrypted?: Uint8Array | undefined;
 }
 
 export function createDocumentFileId(seed: Uint8Array): Uint8Array {
@@ -55,10 +61,15 @@ export function createPdfEncryptionContext(
   encryption: NormalizedDocumentEncryption,
   fileId: Uint8Array
 ): PdfEncryptionContext {
+  if (encryption.revision === 6) {
+    return createR6EncryptionContext(encryption, fileId);
+  }
+
+  const legacyRevision = encryption.revision as 2 | 3 | 4 | 5;
   const ownerKey = computeOwnerKey(
     encryption.ownerPassword,
     encryption.userPassword,
-    encryption.revision,
+    legacyRevision,
     encryption.keyLengthBytes
   );
   const permissionsValue = computePermissionsValue(encryption.permissions);
@@ -67,10 +78,10 @@ export function createPdfEncryptionContext(
     ownerKey,
     permissionsValue,
     fileId,
-    encryption.revision,
+    legacyRevision,
     encryption.keyLengthBytes
   );
-  const userKey = computeUserKey(documentKey, fileId, encryption.revision);
+  const userKey = computeUserKey(documentKey, fileId, legacyRevision);
 
   return {
     fileId,
@@ -86,20 +97,25 @@ export function createPdfEncryptionContext(
 }
 
 export function openPdfEncryptionContext(options: OpenPdfEncryptionContextOptions): PdfEncryptionContext | undefined {
+  if (options.revision === 6) {
+    return openR6EncryptionContext(options);
+  }
+
+  const legacyRevision = options.revision as 2 | 3 | 4 | 5;
   const userPasswordDocumentKey = computeDocumentKey(
     padPassword(options.password),
     options.ownerKey,
     options.permissionsValue,
     options.fileId,
-    options.revision,
+    legacyRevision,
     options.keyLengthBytes
   );
-  if (matchesUserKey(computeUserKey(userPasswordDocumentKey, options.fileId, options.revision), options.userKey, options.revision)) {
+  if (matchesUserKey(computeUserKey(userPasswordDocumentKey, options.fileId, legacyRevision), options.userKey, legacyRevision)) {
     return {
       fileId: options.fileId,
-      algorithm: options.algorithm ?? (options.revision >= 4 ? "aes-128" : options.revision === 2 ? "rc4-40" : "rc4-128"),
+      algorithm: options.algorithm ?? (legacyRevision >= 4 ? "aes-128" : legacyRevision === 2 ? "rc4-40" : "rc4-128"),
       version: options.version,
-      revision: options.revision,
+      revision: legacyRevision,
       keyLengthBytes: options.keyLengthBytes,
       permissionsValue: options.permissionsValue,
       ownerKey: options.ownerKey,
@@ -111,7 +127,7 @@ export function openPdfEncryptionContext(options: OpenPdfEncryptionContextOption
   const paddedUserPassword = recoverPaddedUserPassword(
     options.password,
     options.ownerKey,
-    options.revision,
+    legacyRevision,
     options.keyLengthBytes
   );
   const ownerPasswordDocumentKey = computeDocumentKey(
@@ -119,18 +135,18 @@ export function openPdfEncryptionContext(options: OpenPdfEncryptionContextOption
     options.ownerKey,
     options.permissionsValue,
     options.fileId,
-    options.revision,
+    legacyRevision,
     options.keyLengthBytes
   );
-  if (!matchesUserKey(computeUserKey(ownerPasswordDocumentKey, options.fileId, options.revision), options.userKey, options.revision)) {
+  if (!matchesUserKey(computeUserKey(ownerPasswordDocumentKey, options.fileId, legacyRevision), options.userKey, legacyRevision)) {
     return undefined;
   }
 
   return {
     fileId: options.fileId,
-    algorithm: options.algorithm ?? (options.revision >= 4 ? "aes-128" : options.revision === 2 ? "rc4-40" : "rc4-128"),
+    algorithm: options.algorithm ?? (legacyRevision >= 4 ? "aes-128" : legacyRevision === 2 ? "rc4-40" : "rc4-128"),
     version: options.version,
-    revision: options.revision,
+    revision: legacyRevision,
     keyLengthBytes: options.keyLengthBytes,
     permissionsValue: options.permissionsValue,
     ownerKey: options.ownerKey,
@@ -157,6 +173,10 @@ export function createCipherForObject(
   objectId: number,
   generation: number
 ): PdfObjectCipher {
+  if (context.revision === 6) {
+    return createAesCbcCipher(context.documentKey.subarray(0, 32));
+  }
+
   const keyMaterial = concatBytes(
     context.documentKey,
     Uint8Array.from([
@@ -168,9 +188,9 @@ export function createCipherForObject(
     ])
   );
   const objectKey = md5(keyMaterial).subarray(0, Math.min(context.documentKey.length + 5, 16));
-  if (context.algorithm === "aes-128" || context.algorithm === "aes-256") {
+  if (context.algorithm === "aes-128" || context.algorithm === "aes-256" || context.algorithm === "aes-256-r6") {
     const aesKeyMaterial = concatBytes(keyMaterial, latin1Bytes("sAlT"));
-    const aesObjectKey = context.algorithm === "aes-256"
+    const aesObjectKey = (context.algorithm === "aes-256" || context.algorithm === "aes-256-r6")
       ? context.documentKey.subarray(0, 32)
       : md5(aesKeyMaterial).subarray(0, 16);
     return createAesCbcCipher(aesObjectKey);
@@ -188,7 +208,11 @@ export function decryptBytesForObject(
     return bytes;
   }
 
-  if (context.algorithm !== "aes-128" && context.algorithm !== "aes-256") {
+  if (context.revision === 6) {
+    return aesCbcDecrypt(context.documentKey.subarray(0, 32), bytes);
+  }
+
+  if (context.algorithm !== "aes-128" && context.algorithm !== "aes-256" && context.algorithm !== "aes-256-r6") {
     return encryptBytesForObject(context, objectId, generation, bytes);
   }
 
@@ -202,7 +226,7 @@ export function decryptBytesForObject(
       (generation >>> 8) & 0xff
     ])
   );
-  const aesObjectKey = context.algorithm === "aes-256"
+  const aesObjectKey = (context.algorithm === "aes-256" || context.algorithm === "aes-256-r6")
     ? context.documentKey.subarray(0, 32)
     : md5(concatBytes(keyMaterial, latin1Bytes("sAlT"))).subarray(0, 16);
   return aesCbcDecrypt(aesObjectKey, bytes);
@@ -591,4 +615,204 @@ function writeLittleEndian32(buffer: Uint8Array, offset: number, value: number):
   buffer[offset + 1] = (normalized >>> 8) & 0xff;
   buffer[offset + 2] = (normalized >>> 16) & 0xff;
   buffer[offset + 3] = (normalized >>> 24) & 0xff;
+}
+
+// === PDF 2.0 R=6 (ISO 32000-2 §7.6.4) ===
+
+function saslprepPassword(password: string): Uint8Array {
+  // RFC 4013 SASLprep: map non-ASCII space to U+0020; map "commonly mapped to nothing" (RFC 3454 B.1) to nothing; NFKC normalize.
+  const mapped: number[] = [];
+  for (const codePoint of password) {
+    const cp = codePoint.codePointAt(0)!;
+    // RFC 3454 C.1.2 non-ASCII space → SPACE
+    if (cp === 0x00a0 || cp === 0x1680 || (cp >= 0x2000 && cp <= 0x200b) || cp === 0x202f || cp === 0x205f || cp === 0x3000) {
+      mapped.push(0x20);
+      continue;
+    }
+    // RFC 3454 B.1 mapped to nothing
+    if (cp === 0x00ad || cp === 0x034f || cp === 0x1806 || (cp >= 0x180b && cp <= 0x180d) || (cp >= 0x200b && cp <= 0x200d) || cp === 0x2060 || (cp >= 0xfe00 && cp <= 0xfe0f) || cp === 0xfeff) {
+      continue;
+    }
+    mapped.push(cp);
+  }
+  const normalized = String.fromCodePoint(...mapped).normalize("NFKC");
+  const utf8 = new TextEncoder().encode(normalized);
+  return utf8.length > 127 ? utf8.subarray(0, 127) : utf8;
+}
+
+function shaHash(algorithm: "sha256" | "sha384" | "sha512", data: Uint8Array): Uint8Array {
+  const crypto = getNodeCrypto();
+  const hash = (crypto as unknown as { createHash(name: string): { update(data: Uint8Array): { digest(): Uint8Array } } }).createHash(algorithm);
+  return Uint8Array.from(hash.update(data).digest());
+}
+
+function aesCbcNoPad(key: Uint8Array, iv: Uint8Array, data: Uint8Array, encrypt: boolean): Uint8Array {
+  const crypto = getNodeCrypto() as unknown as {
+    createCipheriv(name: string, key: Uint8Array, iv: Uint8Array): { setAutoPadding(pad: boolean): void; update(d: Uint8Array): Uint8Array; final(): Uint8Array };
+    createDecipheriv(name: string, key: Uint8Array, iv: Uint8Array): { setAutoPadding(pad: boolean): void; update(d: Uint8Array): Uint8Array; final(): Uint8Array };
+  };
+  const algName = key.length === 32 ? "aes-256-cbc" : "aes-128-cbc";
+  const cipher = encrypt ? crypto.createCipheriv(algName, key, iv) : crypto.createDecipheriv(algName, key, iv);
+  cipher.setAutoPadding(false);
+  return concatBytes(cipher.update(data), cipher.final());
+}
+
+// ISO 32000-2 §7.6.4.3.4 Algorithm 2.B
+function algorithm2B(password: Uint8Array, salt: Uint8Array, additional: Uint8Array): Uint8Array {
+  let K = shaHash("sha256", concatBytes(password, salt, additional));
+  let round = 0;
+  while (true) {
+    const repeated = concatBytes(password, K, additional);
+    const K1 = new Uint8Array(repeated.length * 64);
+    for (let i = 0; i < 64; i += 1) {
+      K1.set(repeated, i * repeated.length);
+    }
+    const aesKey = K.subarray(0, 16);
+    const iv = K.subarray(16, 32);
+    const E = aesCbcNoPad(aesKey, iv, K1, true);
+
+    let sum = 0;
+    for (let i = 0; i < 16; i += 1) sum += E[i]!;
+    const mod3 = sum % 3;
+    const next: "sha256" | "sha384" | "sha512" = mod3 === 0 ? "sha256" : mod3 === 1 ? "sha384" : "sha512";
+    K = shaHash(next, E);
+    round += 1;
+    if (round >= 64 && E[E.length - 1]! <= round - 32) {
+      break;
+    }
+  }
+  return K.subarray(0, 32);
+}
+
+function createR6EncryptionContext(
+  encryption: NormalizedDocumentEncryption,
+  fileId: Uint8Array
+): PdfEncryptionContext {
+  const userPwd = saslprepPassword(encryption.userPassword);
+  const ownerPwd = saslprepPassword(encryption.ownerPassword);
+  const fileEncryptionKey = randomBytes(32);
+
+  const userValidationSalt = randomBytes(8);
+  const userKeySalt = randomBytes(8);
+  const ownerValidationSalt = randomBytes(8);
+  const ownerKeySalt = randomBytes(8);
+
+  const empty = new Uint8Array(0);
+
+  const userHash = algorithm2B(userPwd, userValidationSalt, empty);
+  const userKey = concatBytes(userHash, userValidationSalt, userKeySalt);
+
+  const userIntermediate = algorithm2B(userPwd, userKeySalt, empty);
+  const userEncryptionKey = aesCbcNoPad(userIntermediate, new Uint8Array(16), fileEncryptionKey, true);
+
+  const ownerHash = algorithm2B(ownerPwd, ownerValidationSalt, userKey);
+  const ownerKey = concatBytes(ownerHash, ownerValidationSalt, ownerKeySalt);
+
+  const ownerIntermediate = algorithm2B(ownerPwd, ownerKeySalt, userKey);
+  const ownerEncryptionKey = aesCbcNoPad(ownerIntermediate, new Uint8Array(16), fileEncryptionKey, true);
+
+  const permissionsValue = computePermissionsValue(encryption.permissions);
+  const permsBlock = buildR6PermsBlock(permissionsValue, true);
+  const permsEncrypted = aesCbcNoPad(fileEncryptionKey, new Uint8Array(16), permsBlock, true);
+
+  return {
+    fileId,
+    algorithm: encryption.algorithm,
+    version: encryption.version,
+    revision: 6,
+    keyLengthBytes: encryption.keyLengthBytes,
+    permissionsValue,
+    ownerKey,
+    userKey,
+    documentKey: fileEncryptionKey,
+    ownerEncryptionKey,
+    userEncryptionKey,
+    permsEncrypted
+  };
+}
+
+function buildR6PermsBlock(permissionsValue: number, encryptMetadata: boolean): Uint8Array {
+  const block = new Uint8Array(16);
+  const p = permissionsValue >>> 0;
+  block[0] = p & 0xff;
+  block[1] = (p >>> 8) & 0xff;
+  block[2] = (p >>> 16) & 0xff;
+  block[3] = (p >>> 24) & 0xff;
+  block[4] = 0xff;
+  block[5] = 0xff;
+  block[6] = 0xff;
+  block[7] = 0xff;
+  block[8] = encryptMetadata ? 0x54 /* 'T' */ : 0x46 /* 'F' */;
+  block[9] = 0x61; // 'a'
+  block[10] = 0x64; // 'd'
+  block[11] = 0x62; // 'b'
+  const tail = randomBytes(4);
+  block[12] = tail[0]!;
+  block[13] = tail[1]!;
+  block[14] = tail[2]!;
+  block[15] = tail[3]!;
+  return block;
+}
+
+function openR6EncryptionContext(options: OpenPdfEncryptionContextOptions): PdfEncryptionContext | undefined {
+  if (options.userKey.length < 48 || options.ownerKey.length < 48) {
+    return undefined;
+  }
+  if (options.userEncryptionKey === undefined || options.ownerEncryptionKey === undefined) {
+    return undefined;
+  }
+
+  const password = saslprepPassword(options.password);
+  const userValidationSalt = options.userKey.subarray(32, 40);
+  const userKeySalt = options.userKey.subarray(40, 48);
+  const ownerValidationSalt = options.ownerKey.subarray(32, 40);
+  const ownerKeySalt = options.ownerKey.subarray(40, 48);
+  const empty = new Uint8Array(0);
+
+  let fileEncryptionKey: Uint8Array | undefined;
+
+  // Try user password first.
+  const userHash = algorithm2B(password, userValidationSalt, empty);
+  if (bytesEqual(userHash, options.userKey.subarray(0, 32))) {
+    const userIntermediate = algorithm2B(password, userKeySalt, empty);
+    fileEncryptionKey = aesCbcNoPad(userIntermediate, new Uint8Array(16), options.userEncryptionKey, false);
+  } else {
+    // Try owner password.
+    const ownerHash = algorithm2B(password, ownerValidationSalt, options.userKey);
+    if (bytesEqual(ownerHash, options.ownerKey.subarray(0, 32))) {
+      const ownerIntermediate = algorithm2B(password, ownerKeySalt, options.userKey);
+      fileEncryptionKey = aesCbcNoPad(ownerIntermediate, new Uint8Array(16), options.ownerEncryptionKey, false);
+    }
+  }
+
+  if (fileEncryptionKey === undefined) {
+    return undefined;
+  }
+
+  // ISO 32000-2 §7.6.4.4.10 Algorithm 13: validate Perms block.
+  if (options.permsEncrypted !== undefined && options.permsEncrypted.length === 16) {
+    const decrypted = aesCbcNoPad(fileEncryptionKey, new Uint8Array(16), options.permsEncrypted, false);
+    if (decrypted[9] !== 0x61 || decrypted[10] !== 0x64 || decrypted[11] !== 0x62) {
+      return undefined;
+    }
+    const decodedP = ((decrypted[0]! | (decrypted[1]! << 8) | (decrypted[2]! << 16) | (decrypted[3]! << 24)) | 0);
+    if (decodedP !== (options.permissionsValue | 0)) {
+      return undefined;
+    }
+  }
+
+  return {
+    fileId: options.fileId,
+    algorithm: options.algorithm ?? "aes-256-r6",
+    version: options.version,
+    revision: 6,
+    keyLengthBytes: options.keyLengthBytes,
+    permissionsValue: options.permissionsValue,
+    ownerKey: options.ownerKey,
+    userKey: options.userKey,
+    documentKey: fileEncryptionKey,
+    ...(options.ownerEncryptionKey !== undefined ? { ownerEncryptionKey: options.ownerEncryptionKey } : {}),
+    ...(options.userEncryptionKey !== undefined ? { userEncryptionKey: options.userEncryptionKey } : {}),
+    ...(options.permsEncrypted !== undefined ? { permsEncrypted: options.permsEncrypted } : {})
+  };
 }
