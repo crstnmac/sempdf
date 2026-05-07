@@ -33,6 +33,10 @@
     "example:pdf2-encryption": "npm run build && node dist/examples/pdf2-encryption.js",
     "example:pdf2-tagged": "npm run build && node dist/examples/pdf2-tagged.js",
     "example:pdf-version": "npm run build && node dist/examples/pdf-version-autodetect.js",
+    "example:cookbook-invoice": "npm run build && node dist/examples/cookbook-invoice.js",
+    "example:cookbook-ticket": "npm run build && node dist/examples/cookbook-ticket.js",
+    "example:cookbook-certificate": "npm run build && node dist/examples/cookbook-certificate.js",
+    "example:cookbook-report": "npm run build && node dist/examples/cookbook-multi-column-report.js",
     "example:web": "npm run build && node examples/website/server.mjs"
   },
   "keywords": [
