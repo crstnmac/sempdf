@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 
-import { appendPages, BufferSink, createDocument, editDocument, extractPages, mergeDocuments, PAGE_SIZES, parseDocument, PdfEngineError, PdfErrorCode, rgb, splitDocument } from "../src/index.js";
+import { appendPages, BufferSink, cmyk, createDocument, editDocument, extractPages, mergeDocuments, PAGE_SIZES, parseDocument, PdfEngineError, PdfErrorCode, rgb, splitDocument } from "../src/index.js";
 import { StreamingByteWriter } from "../src/internal/streaming-byte-writer.js";
 import { inspectPdf } from "../src/internal/inspect.js";
 import { makeKerningPairKey, measureTextWidth } from "../src/internal/text-layout.js";
@@ -434,6 +434,7 @@ test("streams encrypted generated documents with lazy encrypted streams", async 
       modificationDate: "D:20260413213000Z"
     },
     encryption: {
+      algorithm: "aes-128",
       userPassword: "reader",
       ownerPassword: "owner"
     }
@@ -448,6 +449,7 @@ test("streams encrypted generated documents with lazy encrypted streams", async 
 
   assert.equal(parsed.getMetadata().title, "Encrypted Sink Output");
   assert.equal(parsed.getPageCount(), 1);
+  assert.match(text, /\/CFM \/AESV2/);
   assert.equal(text.includes("Secret sink"), false);
   assert.match(text, /\/Length \d+ 0 R/);
 });
@@ -641,6 +643,23 @@ test("uses embedded fallback fonts inside wrapped text blocks", () => {
   assert.match(text, /1 0 0 1 36 700 Tm/);
   assert.match(text, /1 0 0 1 36 686 Tm/);
   assert.match(text, /\/Subtype \/Type0/);
+});
+
+test("serializes embedded TrueType text with compact CID remapping", () => {
+  const fontPath = findTrueTypeFixturePath();
+  if (!fontPath) {
+    return;
+  }
+
+  const doc = createDocument();
+  const font = doc.embedTrueTypeFont(readFileSync(fontPath), { family: "CompactCid" });
+  doc.addPage().text("AZ", { x: 36, y: 700, font });
+
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/CIDToGIDMap \d+ 0 R/);
+  assert.doesNotMatch(text, /\/CIDToGIDMap \/Identity/);
+  assert.match(text, /<00010002> Tj/);
+  assert.match(text, /<0001> <00[0-9A-F]{2}>/);
 });
 
 test("anchors rtl single-line text from the right edge", () => {
@@ -2289,6 +2308,29 @@ test("defaults password-protected PDFs to rc4-128 protection", () => {
   assert.equal(parseDocument(bytes, { password: "reader" }).getMetadata().title, "Protected 128");
 });
 
+test("serializes and parses AES password-protected PDFs", () => {
+  for (const algorithm of ["aes-128", "aes-256"] as const) {
+    const doc = createDocument({
+      info: { title: `Protected ${algorithm}` },
+      encryption: {
+        algorithm,
+        userPassword: "reader",
+        ownerPassword: "owner-secret"
+      }
+    });
+
+    doc.addPage({ size: "Letter" }).text(`Secret ${algorithm}`, { x: 24, y: 700 });
+    const bytes = doc.toUint8Array();
+    const text = new TextDecoder().decode(bytes);
+
+    assert.match(text, new RegExp(`/CFM /${algorithm === "aes-256" ? "AESV3" : "AESV2"}`));
+    assert.match(text, new RegExp(`/Length ${algorithm === "aes-256" ? "256" : "128"}`));
+    assert.equal(text.includes(`Secret ${algorithm}`), false);
+    assert.equal(parseDocument(bytes, { password: "reader" }).getMetadata().title, `Protected ${algorithm}`);
+    assert.equal(parseDocument(bytes, { password: "owner-secret" }).getPageCount(), 1);
+  }
+});
+
 test("incrementally edits encrypted PDFs and preserves encryption", () => {
   const base = createDocument({
     info: {
@@ -3421,6 +3463,42 @@ test("incrementally edits xref-stream PDFs by appending a new revision xref stre
   assert.match(text, /\/Prev \d+/);
 });
 
+test("serializes generated PDFs with compressed object streams when requested", () => {
+  const doc = createDocument({ objectStreams: true, compress: true });
+  const page = doc.addPage();
+  page.text("Object stream body", { x: 36, y: 700 });
+  page.note({ x: 36, y: 660, contents: "Packed objects" });
+
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+  const parsed = parseDocument(bytes);
+
+  assert.match(text, /%PDF-1\.5/);
+  assert.match(text, /\/Type \/ObjStm/);
+  assert.match(text, /\/Type \/XRef/);
+  assert.equal(parsed.getPageCount(), 1);
+});
+
+test("serializes encrypted generated PDFs with object streams", () => {
+  const doc = createDocument({
+    objectStreams: true,
+    compress: true,
+    encryption: {
+      algorithm: "aes-128",
+      userPassword: "reader"
+    }
+  });
+  doc.addPage().text("Encrypted object stream body", { x: 36, y: 700 });
+
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+  const parsed = parseDocument(bytes, { password: "reader" });
+
+  assert.match(text, /\/Type \/ObjStm/);
+  assert.match(text, /\/CFM \/AESV2/);
+  assert.equal(parsed.getPageCount(), 1);
+});
+
 test("incrementally adds XMP metadata to xref-stream PDFs", () => {
   const xmpMetadata =
     '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>XRef Stream</dc:title></rdf:Description></rdf:RDF></x:xmpmeta>';
@@ -3461,6 +3539,33 @@ test("serializes highlight, note, and free text annotations", () => {
   assert.match(text, /\/Subtype \/FreeText/);
 });
 
+test("serializes CMYK colors and custom ICC output intents", () => {
+  const icc = Uint8Array.from([0, 1, 2, 3, 4, 5, 6, 7]);
+  const doc = createDocument({
+    outputIntent: {
+      profile: icc,
+      outputConditionIdentifier: "Fixture CMYK",
+      info: "Fixture press profile",
+      alternate: "DeviceCMYK",
+      channels: 4
+    }
+  });
+  const page = doc.addPage();
+  page.text("CMYK", { x: 36, y: 700, color: cmyk(0.1, 0.2, 0.3, 0.4) });
+  page.path([{ type: "rect", x: 36, y: 640, width: 80, height: 24 }], {
+    paint: "fillStroke",
+    fill: { color: cmyk(0, 0.1, 0.2, 0.3) },
+    stroke: { color: cmyk(0.4, 0.3, 0.2, 0.1) }
+  });
+
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /0\.1 0\.2 0\.3 0\.4 k/);
+  assert.match(text, /0\.4 0\.3 0\.2 0\.1 K/);
+  assert.match(text, /\/OutputConditionIdentifier \(Fixture CMYK\)/);
+  assert.match(text, /\/N 4/);
+  assert.match(text, /\/Alternate \/DeviceCMYK/);
+});
+
 test("serializes push buttons and signature fields through AcroForm", () => {
   const doc = createDocument();
   const page = doc.addPage();
@@ -3475,6 +3580,60 @@ test("serializes push buttons and signature fields through AcroForm", () => {
 
   assert.equal(pushButton?.buttonKind, "pushButton");
   assert.equal(signatureField?.fieldType, "Sig");
+});
+
+test("applies detached digital signatures with patched byte ranges", () => {
+  let signedInput: Uint8Array | undefined;
+  const cms = Uint8Array.from([0xde, 0xad, 0xbe, 0xef]);
+  const doc = createDocument({
+    signature: {
+      fieldName: "approval",
+      reason: "Reviewed",
+      placeholderBytes: 256,
+      sign(bytes) {
+        signedInput = bytes.slice();
+        return cms;
+      }
+    }
+  });
+  doc.addPage().text("Signed payload", { x: 36, y: 700 });
+
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+  const byteRange = /\/ByteRange \[0\s+(\d+)\s+(\d+)\s+(\d+)\]/.exec(text);
+
+  assert.ok(byteRange);
+  assert.ok(signedInput);
+  assert.match(text, /\/FT \/Sig/);
+  assert.match(text, /\/SubFilter \/adbe\.pkcs7\.detached/);
+  assert.match(text, /\/Reason \(Reviewed\)/);
+  assert.match(text, /\/Contents <DEADBEEF0+/);
+  assert.equal(Number(byteRange[1]) + Number(byteRange[3]), signedInput!.length);
+});
+
+test("applies detached digital signatures as incremental updates", () => {
+  const base = createDocument();
+  base.addPage().text("Base signed payload", { x: 36, y: 700 });
+
+  let signedInput: Uint8Array | undefined;
+  const editable = editDocument(base.toUint8Array());
+  editable.sign({
+    fieldName: "incremental-approval",
+    placeholderBytes: 128,
+    sign(bytes) {
+      signedInput = bytes.slice();
+      return Uint8Array.from([0xca, 0xfe]);
+    }
+  });
+
+  const bytes = editable.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+  const parsed = parseDocument(bytes);
+
+  assert.ok(signedInput);
+  assert.match(text, /\/Prev \d+/);
+  assert.match(text, /\/Contents <CAFE0+/);
+  assert.equal(parsed.listFormFields().some((field) => field.name === "incremental-approval" && field.fieldType === "Sig"), true);
 });
 
 test("flattens existing AcroForm widgets into static page content", () => {

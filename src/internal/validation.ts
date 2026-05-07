@@ -42,9 +42,9 @@ export interface NormalizedDocumentEncryption {
   ownerPassword: string;
   permissions: NormalizedDocumentPermissions;
   algorithm: DocumentEncryptionAlgorithm;
-  version: 1 | 2;
-  revision: 2 | 3;
-  keyLengthBytes: 5 | 16;
+  version: 1 | 2 | 4 | 5;
+  revision: 2 | 3 | 4 | 5;
+  keyLengthBytes: 5 | 16 | 32;
 }
 
 export interface NormalizedDocumentAccessibility {
@@ -393,6 +393,20 @@ function resolveDocumentEncryptionAlgorithm(
         version: 2,
         revision: 3,
         keyLengthBytes: 16
+      };
+    case "aes-128":
+      return {
+        algorithm: "aes-128",
+        version: 4,
+        revision: 4,
+        keyLengthBytes: 16
+      };
+    case "aes-256":
+      return {
+        algorithm: "aes-256",
+        version: 5,
+        revision: 5,
+        keyLengthBytes: 32
       };
     default:
       throw new PdfEngineError(PdfErrorCode.INVALID_ENCRYPTION, "Unsupported document encryption algorithm.", {
@@ -1655,9 +1669,17 @@ export function normalizeColor(color: PdfColor): PdfColor {
     return color;
   }
 
-  assertRange(color.r, "rgb.r");
-  assertRange(color.g, "rgb.g");
-  assertRange(color.b, "rgb.b");
+  if (color.kind === "rgb") {
+    assertRange(color.r, "rgb.r");
+    assertRange(color.g, "rgb.g");
+    assertRange(color.b, "rgb.b");
+    return color;
+  }
+
+  assertRange(color.c, "cmyk.c");
+  assertRange(color.m, "cmyk.m");
+  assertRange(color.y, "cmyk.y");
+  assertRange(color.k, "cmyk.k");
   return color;
 }
 

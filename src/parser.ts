@@ -1,6 +1,6 @@
 import { PdfEngineError, PdfErrorCode } from "./errors.js";
 import { inflateZlib } from "./internal/deflate.js";
-import { encryptBytesForObject, latin1Bytes, openPdfEncryptionContext, type PdfEncryptionContext } from "./internal/pdf-encryption.js";
+import { decryptBytesForObject, encryptBytesForObject, latin1Bytes, openPdfEncryptionContext, type PdfEncryptionContext } from "./internal/pdf-encryption.js";
 import type { BinaryData } from "./types.js";
 import { isPdfStream, type PdfDict, type PdfRef, type PdfStream, type PdfValue } from "./internal/pdf-primitives.js";
 
@@ -632,13 +632,18 @@ function resolveDocumentEncryption(
   const filter = getNameValue(encryptDict, "Filter");
   const rawVersion = getDictValue(encryptDict, "V");
   const rawRevision = getDictValue(encryptDict, "R");
-  const version = rawVersion === 1 || rawVersion === 2 ? rawVersion : undefined;
-  const revision = rawRevision === 2 || rawRevision === 3 ? rawRevision : undefined;
+  const version = rawVersion === 1 || rawVersion === 2 || rawVersion === 4 || rawVersion === 5 ? rawVersion : undefined;
+  const revision = rawRevision === 2 || rawRevision === 3 || rawRevision === 4 || rawRevision === 5 ? rawRevision : undefined;
   const keyLengthBytes = resolveEncryptionKeyLength(version, revision, getDictValue(encryptDict, "Length"));
+  const algorithm =
+    revision === 2 ? "rc4-40"
+      : revision === 3 ? "rc4-128"
+        : revision === 5 ? "aes-256"
+          : "aes-128";
   if (filter !== "Standard" || version === undefined || revision === undefined || keyLengthBytes === undefined) {
     throw new PdfEngineError(
       PdfErrorCode.UNSUPPORTED_ENCRYPTION,
-      "Only Standard Security Handler revisions 2 and 3 RC4 encryption are supported.",
+      "Only Standard Security Handler RC4 and AES password encryption are supported.",
       {
         filter,
         version: rawVersion,
@@ -659,6 +664,7 @@ function resolveDocumentEncryption(
   const context = openPdfEncryptionContext({
     password: options.password,
     fileId,
+    algorithm,
     version,
     revision,
     keyLengthBytes,
@@ -683,6 +689,14 @@ function resolveEncryptionKeyLength(
 ): number | undefined {
   if (version === 1 && revision === 2) {
     return 5;
+  }
+
+  if ((version === 4 && revision === 4) || (version === 5 && revision === 5)) {
+    if (typeof lengthValue !== "number" || !Number.isInteger(lengthValue) || lengthValue % 8 !== 0) {
+      return undefined;
+    }
+    const bytes = lengthValue / 8;
+    return bytes === 16 || bytes === 32 ? bytes : undefined;
   }
 
   if (version !== 2 || revision !== 3) {
@@ -777,14 +791,14 @@ function decryptPdfValueForObject(
     return {
       kind: "stream",
       dict: value.dict.map(([key, entryValue]) => [key, decryptPdfValueForObject(entryValue, encryption, objectId, generation)] as [string, PdfValue]),
-      bytes: encryptBytesForObject(encryption, objectId, generation, value.bytes)
+      bytes: decryptBytesForObject(encryption, objectId, generation, value.bytes)
     };
   }
 
   if (isPdfString(value)) {
     return {
       kind: "string",
-      value: decodeLatin1(encryptBytesForObject(encryption, objectId, generation, latin1Bytes(value.value)))
+      value: decodeLatin1(decryptBytesForObject(encryption, objectId, generation, latin1Bytes(value.value)))
     };
   }
 
