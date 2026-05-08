@@ -114,6 +114,9 @@ interface StructElementAllocation {
   readonly actualText?: string | undefined;
   readonly language?: string | undefined;
   readonly attributes?: Record<string, PdfStructureAttributeValue> | undefined;
+  readonly mathML?: string | undefined;
+  readonly mathmlFilespecObjectId?: number | undefined;
+  readonly mathmlFileObjectId?: number | undefined;
 }
 
 interface TaggedPdfAllocation {
@@ -356,7 +359,7 @@ function* buildSerializedPageObjects(
         // PDF/UA-1 7.18.3: every page in a tagged document must declare a tab
         // order (struct order) so assistive tech can navigate annotations and
         // form fields in reading order.
-        ["Tabs", options.tagged === true || options.conformance === "pdfua-1" ? name("S") : undefined],
+        ["Tabs", options.tagged === true || options.conformance === "pdfua-1" || options.conformance === "pdfua-2" || options.conformance === "wtpdf" ? name("S") : undefined],
         ["StructParents", page.structParentsKey],
         ["Contents", ref(page.contentObjectId)]
       ])
@@ -413,6 +416,20 @@ function* buildTaggedPdfObjects(
       id: element.objectId,
       value: buildStructElementDictionary(element, options.namespaceObjectIds?.pdf2)
     };
+    if (
+      element.mathML !== undefined &&
+      element.mathmlFilespecObjectId !== undefined &&
+      element.mathmlFileObjectId !== undefined
+    ) {
+      yield {
+        id: element.mathmlFilespecObjectId,
+        value: buildMathmlFilespecDictionary(element.mathmlFileObjectId, element.role)
+      };
+      yield {
+        id: element.mathmlFileObjectId,
+        value: buildMathmlEmbeddedFileStream(element.mathML)
+      };
+    }
   }
 }
 
@@ -746,6 +763,14 @@ function allocateStructElementTree(
     annotationParentTreeKeys.set(annotationObjectId, key);
     return key;
   });
+  let mathmlFilespecObjectId: number | undefined;
+  let mathmlFileObjectId: number | undefined;
+  if (node.mathML !== undefined) {
+    mathmlFilespecObjectId = nextObjectId;
+    nextObjectId += 1;
+    mathmlFileObjectId = nextObjectId;
+    nextObjectId += 1;
+  }
   elements.push({
     objectId,
     parentObjectId,
@@ -759,7 +784,10 @@ function allocateStructElementTree(
     ...(altText !== undefined ? { altText } : {}),
     ...(node.actualText !== undefined ? { actualText: node.actualText } : {}),
     ...(node.language !== undefined ? { language: node.language } : {}),
-    ...(node.attributes !== undefined ? { attributes: node.attributes } : {})
+    ...(node.attributes !== undefined ? { attributes: node.attributes } : {}),
+    ...(node.mathML !== undefined ? { mathML: node.mathML } : {}),
+    ...(mathmlFilespecObjectId !== undefined ? { mathmlFilespecObjectId } : {}),
+    ...(mathmlFileObjectId !== undefined ? { mathmlFileObjectId } : {})
   });
   return {
     objectId,
@@ -794,7 +822,12 @@ function prepareDocumentSerialization(
   let reservedObjectId = 4;
   const metadataObjectId = effectiveXmpMetadata !== undefined ? reservedObjectId++ : undefined;
   const encryptionObjectId = model.encryption !== undefined ? reservedObjectId++ : undefined;
-  const hasOutputIntent = model.conformance === "pdfa-1b" || model.outputIntent !== undefined;
+  const hasOutputIntent =
+    model.conformance === "pdfa-1b" ||
+    model.conformance === "pdfa-2b" ||
+    model.conformance === "pdfa-3b" ||
+    model.conformance === "pdfa-4" ||
+    model.outputIntent !== undefined;
   const outputProfileObjectId = hasOutputIntent ? reservedObjectId++ : undefined;
   const outputIntentObjectId = hasOutputIntent ? reservedObjectId++ : undefined;
   const encryptionFileId =
@@ -918,11 +951,18 @@ function prepareDocumentSerialization(
       ["Metadata", metadataObjectId ? ref(metadataObjectId) : undefined],
       ["Lang", model.language ? literalString(model.language) : undefined],
       ["MarkInfo", model.tagged ? dict([["Marked", true]]) : undefined],
-      ["ViewerPreferences", model.conformance === "pdfua-1" ? dict([["DisplayDocTitle", true]]) : undefined],
+      ["ViewerPreferences", model.conformance === "pdfua-1" || model.conformance === "pdfua-2" || model.conformance === "wtpdf" ? dict([["DisplayDocTitle", true]]) : undefined],
       ["StructTreeRoot", taggedPdfAllocation ? ref(taggedPdfAllocation.structTreeRootObjectId) : undefined],
       ["PageLabels", pageLabelsDictionary],
       ["AcroForm", acroFormObjectId ? ref(acroFormObjectId) : undefined],
-      ["AF", model.attachments.length > 0 ? array(model.attachments.map((attachment) => ref(attachmentObjectIds.get(attachment.name)!.fileSpec))) : undefined],
+      ["AF", (() => {
+        const attachmentRefs = model.attachments.map((attachment) => ref(attachmentObjectIds.get(attachment.name)!.fileSpec));
+        const mathmlRefs = (taggedPdfAllocation?.elements ?? [])
+          .filter((element) => element.mathmlFilespecObjectId !== undefined)
+          .map((element) => ref(element.mathmlFilespecObjectId!));
+        const all = [...attachmentRefs, ...mathmlRefs];
+        return all.length > 0 ? array(all) : undefined;
+      })()],
       ["Outlines", outlinesRootObjectId ? ref(outlinesRootObjectId) : undefined],
       ["PageMode", outlinesRootObjectId ? name("UseOutlines") : undefined],
       ["OutputIntents", outputIntentObjectId !== undefined ? array([ref(outputIntentObjectId)]) : undefined]
@@ -3288,61 +3328,80 @@ function buildXmpMetadataStream(xmpMetadata: string): ReturnType<typeof stream> 
 }
 
 function buildEffectiveXmpMetadata(model: PdfDocumentModel): string | undefined {
-  if (model.conformance === "pdfua-1") {
-    if (model.xmpMetadata === undefined) {
-      return buildPdfuaXmpPacket(model.info);
-    }
-    if (model.xmpMetadata.includes("pdfuaid:part")) {
-      return model.xmpMetadata;
-    }
-    if (model.xmpMetadata.includes("</rdf:RDF>")) {
-      return model.xmpMetadata.replace("</rdf:RDF>", `${buildPdfuaIdentificationDescription()}</rdf:RDF>`);
-    }
-    return buildPdfuaXmpPacket(model.info);
-  }
+  const profile = model.conformance;
+  if (profile === undefined) return model.xmpMetadata;
 
-  if (model.conformance !== "pdfa-1b") {
-    return model.xmpMetadata;
-  }
+  const identification = buildIdentificationDescriptionForProfile(profile);
+  if (identification === undefined) return model.xmpMetadata;
 
   if (model.xmpMetadata === undefined) {
-    return buildPdfaXmpPacket(model.info);
+    return buildBaseXmpPacket(model.info, identification);
   }
-
-  if (model.xmpMetadata.includes("pdfaid:part") && model.xmpMetadata.includes("pdfaid:conformance")) {
+  if (alreadyHasIdentification(model.xmpMetadata, profile)) {
     return model.xmpMetadata;
   }
-
   if (model.xmpMetadata.includes("</rdf:RDF>")) {
-    return model.xmpMetadata.replace("</rdf:RDF>", `${buildPdfaIdentificationDescription()}</rdf:RDF>`);
+    return model.xmpMetadata.replace("</rdf:RDF>", `${identification}</rdf:RDF>`);
   }
-
-  return buildPdfaXmpPacket(model.info);
+  return buildBaseXmpPacket(model.info, identification);
 }
 
-function buildPdfuaIdentificationDescription(): string {
+function alreadyHasIdentification(xmp: string, profile: NonNullable<PdfDocumentModel["conformance"]>): boolean {
+  if (profile === "pdfa-1b") return /pdfaid:part>\s*1\s*</.test(xmp) && /pdfaid:conformance>\s*B\s*</.test(xmp);
+  if (profile === "pdfa-2b") return /pdfaid:part>\s*2\s*</.test(xmp) && /pdfaid:conformance>\s*B\s*</.test(xmp);
+  if (profile === "pdfa-3b") return /pdfaid:part>\s*3\s*</.test(xmp) && /pdfaid:conformance>\s*B\s*</.test(xmp);
+  if (profile === "pdfa-4") return /pdfaid:part>\s*4\s*</.test(xmp);
+  if (profile === "pdfua-1") return /pdfuaid:part>\s*1\s*</.test(xmp);
+  if (profile === "pdfua-2") return /pdfuaid:part>\s*2\s*</.test(xmp);
+  if (profile === "wtpdf") return /wtpdf:part/i.test(xmp);
+  return false;
+}
+
+function buildIdentificationDescriptionForProfile(profile: NonNullable<PdfDocumentModel["conformance"]>): string | undefined {
+  if (profile === "pdfa-1b") return buildPdfaIdentificationDescription("1", "B");
+  if (profile === "pdfa-2b") return buildPdfaIdentificationDescription("2", "B");
+  if (profile === "pdfa-3b") return buildPdfaIdentificationDescription("3", "B");
+  if (profile === "pdfa-4") return buildPdfa4IdentificationDescription();
+  if (profile === "pdfua-1") return buildPdfuaIdentificationDescription("1");
+  if (profile === "pdfua-2") return buildPdfuaIdentificationDescription("2");
+  if (profile === "wtpdf") return buildWtpdfIdentificationDescription();
+  return undefined;
+}
+
+function buildPdfuaIdentificationDescription(part: string): string {
   return [
     '<rdf:Description rdf:about="" xmlns:pdfuaid="http://www.aiim.org/pdfua/ns/id/">',
-    "<pdfuaid:part>1</pdfuaid:part>",
+    `<pdfuaid:part>${part}</pdfuaid:part>`,
     "</rdf:Description>"
   ].join("");
 }
 
-function buildPdfuaXmpPacket(info: PdfDocumentModel["info"]): string {
-  return buildBaseXmpPacket(info, buildPdfuaIdentificationDescription());
-}
-
-function buildPdfaIdentificationDescription(): string {
+function buildPdfaIdentificationDescription(part: string, conformance: string): string {
   return [
     '<rdf:Description rdf:about="" xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/">',
-    "<pdfaid:part>1</pdfaid:part>",
-    "<pdfaid:conformance>B</pdfaid:conformance>",
+    `<pdfaid:part>${part}</pdfaid:part>`,
+    `<pdfaid:conformance>${conformance}</pdfaid:conformance>`,
     "</rdf:Description>"
   ].join("");
 }
 
-function buildPdfaXmpPacket(info: PdfDocumentModel["info"]): string {
-  return buildBaseXmpPacket(info, buildPdfaIdentificationDescription());
+function buildPdfa4IdentificationDescription(): string {
+  // PDF/A-4 (ISO 19005-4): no conformance letter, rev=2020.
+  return [
+    '<rdf:Description rdf:about="" xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/">',
+    "<pdfaid:part>4</pdfaid:part>",
+    "<pdfaid:rev>2020</pdfaid:rev>",
+    "</rdf:Description>"
+  ].join("");
+}
+
+function buildWtpdfIdentificationDescription(): string {
+  // WTPDF v1.0: well-tagged baseline; uses extension namespace per PDF Association.
+  return [
+    '<rdf:Description rdf:about="" xmlns:wtpdf="http://pdfa.org/ns/wtpdf/">',
+    "<wtpdf:part>1</wtpdf:part>",
+    "</rdf:Description>"
+  ].join("");
 }
 
 function buildBaseXmpPacket(info: PdfDocumentModel["info"], identification: string): string {
@@ -3402,7 +3461,14 @@ function buildOutputIntentDictionary(profileObjectId: number, model: PdfDocument
 
   return dict([
     ["Type", name("OutputIntent")],
-    ["S", name(model.conformance === "pdfa-1b" ? "GTS_PDFA1" : "GTS_PDFX")],
+    ["S", name(
+      model.conformance === "pdfa-1b" ||
+      model.conformance === "pdfa-2b" ||
+      model.conformance === "pdfa-3b" ||
+      model.conformance === "pdfa-4"
+        ? "GTS_PDFA1"
+        : "GTS_PDFX"
+    )],
     ["OutputConditionIdentifier", literalString(outputConditionIdentifier)],
     ["Info", literalString(info)],
     ["RegistryName", literalString(registryName)],
@@ -3562,8 +3628,34 @@ function buildStructElementDictionary(
     ["ActualText", element.actualText !== undefined ? literalString(element.actualText) : undefined],
     ["Lang", element.language !== undefined ? literalString(element.language) : undefined],
     ["A", element.attributes !== undefined ? buildStructureAttributesDictionary(element.attributes) : undefined],
+    ["AF", element.mathmlFilespecObjectId !== undefined ? array([ref(element.mathmlFilespecObjectId)]) : undefined],
     ["NS", defaultNamespaceObjectId !== undefined ? ref(defaultNamespaceObjectId) : undefined]
   ]);
+}
+
+function buildMathmlFilespecDictionary(fileObjectId: number, role: string): PdfDict {
+  const filename = `${role.toLowerCase()}.mml`;
+  return dict([
+    ["Type", name("Filespec")],
+    ["F", literalString(filename)],
+    ["UF", literalString(filename)],
+    ["AFRelationship", name("Supplement")],
+    ["Desc", literalString(`MathML for ${role} structure element`)],
+    ["EF", dict([
+      ["F", ref(fileObjectId)],
+      ["UF", ref(fileObjectId)]
+    ])]
+  ]);
+}
+
+function buildMathmlEmbeddedFileStream(mathML: string): ReturnType<typeof stream> {
+  return stream(
+    dict([
+      ["Type", name("EmbeddedFile")],
+      ["Subtype", name("application/mathml+xml")]
+    ]),
+    new TextEncoder().encode(mathML)
+  );
 }
 
 function buildStructureAttributesDictionary(attributes: Record<string, PdfStructureAttributeValue>): PdfDict {
