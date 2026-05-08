@@ -570,6 +570,12 @@ function collectTaggedPageContent(ops: readonly PdfOp[], mcidStart: number): Tag
 
   for (const [opIndex, op] of ops.entries()) {
     if (op.type === "text" && op.options.tag !== undefined) {
+      if (op.options.tag === "Artifact") {
+        groupId = undefined;
+        groupMcid = undefined;
+        items.push({ opIndex, kind: "artifact" });
+        continue;
+      }
       const sid = op.options.structureGroupId;
       if (sid !== undefined && sid === groupId) {
         items.push({
@@ -995,7 +1001,7 @@ function prepareDocumentSerialization(
       ["Names", namesDictionary],
       ["Metadata", metadataObjectId ? ref(metadataObjectId) : undefined],
       ["Lang", model.language ? literalString(model.language) : undefined],
-      ["MarkInfo", model.tagged ? dict([["Marked", true]]) : undefined],
+      ["MarkInfo", model.tagged ? dict([["Marked", true], ["Suspects", false]]) : undefined],
       ["ViewerPreferences", model.conformance === "pdfua-1" || model.conformance === "pdfua-2" || model.conformance === "wtpdf" ? dict([["DisplayDocTitle", true]]) : undefined],
       ["StructTreeRoot", taggedPdfAllocation ? ref(taggedPdfAllocation.structTreeRootObjectId) : undefined],
       ["PageLabels", pageLabelsDictionary],
@@ -1827,7 +1833,7 @@ function prepareIncrementalUpdateSerialization(
           ["Type", name("Catalog")],
           ["AcroForm", !existingAcroFormRef && shouldUpdateAcroForm && acroFormObjectId !== undefined ? ref(acroFormObjectId) : undefined],
           ["Metadata", xmpMetadataObjectId !== undefined ? ref(xmpMetadataObjectId) : undefined],
-          ["MarkInfo", taggedPdfAllocation !== undefined ? dict([["Marked", true]]) : undefined],
+          ["MarkInfo", taggedPdfAllocation !== undefined ? dict([["Marked", true], ["Suspects", false]]) : undefined],
           [
             "StructTreeRoot",
             taggedPdfAllocation !== undefined
