@@ -292,7 +292,7 @@ doc.renderTemplate({
       text: [
         'Tel: +91 (22) 2686 0485 / +91 (22) 2686 0486',
         'Tel: +1 586 232 9773',
-      ].join('\n'),
+      ].join(' \n'),
       options: {
         fontSize: 10,
         align: 'left',

@@ -57,13 +57,15 @@ export function layoutTextBlock(
 
       const textLine = wrappedLines[index]!;
       const isLastLine = index === wrappedLines.length - 1;
+      const isLastParagraph = paragraphIndex === paragraphs.length - 1;
       const lineOptions = buildLineOptions(textLine, options, embeddedFonts, y, isLastLine);
-      // Append a trailing space when the next visual line continues the same
-      // paragraph, so PDF reading order (copy/paste, screen readers) keeps a
-      // word boundary at the wrap point. Skip for RTL where appending past
-      // the visual end would shift the right-edge anchor.
+      // Append a trailing space when another visual line follows (wrapping
+      // within a paragraph or a hard newline before the next paragraph), so
+      // PDF reading order (copy/paste, screen readers) keeps a word boundary
+      // at the wrap point. Skip for RTL where appending past the visual end
+      // would shift the right-edge anchor.
       const lineDirection = resolveTextDirection(textLine, options.direction);
-      const emitText = isLastLine || lineDirection === "rtl" ? textLine : `${textLine} `;
+      const emitText = (isLastLine && isLastParagraph) || lineDirection === "rtl" ? textLine : `${textLine} `;
       lines.push(...positionTextRuns(emitText, lineOptions, embeddedFonts));
       y -= options.lineHeight;
       remainingLines -= 1;
