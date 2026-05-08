@@ -64,6 +64,7 @@ interface EmbeddedFontObjectIds {
   fontFile: number;
   toUnicode: number;
   cidToGid: number;
+  metadata: number;
 }
 
 interface EmbeddedFontContext {
@@ -369,7 +370,7 @@ function* buildSerializedPageObjects(
         // form fields in reading order.
         ["Tabs", options.tagged === true || options.conformance === "pdfua-1" || options.conformance === "pdfua-2" || options.conformance === "wtpdf" ? name("S") : undefined],
         ["StructParents", page.structParentsKey],
-        ["Group", page.modelPage.transparencyGroup !== undefined ? buildTransparencyGroupDictionary(page.modelPage.transparencyGroup) : undefined],
+        ["Group", buildEffectiveTransparencyGroup(page, options)],
         ["Contents", ref(page.contentObjectId)]
       ])
     };
@@ -900,9 +901,10 @@ function prepareDocumentSerialization(
       descriptor: nextObjectId + 2,
       fontFile: nextObjectId + 3,
       toUnicode: nextObjectId + 4,
-      cidToGid: nextObjectId + 5
+      cidToGid: nextObjectId + 5,
+      metadata: nextObjectId + 6
     });
-    nextObjectId += 6;
+    nextObjectId += 7;
   }
   for (const image of images) {
     const objectIds: ImageObjectIds = { base: nextObjectId };
@@ -1127,6 +1129,11 @@ function prepareDocumentSerialization(
     });
 
     documentObjects.push({
+      id: objectIds.metadata,
+      value: buildXmpMetadataStream(buildFontMetadataXmp(context.font))
+    });
+
+    documentObjects.push({
       id: objectIds.descriptor,
       value: dict([
         ["Type", name("FontDescriptor")],
@@ -1138,7 +1145,8 @@ function prepareDocumentSerialization(
         ["Descent", scaleMetric(context.font.descent, context.font.unitsPerEm)],
         ["CapHeight", scaleMetric(context.font.capHeight, context.font.unitsPerEm)],
         ["StemV", context.font.stemV],
-        ["FontFile2", ref(objectIds.fontFile)]
+        ["FontFile2", ref(objectIds.fontFile)],
+        ["Metadata", ref(objectIds.metadata)]
       ])
     });
 
@@ -1413,9 +1421,10 @@ function prepareIncrementalUpdateSerialization(
       descriptor: nextObjectId + 2,
       fontFile: nextObjectId + 3,
       toUnicode: nextObjectId + 4,
-      cidToGid: nextObjectId + 5
+      cidToGid: nextObjectId + 5,
+      metadata: nextObjectId + 6
     });
-    nextObjectId += 6;
+    nextObjectId += 7;
   }
 
   for (const image of images) {
@@ -1560,6 +1569,11 @@ function prepareIncrementalUpdateSerialization(
     });
 
     prefixObjects.push({
+      id: objectIds.metadata,
+      value: buildXmpMetadataStream(buildFontMetadataXmp(context.font))
+    });
+
+    prefixObjects.push({
       id: objectIds.descriptor,
       value: dict([
         ["Type", name("FontDescriptor")],
@@ -1571,7 +1585,8 @@ function prepareIncrementalUpdateSerialization(
         ["Descent", scaleMetric(context.font.descent, context.font.unitsPerEm)],
         ["CapHeight", scaleMetric(context.font.capHeight, context.font.unitsPerEm)],
         ["StemV", context.font.stemV],
-        ["FontFile2", ref(objectIds.fontFile)]
+        ["FontFile2", ref(objectIds.fontFile)],
+        ["Metadata", ref(objectIds.metadata)]
       ])
     });
 
@@ -1895,7 +1910,7 @@ function writePdf(objects: PdfIndirectObject[], options: WritePdfOptions = {}): 
 
   const writer = new ByteWriter();
   writer.writeLine(formatHeader(options.pdfVersion ?? "1.4"));
-  writer.writeBytes(new Uint8Array([0x25, 0xff, 0xff, 0xff, 0x0a]));
+  writer.writeBytes(new Uint8Array([0x25, 0xff, 0xff, 0xff, 0xff, 0x0a]));
 
   const offsets = new Map<number, number>();
 
@@ -2000,7 +2015,7 @@ function writeLinearizedPdf(objects: PdfIndirectObject[], options: WritePdfOptio
     const writer = new ByteWriter();
     const offsets = new Map<number, number>();
     writer.writeLine(formatHeader(options.pdfVersion ?? "1.4"));
-    writer.writeBytes(new Uint8Array([0x25, 0xff, 0xff, 0xff, 0x0a]));
+    writer.writeBytes(new Uint8Array([0x25, 0xff, 0xff, 0xff, 0xff, 0x0a]));
 
     offsets.set(linearizationObjectId, writer.size);
     writer.writeLine(`${linearizationObjectId} 0 obj`);
@@ -2454,7 +2469,7 @@ function offsetMapsEqual(left: ReadonlyMap<number, number>, right: ReadonlyMap<n
 function writePdfWithObjectStreams(objects: PdfIndirectObject[], options: WritePdfOptions = {}): Uint8Array {
   const writer = new ByteWriter();
   writer.writeLine(formatHeader(maxVersion("1.5", options.pdfVersion ?? "1.5")));
-  writer.writeBytes(new Uint8Array([0x25, 0xff, 0xff, 0xff, 0x0a]));
+  writer.writeBytes(new Uint8Array([0x25, 0xff, 0xff, 0xff, 0xff, 0x0a]));
 
   const maxOriginalObjectId = getMaxSerializedObjectId(objects);
   const objectStreamObjectId = maxOriginalObjectId + 1;
@@ -2617,7 +2632,7 @@ function buildFullXrefStreamValue(
 async function writePdfToSink(objects: Iterable<PdfIndirectObject>, sink: ByteSink, options: WritePdfOptions = {}): Promise<void> {
   const writer = new StreamingByteWriter(sink);
   await writer.writeLine(formatHeader(options.pdfVersion ?? "1.4"));
-  await writer.writeBytes(new Uint8Array([0x25, 0xff, 0xff, 0xff, 0x0a]));
+  await writer.writeBytes(new Uint8Array([0x25, 0xff, 0xff, 0xff, 0xff, 0x0a]));
 
   const offsets = new Map<number, number>();
 
@@ -3449,6 +3464,20 @@ function buildXmpMetadataStream(xmpMetadata: string): ReturnType<typeof stream> 
   );
 }
 
+function buildFontMetadataXmp(font: ParsedTrueTypeFont): string {
+  return [
+    '<?xpacket begin="\uFEFF" id="W5M0MpCehiHzreSzNTczkc9d"?>',
+    '<x:xmpmeta xmlns:x="adobe:ns:meta/">',
+    '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">',
+    '<rdf:Description rdf:about="" xmlns:xmpTPg="http://ns.adobe.com/xap/1.0/t/pg/">',
+    `<xmpTPg:Fonts><rdf:Bag><rdf:li rdf:parseType="Resource"><xmpTPg:fontName>${escapeXml(font.postScriptName)}</xmpTPg:fontName><xmpTPg:fontType>TrueType</xmpTPg:fontType></rdf:li></rdf:Bag></xmpTPg:Fonts>`,
+    '</rdf:Description>',
+    '</rdf:RDF>',
+    '</x:xmpmeta>',
+    '<?xpacket end="w"?>'
+  ].join("");
+}
+
 function buildEffectiveXmpMetadata(model: PdfDocumentModel): string | undefined {
   const profile = model.conformance;
   if (profile === undefined) return model.xmpMetadata;
@@ -3736,7 +3765,8 @@ function buildStructElementDictionary(
     ...element.mcids,
     ...element.annotationObjectIds.map((objectId) => dict([
       ["Type", name("OBJR")],
-      ["Obj", ref(objectId)]
+      ["Obj", ref(objectId)],
+      ["Pg", element.pageObjectId !== undefined ? ref(element.pageObjectId) : undefined]
     ]))
   ];
 
@@ -3781,7 +3811,14 @@ function buildMathmlEmbeddedFileStream(mathML: string): ReturnType<typeof stream
 }
 
 function buildStructureAttributesDictionary(attributes: Record<string, PdfStructureAttributeValue>): PdfDict {
-  return dict(Object.entries(attributes).map(([key, value]) => [key, buildStructureAttributeValue(value)]));
+  const entries: Array<[string, PdfValue | undefined]> = [];
+  if (!("O" in attributes)) {
+    entries.push(["O", name("Layout")]);
+  }
+  for (const [key, value] of Object.entries(attributes)) {
+    entries.push([key, buildStructureAttributeValue(value)]);
+  }
+  return dict(entries);
 }
 
 function buildStructureAttributeValue(value: PdfStructureAttributeValue): PdfValue {
@@ -4118,6 +4155,7 @@ function buildAnnotationDictionary(
       return dict([
         ["Type", name("Annot")],
         ["Subtype", name("Link")],
+        ["F", 4],
         ["Rect", rect],
         ["Border", array([0, 0, annotation.options.borderWidth])],
         ["Contents", buildLinkContents(annotation.options.structure, annotation.url)],
@@ -4139,6 +4177,7 @@ function buildAnnotationDictionary(
       return dict([
         ["Type", name("Annot")],
         ["Subtype", name("Link")],
+        ["F", 4],
         ["Rect", rect],
         ["Border", array([0, 0, annotation.options.borderWidth])],
         ["Contents", buildLinkContents(annotation.options.structure, "Internal page link")],
@@ -4150,6 +4189,7 @@ function buildAnnotationDictionary(
       return dict([
         ["Type", name("Annot")],
         ["Subtype", name("Highlight")],
+        ["F", 4],
         ["Rect", rect],
         ["QuadPoints", buildHighlightQuadPoints(annotation.options)],
         ["StructParent", structParentKey],
@@ -4159,6 +4199,7 @@ function buildAnnotationDictionary(
       return dict([
         ["Type", name("Annot")],
         ["Subtype", name("Text")],
+        ["F", 4],
         ["Rect", rect],
         ["Contents", literalString(annotation.options.contents)],
         ["StructParent", structParentKey],
@@ -4173,6 +4214,7 @@ function buildAnnotationDictionary(
       return dict([
         ["Type", name("Annot")],
         ["Subtype", name("FreeText")],
+        ["F", 4],
         ["Rect", rect],
         ["Contents", literalString(annotation.options.text)],
         ["Border", array([0, 0, annotation.options.borderWidth])],
@@ -4190,6 +4232,7 @@ function buildAnnotationDictionary(
       return dict([
         ["Type", name("Annot")],
         ["Subtype", name("Widget")],
+        ["F", 4],
         ["FT", name("Tx")],
         ["T", literalString(annotation.name)],
         ["Rect", rect],
@@ -4211,6 +4254,7 @@ function buildAnnotationDictionary(
       return dict([
         ["Type", name("Annot")],
         ["Subtype", name("Widget")],
+        ["F", 4],
         ["FT", name("Ch")],
         ["T", literalString(annotation.name)],
         ["Rect", rect],
@@ -4233,6 +4277,7 @@ function buildAnnotationDictionary(
       return dict([
         ["Type", name("Annot")],
         ["Subtype", name("Widget")],
+        ["F", 4],
         ["FT", name("Btn")],
         ["T", literalString(annotation.name)],
         ["Rect", rect],
@@ -4254,6 +4299,7 @@ function buildAnnotationDictionary(
       return dict([
         ["Type", name("Annot")],
         ["Subtype", name("Widget")],
+        ["F", 4],
         ["FT", name("Sig")],
         ["T", literalString(annotation.name)],
         ["Rect", rect],
@@ -4272,6 +4318,7 @@ function buildAnnotationDictionary(
       return dict([
         ["Type", name("Annot")],
         ["Subtype", name("Widget")],
+        ["F", 4],
         ["FT", name("Btn")],
         ["T", literalString(annotation.name)],
         ["Rect", rect],
@@ -4497,6 +4544,30 @@ function buildTransparencyGroupDictionary(options: PageTransparencyGroupOptions)
   ]);
 }
 
+function buildEffectiveTransparencyGroup(
+  page: PlannedPage,
+  options: { readonly imageObjectIds: ReadonlyMap<string, ImageObjectIds> }
+): PdfDict | undefined {
+  if (page.modelPage.transparencyGroup !== undefined) {
+    return buildTransparencyGroupDictionary(page.modelPage.transparencyGroup);
+  }
+
+  for (const imageKey of page.imageResourceMap.keys()) {
+    const imageIds = options.imageObjectIds.get(imageKey);
+    if (imageIds?.smask !== undefined) {
+      return buildTransparencyGroupDictionary({});
+    }
+  }
+
+  for (const [, gsEntry] of page.extGStateResourceMap) {
+    if (gsEntry.options.softMask !== undefined) {
+      return buildTransparencyGroupDictionary({});
+    }
+  }
+
+  return undefined;
+}
+
 function buildUpdatedExistingPageDictionary(
   base: PdfIncrementalUpdateModel["base"],
   existingPageDict: PdfDict,
@@ -4650,6 +4721,7 @@ function buildRadioWidgetDictionary(
   return dict([
     ["Type", name("Annot")],
     ["Subtype", name("Widget")],
+    ["F", 4],
     ["Parent", ref(parentObjectId)],
     ["Rect", array([item.x, item.y, item.x + item.width, item.y + item.height])],
     ["Border", array([0, 0, annotation.options.borderWidth])],

@@ -558,7 +558,7 @@ function writePdf(
 ): Uint8Array {
   const writer = new ByteWriter();
   writer.writeLine(formatHeader(pdfVersion));
-  writer.writeBytes(new Uint8Array([0x25, 0xff, 0xff, 0xff, 0x0a]));
+  writer.writeBytes(new Uint8Array([0x25, 0xff, 0xff, 0xff, 0xff, 0x0a]));
 
   const offsets = new Map<number, number>();
   for (const object of objects) {
