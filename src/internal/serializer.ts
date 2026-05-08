@@ -2,7 +2,7 @@ import { ByteWriter } from "./byte-writer.js";
 import type { ByteSink } from "./byte-sink.js";
 import { StreamingByteWriter } from "./streaming-byte-writer.js";
 import type { PdfDocumentModel, PdfIncrementalUpdateModel } from "../document.js";
-import type { FontName, PdfFont, PathCommand, PdfColor, PdfStructureAttributeValue, PdfStructureTag, Transform } from "../types.js";
+import type { DeviceNColor, ExtGStateOptions, FontName, PageTransparencyGroupOptions, PdfFont, PathCommand, PdfColor, PdfStructureAttributeValue, PdfStructureTag, ProcessColor, SeparationColor, Transform } from "../types.js";
 import type { EmbeddedImageAsset } from "./image.js";
 import type { EmbeddedTextGlyph, PdfOp } from "./ops.js";
 import { deflateZlib } from "./deflate.js";
@@ -30,6 +30,8 @@ interface PlannedPage {
   size: { width: number; height: number };
   fontResourceMap: Map<string, string>;
   imageResourceMap: Map<string, string>;
+  extGStateResourceMap: Map<string, { name: string; options: ExtGStateOptions }>;
+  colorSpaceResourceMap: Map<string, { name: string; color: SeparationColor | DeviceNColor }>;
   annotationObjectIds: number[];
   formFieldObjectIdsByAnnotationIndex: Map<number, number>;
   checkBoxAppearanceObjectIds: Map<number, { off: number; on: number }>;
@@ -74,6 +76,7 @@ interface EmbeddedFontContext {
 interface ImageObjectIds {
   base: number;
   smask?: number;
+  icc?: number;
 }
 
 interface AttachmentObjectIds {
@@ -188,6 +191,7 @@ interface SerializedPageObjectsOptions {
   readonly builtInFontObjectIds: ReadonlyMap<FontName, number>;
   readonly embeddedFontObjectIds: ReadonlyMap<string, EmbeddedFontObjectIds>;
   readonly imageObjectIds: ReadonlyMap<string, ImageObjectIds>;
+  readonly softMaskFormObjectIds?: ReadonlyMap<string, number> | undefined;
   readonly embeddedFontContexts: ReadonlyMap<string, EmbeddedFontContext>;
   readonly lazyPageContentStreams?: boolean | undefined;
   readonly allocateLazyLengthObjectId: () => number;
@@ -322,6 +326,8 @@ function* buildSerializedPageObjects(
             () => encodePageContentChunks(page.modelPage.ops, {
               fonts: page.fontResourceMap,
               images: page.imageResourceMap,
+              extGStates: page.extGStateResourceMap,
+              colorSpaces: page.colorSpaceResourceMap,
               embeddedFonts: new Map(options.embeddedFontContexts),
               taggedContentItems: page.taggedContentItems
             })
@@ -332,6 +338,8 @@ function* buildSerializedPageObjects(
               ? encodePageContent(page.modelPage.ops, {
                   fonts: page.fontResourceMap,
                   images: page.imageResourceMap,
+                  extGStates: page.extGStateResourceMap,
+              colorSpaces: page.colorSpaceResourceMap,
                   embeddedFonts: new Map(options.embeddedFontContexts),
                   taggedContentItems: page.taggedContentItems
                 })
@@ -354,13 +362,14 @@ function* buildSerializedPageObjects(
         ["Type", name("Page")],
         ["Parent", ref(options.pageContainerObjectId)],
         ["MediaBox", array([0, 0, page.size.width, page.size.height])],
-        ["Resources", buildPageResourcesDictionary(page, options.builtInFontObjectIds, options.embeddedFontObjectIds, options.imageObjectIds)],
+        ["Resources", buildPageResourcesDictionary(page, options.builtInFontObjectIds, options.embeddedFontObjectIds, options.imageObjectIds, options.softMaskFormObjectIds)],
         ["Annots", page.annotationObjectIds.length > 0 ? array(page.annotationObjectIds.map((objectId) => ref(objectId))) : undefined],
         // PDF/UA-1 7.18.3: every page in a tagged document must declare a tab
         // order (struct order) so assistive tech can navigate annotations and
         // form fields in reading order.
         ["Tabs", options.tagged === true || options.conformance === "pdfua-1" || options.conformance === "pdfua-2" || options.conformance === "wtpdf" ? name("S") : undefined],
         ["StructParents", page.structParentsKey],
+        ["Group", page.modelPage.transparencyGroup !== undefined ? buildTransparencyGroupDictionary(page.modelPage.transparencyGroup) : undefined],
         ["Contents", ref(page.contentObjectId)]
       ])
     };
@@ -502,6 +511,8 @@ function planSerializedPages(
 
     const fontResourceMap = buildFontResourceMap(page.ops);
     const imageResourceMap = buildImageResourceMap(page.ops);
+    const extGStateResourceMap = buildExtGStateResourceMap(page.ops);
+    const colorSpaceResourceMap = buildColorSpaceResourceMap(page.ops);
     const structParentsKey = fixedStructParentsKeys.get(page);
     plannedPages.push({
       modelPage: page,
@@ -510,6 +521,8 @@ function planSerializedPages(
       size: page.size,
       fontResourceMap,
       imageResourceMap,
+      extGStateResourceMap,
+      colorSpaceResourceMap,
       annotationObjectIds,
       formFieldObjectIdsByAnnotationIndex,
       checkBoxAppearanceObjectIds,
@@ -532,6 +545,8 @@ function attachSerializedPageContentBytes(
     contentBytes: encodePageContent(page.modelPage.ops, {
       fonts: page.fontResourceMap,
       images: page.imageResourceMap,
+      extGStates: page.extGStateResourceMap,
+              colorSpaces: page.colorSpaceResourceMap,
       embeddedFonts: new Map(embeddedFontContexts),
       taggedContentItems: page.taggedContentItems
     })
@@ -877,7 +892,16 @@ function prepareDocumentSerialization(
       objectIds.smask = nextObjectId;
       nextObjectId += 1;
     }
+    if (image.iccProfile) {
+      objectIds.icc = nextObjectId;
+      nextObjectId += 1;
+    }
     imageObjectIds.set(image.key, objectIds);
+  }
+  const softMaskFormObjectIds = new Map<string, number>();
+  for (const mask of model.softMasks ?? []) {
+    softMaskFormObjectIds.set(mask.key, nextObjectId);
+    nextObjectId += 1;
   }
   for (const attachment of model.attachments) {
     attachmentObjectIds.set(attachment.name, {
@@ -1151,10 +1175,24 @@ function prepareDocumentSerialization(
         value: prepareByteStream(buildSoftMaskStream(image))
       });
     }
+    if (image.iccProfile && objectIds.icc !== undefined) {
+      documentObjects.push({
+        id: objectIds.icc,
+        value: prepareByteStream(buildIccProfileStream(image.iccProfile))
+      });
+    }
 
     documentObjects.push({
       id: objectIds.base,
-      value: prepareByteStream(buildImageStream(image, objectIds.smask))
+      value: prepareByteStream(buildImageStream(image, objectIds.smask, objectIds.icc))
+    });
+  }
+
+  for (const mask of model.softMasks ?? []) {
+    const formObjectId = softMaskFormObjectIds.get(mask.key)!;
+    documentObjects.push({
+      id: formObjectId,
+      value: prepareByteStream(buildSoftMaskFormStream(mask))
     });
   }
 
@@ -1192,6 +1230,7 @@ function prepareDocumentSerialization(
         builtInFontObjectIds,
         embeddedFontObjectIds,
         imageObjectIds,
+        softMaskFormObjectIds,
         embeddedFontContexts,
         lazyPageContentStreams: options.lazyPageContentStreams,
         allocateLazyLengthObjectId: () => nextPageLazyLengthObjectId++,
@@ -1569,10 +1608,16 @@ function prepareIncrementalUpdateSerialization(
         value: prepareByteStream(buildSoftMaskStream(image))
       });
     }
+    if (image.iccProfile && objectIds.icc !== undefined) {
+      prefixObjects.push({
+        id: objectIds.icc,
+        value: prepareByteStream(buildIccProfileStream(image.iccProfile))
+      });
+    }
 
     prefixObjects.push({
       id: objectIds.base,
-      value: prepareByteStream(buildImageStream(image, objectIds.smask))
+      value: prepareByteStream(buildImageStream(image, objectIds.smask, objectIds.icc))
     });
   }
 
@@ -3304,6 +3349,64 @@ function buildImageResourceMap(ops: readonly PdfOp[]): Map<string, string> {
   return new Map([...keys].sort().map((key, index) => [key, `Im${index + 1}`]));
 }
 
+function extGStateKey(options: ExtGStateOptions): string {
+  const softMaskPart =
+    options.softMask === undefined
+      ? ""
+      : options.softMask === null
+        ? "none"
+        : options.softMask.key;
+  return [
+    options.fillAlpha ?? "",
+    options.strokeAlpha ?? "",
+    options.blendMode ?? "",
+    softMaskPart
+  ].join("|");
+}
+
+function* iterateColorsInOp(op: PdfOp): Iterable<PdfColor> {
+  if (op.type === "text") {
+    yield op.options.color;
+  } else if (op.type === "path") {
+    if (op.style.stroke) yield op.style.stroke.color;
+    if (op.style.fill) yield op.style.fill.color;
+  }
+}
+
+function buildColorSpaceResourceMap(ops: readonly PdfOp[]): Map<string, { name: string; color: SeparationColor | DeviceNColor }> {
+  const seen = new Map<string, SeparationColor | DeviceNColor>();
+  for (const op of ops) {
+    for (const color of iterateColorsInOp(op)) {
+      if (color.kind === "separation" || color.kind === "deviceN") {
+        const key = colorSpaceKey(color);
+        if (!seen.has(key)) {
+          seen.set(key, color);
+        }
+      }
+    }
+  }
+  const sortedKeys = [...seen.keys()].sort();
+  return new Map(
+    sortedKeys.map((key, index) => [key, { name: `CS${index + 1}`, color: seen.get(key)! }])
+  );
+}
+
+function buildExtGStateResourceMap(ops: readonly PdfOp[]): Map<string, { name: string; options: ExtGStateOptions }> {
+  const seen = new Map<string, ExtGStateOptions>();
+  for (const op of ops) {
+    if (op.type === "extGState") {
+      const key = extGStateKey(op.options);
+      if (!seen.has(key)) {
+        seen.set(key, op.options);
+      }
+    }
+  }
+  const sortedKeys = [...seen.keys()].sort();
+  return new Map(
+    sortedKeys.map((key, index) => [key, { name: `GS${index + 1}`, options: seen.get(key)! }])
+  );
+}
+
 function buildInfoDictionary(info: PdfDocumentModel["info"]): PdfDict {
   return dict([
     ["Producer", literalString(info.producer)],
@@ -4205,11 +4308,14 @@ function buildAnnotationColorArray(color: PdfColor | undefined): PdfValue | unde
     return undefined;
   }
 
-  return color.kind === "gray"
-    ? array([color.value])
-    : color.kind === "rgb"
-      ? array([color.r, color.g, color.b])
-      : array([color.c, color.m, color.y, color.k]);
+  // Annotation /C entries only support Device color spaces; resolve spot
+  // colors to their alternate process color for the annotation border tint.
+  const resolved = color.kind === "separation" || color.kind === "deviceN" ? color.alternate : color;
+  return resolved.kind === "gray"
+    ? array([resolved.value])
+    : resolved.kind === "rgb"
+      ? array([resolved.r, resolved.g, resolved.b])
+      : array([resolved.c, resolved.m, resolved.y, resolved.k]);
 }
 
 function buildDetachedSignatureFieldDictionary(
@@ -4257,7 +4363,8 @@ function buildPageResourcesDictionary(
   page: SerializedPage,
   builtInFontObjectIds: ReadonlyMap<FontName, number>,
   embeddedFontObjectIds: ReadonlyMap<string, EmbeddedFontObjectIds>,
-  imageObjectIds: ReadonlyMap<string, ImageObjectIds>
+  imageObjectIds: ReadonlyMap<string, ImageObjectIds>,
+  softMaskFormObjectIds?: ReadonlyMap<string, number>
 ): PdfDict | undefined {
   const fontEntries = [...page.fontResourceMap.entries()].map(([fontName, resourceName]) => [
     resourceName,
@@ -4267,14 +4374,107 @@ function buildPageResourcesDictionary(
     resourceName,
     ref(imageObjectIds.get(imageKey)!.base)
   ] as [string, PdfValue]);
+  const extGStateEntries = [...page.extGStateResourceMap.values()].map(({ name: resourceName, options }) => [
+    resourceName,
+    buildExtGStateDictionary(options, softMaskFormObjectIds)
+  ] as [string, PdfValue]);
+  const colorSpaceEntries = [...page.colorSpaceResourceMap.values()].map(({ name: resourceName, color }) => [
+    resourceName,
+    buildSpotColorSpaceArray(color)
+  ] as [string, PdfValue]);
 
-  if (fontEntries.length === 0 && xObjectEntries.length === 0) {
+  if (
+    fontEntries.length === 0
+    && xObjectEntries.length === 0
+    && extGStateEntries.length === 0
+    && colorSpaceEntries.length === 0
+  ) {
     return undefined;
   }
 
   return dict([
     ["Font", fontEntries.length > 0 ? dict(fontEntries) : undefined],
-    ["XObject", xObjectEntries.length > 0 ? dict(xObjectEntries) : undefined]
+    ["XObject", xObjectEntries.length > 0 ? dict(xObjectEntries) : undefined],
+    ["ExtGState", extGStateEntries.length > 0 ? dict(extGStateEntries) : undefined],
+    ["ColorSpace", colorSpaceEntries.length > 0 ? dict(colorSpaceEntries) : undefined]
+  ]);
+}
+
+function alternateChannels(color: ProcessColor): { space: "DeviceGray" | "DeviceRGB" | "DeviceCMYK"; values: number[] } {
+  if (color.kind === "gray") return { space: "DeviceGray", values: [color.value] };
+  if (color.kind === "rgb") return { space: "DeviceRGB", values: [color.r, color.g, color.b] };
+  return { space: "DeviceCMYK", values: [color.c, color.m, color.y, color.k] };
+}
+
+function buildTintTransformDictionary(color: SeparationColor | DeviceNColor): PdfDict {
+  // Type-2 exponential interpolation between zero (white) and the alternate
+  // process color at full tint.
+  const { values: c1 } = alternateChannels(color.alternate);
+  const c0 = c1.map(() => 0);
+  const inputCount = color.kind === "separation" ? 1 : color.names.length;
+  const domain: number[] = [];
+  for (let i = 0; i < inputCount; i += 1) {
+    domain.push(0, 1);
+  }
+  return dict([
+    ["FunctionType", 2],
+    ["Domain", array(domain)],
+    ["N", 1],
+    ["C0", array(c0)],
+    ["C1", array(c1)]
+  ]);
+}
+
+function buildSpotColorSpaceArray(color: SeparationColor | DeviceNColor): PdfValue {
+  const { space } = alternateChannels(color.alternate);
+  const tint = buildTintTransformDictionary(color);
+  if (color.kind === "separation") {
+    return array([name("Separation"), name(color.name), name(space), tint]);
+  }
+  return array([
+    name("DeviceN"),
+    array(color.names.map((inkName) => name(inkName))),
+    name(space),
+    tint
+  ]);
+}
+
+function buildExtGStateDictionary(options: ExtGStateOptions, softMaskFormObjectIds?: ReadonlyMap<string, number>): PdfDict {
+  let smaskValue: PdfValue | undefined;
+  if (options.softMask !== undefined) {
+    if (options.softMask === null) {
+      smaskValue = name("None");
+    } else {
+      const formObjectId = softMaskFormObjectIds?.get(options.softMask.key);
+      if (formObjectId !== undefined) {
+        smaskValue = dict([
+          ["Type", name("Mask")],
+          ["S", name("Luminosity")],
+          ["G", ref(formObjectId)]
+        ]);
+      }
+    }
+  }
+  return dict([
+    ["Type", name("ExtGState")],
+    ["CA", options.strokeAlpha],
+    ["ca", options.fillAlpha],
+    ["BM", options.blendMode !== undefined ? name(options.blendMode) : undefined],
+    ["SMask", smaskValue]
+  ]);
+}
+
+function buildTransparencyGroupDictionary(options: PageTransparencyGroupOptions): PdfDict {
+  const colorSpace = options.colorSpace ?? "DeviceRGB";
+  // Page transparency groups default isolated=true per ISO 32000-2 §11.6.6.
+  const isolated = options.isolated ?? true;
+  const knockout = options.knockout ?? false;
+  return dict([
+    ["Type", name("Group")],
+    ["S", name("Transparency")],
+    ["CS", name(colorSpace)],
+    ["I", isolated],
+    ["K", knockout]
   ]);
 }
 
@@ -4499,7 +4699,51 @@ function buildEllipsePath(centerX: number, centerY: number, radiusX: number, rad
   ];
 }
 
-function buildImageStream(image: EmbeddedImageAsset, softMaskObjectId?: number): ReturnType<typeof stream> {
+function imageColorSpace(image: EmbeddedImageAsset, iccObjectId: number | undefined): PdfValue {
+  if (image.iccProfile && iccObjectId !== undefined) {
+    return array([name("ICCBased"), ref(iccObjectId)]);
+  }
+  return name(image.colorSpace);
+}
+
+function buildSoftMaskFormStream(mask: NonNullable<PdfDocumentModel["softMasks"]>[number]): ReturnType<typeof stream> {
+  const lines = [...serializeSoftMaskFormLines(mask.ops)];
+  return stream(
+    dict([
+      ["Type", name("XObject")],
+      ["Subtype", name("Form")],
+      ["BBox", array([0, 0, mask.width, mask.height])],
+      ["Group", dict([
+        ["Type", name("Group")],
+        ["S", name("Transparency")],
+        ["CS", name("DeviceGray")]
+      ])]
+    ]),
+    encoder.encode(`${lines.join("\n")}\n`)
+  );
+}
+
+function* serializeSoftMaskFormLines(ops: readonly PdfOp[]): Iterable<string> {
+  for (const op of ops) {
+    if (op.type === "saveState") yield "q";
+    else if (op.type === "restoreState") yield "Q";
+    else if (op.type === "transform") yield `${formatMatrix(op.matrix)} cm`;
+    else if (op.type === "path") yield* serializePath(op.commands, op.style);
+  }
+}
+
+function buildIccProfileStream(iccProfile: { bytes: Uint8Array; channels: number }): ReturnType<typeof stream> {
+  const alternate = iccProfile.channels === 1 ? "DeviceGray" : iccProfile.channels === 4 ? "DeviceCMYK" : "DeviceRGB";
+  return stream(
+    dict([
+      ["N", iccProfile.channels],
+      ["Alternate", name(alternate)]
+    ]),
+    iccProfile.bytes
+  );
+}
+
+function buildImageStream(image: EmbeddedImageAsset, softMaskObjectId?: number, iccObjectId?: number): ReturnType<typeof stream> {
   if (image.kind === "jpeg") {
     return stream(
       dict([
@@ -4507,7 +4751,7 @@ function buildImageStream(image: EmbeddedImageAsset, softMaskObjectId?: number):
         ["Subtype", name("Image")],
         ["Width", image.pixelWidth],
         ["Height", image.pixelHeight],
-        ["ColorSpace", name(image.colorSpace)],
+        ["ColorSpace", imageColorSpace(image, iccObjectId)],
         ["BitsPerComponent", image.bitsPerComponent],
         ["Filter", name("DCTDecode")]
       ]),
@@ -4522,7 +4766,7 @@ function buildImageStream(image: EmbeddedImageAsset, softMaskObjectId?: number):
         ["Subtype", name("Image")],
         ["Width", image.pixelWidth],
         ["Height", image.pixelHeight],
-        ["ColorSpace", name(image.colorSpace)],
+        ["ColorSpace", imageColorSpace(image, iccObjectId)],
         ["BitsPerComponent", image.bitsPerComponent],
         ["SMask", softMaskObjectId !== undefined ? ref(softMaskObjectId) : undefined]
       ]),
@@ -4536,7 +4780,7 @@ function buildImageStream(image: EmbeddedImageAsset, softMaskObjectId?: number):
       ["Subtype", name("Image")],
       ["Width", image.pixelWidth],
       ["Height", image.pixelHeight],
-      ["ColorSpace", name(image.colorSpace)],
+      ["ColorSpace", imageColorSpace(image, iccObjectId)],
       ["BitsPerComponent", image.bitsPerComponent],
       ["Filter", name("FlateDecode")],
       ["Mask", image.mask ? array([...image.mask]) : undefined],
@@ -4785,6 +5029,8 @@ function encodePageContent(
   resources: {
     fonts: Map<string, string>;
     images: Map<string, string>;
+    extGStates: Map<string, { name: string; options: ExtGStateOptions }>;
+    colorSpaces: Map<string, { name: string; color: SeparationColor | DeviceNColor }>;
     embeddedFonts: Map<string, EmbeddedFontContext>;
     taggedContentItems: readonly TaggedPageContentItem[];
   }
@@ -4797,6 +5043,8 @@ async function* encodePageContentChunks(
   resources: {
     fonts: Map<string, string>;
     images: Map<string, string>;
+    extGStates: Map<string, { name: string; options: ExtGStateOptions }>;
+    colorSpaces: Map<string, { name: string; color: SeparationColor | DeviceNColor }>;
     embeddedFonts: Map<string, EmbeddedFontContext>;
     taggedContentItems: readonly TaggedPageContentItem[];
   }
@@ -4820,6 +5068,8 @@ function* serializePageContentLines(
   resources: {
     fonts: Map<string, string>;
     images: Map<string, string>;
+    extGStates: Map<string, { name: string; options: ExtGStateOptions }>;
+    colorSpaces: Map<string, { name: string; color: SeparationColor | DeviceNColor }>;
     embeddedFonts: Map<string, EmbeddedFontContext>;
     taggedContentItems: readonly TaggedPageContentItem[];
   }
@@ -4841,7 +5091,7 @@ function* serializePageContentLines(
       case "text":
         opLines.push("BT");
         opLines.push(`/${resources.fonts.get(getFontKey(op.options.font))!} ${formatPdfNumber(op.options.fontSize)} Tf`);
-        opLines.push(serializeTextColor(op.options.color));
+        opLines.push(serializeTextColor(op.options.color, new Map([...resources.colorSpaces].map(([k, v]) => [k, v.name]))));
         if (op.options.characterSpacing !== undefined) {
           opLines.push(`${formatPdfNumber(op.options.characterSpacing)} Tc`);
         }
@@ -4856,7 +5106,7 @@ function* serializePageContentLines(
         opLines.push("ET");
         break;
       case "path":
-        opLines.push(...serializePath(op.commands, op.style));
+        opLines.push(...serializePath(op.commands, op.style, new Map([...resources.colorSpaces].map(([k, v]) => [k, v.name]))));
         break;
       case "image":
         opLines.push("q");
@@ -4866,6 +5116,13 @@ function* serializePageContentLines(
         opLines.push(`/${resources.images.get(op.image.key)!} Do`);
         opLines.push("Q");
         break;
+      case "extGState": {
+        const entry = resources.extGStates.get(extGStateKey(op.options));
+        if (entry !== undefined) {
+          opLines.push(`/${entry.name} gs`);
+        }
+        break;
+      }
       default:
         assertNever(op);
     }
@@ -4889,7 +5146,7 @@ function* serializePageContentLines(
   }
 }
 
-function serializePath(commands: PathCommand[], style: Extract<PdfOp, { type: "path" }>["style"]): string[] {
+function serializePath(commands: PathCommand[], style: Extract<PdfOp, { type: "path" }>["style"], colorSpaces?: Map<string, string>): string[] {
   const lines: string[] = [];
 
   if (style.stroke) {
@@ -4904,11 +5161,11 @@ function serializePath(commands: PathCommand[], style: Extract<PdfOp, { type: "p
       const dashPhase = formatPdfNumber(style.stroke.dashPhase ?? 0);
       lines.push(`[${dashArray}] ${dashPhase} d`);
     }
-    lines.push(serializeStrokeColor(style.stroke.color));
+    lines.push(serializeStrokeColor(style.stroke.color, colorSpaces));
   }
 
   if (style.fill) {
-    lines.push(serializeFillColor(style.fill.color));
+    lines.push(serializeFillColor(style.fill.color, colorSpaces));
   }
 
   for (const command of commands) {
@@ -5288,7 +5545,36 @@ function buildTextFieldAppearance(resourceName: string, fontSize: number, color:
   return `/${resourceName} ${formatPdfNumber(fontSize)} Tf ${serializeTextColor(color)}`;
 }
 
-function serializeTextColor(color: PdfColor): string {
+function colorSpaceKey(color: SeparationColor | DeviceNColor): string {
+  if (color.kind === "separation") {
+    const alt = serializeAlternateForKey(color.alternate);
+    return `sep|${color.name}|${alt}`;
+  }
+  const alt = serializeAlternateForKey(color.alternate);
+  return `dn|${color.names.join(",")}|${alt}`;
+}
+
+function serializeAlternateForKey(color: ProcessColor): string {
+  if (color.kind === "gray") return `g${color.value}`;
+  if (color.kind === "rgb") return `r${color.r},${color.g},${color.b}`;
+  return `c${color.c},${color.m},${color.y},${color.k}`;
+}
+
+function serializeTextColor(color: PdfColor, colorSpaces?: Map<string, string>): string {
+  if (color.kind === "separation") {
+    const resourceName = colorSpaces?.get(colorSpaceKey(color));
+    if (resourceName) {
+      return `/${resourceName} cs ${formatPdfNumber(color.tint)} scn`;
+    }
+    return serializeTextColor(color.alternate);
+  }
+  if (color.kind === "deviceN") {
+    const resourceName = colorSpaces?.get(colorSpaceKey(color));
+    if (resourceName) {
+      return `/${resourceName} cs ${color.tints.map(formatPdfNumber).join(" ")} scn`;
+    }
+    return serializeTextColor(color.alternate);
+  }
   switch (color.kind) {
     case "gray":
       return `${formatPdfNumber(color.value)} g`;
@@ -5301,7 +5587,21 @@ function serializeTextColor(color: PdfColor): string {
   }
 }
 
-function serializeFillColor(color: PdfColor): string {
+function serializeFillColor(color: PdfColor, colorSpaces?: Map<string, string>): string {
+  if (color.kind === "separation") {
+    const resourceName = colorSpaces?.get(colorSpaceKey(color));
+    if (resourceName) {
+      return `/${resourceName} cs ${formatPdfNumber(color.tint)} scn`;
+    }
+    return serializeFillColor(color.alternate);
+  }
+  if (color.kind === "deviceN") {
+    const resourceName = colorSpaces?.get(colorSpaceKey(color));
+    if (resourceName) {
+      return `/${resourceName} cs ${color.tints.map(formatPdfNumber).join(" ")} scn`;
+    }
+    return serializeFillColor(color.alternate);
+  }
   switch (color.kind) {
     case "gray":
       return `${formatPdfNumber(color.value)} g`;
@@ -5314,7 +5614,21 @@ function serializeFillColor(color: PdfColor): string {
   }
 }
 
-function serializeStrokeColor(color: PdfColor): string {
+function serializeStrokeColor(color: PdfColor, colorSpaces?: Map<string, string>): string {
+  if (color.kind === "separation") {
+    const resourceName = colorSpaces?.get(colorSpaceKey(color));
+    if (resourceName) {
+      return `/${resourceName} CS ${formatPdfNumber(color.tint)} SCN`;
+    }
+    return serializeStrokeColor(color.alternate);
+  }
+  if (color.kind === "deviceN") {
+    const resourceName = colorSpaces?.get(colorSpaceKey(color));
+    if (resourceName) {
+      return `/${resourceName} CS ${color.tints.map(formatPdfNumber).join(" ")} SCN`;
+    }
+    return serializeStrokeColor(color.alternate);
+  }
   switch (color.kind) {
     case "gray":
       return `${formatPdfNumber(color.value)} G`;

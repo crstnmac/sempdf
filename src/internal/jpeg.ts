@@ -9,6 +9,7 @@ export interface EmbeddedJpegAsset {
   readonly pixelHeight: number;
   readonly bitsPerComponent: number;
   readonly colorSpace: "DeviceGray" | "DeviceRGB";
+  readonly iccProfile?: { readonly bytes: Uint8Array; readonly channels: number } | undefined;
 }
 
 const SOF_MARKERS = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);

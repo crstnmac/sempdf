@@ -16,6 +16,7 @@ export interface EmbeddedPngAsset {
   readonly decodeMode: "pngPredictor" | "rawSamples";
   readonly alphaBytes?: Uint8Array | undefined;
   readonly mask?: readonly number[] | undefined;
+  readonly iccProfile?: { readonly bytes: Uint8Array; readonly channels: number } | undefined;
 }
 
 export function parsePng(data: BinaryData): EmbeddedPngAsset {

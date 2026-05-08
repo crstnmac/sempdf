@@ -419,6 +419,24 @@ export interface PageLabelOptions {
 export interface PageOptions {
   /** Page size for the generated page. */
   size?: PageSize;
+  /**
+   * Transparency group dict applied to the page (ISO 32000-2 § 11.6.6).
+   * Required by some workflows when the page contains transparency or blend
+   * modes that must compose against an explicit blending color space.
+   */
+  transparencyGroup?: PageTransparencyGroupOptions | undefined;
+}
+
+/**
+ * Page-level transparency group options.
+ */
+export interface PageTransparencyGroupOptions {
+  /** Blending color space. Defaults to DeviceRGB. */
+  colorSpace?: "DeviceGray" | "DeviceRGB" | "DeviceCMYK" | undefined;
+  /** Whether the group is isolated (/I). Defaults to true for page groups. */
+  isolated?: boolean | undefined;
+  /** Whether the group is a knockout group (/K). Defaults to false. */
+  knockout?: boolean | undefined;
 }
 
 /**
@@ -469,7 +487,104 @@ export interface CmykColor {
 /**
  * Union of supported color representations.
  */
-export type PdfColor = GrayColor | RgbColor | CmykColor;
+/**
+ * Process color used as the alternate color space for a Separation or
+ * DeviceN tint transform.
+ */
+export type ProcessColor = GrayColor | RgbColor | CmykColor;
+
+/**
+ * Separation (single-ink spot color) color representation.
+ * Emitted as a Separation color space with a Type-2 exponential tint
+ * transform mapping the tint scalar to the alternate process color.
+ */
+export interface SeparationColor {
+  /** Discriminator identifying this value shape. */
+  kind: "separation";
+  /** Spot ink name, e.g. "PANTONE 185 C". Encoded into the PDF name token. */
+  name: string;
+  /** Tint applied to the spot ink (0..1). */
+  tint: number;
+  /** Process-color value at full tint, used for the alternate color space. */
+  alternate: ProcessColor;
+}
+
+/**
+ * DeviceN (multi-ink spot color) color representation.
+ * Emitted as a DeviceN color space; each tint maps through a Type-2
+ * exponential into the alternate process color at full mix.
+ */
+export interface DeviceNColor {
+  /** Discriminator identifying this value shape. */
+  kind: "deviceN";
+  /** One ink name per channel. */
+  names: readonly string[];
+  /** Tint per channel (0..1), one entry per name. */
+  tints: readonly number[];
+  /** Process-color value when all channels are at full tint. */
+  alternate: ProcessColor;
+}
+
+export type PdfColor = GrayColor | RgbColor | CmykColor | SeparationColor | DeviceNColor;
+
+/**
+ * PDF blend mode names defined in ISO 32000-2 § 11.3.5.
+ */
+export type PdfBlendMode =
+  | "Normal"
+  | "Multiply"
+  | "Screen"
+  | "Overlay"
+  | "Darken"
+  | "Lighten"
+  | "ColorDodge"
+  | "ColorBurn"
+  | "HardLight"
+  | "SoftLight"
+  | "Difference"
+  | "Exclusion"
+  | "Hue"
+  | "Saturation"
+  | "Color"
+  | "Luminosity";
+
+/**
+ * Graphics-state parameters for fill/stroke alpha and blend mode.
+ * Emitted as an inline ExtGState entry referenced by the `gs` operator.
+ */
+export interface ExtGStateOptions {
+  /** Stroking alpha constant (0..1). Maps to /CA. */
+  strokeAlpha?: number | undefined;
+  /** Non-stroking (fill) alpha constant (0..1). Maps to /ca. */
+  fillAlpha?: number | undefined;
+  /** Blend mode applied to subsequent painting operations. Maps to /BM. */
+  blendMode?: PdfBlendMode | undefined;
+  /**
+   * Soft mask reference. When provided, /SMask in the ExtGState references a
+   * Form XObject built via {@link PdfDocument.createLuminositySoftMask}.
+   * Pass `null` to set /SMask /None (clearing any active mask).
+   */
+  softMask?: SoftMaskHandle | null | undefined;
+}
+
+/**
+ * Options for creating a luminosity-based soft mask Form XObject.
+ */
+export interface SoftMaskOptions {
+  /** Width of the mask form's BBox in PDF points. */
+  width: number;
+  /** Height of the mask form's BBox in PDF points. */
+  height: number;
+}
+
+/**
+ * Opaque handle returned by {@link PdfDocument.createLuminositySoftMask}.
+ * Pass to {@link ExtGStateOptions.softMask} to apply the mask.
+ */
+export interface SoftMaskHandle {
+  /** Internal mask key, used by the serializer to resolve the form XObject. */
+  readonly key: string;
+}
 
 /**
  * Text direction options, including automatic RTL detection.
@@ -1056,6 +1171,12 @@ export interface JpegImageOptions {
   tag?: PdfFigureStructureTag | "Artifact" | undefined;
   /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
+  /**
+   * ICC profile bytes used to tag the image's color space as ICCBased
+   * (ISO 32000-2 § 8.6.5.5). When provided, the image's ColorSpace becomes
+   * [/ICCBased ref] referencing the embedded profile stream.
+   */
+  iccProfile?: BinaryData | undefined;
 }
 
 /**
@@ -1076,6 +1197,10 @@ export interface PngImageOptions {
   tag?: PdfFigureStructureTag | "Artifact" | undefined;
   /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
+  /**
+   * ICC profile bytes used to tag the image's color space as ICCBased.
+   */
+  iccProfile?: BinaryData | undefined;
 }
 
 /**
@@ -1609,6 +1734,31 @@ export function gray(value: number): GrayColor {
  */
 export function cmyk(c: number, m: number, y: number, k: number): CmykColor {
   return { kind: "cmyk", c, m, y, k };
+}
+
+/**
+ * Creates a Separation (single-ink spot) color.
+ *
+ * @param name Spot ink name (e.g. "PANTONE 185 C").
+ * @param tint Tint value from 0 to 1.
+ * @param alternate Process color at full tint.
+ */
+export function separation(name: string, tint: number, alternate: ProcessColor): SeparationColor {
+  return { kind: "separation", name, tint, alternate };
+}
+
+/**
+ * Creates a DeviceN (multi-ink spot) color.
+ *
+ * @param names Ink names, one per channel.
+ * @param tints Tint values per channel, one per name (0..1).
+ * @param alternate Process color produced when all channels are at full tint.
+ */
+export function deviceN(names: readonly string[], tints: readonly number[], alternate: ProcessColor): DeviceNColor {
+  if (names.length !== tints.length || names.length === 0) {
+    throw new Error("deviceN requires equal-length, non-empty names and tints arrays.");
+  }
+  return { kind: "deviceN", names: [...names], tints: [...tints], alternate };
 }
 
 /**
