@@ -1,0 +1,123 @@
+%PDF-1.4
+%ÿÿÿ
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /Outlines 11 0 R /PageMode /UseOutlines >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 3 /Kids [6 0 R 8 0 R 10 0 R] >>
+endobj
+3 0 obj
+<< /Producer (pdf-editing-lib) /Title (PDF Outlines \(Bookmarks\) Demo) /Author (pdf-editing-lib) >>
+endobj
+11 0 obj
+<< /Type /Outlines /First 12 0 R /Last 17 0 R /Count 6 >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+12 0 obj
+<< /Title (Chapter 1: Introduction) /Parent 11 0 R /Next 14 0 R /First 13 0 R /Last 13 0 R /Count 1 /Dest [6 0 R /Fit] >>
+endobj
+13 0 obj
+<< /Title (Overview) /Parent 12 0 R /Dest [6 0 R /Fit] >>
+endobj
+14 0 obj
+<< /Title (Chapter 2: Advanced Topics) /Parent 11 0 R /Prev 12 0 R /Next 17 0 R /First 15 0 R /Last 16 0 R /Count 2 /Dest [8 0 R /Fit] >>
+endobj
+15 0 obj
+<< /Title (Section 2.1 - Deep Dive) /Parent 14 0 R /Next 16 0 R /Dest [8 0 R /Fit] >>
+endobj
+16 0 obj
+<< /Title (Section 2.2 - Examples) /Parent 14 0 R /Prev 15 0 R /Dest [8 0 R /Fit] >>
+endobj
+17 0 obj
+<< /Title (Appendix A: Reference) /Parent 11 0 R /Prev 14 0 R /Dest [10 0 R /Fit] >>
+endobj
+5 0 obj
+<< /Length 187 >>
+stream
+BT
+/F1 20 Tf
+0.101961 0.101961 0.180392 rg
+1 0 0 1 56 780 Tm
+(Chapter 1: Introduction) Tj
+ET
+BT
+/F1 12 Tf
+0 g
+1 0 0 1 56 740 Tm
+(This is the first chapter covering basic concepts.) Tj
+ET
+
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+7 0 obj
+<< /Length 229 >>
+stream
+BT
+/F1 20 Tf
+0.101961 0.101961 0.180392 rg
+1 0 0 1 56 780 Tm
+(Chapter 2: Advanced Topics) Tj
+ET
+BT
+/F1 14 Tf
+0 g
+1 0 0 1 56 740 Tm
+(Section 2.1 - Deep Dive) Tj
+ET
+BT
+/F1 14 Tf
+0 g
+1 0 0 1 56 710 Tm
+(Section 2.2 - Examples) Tj
+ET
+
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 4 0 R >> >> /Contents 7 0 R >>
+endobj
+9 0 obj
+<< /Length 91 >>
+stream
+BT
+/F1 20 Tf
+0.101961 0.101961 0.180392 rg
+1 0 0 1 56 780 Tm
+(Appendix A: Reference) Tj
+ET
+
+endstream
+endobj
+10 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 4 0 R >> >> /Contents 9 0 R >>
+endobj
+xref
+0 18
+0000000000 65535 f 
+0000000014 00000 n 
+0000000103 00000 n 
+0000000173 00000 n 
+0000000363 00000 n 
+0000001103 00000 n 
+0000001341 00000 n 
+0000001473 00000 n 
+0000001753 00000 n 
+0000001885 00000 n 
+0000002026 00000 n 
+0000000289 00000 n 
+0000000433 00000 n 
+0000000571 00000 n 
+0000000645 00000 n 
+0000000799 00000 n 
+0000000901 00000 n 
+0000001002 00000 n 
+trailer
+<< /Size 18 /Root 1 0 R /Info 3 0 R >>
+startxref
+2159
+%%EOF

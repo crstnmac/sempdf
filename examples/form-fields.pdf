@@ -1,0 +1,296 @@
+%PDF-1.4
+%ÿÿÿ
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /AcroForm 25 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 1 /Kids [6 0 R] >>
+endobj
+3 0 obj
+<< /Producer (pdf-editing-lib) /Title (PDF Form Fields Demo) /Author (pdf-editing-lib) >>
+endobj
+25 0 obj
+<< /Fields [7 0 R 8 0 R 11 0 R 12 0 R 13 0 R 23 0 R 24 0 R] /NeedAppearances true /DR << /Font << /FormF1 4 0 R >> >> /DA (/FormF1 12 Tf 0 g) >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+7 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Tx /T (name) /Rect [56 735 356 757] /Border [0 0 1] /DA (/FormF1 11 Tf 0 g) /V (John Doe) /P 6 0 R >>
+endobj
+9 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length 27 >>
+stream
+q
+1 w
+0.5 0.5 15 15 re
+S
+Q
+
+endstream
+endobj
+10 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length 81 >>
+stream
+q
+1 w
+0.5 0.5 15 15 re
+S
+3.52 3.52 m
+12.48 12.48 l
+3.52 12.48 m
+12.48 3.52 l
+S
+Q
+
+endstream
+endobj
+8 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Btn /T (subscribe) /Rect [56 670 72 686] /Border [0 0 1] /V /Yes /AS /Yes /AP << /N << /Off 9 0 R /Yes 10 0 R >> >> /P 6 0 R >>
+endobj
+11 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Ch /T (country) /Rect [56 605 256 627] /Border [0 0 1] /DA (/FormF1 10 Tf 0 g) /Opt [(United States) (Canada) (United Kingdom) (Germany) (Japan)] /V (United States) /Ff 131072 /P 6 0 R >>
+endobj
+12 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Ch /T (skills) /Rect [300 600 500 660] /Border [0 0 1] /DA (/FormF1 10 Tf 0 g) /Opt [(TypeScript) (JavaScript) (Python) (Rust) (Go)] /P 6 0 R >>
+endobj
+13 0 obj
+<< /FT /Btn /T (gender) /V /male /Ff 32768 /Kids [14 0 R 17 0 R 20 0 R] >>
+endobj
+15 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length 164 >>
+stream
+q
+1 w
+0.5 8 m
+0.5 12.142136 3.857864 15.5 8 15.5 c
+12.142136 15.5 15.5 12.142136 15.5 8 c
+15.5 3.857864 12.142136 0.5 8 0.5 c
+3.857864 0.5 0.5 3.857864 0.5 8 c
+S
+Q
+
+endstream
+endobj
+16 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length 342 >>
+stream
+q
+1 w
+0.5 8 m
+0.5 12.142136 3.857864 15.5 8 15.5 c
+12.142136 15.5 15.5 12.142136 15.5 8 c
+15.5 3.857864 12.142136 0.5 8 0.5 c
+3.857864 0.5 0.5 3.857864 0.5 8 c
+S
+4.625 8 m
+4.625 9.863961 6.136039 11.375 8 11.375 c
+9.863961 11.375 11.375 9.863961 11.375 8 c
+11.375 6.136039 9.863961 4.625 8 4.625 c
+6.136039 4.625 4.625 6.136039 4.625 8 c
+f
+Q
+
+endstream
+endobj
+14 0 obj
+<< /Type /Annot /Subtype /Widget /Parent 13 0 R /Rect [56 545 72 561] /Border [0 0 1] /AP << /N << /Off 15 0 R /male 16 0 R >> >> /AS /male /P 6 0 R >>
+endobj
+18 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length 164 >>
+stream
+q
+1 w
+0.5 8 m
+0.5 12.142136 3.857864 15.5 8 15.5 c
+12.142136 15.5 15.5 12.142136 15.5 8 c
+15.5 3.857864 12.142136 0.5 8 0.5 c
+3.857864 0.5 0.5 3.857864 0.5 8 c
+S
+Q
+
+endstream
+endobj
+19 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length 342 >>
+stream
+q
+1 w
+0.5 8 m
+0.5 12.142136 3.857864 15.5 8 15.5 c
+12.142136 15.5 15.5 12.142136 15.5 8 c
+15.5 3.857864 12.142136 0.5 8 0.5 c
+3.857864 0.5 0.5 3.857864 0.5 8 c
+S
+4.625 8 m
+4.625 9.863961 6.136039 11.375 8 11.375 c
+9.863961 11.375 11.375 9.863961 11.375 8 c
+11.375 6.136039 9.863961 4.625 8 4.625 c
+6.136039 4.625 4.625 6.136039 4.625 8 c
+f
+Q
+
+endstream
+endobj
+17 0 obj
+<< /Type /Annot /Subtype /Widget /Parent 13 0 R /Rect [160 545 176 561] /Border [0 0 1] /AP << /N << /Off 18 0 R /female 19 0 R >> >> /AS /Off /P 6 0 R >>
+endobj
+21 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length 164 >>
+stream
+q
+1 w
+0.5 8 m
+0.5 12.142136 3.857864 15.5 8 15.5 c
+12.142136 15.5 15.5 12.142136 15.5 8 c
+15.5 3.857864 12.142136 0.5 8 0.5 c
+3.857864 0.5 0.5 3.857864 0.5 8 c
+S
+Q
+
+endstream
+endobj
+22 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length 342 >>
+stream
+q
+1 w
+0.5 8 m
+0.5 12.142136 3.857864 15.5 8 15.5 c
+12.142136 15.5 15.5 12.142136 15.5 8 c
+15.5 3.857864 12.142136 0.5 8 0.5 c
+3.857864 0.5 0.5 3.857864 0.5 8 c
+S
+4.625 8 m
+4.625 9.863961 6.136039 11.375 8 11.375 c
+9.863961 11.375 11.375 9.863961 11.375 8 c
+11.375 6.136039 9.863961 4.625 8 4.625 c
+6.136039 4.625 4.625 6.136039 4.625 8 c
+f
+Q
+
+endstream
+endobj
+20 0 obj
+<< /Type /Annot /Subtype /Widget /Parent 13 0 R /Rect [280 545 296 561] /Border [0 0 1] /AP << /N << /Off 21 0 R /other 22 0 R >> >> /AS /Off /P 6 0 R >>
+endobj
+23 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Btn /T (submit) /Rect [56 470 176 500] /Border [0 0 1] /DA (/FormF1 11 Tf 0 g) /MK << /CA (Submit Form) >> /Ff 65536 /P 6 0 R >>
+endobj
+24 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Sig /T (sig) /Rect [56 340 456 420] /Border [0 0 1] /P 6 0 R >>
+endobj
+5 0 obj
+<< /Length 690 >>
+stream
+BT
+/F1 20 Tf
+0 g
+1 0 0 1 56 800 Tm
+(PDF Form Fields) Tj
+ET
+BT
+/F1 12 Tf
+0 g
+1 0 0 1 56 770 Tm
+(Text Field) Tj
+ET
+BT
+/F1 12 Tf
+0 g
+1 0 0 1 56 700 Tm
+(Checkbox) Tj
+ET
+BT
+/F1 11 Tf
+0 g
+1 0 0 1 80 672 Tm
+(Subscribe to newsletter) Tj
+ET
+BT
+/F1 12 Tf
+0 g
+1 0 0 1 56 640 Tm
+(Choice Field \(Combo Box\)) Tj
+ET
+BT
+/F1 12 Tf
+0 g
+1 0 0 1 300 640 Tm
+(Choice Field \(List Box\)) Tj
+ET
+BT
+/F1 12 Tf
+0 g
+1 0 0 1 56 575 Tm
+(Radio Group) Tj
+ET
+BT
+/F1 11 Tf
+0 g
+1 0 0 1 80 547 Tm
+(Male) Tj
+ET
+BT
+/F1 11 Tf
+0 g
+1 0 0 1 184 547 Tm
+(Female) Tj
+ET
+BT
+/F1 11 Tf
+0 g
+1 0 0 1 304 547 Tm
+(Other) Tj
+ET
+BT
+/F1 12 Tf
+0 g
+1 0 0 1 56 510 Tm
+(Push Button) Tj
+ET
+BT
+/F1 12 Tf
+0 g
+1 0 0 1 56 440 Tm
+(Signature Field) Tj
+ET
+
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 4 0 R >> >> /Annots [7 0 R 8 0 R 11 0 R 12 0 R 14 0 R 17 0 R 20 0 R 23 0 R 24 0 R] /Contents 5 0 R >>
+endobj
+xref
+0 26
+0000000000 65535 f 
+0000000014 00000 n 
+0000000080 00000 n 
+0000000137 00000 n 
+0000000403 00000 n 
+0000004574 00000 n 
+0000005315 00000 n 
+0000000473 00000 n 
+0000000933 00000 n 
+0000000628 00000 n 
+0000000753 00000 n 
+0000001114 00000 n 
+0000001356 00000 n 
+0000001555 00000 n 
+0000002352 00000 n 
+0000001646 00000 n 
+0000001910 00000 n 
+0000003226 00000 n 
+0000002520 00000 n 
+0000002784 00000 n 
+0000004103 00000 n 
+0000003397 00000 n 
+0000003661 00000 n 
+0000004273 00000 n 
+0000004456 00000 n 
+0000000242 00000 n 
+trailer
+<< /Size 26 /Root 1 0 R /Info 3 0 R >>
+startxref
+5518
+%%EOF

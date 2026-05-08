@@ -1,0 +1,84 @@
+%PDF-1.4
+%ÿÿÿ
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /AcroForm 11 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 1 /Kids [6 0 R] >>
+endobj
+3 0 obj
+<< /Producer (pdf-editing-lib) /Title (Base Document) /Author (pdf-editing-lib) >>
+endobj
+11 0 obj
+<< /Fields [7 0 R 8 0 R] /NeedAppearances true /DR << /Font << /FormF1 4 0 R >> >> /DA (/FormF1 12 Tf 0 g) >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+7 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Tx /T (name) /Rect [56 730 356 752] /Border [0 0 1] /DA (/FormF1 11 Tf 0 g) /V (Original) /P 6 0 R >>
+endobj
+9 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length 27 >>
+stream
+q
+1 w
+0.5 0.5 15 15 re
+S
+Q
+
+endstream
+endobj
+10 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length 81 >>
+stream
+q
+1 w
+0.5 0.5 15 15 re
+S
+3.52 3.52 m
+12.48 12.48 l
+3.52 12.48 m
+12.48 3.52 l
+S
+Q
+
+endstream
+endobj
+8 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Btn /T (agree) /Rect [56 690 72 706] /Border [0 0 1] /V /Off /AS /Off /AP << /N << /Off 9 0 R /Yes 10 0 R >> >> /P 6 0 R >>
+endobj
+5 0 obj
+<< /Length 106 >>
+stream
+BT
+/F1 14 Tf
+0 g
+1 0 0 1 56 780 Tm
+(Original content - this document will be edited incrementally.) Tj
+ET
+
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 4 0 R >> >> /Annots [7 0 R 8 0 R] /Contents 5 0 R >>
+endobj
+xref
+0 12
+0000000000 65535 f 
+0000000014 00000 n 
+0000000080 00000 n 
+0000000137 00000 n 
+0000000361 00000 n 
+0000001068 00000 n 
+0000001225 00000 n 
+0000000431 00000 n 
+0000000891 00000 n 
+0000000586 00000 n 
+0000000711 00000 n 
+0000000235 00000 n 
+trailer
+<< /Size 12 /Root 1 0 R /Info 3 0 R >>
+startxref
+1379
+%%EOF

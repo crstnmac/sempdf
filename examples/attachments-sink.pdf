@@ -1,0 +1,120 @@
+%PDF-1.7
+%ÿÿÿ
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /Names << /Dests << /Names [(chapter1) [10 0 R /Fit]] >> /EmbeddedFiles << /Names [(README.md) 5 0 R] >> >> /PageLabels << /Nums [0 << /S /R /P (Intro-) >> 1 << /S /D /P (Chapter 1-) >> 2 << /S /D /P (Chapter 1-) /St 2 >> 3 << /S /A /P (Appendix-) >>] >> /AF [5 0 R] >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 4 /Kids [8 0 R 10 0 R 12 0 R 14 0 R] >>
+endobj
+3 0 obj
+<< /Producer (pdf-editing-lib) /Title (Attachments & Page Labels Demo) /Author (pdf-editing-lib) >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+6 0 obj
+<< /Type /EmbeddedFile /Params << /Size 50 >> /Length 50 >>
+stream
+# Project README
+
+This is an embedded attachment.
+
+endstream
+endobj
+5 0 obj
+<< /Type /Filespec /F (README.md) /UF (README.md) /Desc (Project README file) /EF << /F 6 0 R /UF 6 0 R >> >>
+endobj
+7 0 obj
+<< /Length 4 0 R >>
+stream
+BT
+/F1 16 Tf
+0 g
+1 0 0 1 56 780 Tm
+(Front Matter \(roman numerals\)) Tj
+ET
+
+endstream
+endobj
+4 0 obj
+75
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 4 0 R >> >> /Contents 7 0 R >>
+endobj
+9 0 obj
+<< /Length 5 0 R >>
+stream
+BT
+/F1 16 Tf
+0 g
+1 0 0 1 56 780 Tm
+(Chapter 1 - Decimal numbering starts here) Tj
+ET
+
+endstream
+endobj
+5 0 obj
+85
+endobj
+10 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 4 0 R >> >> /Contents 9 0 R >>
+endobj
+11 0 obj
+<< /Length 6 0 R >>
+stream
+BT
+/F1 16 Tf
+0 g
+1 0 0 1 56 780 Tm
+(Chapter 1 - Continued) Tj
+ET
+
+endstream
+endobj
+6 0 obj
+65
+endobj
+12 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 4 0 R >> >> /Contents 11 0 R >>
+endobj
+13 0 obj
+<< /Length 7 0 R >>
+stream
+BT
+/F1 16 Tf
+0 g
+1 0 0 1 56 780 Tm
+(Appendix A - Letter-style numbering) Tj
+ET
+
+endstream
+endobj
+7 0 obj
+79
+endobj
+14 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 4 0 R >> >> /Contents 13 0 R >>
+endobj
+xref
+0 15
+0000000000 65535 f 
+0000000014 00000 n 
+0000000330 00000 n 
+0000000408 00000 n 
+0000000989 00000 n 
+0000001277 00000 n 
+0000001547 00000 n 
+0000001832 00000 n 
+0000001007 00000 n 
+0000001139 00000 n 
+0000001295 00000 n 
+0000001428 00000 n 
+0000001565 00000 n 
+0000001699 00000 n 
+0000001850 00000 n 
+trailer
+<< /Size 15 /Root 1 0 R /Info 3 0 R >>
+startxref
+1984
+%%EOF

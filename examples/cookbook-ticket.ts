@@ -72,7 +72,6 @@ doc.renderTemplate({
       options: {
         headerColumns: 1,
         fontSize: 11,
-        cellPadding: 8,
         rowGap: 3,
         marginBottom: 24
       }

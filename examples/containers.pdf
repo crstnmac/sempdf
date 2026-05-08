@@ -1,0 +1,381 @@
+%PDF-1.4
+%ÿÿÿ
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >> /StructTreeRoot 8 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 1 /Kids [7 0 R] >>
+endobj
+3 0 obj
+<< /Producer (pdf-editing-lib) /Title (Structure Containers Demo) /Author (pdf-editing-lib) >>
+endobj
+9 0 obj
+<< /Nums [0 [12 0 R 13 0 R 13 0 R 15 0 R 16 0 R 16 0 R 17 0 R 19 0 R 19 0 R 21 0 R 23 0 R 26 0 R 27 0 R 28 0 R 30 0 R 31 0 R 32 0 R 34 0 R 35 0 R 36 0 R 38 0 R 39 0 R 40 0 R]] >>
+endobj
+8 0 obj
+<< /Type /StructTreeRoot /K [10 0 R] /ParentTree 9 0 R /ParentTreeNextKey 1 >>
+endobj
+12 0 obj
+<< /Type /StructElem /S /H2 /P 11 0 R /Pg 7 0 R /K 0 >>
+endobj
+13 0 obj
+<< /Type /StructElem /S /P /P 11 0 R /Pg 7 0 R /K [1 2] >>
+endobj
+15 0 obj
+<< /Type /StructElem /S /H3 /P 14 0 R /Pg 7 0 R /K 3 >>
+endobj
+16 0 obj
+<< /Type /StructElem /S /P /P 14 0 R /Pg 7 0 R /K [4 5] >>
+endobj
+14 0 obj
+<< /Type /StructElem /S /Sect /P 11 0 R /Pg 7 0 R /K [15 0 R 16 0 R] >>
+endobj
+11 0 obj
+<< /Type /StructElem /S /Sect /P 10 0 R /Pg 7 0 R /K [12 0 R 13 0 R 14 0 R] >>
+endobj
+17 0 obj
+<< /Type /StructElem /S /H2 /P 10 0 R /Pg 7 0 R /K 6 >>
+endobj
+19 0 obj
+<< /Type /StructElem /S /P /P 18 0 R /Pg 7 0 R /K [7 8] >>
+endobj
+18 0 obj
+<< /Type /StructElem /S /Note /P 10 0 R /Pg 7 0 R /K 19 0 R >>
+endobj
+21 0 obj
+<< /Type /StructElem /S /P /P 20 0 R /Pg 7 0 R /K 9 >>
+endobj
+20 0 obj
+<< /Type /StructElem /S /BlockQuote /P 10 0 R /Pg 7 0 R /K 21 0 R >>
+endobj
+23 0 obj
+<< /Type /StructElem /S /H3 /P 22 0 R /Pg 7 0 R /K 10 >>
+endobj
+26 0 obj
+<< /Type /StructElem /S /TH /P 25 0 R /Pg 7 0 R /K 11 /A << /O /Table /Scope /Column >> >>
+endobj
+27 0 obj
+<< /Type /StructElem /S /TH /P 25 0 R /Pg 7 0 R /K 12 /A << /O /Table /Scope /Column >> >>
+endobj
+28 0 obj
+<< /Type /StructElem /S /TH /P 25 0 R /Pg 7 0 R /K 13 /A << /O /Table /Scope /Column >> >>
+endobj
+25 0 obj
+<< /Type /StructElem /S /TR /P 24 0 R /Pg 7 0 R /K [26 0 R 27 0 R 28 0 R] >>
+endobj
+30 0 obj
+<< /Type /StructElem /S /TD /P 29 0 R /Pg 7 0 R /K 14 /A << /O /Table >> >>
+endobj
+31 0 obj
+<< /Type /StructElem /S /TD /P 29 0 R /Pg 7 0 R /K 15 /A << /O /Table >> >>
+endobj
+32 0 obj
+<< /Type /StructElem /S /TD /P 29 0 R /Pg 7 0 R /K 16 /A << /O /Table >> >>
+endobj
+29 0 obj
+<< /Type /StructElem /S /TR /P 24 0 R /Pg 7 0 R /K [30 0 R 31 0 R 32 0 R] >>
+endobj
+34 0 obj
+<< /Type /StructElem /S /TD /P 33 0 R /Pg 7 0 R /K 17 /A << /O /Table >> >>
+endobj
+35 0 obj
+<< /Type /StructElem /S /TD /P 33 0 R /Pg 7 0 R /K 18 /A << /O /Table >> >>
+endobj
+36 0 obj
+<< /Type /StructElem /S /TD /P 33 0 R /Pg 7 0 R /K 19 /A << /O /Table >> >>
+endobj
+33 0 obj
+<< /Type /StructElem /S /TR /P 24 0 R /Pg 7 0 R /K [34 0 R 35 0 R 36 0 R] >>
+endobj
+38 0 obj
+<< /Type /StructElem /S /TD /P 37 0 R /Pg 7 0 R /K 20 /A << /O /Table >> >>
+endobj
+39 0 obj
+<< /Type /StructElem /S /TD /P 37 0 R /Pg 7 0 R /K 21 /A << /O /Table >> >>
+endobj
+40 0 obj
+<< /Type /StructElem /S /TD /P 37 0 R /Pg 7 0 R /K 22 /A << /O /Table >> >>
+endobj
+37 0 obj
+<< /Type /StructElem /S /TR /P 24 0 R /Pg 7 0 R /K [38 0 R 39 0 R 40 0 R] >>
+endobj
+24 0 obj
+<< /Type /StructElem /S /Table /P 22 0 R /Pg 7 0 R /K [25 0 R 29 0 R 33 0 R 37 0 R] >>
+endobj
+22 0 obj
+<< /Type /StructElem /S /Sect /P 10 0 R /Pg 7 0 R /K [23 0 R 24 0 R] >>
+endobj
+10 0 obj
+<< /Type /StructElem /S /Document /P 8 0 R /K [11 0 R 17 0 R 18 0 R 20 0 R 22 0 R] >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /ToUnicode 5 0 R >>
+endobj
+5 0 obj
+<< /Length 338 >>
+stream
+/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def
+/CMapName /Adobe-Identity-UCS def
+/CMapType 2 def
+1 begincodespacerange
+<00> <FF>
+endcodespacerange
+1 beginbfrange
+<20> <7E> <0020>
+endbfrange
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end
+endstream
+endobj
+6 0 obj
+<< /Length 2375 >>
+stream
+BT
+/F1 16 Tf
+0 g
+1 0 0 1 56 800 Tm
+(Structure Containers & Tagged Content) Tj
+ET
+/H2 <</MCID 0>> BDC
+BT
+/F1 14 Tf
+0.082353 0.396078 0.752941 rg
+1 0 0 1 56 760 Tm
+(Section Container) Tj
+ET
+EMC
+/P <</MCID 1>> BDC
+BT
+/F1 11 Tf
+0 g
+1 0 0 1 56 735 Tm
+(Structure containers group content into tagged <Sect> elements. Screen readers ) Tj
+ET
+EMC
+/P <</MCID 2>> BDC
+BT
+/F1 11 Tf
+0 g
+1 0 0 1 56 721.8 Tm
+(use this structure for document navigation.) Tj
+ET
+EMC
+/H3 <</MCID 3>> BDC
+BT
+/F1 12 Tf
+0.180392 0.490196 0.196078 rg
+1 0 0 1 56 695 Tm
+(Nested Subsection) Tj
+ET
+EMC
+/P <</MCID 4>> BDC
+BT
+/F1 10 Tf
+0 g
+1 0 0 1 56 675 Tm
+(Containers can be nested to build deep document hierarchies for complex, well-structured ) Tj
+ET
+EMC
+/P <</MCID 5>> BDC
+BT
+/F1 10 Tf
+0 g
+1 0 0 1 56 663 Tm
+(PDF content.) Tj
+ET
+EMC
+/H2 <</MCID 6>> BDC
+BT
+/F1 14 Tf
+0.082353 0.396078 0.752941 rg
+1 0 0 1 56 635 Tm
+(Custom Structure Roles) Tj
+ET
+EMC
+/P <</MCID 7>> BDC
+BT
+/F1 10 Tf
+0 g
+1 0 0 1 56 605 Tm
+(Note: Structure containers enable full control over the PDF logical structure tree for ) Tj
+ET
+EMC
+/P <</MCID 8>> BDC
+BT
+/F1 10 Tf
+0 g
+1 0 0 1 56 593 Tm
+(maximum accessibility.) Tj
+ET
+EMC
+/P <</MCID 9>> BDC
+BT
+/F1 11 Tf
+0.333333 0.333333 0.4 rg
+1 0 0 1 56 575 Tm
+("Well-structured PDFs are accessible to all." -- PDF/UA) Tj
+ET
+EMC
+/H3 <</MCID 10>> BDC
+BT
+/F1 13 Tf
+0.082353 0.396078 0.752941 rg
+1 0 0 1 56 535 Tm
+(Container with Table) Tj
+ET
+EMC
+/TH <</MCID 11>> BDC
+BT
+/F1 9.5 Tf
+0 g
+1 0 0 1 58 458 Tm
+(Item) Tj
+ET
+EMC
+/TH <</MCID 12>> BDC
+BT
+/F1 9.5 Tf
+0 g
+1 0 0 1 208 458 Tm
+(Status) Tj
+ET
+EMC
+/TH <</MCID 13>> BDC
+BT
+/F1 9.5 Tf
+0 g
+1 0 0 1 358 458 Tm
+(Notes) Tj
+ET
+EMC
+/TD <</MCID 14>> BDC
+BT
+/F1 9.5 Tf
+0 g
+1 0 0 1 58 442.6 Tm
+(Design) Tj
+ET
+EMC
+/TD <</MCID 15>> BDC
+BT
+/F1 9.5 Tf
+0 g
+1 0 0 1 208 442.6 Tm
+(Complete) Tj
+ET
+EMC
+/TD <</MCID 16>> BDC
+BT
+/F1 9.5 Tf
+0 g
+1 0 0 1 358 442.6 Tm
+(Lead approved) Tj
+ET
+EMC
+/TD <</MCID 17>> BDC
+BT
+/F1 9.5 Tf
+0 g
+1 0 0 1 58 427.2 Tm
+(Development) Tj
+ET
+EMC
+/TD <</MCID 18>> BDC
+BT
+/F1 9.5 Tf
+0 g
+1 0 0 1 208 427.2 Tm
+(In Progress) Tj
+ET
+EMC
+/TD <</MCID 19>> BDC
+BT
+/F1 9.5 Tf
+0 g
+1 0 0 1 358 427.2 Tm
+(Sprint 3) Tj
+ET
+EMC
+/TD <</MCID 20>> BDC
+BT
+/F1 9.5 Tf
+0 g
+1 0 0 1 58 411.8 Tm
+(Testing) Tj
+ET
+EMC
+/TD <</MCID 21>> BDC
+BT
+/F1 9.5 Tf
+0 g
+1 0 0 1 208 411.8 Tm
+(Pending) Tj
+ET
+EMC
+/TD <</MCID 22>> BDC
+BT
+/F1 9.5 Tf
+0 g
+1 0 0 1 358 411.8 Tm
+(Starts Mon) Tj
+ET
+EMC
+
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 4 0 R >> >> /Tabs /S /StructParents 0 /Contents 6 0 R >>
+endobj
+xref
+0 41
+0000000000 65535 f 
+0000000014 00000 n 
+0000000128 00000 n 
+0000000185 00000 n 
+0000003329 00000 n 
+0000003416 00000 n 
+0000003805 00000 n 
+0000006232 00000 n 
+0000000489 00000 n 
+0000000295 00000 n 
+0000003227 00000 n 
+0000000965 00000 n 
+0000000583 00000 n 
+0000000655 00000 n 
+0000000877 00000 n 
+0000000730 00000 n 
+0000000802 00000 n 
+0000001060 00000 n 
+0000001207 00000 n 
+0000001132 00000 n 
+0000001357 00000 n 
+0000001286 00000 n 
+0000003139 00000 n 
+0000001442 00000 n 
+0000003036 00000 n 
+0000001836 00000 n 
+0000001515 00000 n 
+0000001622 00000 n 
+0000001729 00000 n 
+0000002205 00000 n 
+0000001929 00000 n 
+0000002021 00000 n 
+0000002113 00000 n 
+0000002574 00000 n 
+0000002298 00000 n 
+0000002390 00000 n 
+0000002482 00000 n 
+0000002943 00000 n 
+0000002667 00000 n 
+0000002759 00000 n 
+0000002851 00000 n 
+trailer
+<< /Size 41 /Root 1 0 R /Info 3 0 R >>
+startxref
+6390
+%%EOF
