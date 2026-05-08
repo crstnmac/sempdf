@@ -564,15 +564,30 @@ function getSerializedPageContentBytes(page: SerializedPage): Uint8Array {
 function collectTaggedPageContent(ops: readonly PdfOp[], mcidStart: number): TaggedPageContentItem[] {
   const items: TaggedPageContentItem[] = [];
   let nextMcid = mcidStart;
+  let groupId: number | undefined;
+  let groupMcid: number | undefined;
 
   for (const [opIndex, op] of ops.entries()) {
     if (op.type === "text" && op.options.tag !== undefined) {
+      const sid = op.options.structureGroupId;
+      if (sid !== undefined && sid === groupId) {
+        items.push({
+          opIndex,
+          kind: "struct",
+          role: op.options.tag,
+          mcid: groupMcid,
+          structureGroupId: sid
+        });
+        continue;
+      }
+      groupId = sid;
+      groupMcid = nextMcid;
       items.push({
         opIndex,
         kind: "struct",
         role: op.options.tag,
         mcid: nextMcid,
-        structureGroupId: op.options.structureGroupId
+        structureGroupId: sid
       });
       nextMcid += 1;
       continue;
@@ -589,6 +604,8 @@ function collectTaggedPageContent(ops: readonly PdfOp[], mcidStart: number): Tag
     }
 
     if (op.options.tag === "Artifact") {
+      groupId = undefined;
+      groupMcid = undefined;
       items.push({
         opIndex,
         kind: "artifact"
@@ -597,6 +614,8 @@ function collectTaggedPageContent(ops: readonly PdfOp[], mcidStart: number): Tag
     }
 
     if (op.options.tag === "Figure" || op.options.altText !== undefined) {
+      groupId = undefined;
+      groupMcid = undefined;
       items.push({
         opIndex,
         kind: "struct",
@@ -700,7 +719,7 @@ function allocateTaggedPdf(
         pageObjectId: page.pageObjectId,
         parentTreeKey: page.structParentsKey,
         role: firstItem.role,
-        mcids: items.map((item) => item.mcid!).sort((left, right) => left - right),
+        mcids: [...new Set(items.map((item) => item.mcid!))].sort((left, right) => left - right),
         childObjectIds: [],
         annotationObjectIds: [],
         annotationParentTreeKeys: [],
@@ -770,7 +789,7 @@ function allocateStructElementTree(
   }
 
   const items = groupedItems.get(node.id) ?? [];
-  const mcids = items.map((item) => item.mcid!).sort((left, right) => left - right);
+  const mcids = [...new Set(items.map((item) => item.mcid!))].sort((left, right) => left - right);
   const altText = node.altText ?? items.find((item) => item.altText !== undefined)?.altText;
   const annotationObjectIds = node.annotationIndexes.flatMap((index) => resolveAnnotationObjectIds(page, index));
   const nodeAnnotationParentTreeKeys = annotationObjectIds.map((annotationObjectId) => {
@@ -5076,6 +5095,29 @@ function* serializePageContentLines(
 ): Iterable<string> {
   const taggedContentByOpIndex = new Map(resources.taggedContentItems.map((item) => [item.opIndex, item]));
 
+  const groupStartOps = new Set<number>();
+  const groupEndOps = new Set<number>();
+  let prevMcid: number | undefined;
+  for (const item of resources.taggedContentItems) {
+    if (item.kind === "struct" && item.mcid !== undefined) {
+      if (item.mcid !== prevMcid) {
+        groupStartOps.add(item.opIndex);
+      }
+      prevMcid = item.mcid;
+    } else {
+      prevMcid = undefined;
+    }
+  }
+  for (let i = 0; i < resources.taggedContentItems.length; i += 1) {
+    const item = resources.taggedContentItems[i]!;
+    if (item.kind === "struct" && item.mcid !== undefined) {
+      const nextItem = resources.taggedContentItems[i + 1];
+      if (!nextItem || nextItem.kind !== "struct" || nextItem.mcid !== item.mcid) {
+        groupEndOps.add(item.opIndex);
+      }
+    }
+  }
+
   for (const [opIndex, op] of ops.entries()) {
     const opLines: string[] = [];
     switch (op.type) {
@@ -5136,9 +5178,13 @@ function* serializePageContentLines(
     }
 
     if (taggedItem?.kind === "struct" && taggedItem.role !== undefined && taggedItem.mcid !== undefined) {
-      yield `/${taggedItem.role} <</MCID ${taggedItem.mcid}>> BDC`;
+      if (groupStartOps.has(opIndex)) {
+        yield `/${taggedItem.role} <</MCID ${taggedItem.mcid}>> BDC`;
+      }
       yield* opLines;
-      yield "EMC";
+      if (groupEndOps.has(opIndex)) {
+        yield "EMC";
+      }
       continue;
     }
 
