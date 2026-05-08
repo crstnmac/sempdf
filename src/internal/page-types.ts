@@ -1,4 +1,4 @@
-import type { PageSize, PdfStructureAttributeValue, PdfStructureTag } from "../types.js";
+import type { PageSize, PageTransparencyGroupOptions, PdfStructureAttributeValue, PdfStructureTag } from "../types.js";
 import type { PdfOp } from "./ops.js";
 import {
   resolvePageSize,
@@ -161,9 +161,10 @@ export interface InternalPageModel {
   readonly structureNodes: Map<number, InternalStructureNode>;
   graphicsDepth: number;
   nextStructureGroupId: number;
+  transparencyGroup?: PageTransparencyGroupOptions | undefined;
 }
 
-export function createPageModel(size: PageSize): InternalPageModel {
+export function createPageModel(size: PageSize, transparencyGroup?: PageTransparencyGroupOptions): InternalPageModel {
   return {
     size: resolvePageSize(size),
     ops: [],
@@ -171,7 +172,8 @@ export function createPageModel(size: PageSize): InternalPageModel {
     structureRoots: [],
     structureNodes: new Map(),
     graphicsDepth: 0,
-    nextStructureGroupId: 0
+    nextStructureGroupId: 0,
+    ...(transparencyGroup === undefined ? {} : { transparencyGroup })
   };
 }
 

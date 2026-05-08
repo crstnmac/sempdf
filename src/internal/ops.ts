@@ -1,4 +1,4 @@
-import type { JpegImageOptions, PathCommand, PathStyle, PdfColor, PdfFigureStructureTag, PdfFont, PdfStructureOptions, PdfStructureTag, PngImageOptions, Transform } from "../types.js";
+import type { ExtGStateOptions, JpegImageOptions, PathCommand, PathStyle, PdfColor, PdfFigureStructureTag, PdfFont, PdfStructureOptions, PdfStructureTag, PngImageOptions, Transform } from "../types.js";
 import type { EmbeddedImageAsset } from "./image.js";
 
 export interface EmbeddedTextGlyph {
@@ -51,4 +51,5 @@ export type PdfOp =
   | { type: "transform"; matrix: Transform }
   | { type: "text"; text: string; options: NormalizedTextOptions; glyphs?: readonly EmbeddedTextGlyph[] | undefined }
   | { type: "path"; commands: PathCommand[]; style: NormalizedPathStyle }
-  | { type: "image"; image: EmbeddedImageAsset; options: NormalizedImageOptions };
+  | { type: "image"; image: EmbeddedImageAsset; options: NormalizedImageOptions }
+  | { type: "extGState"; options: ExtGStateOptions };

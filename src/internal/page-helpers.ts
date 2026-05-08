@@ -214,7 +214,7 @@ export function addImageToPage(
       : undefined;
   page.ops.push({
     type: "image",
-    image: parseImage(format, data),
+    image: parseImage(format, data, options.iccProfile),
     options: {
       ...normalizedOptions,
       ...(structureNode === undefined ? {} : { structureGroupId: structureNode.id })
