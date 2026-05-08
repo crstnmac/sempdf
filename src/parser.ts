@@ -14,6 +14,17 @@ import {
   type PdfStream,
   type PdfValue,
 } from "./internal/pdf-primitives.js";
+import {
+  extractPageText,
+  parseToUnicodeCMap,
+  type FontState,
+  type PageTextExtraction,
+  type PositionedTextRun,
+} from "./internal/text-extract.js";
+import {
+  glyphNameToString,
+  resolveBaseEncoding,
+} from "./internal/pdf-encodings.js";
 
 /**
  * Low-level parsed indirect object record.
@@ -32,6 +43,19 @@ export interface ParsedPdfIndirectObject {
 /**
  * Page metadata discovered while parsing an existing PDF.
  */
+/**
+ * Options for {@link ParsedPdfDocument.extractText}.
+ */
+export interface ExtractTextOptions {
+  /**
+   * Reading order strategy:
+   *   - "stream" (default): runs in content-stream order
+   *   - "structure": runs reordered to match StructTree traversal via MCID;
+   *     runs without MCID are appended in stream order at the end
+   */
+  readonly readingOrder?: "stream" | "structure" | undefined;
+}
+
 export interface ParsedPdfPage {
   /** PDF indirect object number for the parsed item. */
   readonly objectId: number;
@@ -39,6 +63,8 @@ export interface ParsedPdfPage {
   readonly mediaBox?: readonly number[] | undefined;
   /** Object ids of content streams attached to the page. */
   readonly contentObjectIds: readonly number[];
+  /** Resolved Resources dictionary (inherited from page tree if absent on page). */
+  readonly resources?: PdfDict | undefined;
 }
 
 /**
@@ -544,6 +570,29 @@ export class ParsedPdfDocument {
     const output: ParsedPdfPage[] = [];
     walkPages(this, pagesRef, output);
     return output;
+  }
+
+  /**
+   * Extracts positioned Unicode text from every page of the document.
+   * Best-effort: decodes each font via its /ToUnicode CMap when present and
+   * falls back to Latin-1 otherwise. Positions are user-space coordinates
+   * (origin lower-left) computed from the active text and graphics matrices.
+   *
+   * @returns Per-page text and positioned runs.
+   */
+  extractText(options: ExtractTextOptions = {}): readonly PageTextExtraction[] {
+    const pages = this.listPages();
+    const readingOrder = options.readingOrder ?? "stream";
+    return pages.map((page, pageIndex) => {
+      const fonts = collectPageFonts(this, page.resources);
+      const content = readPageContentStreams(this, page);
+      let runs = extractPageText(content, fonts);
+      if (readingOrder === "structure") {
+        runs = reorderRunsByStructureTree(this, runs);
+      }
+      const text = runs.map((run) => run.text).join("");
+      return { pageIndex, text, runs };
+    });
   }
 
   /**
@@ -2347,6 +2396,315 @@ class ValueParser {
   }
 }
 
+function reorderRunsByStructureTree(
+  document: ParsedPdfDocument,
+  runs: readonly PositionedTextRun[],
+): PositionedTextRun[] {
+  // Walk the structure tree and collect MCIDs in document order.
+  const catalog = getCatalogDict(document);
+  const structRoot = resolveDict(document, getDictValue(catalog, "StructTreeRoot"));
+  if (!structRoot) return [...runs];
+
+  const orderedMcids: number[] = [];
+  const visit = (value: PdfValue | undefined): void => {
+    if (value === undefined) return;
+    if (typeof value === "number") {
+      orderedMcids.push(value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      if (isPdfDict(value)) {
+        // dict — could be MCR or OBJR
+        const type = getNameValue(value, "Type");
+        if (type === "MCR") {
+          const mcid = getNumberValue(value, "MCID");
+          if (mcid !== undefined) orderedMcids.push(mcid);
+          return;
+        }
+        // StructElem-like; recurse into K
+        const k = getDictValue(value, "K");
+        visit(resolveValue(document, k));
+        return;
+      }
+      for (const item of value) visit(resolveValue(document, item));
+      return;
+    }
+    if (value !== null && typeof value === "object" && "kind" in value && (value as { kind: string }).kind === "ref") {
+      visit(resolveValue(document, value));
+    }
+  };
+  visit(resolveValue(document, getDictValue(structRoot, "K")));
+
+  if (orderedMcids.length === 0) return [...runs];
+
+  // Index runs by MCID; preserve stream order within an MCID bucket.
+  const byMcid = new Map<number, PositionedTextRun[]>();
+  const noMcid: PositionedTextRun[] = [];
+  for (const run of runs) {
+    if (run.mcid === undefined) {
+      noMcid.push(run);
+    } else {
+      const bucket = byMcid.get(run.mcid) ?? [];
+      bucket.push(run);
+      byMcid.set(run.mcid, bucket);
+    }
+  }
+  const ordered: PositionedTextRun[] = [];
+  for (const mcid of orderedMcids) {
+    const bucket = byMcid.get(mcid);
+    if (bucket) ordered.push(...bucket);
+  }
+  // Append untagged content at the end so it isn't lost.
+  ordered.push(...noMcid);
+  return ordered;
+}
+
+function readPageContentStreams(document: ParsedPdfDocument, page: ParsedPdfPage): string {
+  const parts: string[] = [];
+  for (const contentObjectId of page.contentObjectIds) {
+    const object = document.getObject(contentObjectId);
+    if (!object || !isPdfStream(object.value)) continue;
+    try {
+      parts.push(decodeLatin1(decodePdfStreamBytes(object.value, "page content stream")));
+    } catch {
+      // Best-effort: skip unsupported streams.
+    }
+  }
+  return parts.join("\n");
+}
+
+function collectPageFonts(document: ParsedPdfDocument, resources: PdfDict | undefined): Map<string, FontState> {
+  const out = new Map<string, FontState>();
+  if (!resources) return out;
+  const fontDict = resolveDict(document, getDictValue(resources, "Font"));
+  if (!fontDict) return out;
+  for (const [resourceName, fontRef] of fontDict) {
+    const font = resolveDict(document, fontRef);
+    if (!font) continue;
+    const subtype = getNameValue(font, "Subtype");
+    const twoByteCodes = subtype === "Type0";
+
+    // ToUnicode CMap.
+    const toUnicodeRef = getDictValue(font, "ToUnicode");
+    let toUnicode: Map<number, string> | undefined;
+    let codeRanges: readonly { byteLen: number; lo: number; hi: number }[] | undefined;
+    if (isPdfRef(toUnicodeRef)) {
+      const cmapObject = document.getObject(toUnicodeRef.objectId);
+      if (cmapObject && isPdfStream(cmapObject.value)) {
+        try {
+          const source = decodeLatin1(decodePdfStreamBytes(cmapObject.value, "ToUnicode CMap"));
+          const parsed = parseToUnicodeCMap(source);
+          toUnicode = parsed;
+          if (parsed.codeRanges.length > 0) codeRanges = parsed.codeRanges;
+        } catch {
+          // Best-effort.
+        }
+      }
+    }
+
+    // Widths + encoding depend on font kind.
+    const widths = new Map<number, number>();
+    let defaultWidth: number | undefined;
+    let encoding: ReadonlyArray<number | undefined> | undefined;
+
+    let identityHFallback = false;
+    let verticalMode = false;
+    const verticalWidths = new Map<number, number>();
+    const verticalOrigins = new Map<number, { vx: number; vy: number }>();
+    let defaultVerticalWidth: number | undefined;
+    let defaultVerticalOrigin: { vx: number; vy: number } | undefined;
+
+    if (twoByteCodes) {
+      // Identity-H/V detection from /Encoding (PDF spec § 9.7.5).
+      const encodingValue = resolveValue(document, getDictValue(font, "Encoding"));
+      const encodingName =
+        encodingValue && typeof encodingValue === "object" && "kind" in encodingValue
+        && (encodingValue as { kind: string }).kind === "name"
+          ? (encodingValue as { value: string }).value
+          : undefined;
+      if (encodingName === "Identity-H" || encodingName === "Identity-V") {
+        identityHFallback = true;
+      }
+      if (encodingName === "Identity-V") {
+        verticalMode = true;
+      }
+
+      // DescendantFonts[0]: read /DW, /W, /DW2, /W2.
+      const descendants = resolveValue(document, getDictValue(font, "DescendantFonts"));
+      if (Array.isArray(descendants) && !isPdfDict(descendants)) {
+        const cidFont = resolveDict(document, descendants[0]);
+        if (cidFont) {
+          const dw = getNumberValue(cidFont, "DW");
+          if (dw !== undefined) defaultWidth = dw;
+          const wArray = resolveValue(document, getDictValue(cidFont, "W"));
+          if (Array.isArray(wArray) && !isPdfDict(wArray)) {
+            parseCidWidthArray(wArray, widths);
+          }
+          const dw2 = resolveValue(document, getDictValue(cidFont, "DW2"));
+          if (Array.isArray(dw2) && !isPdfDict(dw2)) {
+            // [v_y_origin v_advance] per spec
+            const yOrigin = dw2[0];
+            const adv = dw2[1];
+            if (typeof adv === "number") defaultVerticalWidth = adv;
+            if (typeof yOrigin === "number") {
+              defaultVerticalOrigin = { vx: 500, vy: yOrigin };
+            }
+          }
+          const w2Array = resolveValue(document, getDictValue(cidFont, "W2"));
+          if (Array.isArray(w2Array) && !isPdfDict(w2Array)) {
+            parseCidVerticalWidthArray(w2Array, verticalWidths, verticalOrigins);
+          }
+        }
+      }
+
+      // CMap-derived WMode override: if ToUnicode CMap declares /WMode 1
+      // it doesn't actually mean the *font* is vertical, so we trust only
+      // the Identity-V signal above for fallback decoding.
+    } else {
+      // Simple font: /FirstChar, /LastChar, /Widths
+      const firstChar = getNumberValue(font, "FirstChar");
+      const widthsArr = resolveValue(document, getDictValue(font, "Widths"));
+      if (firstChar !== undefined && Array.isArray(widthsArr) && !isPdfDict(widthsArr)) {
+        for (let i = 0; i < widthsArr.length; i += 1) {
+          const w = widthsArr[i];
+          if (typeof w === "number") widths.set(firstChar + i, w);
+        }
+      }
+      // /Encoding: name or dict {BaseEncoding, Differences}.
+      encoding = resolveSimpleFontEncoding(document, getDictValue(font, "Encoding"));
+    }
+
+    out.set(resourceName, {
+      ...(toUnicode === undefined ? {} : { toUnicode }),
+      ...(codeRanges === undefined ? {} : { codeRanges }),
+      twoByteCodes,
+      ...(encoding === undefined ? {} : { encoding }),
+      ...(identityHFallback ? { identityHFallback: true } : {}),
+      ...(widths.size > 0 ? { widths } : {}),
+      ...(defaultWidth === undefined ? {} : { defaultWidth }),
+      ...(verticalMode ? { verticalMode: true } : {}),
+      ...(verticalWidths.size > 0 ? { verticalWidths } : {}),
+      ...(defaultVerticalWidth === undefined ? {} : { defaultVerticalWidth }),
+      ...(verticalOrigins.size > 0 ? { verticalOrigins } : {}),
+      ...(defaultVerticalOrigin === undefined ? {} : { defaultVerticalOrigin }),
+    });
+  }
+  return out;
+}
+
+function parseCidVerticalWidthArray(
+  w2Array: readonly PdfValue[],
+  widths: Map<number, number>,
+  origins: Map<number, { vx: number; vy: number }>,
+): void {
+  // /W2 form 1: c [w_y0 v_x0 v_y0 w_y1 v_x1 v_y1 ...]
+  // /W2 form 2: c_first c_last w_y v_x v_y
+  let i = 0;
+  while (i < w2Array.length) {
+    const first = w2Array[i];
+    if (typeof first !== "number") { i += 1; continue; }
+    const second = w2Array[i + 1];
+    if (Array.isArray(second) && !isPdfDict(second)) {
+      let j = 0;
+      let cid = first;
+      while (j + 2 < second.length) {
+        const wy = second[j];
+        const vx = second[j + 1];
+        const vy = second[j + 2];
+        if (typeof wy === "number") widths.set(cid, wy);
+        if (typeof vx === "number" && typeof vy === "number") origins.set(cid, { vx, vy });
+        j += 3;
+        cid += 1;
+      }
+      i += 2;
+    } else if (typeof second === "number") {
+      const last = second;
+      const wy = w2Array[i + 2];
+      const vx = w2Array[i + 3];
+      const vy = w2Array[i + 4];
+      if (typeof wy === "number") {
+        for (let cid = first; cid <= last; cid += 1) widths.set(cid, wy);
+      }
+      if (typeof vx === "number" && typeof vy === "number") {
+        for (let cid = first; cid <= last; cid += 1) origins.set(cid, { vx, vy });
+      }
+      i += 5;
+    } else {
+      i += 1;
+    }
+  }
+}
+
+function parseCidWidthArray(wArray: readonly PdfValue[], widths: Map<number, number>): void {
+  let i = 0;
+  while (i < wArray.length) {
+    const first = wArray[i];
+    if (typeof first !== "number") { i += 1; continue; }
+    const second = wArray[i + 1];
+    if (Array.isArray(second) && !isPdfDict(second)) {
+      // first [widths...]
+      for (let j = 0; j < second.length; j += 1) {
+        const w = second[j];
+        if (typeof w === "number") widths.set(first + j, w);
+      }
+      i += 2;
+    } else if (typeof second === "number") {
+      // first last width
+      const width = wArray[i + 2];
+      if (typeof width === "number") {
+        for (let cid = first; cid <= second; cid += 1) widths.set(cid, width);
+      }
+      i += 3;
+    } else {
+      i += 1;
+    }
+  }
+}
+
+function resolveSimpleFontEncoding(
+  document: ParsedPdfDocument,
+  encodingValue: PdfValue | undefined,
+): ReadonlyArray<number | undefined> | undefined {
+  if (encodingValue === undefined) return undefined;
+  const resolved = resolveValue(document, encodingValue);
+  if (!resolved) return undefined;
+
+  // Encoding can be a name or a dict.
+  if (typeof resolved === "object" && "kind" in resolved && (resolved as { kind: string }).kind === "name") {
+    return resolveBaseEncoding((resolved as { value: string }).value).slice();
+  }
+  if (Array.isArray(resolved) && isPdfDict(resolved)) {
+    const base = getNameValue(resolved, "BaseEncoding");
+    const baseTable = resolveBaseEncoding(base ?? "WinAnsiEncoding");
+    const out: Array<number | undefined> = baseTable.slice();
+    const differences = resolveValue(document, getDictValue(resolved, "Differences"));
+    if (Array.isArray(differences) && !isPdfDict(differences)) {
+      let code = 0;
+      for (const entry of differences) {
+        if (typeof entry === "number") {
+          code = entry;
+        } else if (entry && typeof entry === "object" && "kind" in entry && (entry as { kind: string }).kind === "name") {
+          const glyphName = (entry as { value: string }).value;
+          const text = glyphNameToString(glyphName);
+          if (text.length > 0) {
+            out[code] = text.codePointAt(0);
+          } else {
+            out[code] = undefined;
+          }
+          code += 1;
+        }
+      }
+    }
+    return out;
+  }
+  return undefined;
+}
+
+function getNumberValue(dict: PdfDict, key: string): number | undefined {
+  const v = getDictValue(dict, key);
+  return typeof v === "number" ? v : undefined;
+}
+
 function getPagesRef(document: ParsedPdfDocument): PdfRef {
   const catalog = getCatalogDict(document);
   const pagesRef = getDictValue(catalog, "Pages");
@@ -2384,6 +2742,7 @@ function walkPages(
   document: ParsedPdfDocument,
   refValue: PdfRef,
   output: ParsedPdfPage[],
+  inheritedResources?: PdfDict,
 ): void {
   const dict = resolveDict(document, refValue);
   if (!dict) {
@@ -2395,6 +2754,9 @@ function walkPages(
       },
     );
   }
+
+  const ownResources = resolveDict(document, getDictValue(dict, "Resources"));
+  const resources = ownResources ?? inheritedResources;
 
   const type = getNameValue(dict, "Type");
   if (type === "Page") {
@@ -2412,6 +2774,7 @@ function walkPages(
       objectId: refValue.objectId,
       mediaBox,
       contentObjectIds,
+      ...(resources === undefined ? {} : { resources }),
     });
     return;
   }
