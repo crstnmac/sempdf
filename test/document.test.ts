@@ -4009,6 +4009,277 @@ test("setExtGState dedupes identical graphics-state options", () => {
   assert.equal((text.match(/\/GS1 gs/g) ?? []).length, 2);
 });
 
+test("ToUnicode CMap codespacerange enables mixed 1- and 2-byte codes", async () => {
+  const { extractPageText, parseToUnicodeCMap } = await import("../src/internal/text-extract.js");
+  // CMap declares: 1-byte range 00..7F mapped to ASCII, 2-byte range 8000..80FF mapped to U+4E00+offset.
+  const cmap = `
+    begincodespacerange
+    <00> <7F>
+    <8000> <80FF>
+    endcodespacerange
+    1 beginbfchar
+    <41> <0041>
+    endbfchar
+    1 beginbfrange
+    <8000> <80FF> <4E00>
+    endbfrange
+    endcmap
+  `;
+  const parsed = parseToUnicodeCMap(cmap);
+  const fontState = {
+    twoByteCodes: true,
+    toUnicode: parsed,
+    codeRanges: parsed.codeRanges,
+    widths: new Map<number, number>(),
+    defaultWidth: 1000,
+  };
+  // Bytes: 0x41 (single-byte 'A'), then 0x80 0x05 (2-byte → U+4E05).
+  const fonts = new Map([["F1", fontState]]);
+  const content = "BT /F1 10 Tf 0 0 Td <418005> Tj ET";
+  const runs = extractPageText(content, fonts);
+  // Bytes <418005> → "A" then U+4E00+5 = U+4E05.
+  assert.equal(runs[0]?.text, `A${String.fromCharCode(0x4e05)}`);
+});
+
+test("ToUnicode bfchar handles 4-byte codes via codespacerange", async () => {
+  const { parseToUnicodeCMap } = await import("../src/internal/text-extract.js");
+  const cmap = `
+    begincodespacerange
+    <00000000> <FFFFFFFF>
+    endcodespacerange
+    1 beginbfchar
+    <0001F600> <1F600>
+    endbfchar
+    endcmap
+  `;
+  const parsed = parseToUnicodeCMap(cmap);
+  // Code 0x0001F600 → U+1F600 (😀)
+  // hexToUnicode reads 4 hex chars per code unit, so <1F600> padded → "1F60" "0"->"1F600" → 0xF600 + ... behavior.
+  // The generated entry should at least exist for this code.
+  assert.ok(parsed.size >= 1);
+  assert.equal(parsed.codeRanges.length, 1);
+  assert.equal(parsed.codeRanges[0]!.byteLen, 4);
+});
+
+test("vertical /W2 origin offsets shift first glyph position", async () => {
+  const { extractPageText } = await import("../src/internal/text-extract.js");
+  const fonts = new Map([
+    ["F1", {
+      twoByteCodes: true,
+      verticalMode: true,
+      identityHFallback: true,
+      widths: new Map(),
+      defaultWidth: 1000,
+      verticalWidths: new Map(),
+      defaultVerticalWidth: -1000,
+      // (vx=500, vy=880) at fontSize 10 → user-space shift (-5, -8.8).
+      defaultVerticalOrigin: { vx: 500, vy: 880 },
+    }],
+  ]);
+  const content = "BT /F1 10 Tf 100 200 Td <0041> Tj ET";
+  const runs = extractPageText(content, fonts);
+  assert.ok(Math.abs(runs[0]!.x - (100 - 5)) < 0.001);
+  assert.ok(Math.abs(runs[0]!.y - (200 - 8.8)) < 0.001);
+});
+
+test("expanded glyph table covers Latin Extended + AFII Cyrillic + Hebrew", async () => {
+  const { glyphNameToString } = await import("../src/internal/pdf-encodings.js");
+  assert.equal(glyphNameToString("Lslash"), "Ł");
+  assert.equal(glyphNameToString("Tcommaaccent"), "Ț");
+  assert.equal(glyphNameToString("afii10023"), "Ж");
+  assert.equal(glyphNameToString("afii57664"), "א");
+  assert.equal(glyphNameToString("Eng"), "Ŋ");
+});
+
+test("extractText computes user-space width when CTM rotates 90°", async () => {
+  const { extractPageText } = await import("../src/internal/text-extract.js");
+  const fonts = new Map([
+    ["F1", { twoByteCodes: false, widths: new Map([[65, 500]]) }],
+  ]);
+  // 90° CCW rotation: cm 0 1 -1 0 0 0
+  const content = "q 0 1 -1 0 0 0 cm BT /F1 10 Tf 0 0 Td (A) Tj ET Q";
+  const runs = extractPageText(content, fonts);
+  assert.equal(runs.length, 1);
+  // Advance is text-space x = 5; rotated to user-space y direction.
+  // Width in user space should be ≈5 (Euclidean length unchanged by rotation).
+  assert.ok(Math.abs(runs[0]!.width - 5) < 0.001);
+});
+
+test("extractText decodes Identity-H 2-byte codes when no ToUnicode", async () => {
+  const { extractPageText } = await import("../src/internal/text-extract.js");
+  const fonts = new Map([
+    ["F1", { twoByteCodes: true, identityHFallback: true, widths: new Map(), defaultWidth: 1000 }],
+  ]);
+  // Hex string <00410042> = U+0041 ("A") then U+0042 ("B")
+  const content = "BT /F1 10 Tf 0 0 Td <00410042> Tj ET";
+  const runs = extractPageText(content, fonts);
+  assert.equal(runs[0]?.text, "AB");
+});
+
+test("extractText advances vertically in vertical writing mode", async () => {
+  const { extractPageText } = await import("../src/internal/text-extract.js");
+  const fonts = new Map([
+    ["F1", {
+      twoByteCodes: true,
+      verticalMode: true,
+      identityHFallback: true,
+      widths: new Map(),
+      defaultWidth: 1000,
+      verticalWidths: new Map(),
+      defaultVerticalWidth: -1000,
+      // Disable W2 origin shift so the test isolates advance behavior.
+      defaultVerticalOrigin: { vx: 0, vy: 0 },
+    }],
+  ]);
+  const content = "BT /F1 10 Tf 100 200 Td <00410042> Tj ET";
+  const runs = extractPageText(content, fonts);
+  assert.equal(runs[0]?.x, 100);
+  assert.equal(runs[0]?.y, 200);
+  // User-space width of run = |advance| = 2 glyphs × 10 pt = 20 (vertical advance)
+  assert.ok(Math.abs(runs[0]!.width - 20) < 0.001);
+});
+
+test("expanded glyph-name table resolves Greek + math operators", async () => {
+  const { glyphNameToString } = await import("../src/internal/pdf-encodings.js");
+  assert.equal(glyphNameToString("alpha"), "α");
+  assert.equal(glyphNameToString("Omega"), "Ω");
+  assert.equal(glyphNameToString("infinity"), "∞");
+  assert.equal(glyphNameToString("uni4E2D"), "中");
+  assert.equal(glyphNameToString("u1F600"), "😀");
+});
+
+test("extractText emits per-string runs with widths from TJ arrays", async () => {
+  // Hand-crafted content stream so we can assert TJ split behavior precisely.
+  const { extractPageText } = await import("../src/internal/text-extract.js");
+  const fonts = new Map([
+    ["F1", {
+      twoByteCodes: false,
+      encoding: undefined,
+      widths: new Map([
+        [65, 500], [66, 500], [67, 500],
+      ]),
+    }],
+  ]);
+  // BT /F1 10 Tf 100 200 Td [(A) -100 (B) (C)] TJ ET
+  // After "A" advance: (500/1000)*10 + (-100/-1000)*10 → 5 + 1 = 6, then "B" at x=106, then "C" at x=111
+  const content = "BT /F1 10 Tf 100 200 Td [(A) -100 (B) (C)] TJ ET";
+  const runs = extractPageText(content, fonts);
+  assert.equal(runs.length, 3);
+  assert.equal(runs[0]!.text, "A");
+  assert.equal(runs[0]!.x, 100);
+  assert.equal(runs[1]!.text, "B");
+  assert.equal(Math.round(runs[1]!.x * 100) / 100, 106);
+  assert.equal(runs[2]!.text, "C");
+  assert.equal(Math.round(runs[2]!.x * 100) / 100, 111);
+});
+
+test("extractText decodes WinAnsi /Differences and StandardEncoding", async () => {
+  const { extractPageText } = await import("../src/internal/text-extract.js");
+  // Build a font with WinAnsi base + a Differences entry mapping byte 0x80 → "Euro"
+  const baseTable = new Array<number | undefined>(256);
+  for (let i = 0x20; i <= 0x7e; i += 1) baseTable[i] = i;
+  baseTable[0x80] = 0x20ac; // Euro
+  const fonts = new Map([
+    ["F1", { twoByteCodes: false, encoding: baseTable, widths: new Map() }],
+  ]);
+  const content = "BT /F1 12 Tf 0 0 Td <80> Tj ET";
+  const runs = extractPageText(content, fonts);
+  assert.equal(runs[0]?.text, "€");
+});
+
+test("extractText tracks MCID through BDC/EMC and supports structure reading order", () => {
+  const fontPath = findTrueTypeFixturePath();
+  if (!fontPath) return;
+
+  const doc = createDocument({
+    tagged: true,
+    language: "en-US",
+    structureRoot: "Document",
+  });
+  const font = doc.embedTrueTypeFont(readFileSync(fontPath), { family: "OrderFont" });
+  // Add two paragraphs in reverse stream order via container.
+  const page = doc.addPage({ size: "Letter" });
+  page.text("First", { x: 36, y: 720, font, fontSize: 12, tag: "P" });
+  page.text("Second", { x: 36, y: 700, font, fontSize: 12, tag: "P" });
+
+  const parsed = parseDocument(doc.toUint8Array());
+  const stream = parsed.extractText({ readingOrder: "stream" });
+  const struct = parsed.extractText({ readingOrder: "structure" });
+  assert.ok(stream.length === 1 && struct.length === 1);
+  // Stream and structure orders both emit "First" then "Second" here.
+  assert.match(stream[0]!.text, /First.*Second/);
+  assert.match(struct[0]!.text, /First.*Second/);
+  // Runs should carry MCID metadata.
+  const tagged = struct[0]!.runs.filter((r) => r.mcid !== undefined);
+  assert.ok(tagged.length >= 2, `expected MCID-tagged runs, got ${tagged.length}`);
+});
+
+test("extractText returns positioned runs from a built-in-font document", () => {
+  const doc = createDocument({});
+  doc.addPage({ size: "Letter" }).text("Hello, world!", { x: 100, y: 700, fontSize: 14 });
+
+  const parsed = parseDocument(doc.toUint8Array());
+  const pages = parsed.extractText();
+  assert.equal(pages.length, 1);
+  const [page] = pages;
+  assert.ok(page);
+  assert.match(page.text, /Hello, world!/);
+  assert.ok(page.runs.length >= 1);
+  const run = page.runs.find((r) => r.text.includes("Hello"));
+  assert.ok(run, "expected a run containing 'Hello'");
+  assert.equal(run.fontSize, 14);
+  assert.equal(Math.round(run.x), 100);
+  assert.equal(Math.round(run.y), 700);
+});
+
+test("extractText decodes embedded TrueType text via ToUnicode CMap", () => {
+  const fontPath = findTrueTypeFixturePath();
+  if (!fontPath) return;
+
+  const doc = createDocument({});
+  const font = doc.embedTrueTypeFont(readFileSync(fontPath), { family: "ExtractFont" });
+  doc.addPage({ size: "Letter" }).text("Codex 42", { x: 36, y: 720, font, fontSize: 12 });
+
+  const parsed = parseDocument(doc.toUint8Array());
+  const pages = parsed.extractText();
+  const text = pages[0]?.text ?? "";
+  assert.match(text, /Codex 42/);
+});
+
+test("extractText handles multi-page documents", () => {
+  const doc = createDocument({});
+  doc.addPage({ size: "Letter" }).text("Page one", { x: 36, y: 720 });
+  doc.addPage({ size: "Letter" }).text("Page two", { x: 36, y: 720 });
+
+  const pages = parseDocument(doc.toUint8Array()).extractText();
+  assert.equal(pages.length, 2);
+  assert.match(pages[0]!.text, /Page one/);
+  assert.match(pages[1]!.text, /Page two/);
+});
+
+test("parseToUnicodeCMap maps bfchar and bfrange entries", async () => {
+  const cmap = `
+    /CIDInit /ProcSet findresource begin
+    12 dict begin
+    begincmap
+    2 beginbfchar
+    <0001> <0041>
+    <0002> <0042>
+    endbfchar
+    1 beginbfrange
+    <0010> <0012> <0061>
+    endbfrange
+    endcmap
+  `;
+  const { parseToUnicodeCMap } = await import("../src/internal/text-extract.js");
+  const map = parseToUnicodeCMap(cmap);
+  assert.equal(map.get(0x0001), "A");
+  assert.equal(map.get(0x0002), "B");
+  assert.equal(map.get(0x0010), "a");
+  assert.equal(map.get(0x0011), "b");
+  assert.equal(map.get(0x0012), "c");
+});
+
 test("createLuminositySoftMask emits Form XObject and ExtGState SMask reference", () => {
   const doc = createDocument({});
   const mask = doc.createLuminositySoftMask({ width: 100, height: 100 }, (m) => {

@@ -27,6 +27,8 @@ export {
 } from "./internal/byte-sink.js";
 export type { ByteSink, NodeWritableLike } from "./internal/byte-sink.js";
 export { parseDocument, ParsedPdfDocument } from "./parser.js";
+export type { PageTextExtraction, PositionedTextRun } from "./internal/text-extract.js";
+export type { ExtractTextOptions } from "./parser.js";
 export { validatePdf2Conformance } from "./internal/pdf2-validation.js";
 export type { Pdf2ComplianceIssue } from "./internal/pdf2-validation.js";
 export { cmyk, deviceN, gray, hex, PAGE_SIZES, rgb, separation } from "./types.js";
