@@ -24,6 +24,7 @@
     "docs:preview": "vitepress preview docs --host 0.0.0.0",
     "test": "npm run build && node --test dist/test/**/*.test.js",
     "test:performance": "npm run build && node --test dist/test/performance.test.js",
+    "test:stress": "npm run build && node --test dist/test/stress.test.js",
     "validate:pdf": "node scripts/validate-verapdf.mjs",
     "example:hello": "npm run build && node dist/examples/hello-world.js",
     "example:image": "npm run build && node dist/examples/jpeg-image.js",
