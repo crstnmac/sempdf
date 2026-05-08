@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "description": "Zero-dependency PDF generation engine built in TypeScript.",
   "type": "module",
+  "author": {
+    "name": "Criston Mascarenhas",
+    "email": "criston2011@gmail.com"
+  },
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
   "exports": {
