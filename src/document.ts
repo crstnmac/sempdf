@@ -98,6 +98,7 @@ import type {
   CheckBoxOptions,
   ChoiceFieldOptions,
   CustomPageSize,
+  DocumentConformanceProfile,
   DocumentOutputIntentOptions,
   DocumentSignatureOptions,
   DocumentInfo,
@@ -177,7 +178,7 @@ export interface PdfDocumentModel {
   /** Root structure tag to emit, or false to suppress a custom root. */
   readonly structureRoot?: PdfContainerTag | false | undefined;
   /** PDF/A or PDF/UA conformance profile to validate and emit. */
-  readonly conformance?: "pdfa-1b" | "pdfua-1" | undefined;
+  readonly conformance?: DocumentConformanceProfile | undefined;
   /** Whether eligible streams are compressed with FlateDecode. */
   readonly compress?: boolean | undefined;
   /** Whether to emit compressed object streams and xref streams. */
@@ -2490,7 +2491,7 @@ export class PdfEditableDocument {
   /** Tagged base. */
   private readonly taggedBase: boolean;
   /** Conformance base. */
-  private readonly conformanceBase: "pdfa-1b" | "pdfua-1" | undefined;
+  private readonly conformanceBase: DocumentConformanceProfile | undefined;
 
   /**
    * Creates an editor around a parsed source PDF.
@@ -3825,15 +3826,37 @@ function validateEditableCompliance(
     return;
   }
 
-  if (conformance === "pdfa-1b" && hasUpdatedXmpMetadata) {
-    if (
-      updatedXmpMetadata === undefined ||
-      !/pdfaid:part>\s*1\s*</.test(updatedXmpMetadata) ||
-      !/pdfaid:conformance>\s*B\s*</.test(updatedXmpMetadata)
-    ) {
+  if (conformance !== undefined && hasUpdatedXmpMetadata) {
+    const requirePdfa =
+      conformance === "pdfa-1b" ||
+      conformance === "pdfa-2b" ||
+      conformance === "pdfa-3b" ||
+      conformance === "pdfa-4";
+    const requirePdfua = conformance === "pdfua-1" || conformance === "pdfua-2";
+    const expectedPart =
+      conformance === "pdfa-1b" ? "1"
+      : conformance === "pdfa-2b" ? "2"
+      : conformance === "pdfa-3b" ? "3"
+      : conformance === "pdfa-4" ? "4"
+      : conformance === "pdfua-1" ? "1"
+      : conformance === "pdfua-2" ? "2"
+      : undefined;
+    const xmp = updatedXmpMetadata ?? "";
+    let ok = true;
+    if (requirePdfa) {
+      const partRe = new RegExp(`pdfaid:part>\\s*${expectedPart}\\s*<`);
+      ok = partRe.test(xmp);
+      if (ok && conformance !== "pdfa-4") {
+        ok = /pdfaid:conformance>\s*B\s*</.test(xmp);
+      }
+    } else if (requirePdfua) {
+      const partRe = new RegExp(`pdfuaid:part>\\s*${expectedPart}\\s*<`);
+      ok = partRe.test(xmp);
+    }
+    if (!ok) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_COMPLIANCE,
-        "Incremental PDF/A-1b edits must retain PDF/A identification metadata in the XMP packet.",
+        `Incremental ${conformance} edits must retain identification metadata in the XMP packet.`,
       );
     }
   }

@@ -6,7 +6,7 @@ import {
   openPdfEncryptionContext,
   type PdfEncryptionContext,
 } from "./internal/pdf-encryption.js";
-import type { BinaryData } from "./types.js";
+import type { BinaryData, DocumentConformanceProfile } from "./types.js";
 import {
   isPdfStream,
   type PdfDict,
@@ -491,7 +491,20 @@ export class ParsedPdfDocument {
    *
    * @returns The detected supported conformance profile, if any.
    */
-  getConformanceProfile(): "pdfa-1b" | "pdfua-1" | undefined {
+  getConformanceProfile(): DocumentConformanceProfile | undefined {
+    const xmpMetadata = this.getXmpMetadata();
+    if (xmpMetadata) {
+      const pdfaPart = /pdfaid:part>\s*(\d+)\s*</.exec(xmpMetadata)?.[1];
+      const pdfaConf = /pdfaid:conformance>\s*([AB])\s*</.exec(xmpMetadata)?.[1];
+      if (pdfaPart === "1" && pdfaConf === "B") return "pdfa-1b";
+      if (pdfaPart === "2" && pdfaConf === "B") return "pdfa-2b";
+      if (pdfaPart === "3" && pdfaConf === "B") return "pdfa-3b";
+      if (pdfaPart === "4") return "pdfa-4";
+      if (/pdfuaid:part>\s*2\s*</.test(xmpMetadata)) return "pdfua-2";
+      if (/pdfuaid:part>\s*1\s*</.test(xmpMetadata)) return "pdfua-1";
+      if (/wtpdf/i.test(xmpMetadata)) return "wtpdf";
+    }
+
     const catalog = getCatalogDict(this);
     const outputIntents = resolveValue(
       this,
@@ -504,19 +517,6 @@ export class ParsedPdfDocument {
           return "pdfa-1b";
         }
       }
-    }
-
-    const xmpMetadata = this.getXmpMetadata();
-    if (xmpMetadata && /pdfuaid:part>\s*1\s*</.test(xmpMetadata)) {
-      return "pdfua-1";
-    }
-
-    if (
-      xmpMetadata &&
-      /pdfaid:part>\s*1\s*</.test(xmpMetadata) &&
-      /pdfaid:conformance>\s*B\s*</.test(xmpMetadata)
-    ) {
-      return "pdfa-1b";
     }
 
     return undefined;

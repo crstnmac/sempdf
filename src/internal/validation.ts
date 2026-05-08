@@ -460,7 +460,8 @@ export function normalizeStructureOptions(options: PdfStructureOptions | undefin
           ...(options.attributes ?? {}),
           ...(options.boundingBox !== undefined ? { BBox: options.boundingBox } : {})
         }) }
-      : {})
+      : {}),
+    ...(options.mathML !== undefined ? { mathML: options.mathML } : {})
   };
   return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
@@ -631,32 +632,47 @@ export function collectComplianceIssues(input: ComplianceCheckInput): PdfComplia
     });
   }
 
-  if (input.conformance === "pdfa-1b") {
+  const profile = input.conformance;
+  const isPdfa =
+    profile === "pdfa-1b" ||
+    profile === "pdfa-2b" ||
+    profile === "pdfa-3b" ||
+    profile === "pdfa-4";
+  const isPdfua = profile === "pdfua-1" || profile === "pdfua-2";
+
+  if (isPdfa) {
     if (input.hasEncryption) {
       issues.push({
         code: "PDFA_ENCRYPTION_UNSUPPORTED",
         severity: "error",
-        message: "PDF/A-1b output cannot be encrypted."
+        message: `${profile} output cannot be encrypted.`
       });
     }
-
     if (input.usesBuiltInFonts) {
       issues.push({
         code: "PDFA_EMBEDDED_FONTS_REQUIRED",
         severity: "error",
-        message: "PDF/A-1b output requires embedded fonts for visible text."
+        message: `${profile} output requires embedded fonts for visible text.`
       });
     }
-
-    if (input.hasAttachments) {
+    // PDF/A-1b: no attachments. PDF/A-2b: only PDF/A files (we cannot verify, conservatively warn).
+    // PDF/A-3b and PDF/A-4: arbitrary attachments allowed.
+    if (input.hasAttachments && profile === "pdfa-1b") {
       issues.push({
         code: "PDFA_ATTACHMENTS_UNSUPPORTED",
         severity: "error",
         message: "PDF/A-1b output cannot include embedded file attachments."
       });
     }
-
-    if (input.hasTransparency) {
+    if (input.hasAttachments && profile === "pdfa-2b") {
+      issues.push({
+        code: "PDFA2_ATTACHMENTS_RESTRICTED",
+        severity: "warning",
+        message: "PDF/A-2b only permits PDF/A-conformant embedded files; ensure attachments comply."
+      });
+    }
+    // PDF/A-1b forbids transparency. PDF/A-2/3/4 allow it.
+    if (input.hasTransparency && profile === "pdfa-1b") {
       issues.push({
         code: "PDFA_TRANSPARENCY_UNSUPPORTED",
         severity: "error",
@@ -665,33 +681,64 @@ export function collectComplianceIssues(input: ComplianceCheckInput): PdfComplia
     }
   }
 
-  if (input.conformance === "pdfua-1") {
+  if (isPdfua) {
     if (!input.tagged) {
       issues.push({
         code: "PDFUA_TAGGED_REQUIRED",
         severity: "error",
-        message: "PDF/UA-1 output must be tagged."
+        message: `${profile} output must be tagged.`
       });
     }
     if (input.language === undefined) {
       issues.push({
         code: "PDFUA_LANGUAGE_REQUIRED",
         severity: "error",
-        message: "PDF/UA-1 output must declare a document language."
+        message: `${profile} output must declare a document language.`
       });
     }
     if (input.hasFigureWithoutAltText) {
       issues.push({
         code: "PDFUA_FIGURE_ALT_TEXT_REQUIRED",
         severity: "error",
-        message: "PDF/UA-1 figure content must include alt text."
+        message: `${profile} figure content must include alt text.`
       });
     }
     if (input.usesBuiltInFonts) {
       issues.push({
         code: "PDFUA_EMBEDDED_FONTS_REQUIRED",
         severity: "error",
-        message: "PDF/UA-1 output requires embedded fonts for visible text."
+        message: `${profile} output requires embedded fonts for visible text.`
+      });
+    }
+  }
+
+  if (profile === "wtpdf") {
+    if (!input.tagged) {
+      issues.push({
+        code: "WTPDF_TAGGED_REQUIRED",
+        severity: "error",
+        message: "WTPDF output must be tagged per ISO 32000-2 rules."
+      });
+    }
+    if (input.language === undefined) {
+      issues.push({
+        code: "WTPDF_LANGUAGE_RECOMMENDED",
+        severity: "warning",
+        message: "WTPDF output should declare a document language."
+      });
+    }
+    if (input.hasFigureWithoutAltText) {
+      issues.push({
+        code: "WTPDF_FIGURE_ALT_TEXT_REQUIRED",
+        severity: "error",
+        message: "WTPDF figure content must include alt text."
+      });
+    }
+    if (input.usesBuiltInFonts) {
+      issues.push({
+        code: "WTPDF_EMBEDDED_FONTS_REQUIRED",
+        severity: "error",
+        message: "WTPDF output requires embedded fonts for visible text."
       });
     }
   }

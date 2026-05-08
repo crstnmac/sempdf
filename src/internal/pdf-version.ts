@@ -56,6 +56,11 @@ export function detectMinimumVersion(model: PdfDocumentModel): PdfVersion {
   if (model.attachments.length > 0) candidates.push("1.7");
   if (model.signature !== undefined) candidates.push("1.7");
   if (model.conformance === "pdfua-1") candidates.push("1.7");
+  if (model.conformance === "pdfa-2b") candidates.push("1.7");
+  if (model.conformance === "pdfa-3b") candidates.push("1.7");
+  if (model.conformance === "pdfa-4") candidates.push("2.0");
+  if (model.conformance === "pdfua-2") candidates.push("2.0");
+  if (model.conformance === "wtpdf") candidates.push("2.0");
 
   return maxVersion(...candidates);
 }

@@ -150,6 +150,7 @@ export interface InternalStructureNode {
   actualText?: string | undefined;
   language?: string | undefined;
   attributes?: Record<string, PdfStructureAttributeValue> | undefined;
+  mathML?: string | undefined;
 }
 
 export interface InternalPageModel {

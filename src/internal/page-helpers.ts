@@ -52,7 +52,8 @@ export function createStructureNode(
     ...(options?.altText === undefined ? {} : { altText: options.altText }),
     ...(options?.actualText === undefined ? {} : { actualText: options.actualText }),
     ...(options?.language === undefined ? {} : { language: options.language }),
-    ...(options?.attributes === undefined ? {} : { attributes: options.attributes })
+    ...(options?.attributes === undefined ? {} : { attributes: options.attributes }),
+    ...(options?.mathML === undefined ? {} : { mathML: options.mathML })
   };
 
   if (parent) {
