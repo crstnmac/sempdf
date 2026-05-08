@@ -17,19 +17,19 @@ doc.attachFile("README.md", Buffer.from(readmeText), {
 
 // Add pages with labels (save page references for setPageLabel)
 const page1 = doc.addPage({ size: "A4" });
-page1.text("Front Matter (roman numerals)", { x: 56, y: 780, fontSize: 16 });
+page1.text("Front Matter (roman numerals)", {   x: 72, y: 780, fontSize: 16 });
 doc.setPageLabel(page1, { style: "romanUpper", prefix: "Intro-" });
 
 const page2 = doc.addPage({ size: "A4" });
-page2.text("Chapter 1 - Decimal numbering starts here", { x: 56, y: 780, fontSize: 16 });
+page2.text("Chapter 1 - Decimal numbering starts here", {   x: 72, y: 780, fontSize: 16 });
 doc.setPageLabel(page2, { style: "decimal", startAt: 1, prefix: "Chapter 1-" });
 
 const page3 = doc.addPage({ size: "A4" });
-page3.text("Chapter 1 - Continued", { x: 56, y: 780, fontSize: 16 });
+page3.text("Chapter 1 - Continued", {   x: 72, y: 780, fontSize: 16 });
 doc.setPageLabel(page3, { style: "decimal", startAt: 2, prefix: "Chapter 1-" });
 
 const page4 = doc.addPage({ size: "A4" });
-page4.text("Appendix A - Letter-style numbering", { x: 56, y: 780, fontSize: 16 });
+page4.text("Appendix A - Letter-style numbering", {   x: 72, y: 780, fontSize: 16 });
 doc.setPageLabel(page4, { style: "lettersUpper", prefix: "Appendix-" });
 
 // Named destination

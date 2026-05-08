@@ -11,10 +11,10 @@ const doc = createDocument({
 
 const page = doc.addPage({ size: "A4" });
 
-page.text("PDF Form Fields", { x: 56, y: 800, fontSize: 20 });
-page.text("Text Field", { x: 56, y: 770, fontSize: 12 });
+page.text("PDF Form Fields", { x: 72, y: 800, fontSize: 20 });
+page.text("Text Field", { x: 72, y: 770, fontSize: 12 });
 page.textField("name", {
-  x: 56,
+  x: 72,
   y: 735,
   width: 300,
   height: 22,
@@ -22,9 +22,9 @@ page.textField("name", {
   fontSize: 11
 });
 
-page.text("Checkbox", { x: 56, y: 700, fontSize: 12 });
+page.text("Checkbox", { x: 72, y: 700, fontSize: 12 });
 page.checkBox("subscribe", {
-  x: 56,
+  x: 72,
   y: 670,
   width: 16,
   height: 16,
@@ -32,9 +32,9 @@ page.checkBox("subscribe", {
 });
 page.text("Subscribe to newsletter", { x: 80, y: 672, fontSize: 11 });
 
-page.text("Choice Field (Combo Box)", { x: 56, y: 640, fontSize: 12 });
+page.text("Choice Field (Combo Box)", { x: 72, y: 640, fontSize: 12 });
 page.choiceField("country", {
-  x: 56,
+  x: 72,
   y: 605,
   width: 200,
   height: 22,
@@ -55,10 +55,10 @@ page.choiceField("skills", {
   fontSize: 10
 });
 
-page.text("Radio Group", { x: 56, y: 575, fontSize: 12 });
+page.text("Radio Group", { x: 72, y: 575, fontSize: 12 });
 page.radioGroup("gender", {
   items: [
-    { value: "male", x: 56, y: 545, width: 16, height: 16 },
+    { value: "male", x: 72, y: 545, width: 16, height: 16 },
     { value: "female", x: 160, y: 545, width: 16, height: 16 },
     { value: "other", x: 280, y: 545, width: 16, height: 16 }
   ],
@@ -68,9 +68,9 @@ page.text("Male", { x: 80, y: 547, fontSize: 11 });
 page.text("Female", { x: 184, y: 547, fontSize: 11 });
 page.text("Other", { x: 304, y: 547, fontSize: 11 });
 
-page.text("Push Button", { x: 56, y: 510, fontSize: 12 });
+page.text("Push Button", { x: 72, y: 510, fontSize: 12 });
 page.pushButton("submit", {
-  x: 56,
+  x: 72,
   y: 470,
   width: 120,
   height: 30,
@@ -78,9 +78,9 @@ page.pushButton("submit", {
   fontSize: 11
 });
 
-page.text("Signature Field", { x: 56, y: 440, fontSize: 12 });
+page.text("Signature Field", { x: 72, y: 440, fontSize: 12 });
 page.signatureField("sig", {
-  x: 56,
+  x: 72,
   y: 340,
   width: 400,
   height: 80

@@ -10,13 +10,13 @@ import {
 
 // Create source documents
 const doc1 = createDocument({ info: { title: "Source A" } });
-doc1.addPage({ size: "A4" }).text("Page A1 - Source A", { x: 56, y: 780, fontSize: 16 });
-doc1.addPage({ size: "A4" }).text("Page A2 - Source A", { x: 56, y: 780, fontSize: 16 });
+doc1.addPage({ size: "A4" }).text("Page A1 - Source A", {   x: 72, y: 780, fontSize: 16 });
+doc1.addPage({ size: "A4" }).text("Page A2 - Source A", {   x: 72, y: 780, fontSize: 16 });
 const bytes1 = doc1.toUint8Array();
 
 const doc2 = createDocument({ info: { title: "Source B" } });
-doc2.addPage({ size: "A4" }).text("Page B1 - Source B", { x: 56, y: 780, fontSize: 16 });
-doc2.addPage({ size: "A4" }).text("Page B2 - Source B", { x: 56, y: 780, fontSize: 16 });
+doc2.addPage({ size: "A4" }).text("Page B1 - Source B", {   x: 72, y: 780, fontSize: 16 });
+doc2.addPage({ size: "A4" }).text("Page B2 - Source B", {   x: 72, y: 780, fontSize: 16 });
 const bytes2 = doc2.toUint8Array();
 
 // appendPages: append all pages from doc2 into doc1 starting at index 1

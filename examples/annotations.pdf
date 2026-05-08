@@ -13,19 +13,19 @@ endobj
 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
 endobj
 7 0 obj
-<< /Type /Annot /Subtype /Highlight /Rect [56 760 406 774] /QuadPoints [56 774 406 774 56 760 406 760] /C [1 0.921569 0.231373] >>
+<< /Type /Annot /Subtype /Highlight /Rect [72 760 422 774] /QuadPoints [72 774 422 774 72 760 422 760] /C [1 0.921569 0.231373] >>
 endobj
 8 0 obj
-<< /Type /Annot /Subtype /Text /Rect [56 720 76 740] /Contents (This is a sticky note annotation with reviewer comments.) /Open true >>
+<< /Type /Annot /Subtype /Text /Rect [72 720 92 740] /Contents (This is a sticky note annotation with reviewer comments.) /Open true >>
 endobj
 9 0 obj
 << /Type /Annot /Subtype /FreeText /Rect [300 680 500 740] /Contents (Approved by reviewer on May 8, 2026) /Border [0 0 1] /DA (/FormF1 10 Tf 0 g) >>
 endobj
 10 0 obj
-<< /Type /Annot /Subtype /Link /Rect [56 640 276 654] /Border [0 0 0] /Contents (https://example.com/docs) /A << /S /URI /URI (https://example.com/docs) >> >>
+<< /Type /Annot /Subtype /Link /Rect [72 640 292 654] /Border [0 0 0] /Contents (https://example.com/docs) /A << /S /URI /URI (https://example.com/docs) >> >>
 endobj
 11 0 obj
-<< /Type /Annot /Subtype /Link /Rect [56 610 136 624] /Border [0 0 0] /Contents (Internal page link) /Dest [13 0 R /Fit] >>
+<< /Type /Annot /Subtype /Link /Rect [72 610 152 624] /Border [0 0 0] /Contents (Internal page link) /Dest [13 0 R /Fit] >>
 endobj
 5 0 obj
 << /Length 369 >>
@@ -33,31 +33,31 @@ stream
 BT
 /F1 20 Tf
 0 g
-1 0 0 1 56 800 Tm
+1 0 0 1 72 800 Tm
 (PDF Annotations) Tj
 ET
 BT
 /F1 12 Tf
 0 g
-1 0 0 1 56 760 Tm
+1 0 0 1 72 760 Tm
 (This sentence has a highlight annotation on it.) Tj
 ET
 BT
 /F1 12 Tf
 0 g
-1 0 0 1 56 720 Tm
+1 0 0 1 72 720 Tm
 (Click the note icon to read the comment.) Tj
 ET
 BT
 /F1 12 Tf
 0 g
-1 0 0 1 56 640 Tm
+1 0 0 1 72 640 Tm
 (Visit our website for documentation) Tj
 ET
 BT
 /F1 12 Tf
 0 g
-1 0 0 1 56 610 Tm
+1 0 0 1 72 610 Tm
 (Go to Page 2) Tj
 ET
 
@@ -72,7 +72,7 @@ stream
 BT
 /F1 14 Tf
 0 g
-1 0 0 1 56 800 Tm
+1 0 0 1 72 800 Tm
 (You arrived via the 'Go to Page 2' link on Page 1.) Tj
 ET
 

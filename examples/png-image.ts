@@ -18,12 +18,12 @@ const doc = createDocument({
 
 const page = doc.addPage({ size: "Letter" });
 page.text("Embedded PNG image", {
-  x: 56,
+  x: 72,
   y: 720,
   fontSize: 18
 });
 page.png(png, {
-  x: 56,
+  x: 72,
   y: 560,
   width: 120,
   height: 120

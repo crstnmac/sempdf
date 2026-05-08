@@ -19,8 +19,8 @@ const doc = createDocument({
 });
 
 const page = doc.addPage({ size: "A4" });
-page.text("Tagged 2.0 Heading", { x: 56, y: 780, fontSize: 18, tag: "H1" });
-page.text("Body paragraph with structure tagging.", { x: 56, y: 750, fontSize: 11, tag: "P" });
+page.text("Tagged 2.0 Heading", { x: 72, y: 780, fontSize: 18, tag: "H1" });
+page.text("Body paragraph with structure tagging.", { x: 72, y: 750, fontSize: 11, tag: "P" });
 
 const bytes = doc.toUint8Array();
 await writeFile(new URL("./pdf2-tagged.pdf", import.meta.url), bytes);
