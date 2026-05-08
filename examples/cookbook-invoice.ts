@@ -101,8 +101,6 @@ doc.renderTemplate({
       options: {
         headerColumns: 1,
         fontSize: 10,
-        cellPadding: 6,
-        rowGap: 2,
         marginBottom: 28
       }
     },
@@ -145,9 +143,7 @@ doc.renderTemplate({
       options: {
         headerRows: 1,
         fontSize: 10,
-        cellPadding: 8,
-        rowGap: 3,
-        marginBottom: 28
+        marginBottom: 14
       }
     },
     {
@@ -163,8 +159,6 @@ doc.renderTemplate({
       options: {
         headerColumns: 1,
         fontSize: 11,
-        cellPadding: 8,
-        rowGap: 4,
         marginBottom: 36
       }
     },

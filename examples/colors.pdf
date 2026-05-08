@@ -1,0 +1,109 @@
+%PDF-1.4
+%ÿÿÿ
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 1 /Kids [6 0 R] >>
+endobj
+3 0 obj
+<< /Producer (pdf-editing-lib) /Title (Color Spaces Demo) /Author (pdf-editing-lib) >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Length 845 >>
+stream
+BT
+/F1 18 Tf
+0 g
+1 0 0 1 56 800 Tm
+(PDF Color Spaces) Tj
+ET
+BT
+/F1 12 Tf
+0 g
+1 0 0 1 56 780 Tm
+(hex\('#1565c0'\) - DeviceRGB hex) Tj
+ET
+0.082353 0.396078 0.752941 rg
+56 756 60 18 re
+f
+BT
+/F1 12 Tf
+0 g
+1 0 0 1 56 736 Tm
+(rgb\(0.08, 0.4, 0.75\) - DeviceRGB float) Tj
+ET
+0.08 0.4 0.75 rg
+56 712 60 18 re
+f
+BT
+/F1 12 Tf
+0 g
+1 0 0 1 56 692 Tm
+(gray\(0.5\) - DeviceGray) Tj
+ET
+0.5 g
+56 668 60 18 re
+f
+0.2 g
+130 668 60 18 re
+f
+0.8 g
+204 668 60 18 re
+f
+BT
+/F1 12 Tf
+0 g
+1 0 0 1 56 648 Tm
+(cmyk\(0.8, 0.2, 0, 0.15\) - DeviceCMYK) Tj
+ET
+0.8 0.2 0 0.15 k
+56 624 60 18 re
+f
+0 1 1 0 k
+130 624 60 18 re
+f
+0 0 1 0 k
+204 624 60 18 re
+f
+BT
+/F1 12 Tf
+0 g
+1 0 0 1 56 604 Tm
+(Separation spot color \(Pantone 286 C\)) Tj
+ET
+/CS2 cs 1 scn
+56 580 60 18 re
+f
+BT
+/F1 12 Tf
+0 g
+1 0 0 1 56 560 Tm
+(DeviceN - Multi-ink spot color) Tj
+ET
+/CS1 cs 1 0.8 scn
+56 536 60 18 re
+f
+
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 4 0 R >> /ColorSpace << /CS1 [/DeviceN [/Pantone#20286#20C /Black] /DeviceCMYK << /FunctionType 2 /Domain [0 1 0 1] /N 1 /C0 [0 0 0 0] /C1 [1 0.66 0 0.04] >>] /CS2 [/Separation /Pantone#20286#20C /DeviceCMYK << /FunctionType 2 /Domain [0 1] /N 1 /C0 [0 0 0 0] /C1 [1 0.66 0 0.04] >>] >> >> /Contents 5 0 R >>
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000014 00000 n 
+0000000063 00000 n 
+0000000120 00000 n 
+0000000222 00000 n 
+0000000292 00000 n 
+0000001188 00000 n 
+trailer
+<< /Size 7 /Root 1 0 R /Info 3 0 R >>
+startxref
+1598
+%%EOF

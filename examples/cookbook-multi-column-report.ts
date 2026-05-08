@@ -78,7 +78,6 @@ doc.renderTemplate({
       options: {
         headerRows: 1,
         fontSize: 9,
-        cellPadding: 8,
         marginBottom: 28
       }
     },
@@ -130,8 +129,6 @@ doc.renderTemplate({
       options: {
         headerRows: 1,
         fontSize: 10,
-        cellPadding: 6,
-        rowGap: 2,
         marginBottom: 12
       }
     },

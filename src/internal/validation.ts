@@ -851,7 +851,7 @@ export function normalizeListOptions(items: readonly NormalizedListItem[], optio
     throw new PdfEngineError(PdfErrorCode.INVALID_TEXT, "List lineHeight must be greater than zero.", { options });
   }
 
-  const itemSpacing = normalizeOptionalNumber(options.itemSpacing, "itemSpacing") ?? normalizedText.fontSize * 0.35;
+  const itemSpacing = normalizeOptionalNumber(options.itemSpacing, "itemSpacing") ?? 2;
   if (itemSpacing < 0) {
     throw new PdfEngineError(PdfErrorCode.INVALID_TEXT, "List itemSpacing must be zero or greater.", { options });
   }
@@ -861,7 +861,7 @@ export function normalizeListOptions(items: readonly NormalizedListItem[], optio
     throw new PdfEngineError(PdfErrorCode.INVALID_TEXT, "List indent must be greater than zero.", { options });
   }
 
-  const labelGap = normalizeOptionalNumber(options.labelGap, "labelGap") ?? normalizedText.fontSize * 0.5;
+  const labelGap = normalizeOptionalNumber(options.labelGap, "labelGap") ?? 2;
   if (labelGap < 0) {
     throw new PdfEngineError(PdfErrorCode.INVALID_TEXT, "List labelGap must be zero or greater.", { options });
   }
@@ -948,7 +948,7 @@ export function normalizeTableOptions(rows: readonly NormalizedTableRow[], optio
     throw new PdfEngineError(PdfErrorCode.INVALID_TEXT, "Table lineHeight must be greater than zero.", { options });
   }
 
-  const cellPadding = normalizeOptionalNumber(options.cellPadding, "cellPadding") ?? normalizedText.fontSize * 0.35;
+  const cellPadding = normalizeOptionalNumber(options.cellPadding, "cellPadding") ?? 2;
   if (cellPadding < 0) {
     throw new PdfEngineError(PdfErrorCode.INVALID_TEXT, "Table cellPadding must be zero or greater.", { options });
   }
