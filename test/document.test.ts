@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 
-import { appendPages, BufferSink, cmyk, createDocument, editDocument, extractPages, mergeDocuments, PAGE_SIZES, parseDocument, PdfEngineError, PdfErrorCode, rgb, splitDocument } from "../src/index.js";
+import { appendPages, BufferSink, cmyk, createDocument, deviceN, editDocument, extractPages, mergeDocuments, PAGE_SIZES, parseDocument, PdfEngineError, PdfErrorCode, rgb, separation, splitDocument } from "../src/index.js";
 import { StreamingByteWriter } from "../src/internal/streaming-byte-writer.js";
 import { inspectPdf } from "../src/internal/inspect.js";
 import { makeKerningPairKey, measureTextWidth } from "../src/internal/text-layout.js";
@@ -3972,6 +3972,212 @@ test("emits wtpdf identification metadata", () => {
   const parsed = parseDocument(bytes);
   assert.equal(parsed.getConformanceProfile(), "wtpdf");
   assert.match(parsed.getXmpMetadata() ?? "", /wtpdf/);
+});
+
+test("setExtGState emits an ExtGState resource and gs operator", () => {
+  const doc = createDocument({});
+  const page = doc.addPage({ size: "Letter" });
+  page.saveState();
+  page.setExtGState({ fillAlpha: 0.5, strokeAlpha: 0.7, blendMode: "Multiply" });
+  page.path([
+    { type: "moveTo", x: 36, y: 36 },
+    { type: "lineTo", x: 100, y: 100 }
+  ], { paint: "fill", fill: { color: rgb(1, 0, 0) } });
+  page.restoreState();
+
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/ExtGState <<[^>]*\/GS1 <<[^>]*\/Type \/ExtGState[^>]*\/CA 0\.7[^>]*\/ca 0\.5[^>]*\/BM \/Multiply/);
+  assert.match(text, /\/GS1 gs/);
+});
+
+test("setExtGState dedupes identical graphics-state options", () => {
+  const doc = createDocument({});
+  const page = doc.addPage({ size: "Letter" });
+  page.setExtGState({ fillAlpha: 0.25 });
+  page.path(
+    [{ type: "moveTo", x: 0, y: 0 }, { type: "lineTo", x: 10, y: 10 }],
+    { paint: "fill", fill: { color: rgb(0, 0, 0) } }
+  );
+  page.setExtGState({ fillAlpha: 0.25 });
+  page.path(
+    [{ type: "moveTo", x: 0, y: 0 }, { type: "lineTo", x: 20, y: 20 }],
+    { paint: "fill", fill: { color: rgb(0, 0, 0) } }
+  );
+
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.equal((text.match(/\/Type \/ExtGState/g) ?? []).length, 1);
+  assert.equal((text.match(/\/GS1 gs/g) ?? []).length, 2);
+});
+
+test("createLuminositySoftMask emits Form XObject and ExtGState SMask reference", () => {
+  const doc = createDocument({});
+  const mask = doc.createLuminositySoftMask({ width: 100, height: 100 }, (m) => {
+    m.path(
+      [{ type: "rect", x: 0, y: 0, width: 100, height: 100 }],
+      { paint: "fill", fill: { color: rgb(1, 1, 1) } }
+    );
+  });
+
+  const page = doc.addPage({ size: "Letter" });
+  page.saveState();
+  page.setExtGState({ softMask: mask });
+  page.path(
+    [{ type: "rect", x: 36, y: 36, width: 100, height: 100 }],
+    { paint: "fill", fill: { color: rgb(1, 0, 0) } }
+  );
+  page.restoreState();
+
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  // Form XObject for the mask, with grayscale transparency group.
+  assert.match(text, /\/Subtype \/Form[^>]*\/BBox \[0 0 100 100\][^>]*\/Group <<[^>]*\/S \/Transparency[^>]*\/CS \/DeviceGray/);
+  // ExtGState entry with SMask referencing the form.
+  assert.match(text, /\/SMask <<[^>]*\/S \/Luminosity[^>]*\/G \d+ 0 R/);
+  // Page content uses the gs operator.
+  assert.match(text, /\/GS1 gs/);
+});
+
+test("setExtGState({ softMask: null }) emits /SMask /None", () => {
+  const doc = createDocument({});
+  const page = doc.addPage({ size: "Letter" });
+  page.setExtGState({ softMask: null });
+  page.path(
+    [{ type: "moveTo", x: 0, y: 0 }, { type: "lineTo", x: 10, y: 10 }],
+    { paint: "fill", fill: { color: rgb(0, 0, 0) } }
+  );
+
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/SMask \/None/);
+});
+
+test("Separation spot color emits ColorSpace resource and cs/scn ops", () => {
+  const doc = createDocument({});
+  const page = doc.addPage({ size: "Letter" });
+  const pantone185 = separation("PANTONE 185 C", 0.6, cmyk(0, 0.85, 0.85, 0));
+  page.path(
+    [{ type: "moveTo", x: 36, y: 36 }, { type: "lineTo", x: 100, y: 100 }],
+    { paint: "fill", fill: { color: pantone185 } }
+  );
+
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  // Resource entry: [/Separation /<name> /DeviceCMYK <funcDict>]
+  assert.match(text, /\/CS1 \[\/Separation \/PANTONE#20185#20C \/DeviceCMYK <</);
+  // Tint transform Type 2 with C1 reflecting the alternate full-tint CMYK.
+  assert.match(text, /\/FunctionType 2[^>]*\/N 1[^>]*\/C0 \[0 0 0 0\][^>]*\/C1 \[0 0\.85 0\.85 0\]/);
+  // Page content uses the spot resource: /CS1 cs 0.6 scn
+  assert.match(text, /\/CS1 cs 0\.6 scn/);
+});
+
+test("DeviceN spot color emits multi-channel ColorSpace with tint vector", () => {
+  const doc = createDocument({});
+  const page = doc.addPage({ size: "Letter" });
+  const inks = deviceN(["Cyan", "Magenta"], [0.4, 0.7], cmyk(0.4, 0.7, 0, 0));
+  page.path(
+    [{ type: "moveTo", x: 0, y: 0 }, { type: "lineTo", x: 50, y: 50 }],
+    { paint: "stroke", stroke: { color: inks, width: 1 } }
+  );
+
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/CS1 \[\/DeviceN \[\/Cyan \/Magenta\] \/DeviceCMYK <</);
+  // DeviceN domain has two input channels.
+  assert.match(text, /\/Domain \[0 1 0 1\]/);
+  // Stroke uses CS / SCN with two tint values.
+  assert.match(text, /\/CS1 CS 0\.4 0\.7 SCN/);
+});
+
+test("Separation spot colors dedupe across stroke and fill", () => {
+  const doc = createDocument({});
+  const page = doc.addPage({ size: "Letter" });
+  const ink = separation("PANTONE 185 C", 0.5, cmyk(0, 1, 1, 0));
+  page.path(
+    [{ type: "moveTo", x: 0, y: 0 }, { type: "lineTo", x: 10, y: 10 }],
+    { paint: "fillStroke", fill: { color: ink }, stroke: { color: ink, width: 1 } }
+  );
+
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.equal((text.match(/\[\/Separation \/PANTONE/g) ?? []).length, 1);
+});
+
+test("PNG image with iccProfile emits ICCBased ColorSpace and embedded profile stream", () => {
+  // Minimal sRGB-ish ICC profile bytes are not required for the structural assertion.
+  const fakeIcc = new Uint8Array(64);
+  for (let i = 0; i < fakeIcc.length; i += 1) fakeIcc[i] = i;
+
+  const doc = createDocument({});
+  doc.addPage({ size: "Letter" }).png(tinyPngBytes(), {
+    x: 36,
+    y: 720,
+    width: 24,
+    height: 24,
+    iccProfile: fakeIcc
+  });
+
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  // ICC profile stream marker (N + Alternate).
+  assert.match(text, /\/N 3[^>]*\/Alternate \/DeviceRGB/);
+  // Image references it via [/ICCBased <ref>].
+  assert.match(text, /\/ColorSpace \[\/ICCBased \d+ 0 R\]/);
+});
+
+test("JPEG image with iccProfile emits ICCBased ColorSpace", () => {
+  const fakeIcc = new Uint8Array(32);
+  const doc = createDocument({});
+  doc.addPage({ size: "Letter" }).jpeg(tinyJpegBytes(), {
+    x: 36,
+    y: 720,
+    width: 24,
+    height: 24,
+    iccProfile: fakeIcc
+  });
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/ColorSpace \[\/ICCBased \d+ 0 R\]/);
+  assert.match(text, /\/Filter \/DCTDecode/);
+});
+
+test("identical PNG bytes with different iccProfiles produce distinct image XObjects", () => {
+  const iccA = new Uint8Array([1, 2, 3, 4]);
+  const iccB = new Uint8Array([5, 6, 7, 8]);
+  const doc = createDocument({});
+  const page = doc.addPage({ size: "Letter" });
+  page.png(tinyPngBytes(), { x: 0, y: 0, width: 8, height: 8, iccProfile: iccA });
+  page.png(tinyPngBytes(), { x: 16, y: 0, width: 8, height: 8, iccProfile: iccB });
+
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  // Two distinct image XObjects, two ICCBased references.
+  assert.equal((text.match(/\/Subtype \/Image/g) ?? []).length, 2);
+  assert.equal((text.match(/\/ColorSpace \[\/ICCBased \d+ 0 R\]/g) ?? []).length, 2);
+});
+
+test("addPage emits a transparency group dictionary when configured", () => {
+  const doc = createDocument({});
+  doc.addPage({
+    size: "Letter",
+    transparencyGroup: { colorSpace: "DeviceCMYK", isolated: true, knockout: false }
+  }).path(
+    [{ type: "moveTo", x: 0, y: 0 }, { type: "lineTo", x: 10, y: 10 }],
+    { paint: "fill", fill: { color: rgb(0, 0, 0) } }
+  );
+
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/Group <<[^>]*\/Type \/Group[^>]*\/S \/Transparency[^>]*\/CS \/DeviceCMYK[^>]*\/I true[^>]*\/K false/);
+});
+
+test("addPage transparency group defaults to DeviceRGB isolated=true", () => {
+  const doc = createDocument({});
+  doc.addPage({ size: "Letter", transparencyGroup: {} }).path(
+    [{ type: "moveTo", x: 0, y: 0 }, { type: "lineTo", x: 10, y: 10 }],
+    { paint: "fill", fill: { color: rgb(0, 0, 0) } }
+  );
+
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/Group <<[^>]*\/CS \/DeviceRGB[^>]*\/I true/);
+});
+
+test("setExtGState rejects out-of-range alpha and empty options", () => {
+  const doc = createDocument({});
+  const page = doc.addPage({ size: "Letter" });
+  assert.throws(() => page.setExtGState({}), /at least one/i);
+  assert.throws(() => page.setExtGState({ fillAlpha: 1.5 }), /between 0 and 1/i);
+  assert.throws(() => page.setExtGState({ strokeAlpha: -0.1 }), /between 0 and 1/i);
 });
 
 test("PDF/UA Math: emits MathML embedded file and AF reference for Formula", () => {

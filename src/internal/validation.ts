@@ -1,5 +1,5 @@
 import { PdfEngineError, PdfErrorCode } from "../errors.js";
-import type { AttachmentOptions, BuiltInPageSize, CheckBoxOptions, ChoiceFieldMode, ChoiceFieldOptions, CustomPageSize, DocumentConformanceProfile, DocumentEncryptionAlgorithm, DocumentEncryptionOptions, DocumentInfo, DocumentPermissions, FillStyle, FontName, FreeTextAnnotationOptions, HighlightAnnotationOptions, JpegImageOptions, LineCap, LineJoin, ListItem, ListOptions, NoteAnnotationOptions, OutlineOptions, PageLabelOptions, PageLabelStyle, PageLinkOptions, PageSize, PathCommand, PathStyle, PdfColor, PdfComplianceIssue, PdfContainerTag, PdfFigureStructureTag, PdfFont, PdfRoleMap, PdfStandardStructureTag, PdfStructureAttributeValue, PdfStructureOptions, PdfStructureTag, PdfTextStructureTag, PushButtonOptions, RadioGroupOptions, SignatureFieldOptions, StrokeStyle, TableCell, TableHeaderScope, TableOptions, TextAlign, TextBlockOptions, TextDirection, TextFieldOptions, TextOptions, Transform, UriLinkOptions, XmpMetadataInput } from "../types.js";
+import type { AttachmentOptions, BuiltInPageSize, CheckBoxOptions, ChoiceFieldMode, ChoiceFieldOptions, CustomPageSize, DocumentConformanceProfile, DocumentEncryptionAlgorithm, DocumentEncryptionOptions, DocumentInfo, DocumentPermissions, ExtGStateOptions, FillStyle, FontName, FreeTextAnnotationOptions, HighlightAnnotationOptions, JpegImageOptions, LineCap, LineJoin, ListItem, ListOptions, NoteAnnotationOptions, OutlineOptions, PageLabelOptions, PageLabelStyle, PageLinkOptions, PageSize, PathCommand, PathStyle, PdfColor, PdfComplianceIssue, PdfContainerTag, PdfFigureStructureTag, PdfFont, PdfRoleMap, PdfStandardStructureTag, PdfStructureAttributeValue, PdfStructureOptions, PdfStructureTag, PdfTextStructureTag, PushButtonOptions, RadioGroupOptions, SignatureFieldOptions, StrokeStyle, TableCell, TableHeaderScope, TableOptions, TextAlign, TextBlockOptions, TextDirection, TextFieldOptions, TextOptions, Transform, UriLinkOptions, XmpMetadataInput } from "../types.js";
 import { PAGE_SIZES, gray } from "../types.js";
 import type { NormalizedImageOptions, NormalizedPathStyle, NormalizedTextOptions } from "./ops.js";
 import { buildXmpMetadataPacket } from "./xmp.js";
@@ -1474,6 +1474,32 @@ export function validateTransform(transform: Transform): void {
   assertFinite(transform.f, "f");
 }
 
+export function validateExtGStateOptions(options: ExtGStateOptions): void {
+  if (
+    options.fillAlpha === undefined
+    && options.strokeAlpha === undefined
+    && options.blendMode === undefined
+    && options.softMask === undefined
+  ) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_GRAPHICS_STATE,
+      "setExtGState requires at least one of fillAlpha, strokeAlpha, blendMode, or softMask."
+    );
+  }
+  if (options.fillAlpha !== undefined) {
+    assertFinite(options.fillAlpha, "fillAlpha");
+    if (options.fillAlpha < 0 || options.fillAlpha > 1) {
+      throw new PdfEngineError(PdfErrorCode.INVALID_GRAPHICS_STATE, "fillAlpha must be between 0 and 1 inclusive.");
+    }
+  }
+  if (options.strokeAlpha !== undefined) {
+    assertFinite(options.strokeAlpha, "strokeAlpha");
+    if (options.strokeAlpha < 0 || options.strokeAlpha > 1) {
+      throw new PdfEngineError(PdfErrorCode.INVALID_GRAPHICS_STATE, "strokeAlpha must be between 0 and 1 inclusive.");
+    }
+  }
+}
+
 export function normalizeImageOptions(options: JpegImageOptions): NormalizedImageOptions {
   assertFinite(options.x, "x");
   assertFinite(options.y, "y");
@@ -1730,10 +1756,29 @@ export function normalizeColor(color: PdfColor): PdfColor {
     return color;
   }
 
-  assertRange(color.c, "cmyk.c");
-  assertRange(color.m, "cmyk.m");
-  assertRange(color.y, "cmyk.y");
-  assertRange(color.k, "cmyk.k");
+  if (color.kind === "cmyk") {
+    assertRange(color.c, "cmyk.c");
+    assertRange(color.m, "cmyk.m");
+    assertRange(color.y, "cmyk.y");
+    assertRange(color.k, "cmyk.k");
+    return color;
+  }
+
+  if (color.kind === "separation") {
+    if (!color.name) {
+      throw new PdfEngineError(PdfErrorCode.INVALID_COLOR, "Separation color requires a non-empty ink name.");
+    }
+    assertRange(color.tint, "separation.tint");
+    normalizeColor(color.alternate);
+    return color;
+  }
+
+  // deviceN
+  if (color.names.length !== color.tints.length || color.names.length === 0) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_COLOR, "DeviceN color requires equal-length, non-empty names and tints arrays.");
+  }
+  color.tints.forEach((tint, index) => assertRange(tint, `deviceN.tints[${index}]`));
+  normalizeColor(color.alternate);
   return color;
 }
 

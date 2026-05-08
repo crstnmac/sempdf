@@ -77,6 +77,7 @@ import {
   validateChoiceFieldValue,
   validatePathCommands,
   validateTextFieldValue,
+  validateExtGStateOptions,
   validateTransform,
   type ComplianceCheckInput,
   type NormalizedDocumentAccessibility,
@@ -99,6 +100,9 @@ import type {
   ChoiceFieldOptions,
   CustomPageSize,
   DocumentConformanceProfile,
+  ExtGStateOptions,
+  SoftMaskHandle,
+  SoftMaskOptions,
   DocumentOutputIntentOptions,
   DocumentSignatureOptions,
   DocumentInfo,
@@ -160,6 +164,7 @@ import type {
   RadioGroupAnnotation,
   TextFieldAnnotation,
 } from "./internal/page-types.js";
+import type { PdfOp } from "./internal/ops.js";
 import { createPageModel } from "./internal/page-types.js";
 
 export interface PdfDocumentModel {
@@ -201,6 +206,8 @@ export interface PdfDocumentModel {
   readonly outlines: readonly InternalOutlineModel[];
   /** Pages. */
   readonly pages: readonly InternalPageModel[];
+  /** Luminosity soft-mask Form XObjects referenced by ExtGState entries. */
+  readonly softMasks?: readonly InternalSoftMaskModel[] | undefined;
 }
 
 export interface PdfIncrementalUpdateModel {
@@ -1978,12 +1985,69 @@ export class PdfPage {
   }
 
   /**
+   * Sets graphics-state parameters (alpha and/or blend mode) for subsequent
+   * painting operations. Emitted as an inline ExtGState entry referenced by
+   * the `gs` operator. Pair with {@link saveState}/{@link restoreState} to
+   * scope the effect.
+   *
+   * @param options Alpha and blend-mode options.
+   */
+  setExtGState(options: ExtGStateOptions): void {
+    validateExtGStateOptions(options);
+    this.page.ops.push({ type: "extGState", options: { ...options } });
+  }
+
+  /**
    * Returns the internal page model used by serializers and editors.
    *
    * @returns The internal page model.
    */
   toInternalModel(): InternalPageModel {
     return this.page;
+  }
+}
+
+/**
+ * Internal model for a luminosity soft-mask Form XObject.
+ */
+export interface InternalSoftMaskModel {
+  readonly key: string;
+  readonly width: number;
+  readonly height: number;
+  readonly ops: PdfOp[];
+}
+
+/**
+ * Sub-builder for the contents of a luminosity soft-mask Form XObject.
+ * Supports path operations only.
+ */
+export class PdfSoftMaskBuilder {
+  constructor(private readonly ops: PdfOp[]) {}
+
+  /**
+   * Adds a vector path to the soft-mask form. Painted regions whose
+   * luminosity is high (white) become opaque; black becomes transparent.
+   */
+  path(commands: readonly PathCommand[], style: PathStyle): void {
+    const normalized = normalizePathStyle(style);
+    validatePathCommands([...commands]);
+    this.ops.push({ type: "path", commands: [...commands], style: normalized });
+  }
+
+  /** Saves the current graphics state. */
+  saveState(): void {
+    this.ops.push({ type: "saveState" });
+  }
+
+  /** Restores the most recently saved graphics state. */
+  restoreState(): void {
+    this.ops.push({ type: "restoreState" });
+  }
+
+  /** Adds a transformation matrix. */
+  transform(matrix: Transform): void {
+    validateTransform(matrix);
+    this.ops.push({ type: "transform", matrix });
   }
 }
 
@@ -2026,6 +2090,12 @@ export class PdfOutlineItem {
 export class PdfDocument {
   /** Pages added to the document, in insertion order. Each entry is the internal model populated by {@link PdfPage} builders. */
   private readonly pages: InternalPageModel[] = [];
+
+  /** Luminosity soft masks created via {@link createLuminositySoftMask}, in insertion order. */
+  private readonly softMasks: InternalSoftMaskModel[] = [];
+
+  /** Counter for generating unique soft-mask keys. */
+  private nextSoftMaskId = 0;
 
   /** TrueType fonts embedded in the document, keyed by their internal font id ({@link ParsedTrueTypeFont.id}). */
   private readonly embeddedFonts = new Map<string, ParsedTrueTypeFont>();
@@ -2101,9 +2171,34 @@ export class PdfDocument {
    * @returns The new page builder.
    */
   addPage(options: PageOptions = {}): PdfPage {
-    const page = createPageModel(options.size ?? this.defaultPageSize);
+    const page = createPageModel(options.size ?? this.defaultPageSize, options.transparencyGroup);
     this.pages.push(page);
     return new PdfPage(page, this.embeddedFonts);
+  }
+
+  /**
+   * Creates a luminosity soft mask backed by a Form XObject. Pass the
+   * returned handle to {@link ExtGStateOptions.softMask} via
+   * {@link PdfPage.setExtGState} to apply the mask.
+   *
+   * The mask sub-builder supports path operations only. Painted regions
+   * with high luminosity (white) become opaque; black becomes transparent.
+   *
+   * @param options Mask BBox dimensions.
+   * @param build Callback that receives the mask sub-builder.
+   *
+   * @returns A handle referencing the created soft-mask Form XObject.
+   */
+  createLuminositySoftMask(
+    options: SoftMaskOptions,
+    build: (mask: PdfSoftMaskBuilder) => void,
+  ): SoftMaskHandle {
+    const key = `SMask${this.nextSoftMaskId++}`;
+    const ops: PdfOp[] = [];
+    const builder = new PdfSoftMaskBuilder(ops);
+    build(builder);
+    this.softMasks.push({ key, width: options.width, height: options.height, ops });
+    return { key };
   }
 
   /**
@@ -2428,6 +2523,7 @@ export class PdfDocument {
       attachments: this.attachments,
       outlines: this.outlines,
       pages: this.pages,
+      softMasks: this.softMasks,
     };
   }
 }
