@@ -159,7 +159,14 @@ export type DocumentEncryptionAlgorithm =
 /**
  * Supported document conformance profiles for PDF/A and PDF/UA output.
  */
-export type DocumentConformanceProfile = "pdfa-1b" | "pdfua-1";
+export type DocumentConformanceProfile =
+  | "pdfa-1b"
+  | "pdfa-2b"
+  | "pdfa-3b"
+  | "pdfa-4"
+  | "pdfua-1"
+  | "pdfua-2"
+  | "wtpdf";
 /**
  * Standard structure tags for text-like tagged PDF content.
  */
@@ -261,6 +268,13 @@ export interface PdfStructureOptions {
   boundingBox?: PdfBoundingBox | undefined;
   /** Structure attributes to emit for the tagged element. */
   attributes?: Record<string, PdfStructureAttributeValue> | undefined;
+  /**
+   * MathML markup for a Formula structure element.
+   * Emitted as an associated file (Subtype application/mathml+xml,
+   * AFRelationship=Supplement) and referenced from the StructElem /AF array.
+   * Required by PDF/UA Mathematics for accessible mathematical content.
+   */
+  mathML?: string | undefined;
 }
 
 /**

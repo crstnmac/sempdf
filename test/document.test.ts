@@ -3845,3 +3845,165 @@ function joinBytes(chunks: Uint8Array[]): Uint8Array {
   }
   return output;
 }
+
+test("emits pdfa-2b identification metadata and PDF 1.7 header", () => {
+  const fontPath = findTrueTypeFixturePath();
+  if (!fontPath) return;
+
+  const doc = createDocument({ conformance: "pdfa-2b", info: { title: "A2 archive" } });
+  const font = doc.embedTrueTypeFont(readFileSync(fontPath), { family: "A2Fixture" });
+  doc.addPage({ size: "Letter" }).text("hello", { x: 36, y: 720, font, fontSize: 12 });
+
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+  assert.match(text, /^%PDF-1\.7/);
+  assert.match(text, /\/S \/GTS_PDFA1/);
+
+  const parsed = parseDocument(bytes);
+  assert.equal(parsed.getConformanceProfile(), "pdfa-2b");
+  assert.match(parsed.getXmpMetadata() ?? "", /pdfaid:part>2</);
+  assert.match(parsed.getXmpMetadata() ?? "", /pdfaid:conformance>B</);
+});
+
+test("pdfa-2b allows transparent images that pdfa-1b would reject", () => {
+  const fontPath = findTrueTypeFixturePath();
+  if (!fontPath) return;
+
+  const doc = createDocument({ conformance: "pdfa-2b" });
+  doc.embedTrueTypeFont(readFileSync(fontPath), { family: "A2Fixture" });
+  doc.addPage({ size: "Letter" }).png(transparentTinyPngBytes(), { x: 36, y: 720, width: 8, height: 8 });
+
+  // No throw expected.
+  const bytes = doc.toUint8Array();
+  assert.ok(bytes.length > 0);
+});
+
+test("emits pdfa-3b identification metadata", () => {
+  const fontPath = findTrueTypeFixturePath();
+  if (!fontPath) return;
+
+  const doc = createDocument({ conformance: "pdfa-3b" });
+  const font = doc.embedTrueTypeFont(readFileSync(fontPath), { family: "A3Fixture" });
+  doc.addPage({ size: "Letter" }).text("a3", { x: 36, y: 720, font, fontSize: 12 });
+
+  const parsed = parseDocument(doc.toUint8Array());
+  assert.equal(parsed.getConformanceProfile(), "pdfa-3b");
+  assert.match(parsed.getXmpMetadata() ?? "", /pdfaid:part>3</);
+  assert.match(parsed.getXmpMetadata() ?? "", /pdfaid:conformance>B</);
+});
+
+test("emits pdfa-4 identification metadata with rev=2020 and PDF 2.0 header", () => {
+  const fontPath = findTrueTypeFixturePath();
+  if (!fontPath) return;
+
+  const doc = createDocument({ conformance: "pdfa-4" });
+  const font = doc.embedTrueTypeFont(readFileSync(fontPath), { family: "A4Fixture" });
+  doc.addPage({ size: "Letter" }).text("a4", { x: 36, y: 720, font, fontSize: 12 });
+
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+  assert.match(text, /^%PDF-2\.0/);
+
+  const parsed = parseDocument(bytes);
+  assert.equal(parsed.getConformanceProfile(), "pdfa-4");
+  const xmp = parsed.getXmpMetadata() ?? "";
+  assert.match(xmp, /pdfaid:part>4</);
+  assert.match(xmp, /pdfaid:rev>2020</);
+  assert.doesNotMatch(xmp, /pdfaid:conformance>/);
+});
+
+test("emits pdfua-2 identification metadata and PDF 2.0 header", () => {
+  const fontPath = findTrueTypeFixturePath();
+  if (!fontPath) return;
+
+  const doc = createDocument({
+    conformance: "pdfua-2",
+    tagged: true,
+    language: "en-US",
+    structureRoot: "Document",
+    info: { title: "UA-2" }
+  });
+  const font = doc.embedTrueTypeFont(readFileSync(fontPath), { family: "UA2Fixture" });
+  doc.addPage({ size: "Letter" }).text("hello", { x: 36, y: 720, font, fontSize: 12, tag: "P" });
+
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+  assert.match(text, /^%PDF-2\.0/);
+  assert.match(text, /\/DisplayDocTitle true/);
+  assert.match(text, /\/Tabs \/S/);
+
+  const parsed = parseDocument(bytes);
+  assert.equal(parsed.getConformanceProfile(), "pdfua-2");
+  assert.match(parsed.getXmpMetadata() ?? "", /pdfuaid:part>2</);
+});
+
+test("rejects pdfua-2 output without language", () => {
+  const fontPath = findTrueTypeFixturePath();
+  if (!fontPath) return;
+  const doc = createDocument({ conformance: "pdfua-2", tagged: true });
+  const font = doc.embedTrueTypeFont(readFileSync(fontPath), { family: "UA2Fixture" });
+  doc.addPage({ size: "Letter" }).text("hi", { x: 36, y: 720, font, fontSize: 12, tag: "P" });
+  assert.throws(
+    () => doc.toUint8Array(),
+    (error: unknown) =>
+      error instanceof PdfEngineError
+      && error.code === PdfErrorCode.INVALID_COMPLIANCE
+      && /language/i.test(error.message)
+  );
+});
+
+test("emits wtpdf identification metadata", () => {
+  const fontPath = findTrueTypeFixturePath();
+  if (!fontPath) return;
+
+  const doc = createDocument({
+    conformance: "wtpdf",
+    tagged: true,
+    language: "en-US",
+    structureRoot: "Document"
+  });
+  const font = doc.embedTrueTypeFont(readFileSync(fontPath), { family: "WtpdfFixture" });
+  doc.addPage({ size: "Letter" }).text("wt", { x: 36, y: 720, font, fontSize: 12, tag: "P" });
+
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+  assert.match(text, /^%PDF-2\.0/);
+
+  const parsed = parseDocument(bytes);
+  assert.equal(parsed.getConformanceProfile(), "wtpdf");
+  assert.match(parsed.getXmpMetadata() ?? "", /wtpdf/);
+});
+
+test("PDF/UA Math: emits MathML embedded file and AF reference for Formula", () => {
+  const fontPath = findTrueTypeFixturePath();
+  if (!fontPath) return;
+
+  const mathML =
+    '<math xmlns="http://www.w3.org/1998/Math/MathML"><mrow><mi>x</mi><mo>=</mo><mn>1</mn></mrow></math>';
+  const doc = createDocument({
+    conformance: "pdfua-2",
+    tagged: true,
+    language: "en-US",
+    structureRoot: "Document",
+    info: { title: "Math" }
+  });
+  doc.embedTrueTypeFont(readFileSync(fontPath), { family: "MathFixture" });
+  const page = doc.addPage({ size: "Letter" });
+  page.png(tinyPngBytes(), {
+    x: 36,
+    y: 720,
+    width: 24,
+    height: 24,
+    tag: "Formula",
+    structure: { altText: "x equals one", mathML }
+  });
+
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+  // Catalog AF references the Formula filespec.
+  assert.match(text, /\/AF \[/);
+  // Filespec entry.
+  assert.match(text, /\/AFRelationship \/Supplement/);
+  // Embedded file Subtype names the MathML mime type.
+  assert.match(text, /\/Subtype \/application#2Fmathml\+xml|\/Subtype \/application\/mathml\+xml/);
+});
