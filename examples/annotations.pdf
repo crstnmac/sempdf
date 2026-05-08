@@ -1,0 +1,104 @@
+%PDF-1.4
+%ÿÿÿ
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 2 /Kids [6 0 R 13 0 R] >>
+endobj
+3 0 obj
+<< /Producer (pdf-editing-lib) /Title (PDF Annotations Demo) /Author (pdf-editing-lib) >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+7 0 obj
+<< /Type /Annot /Subtype /Highlight /Rect [56 760 406 774] /QuadPoints [56 774 406 774 56 760 406 760] /C [1 0.921569 0.231373] >>
+endobj
+8 0 obj
+<< /Type /Annot /Subtype /Text /Rect [56 720 76 740] /Contents (This is a sticky note annotation with reviewer comments.) /Open true >>
+endobj
+9 0 obj
+<< /Type /Annot /Subtype /FreeText /Rect [300 680 500 740] /Contents (Approved by reviewer on May 8, 2026) /Border [0 0 1] /DA (/FormF1 10 Tf 0 g) >>
+endobj
+10 0 obj
+<< /Type /Annot /Subtype /Link /Rect [56 640 276 654] /Border [0 0 0] /Contents (https://example.com/docs) /A << /S /URI /URI (https://example.com/docs) >> >>
+endobj
+11 0 obj
+<< /Type /Annot /Subtype /Link /Rect [56 610 136 624] /Border [0 0 0] /Contents (Internal page link) /Dest [13 0 R /Fit] >>
+endobj
+5 0 obj
+<< /Length 369 >>
+stream
+BT
+/F1 20 Tf
+0 g
+1 0 0 1 56 800 Tm
+(PDF Annotations) Tj
+ET
+BT
+/F1 12 Tf
+0 g
+1 0 0 1 56 760 Tm
+(This sentence has a highlight annotation on it.) Tj
+ET
+BT
+/F1 12 Tf
+0 g
+1 0 0 1 56 720 Tm
+(Click the note icon to read the comment.) Tj
+ET
+BT
+/F1 12 Tf
+0 g
+1 0 0 1 56 640 Tm
+(Visit our website for documentation) Tj
+ET
+BT
+/F1 12 Tf
+0 g
+1 0 0 1 56 610 Tm
+(Go to Page 2) Tj
+ET
+
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 4 0 R >> >> /Annots [7 0 R 8 0 R 9 0 R 10 0 R 11 0 R] /Contents 5 0 R >>
+endobj
+12 0 obj
+<< /Length 94 >>
+stream
+BT
+/F1 14 Tf
+0 g
+1 0 0 1 56 800 Tm
+(You arrived via the 'Go to Page 2' link on Page 1.) Tj
+ET
+
+endstream
+endobj
+13 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 4 0 R >> >> /Contents 12 0 R >>
+endobj
+xref
+0 14
+0000000000 65535 f 
+0000000014 00000 n 
+0000000063 00000 n 
+0000000127 00000 n 
+0000000232 00000 n 
+0000001079 00000 n 
+0000001499 00000 n 
+0000000302 00000 n 
+0000000448 00000 n 
+0000000599 00000 n 
+0000000764 00000 n 
+0000000939 00000 n 
+0000001673 00000 n 
+0000001818 00000 n 
+trailer
+<< /Size 14 /Root 1 0 R /Info 3 0 R >>
+startxref
+1952
+%%EOF

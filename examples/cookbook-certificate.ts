@@ -169,7 +169,6 @@ function generateCertificate(data: CertificateData): void {
         ],
         options: {
           fontSize: 10,
-          cellPadding: 6,
           marginBottom: 48
         }
       },
