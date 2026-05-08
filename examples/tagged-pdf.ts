@@ -91,7 +91,7 @@ metrics.list(
     "Accessibility improvements: screen-reader navigation support and WCAG 2.1 Level AA compliance.",
     "Migrate analytics pipeline to streaming."
   ],
-  { x: 56, y: 360, width: 480, font, fontSize: 11 }
+  { x: 72, y: 360, width: 480, font, fontSize: 11 }
 );
 
 const compliance = doc.addPage({ size: "A4" });

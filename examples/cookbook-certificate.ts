@@ -82,7 +82,7 @@ function generateCertificate(data: CertificateData): void {
       title: `Certificate \u2014 ${data.course}`,
       author: "Training Academy"
     },
-    page: { size: "Letter", font, margin: 64 },
+    page: { size: "Letter", font },
     blocks: [
       {
         type: "paragraph",

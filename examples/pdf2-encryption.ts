@@ -16,7 +16,7 @@ const doc = createDocument({
   }
 });
 
-doc.addPage({ size: "A4" }).text("PDF 2.0 secret content", { x: 56, y: 780, fontSize: 16 });
+doc.addPage({ size: "A4" }).text("PDF 2.0 secret content", { x: 72, y: 780, fontSize: 16 });
 
 const bytes = doc.toUint8Array();
 await writeFile(new URL("./pdf2-encryption.pdf", import.meta.url), bytes);

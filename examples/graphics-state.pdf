@@ -18,57 +18,57 @@ stream
 BT
 /F1 16 Tf
 0 g
-1 0 0 1 56 800 Tm
+1 0 0 1 72 800 Tm
 (Graphics State: Transforms, Alpha & Blend Modes) Tj
 ET
 BT
 /F1 12 Tf
 0 g
-1 0 0 1 56 770 Tm
+1 0 0 1 72 770 Tm
 (saveState / restoreState) Tj
 ET
 q
 BT
 /F1 14 Tf
 0.082353 0.396078 0.752941 rg
-1 0 0 1 56 740 Tm
+1 0 0 1 72 740 Tm
 (Blue text inside saved state) Tj
 ET
 1 w
 0 J
 0 j
 0.082353 0.396078 0.752941 RG
-56 718 200 16 re
+72 718 200 16 re
 S
 Q
 BT
 /F1 11 Tf
 0 g
-1 0 0 1 56 690 Tm
+1 0 0 1 72 690 Tm
 (Back to default graphics state) Tj
 ET
 BT
 /F1 12 Tf
 0 g
-1 0 0 1 56 660 Tm
+1 0 0 1 72 660 Tm
 (translate\(100, 0\) - two rectangles side by side) Tj
 ET
 q
 1 0 0 1 100 0 cm
 0.890196 0.94902 0.992157 rg
-56 630 80 20 re
+72 630 80 20 re
 f
 Q
 q
 1 0 0 1 188 0 cm
 0.733333 0.870588 0.984314 rg
-56 630 80 20 re
+72 630 80 20 re
 f
 Q
 BT
 /F1 12 Tf
 0 g
-1 0 0 1 56 600 Tm
+1 0 0 1 72 600 Tm
 (scale\(1.5, 1.5\)) Tj
 ET
 q
@@ -76,14 +76,14 @@ q
 BT
 /F1 16 Tf
 0.776471 0.156863 0.156863 rg
-1 0 0 1 56 380 Tm
+1 0 0 1 72 380 Tm
 (SCALED TEXT) Tj
 ET
 Q
 BT
 /F1 12 Tf
 0 g
-1 0 0 1 56 570 Tm
+1 0 0 1 72 570 Tm
 (rotate\(15 degrees\)) Tj
 ET
 q
@@ -91,20 +91,20 @@ q
 BT
 /F1 14 Tf
 0.180392 0.490196 0.196078 rg
-1 0 0 1 56 530 Tm
+1 0 0 1 72 530 Tm
 (Rotated text at 15 degrees) Tj
 ET
 Q
 BT
 /F1 12 Tf
 0 g
-1 0 0 1 56 500 Tm
+1 0 0 1 72 500 Tm
 (Transparency \(fillAlpha = 0.3\)) Tj
 ET
 q
 /GS1 gs
 1 0.341176 0.133333 rg
-56 460 100 30 re
+72 460 100 30 re
 f
 BT
 /F1 10 Tf
@@ -116,13 +116,13 @@ Q
 BT
 /F1 12 Tf
 0 g
-1 0 0 1 56 440 Tm
+1 0 0 1 72 440 Tm
 (Blend mode: 'Multiply' on overlapping rects) Tj
 ET
 q
 /GS2 gs
 1 0 0 rg
-56 390 60 30 re
+72 390 60 30 re
 f
 0 0 1 rg
 86 380 60 30 re
@@ -131,13 +131,13 @@ Q
 BT
 /F1 12 Tf
 0 g
-1 0 0 1 56 360 Tm
+1 0 0 1 72 360 Tm
 (transform\(\) - skewed parallelogram) Tj
 ET
 q
 1 0 0.3 1 0 0 cm
 0.482353 0.121569 0.635294 rg
-56 320 120 25 re
+72 320 120 25 re
 f
 Q
 
