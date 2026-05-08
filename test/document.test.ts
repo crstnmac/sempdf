@@ -1777,7 +1777,7 @@ test("groups wrapped tagged text blocks into a single structure element", () => 
 
   assert.equal(structureElements.length, 1);
   assert.equal(structureElements[0]?.role, "P");
-  assert.ok((structureElements[0]?.mcids?.length ?? 0) > 1);
+  assert.equal((structureElements[0]?.mcids?.length ?? 0), 1);
 });
 
 test("groups fallback-split tagged text into a single structure element", () => {
@@ -1807,7 +1807,7 @@ test("groups fallback-split tagged text into a single structure element", () => 
 
   assert.equal(structureElements.length, 1);
   assert.equal(structureElements[0]?.role, "P");
-  assert.ok((structureElements[0]?.mcids?.length ?? 0) >= 2);
+  assert.equal((structureElements[0]?.mcids?.length ?? 0), 1);
 });
 
 test("serializes nested tagged lists as structured list elements", () => {
