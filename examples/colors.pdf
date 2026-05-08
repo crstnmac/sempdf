@@ -18,74 +18,74 @@ stream
 BT
 /F1 18 Tf
 0 g
-1 0 0 1 56 800 Tm
+1 0 0 1 72 800 Tm
 (PDF Color Spaces) Tj
 ET
 BT
 /F1 12 Tf
 0 g
-1 0 0 1 56 780 Tm
+1 0 0 1 72 780 Tm
 (hex\('#1565c0'\) - DeviceRGB hex) Tj
 ET
 0.082353 0.396078 0.752941 rg
-56 756 60 18 re
+72 756 60 18 re
 f
 BT
 /F1 12 Tf
 0 g
-1 0 0 1 56 736 Tm
+1 0 0 1 72 736 Tm
 (rgb\(0.08, 0.4, 0.75\) - DeviceRGB float) Tj
 ET
 0.08 0.4 0.75 rg
-56 712 60 18 re
+72 712 60 18 re
 f
 BT
 /F1 12 Tf
 0 g
-1 0 0 1 56 692 Tm
+1 0 0 1 72 692 Tm
 (gray\(0.5\) - DeviceGray) Tj
 ET
 0.5 g
-56 668 60 18 re
+72 668 60 18 re
 f
 0.2 g
-130 668 60 18 re
+146 668 60 18 re
 f
 0.8 g
-204 668 60 18 re
+220 668 60 18 re
 f
 BT
 /F1 12 Tf
 0 g
-1 0 0 1 56 648 Tm
+1 0 0 1 72 648 Tm
 (cmyk\(0.8, 0.2, 0, 0.15\) - DeviceCMYK) Tj
 ET
 0.8 0.2 0 0.15 k
-56 624 60 18 re
+72 624 60 18 re
 f
 0 1 1 0 k
-130 624 60 18 re
+146 624 60 18 re
 f
 0 0 1 0 k
-204 624 60 18 re
+220 624 60 18 re
 f
 BT
 /F1 12 Tf
 0 g
-1 0 0 1 56 604 Tm
+1 0 0 1 72 604 Tm
 (Separation spot color \(Pantone 286 C\)) Tj
 ET
 /CS2 cs 1 scn
-56 580 60 18 re
+72 580 60 18 re
 f
 BT
 /F1 12 Tf
 0 g
-1 0 0 1 56 560 Tm
+1 0 0 1 72 560 Tm
 (DeviceN - Multi-ink spot color) Tj
 ET
 /CS1 cs 1 0.8 scn
-56 536 60 18 re
+72 536 60 18 re
 f
 
 endstream

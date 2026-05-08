@@ -18,12 +18,12 @@ const doc = createDocument({
 
 const page = doc.addPage({ size: "Letter" });
 page.text("Embedded JPEG image", {
-  x: 56,
+  x: 72,
   y: 720,
   fontSize: 18
 });
 page.jpeg(jpeg, {
-  x: 56,
+  x: 72,
   y: 560,
   width: 120,
   height: 120

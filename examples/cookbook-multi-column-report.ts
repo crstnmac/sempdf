@@ -45,7 +45,6 @@ doc.renderTemplate({
   page: {
     size: "A4",
     font,
-    margin: 48,
     spacing: {
       paragraphAfter: 8,
       headingBefore: { 2: 16, 3: 12 },

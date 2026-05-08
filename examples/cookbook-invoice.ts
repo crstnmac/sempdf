@@ -67,7 +67,7 @@ const total = subtotal + tax;
 
 doc.renderTemplate({
   info: { title: "Invoice #INV-2026-0042", author: "ACME Corp" },
-  page: { size: "A4", font, margin: 48 },
+  page: { size: "A4", font },
   autoOutline: { maxLevel: 1, expanded: false },
   blocks: [
     {

@@ -13,13 +13,13 @@ const doc = createDocument({
 
 const page = doc.addPage({ size: "A4" });
 page.text("Hello from pdf-editing-lib", {
-  x: 56,
+  x: 72,
   y: 780,
   fontSize: 20,
   color: hex("1c2f6b")
 });
 page.path(
-  [{ type: "rect", x: 48, y: 740, width: 220, height: 36 }],
+  [{ type: "rect", x: 72, y: 740, width: 220, height: 36 }],
   {
     paint: "stroke",
     stroke: {

@@ -138,14 +138,14 @@ stream
 BT
 /F1 16 Tf
 0 g
-1 0 0 1 56 800 Tm
+1 0 0 1 72 800 Tm
 (Structure Containers & Tagged Content) Tj
 ET
 /H2 <</MCID 0>> BDC
 BT
 /F1 14 Tf
 0.082353 0.396078 0.752941 rg
-1 0 0 1 56 760 Tm
+1 0 0 1 72 760 Tm
 (Section Container) Tj
 ET
 EMC
@@ -153,7 +153,7 @@ EMC
 BT
 /F1 11 Tf
 0 g
-1 0 0 1 56 735 Tm
+1 0 0 1 72 735 Tm
 (Structure containers group content into tagged <Sect> elements. Screen readers ) Tj
 ET
 EMC
@@ -161,7 +161,7 @@ EMC
 BT
 /F1 11 Tf
 0 g
-1 0 0 1 56 721.8 Tm
+1 0 0 1 72 721.8 Tm
 (use this structure for document navigation.) Tj
 ET
 EMC
@@ -169,7 +169,7 @@ EMC
 BT
 /F1 12 Tf
 0.180392 0.490196 0.196078 rg
-1 0 0 1 56 695 Tm
+1 0 0 1 72 695 Tm
 (Nested Subsection) Tj
 ET
 EMC
@@ -177,7 +177,7 @@ EMC
 BT
 /F1 10 Tf
 0 g
-1 0 0 1 56 675 Tm
+1 0 0 1 72 675 Tm
 (Containers can be nested to build deep document hierarchies for complex, well-structured ) Tj
 ET
 EMC
@@ -185,7 +185,7 @@ EMC
 BT
 /F1 10 Tf
 0 g
-1 0 0 1 56 663 Tm
+1 0 0 1 72 663 Tm
 (PDF content.) Tj
 ET
 EMC
@@ -193,7 +193,7 @@ EMC
 BT
 /F1 14 Tf
 0.082353 0.396078 0.752941 rg
-1 0 0 1 56 635 Tm
+1 0 0 1 72 635 Tm
 (Custom Structure Roles) Tj
 ET
 EMC
@@ -201,7 +201,7 @@ EMC
 BT
 /F1 10 Tf
 0 g
-1 0 0 1 56 605 Tm
+1 0 0 1 72 605 Tm
 (Note: Structure containers enable full control over the PDF logical structure tree for ) Tj
 ET
 EMC
@@ -209,7 +209,7 @@ EMC
 BT
 /F1 10 Tf
 0 g
-1 0 0 1 56 593 Tm
+1 0 0 1 72 593 Tm
 (maximum accessibility.) Tj
 ET
 EMC
@@ -217,7 +217,7 @@ EMC
 BT
 /F1 11 Tf
 0.333333 0.333333 0.4 rg
-1 0 0 1 56 575 Tm
+1 0 0 1 72 575 Tm
 ("Well-structured PDFs are accessible to all." -- PDF/UA) Tj
 ET
 EMC
@@ -225,7 +225,7 @@ EMC
 BT
 /F1 13 Tf
 0.082353 0.396078 0.752941 rg
-1 0 0 1 56 535 Tm
+1 0 0 1 72 535 Tm
 (Container with Table) Tj
 ET
 EMC
@@ -233,7 +233,7 @@ EMC
 BT
 /F1 9.5 Tf
 0 g
-1 0 0 1 58 458 Tm
+1 0 0 1 74 458 Tm
 (Item) Tj
 ET
 EMC
@@ -241,7 +241,7 @@ EMC
 BT
 /F1 9.5 Tf
 0 g
-1 0 0 1 208 458 Tm
+1 0 0 1 224 458 Tm
 (Status) Tj
 ET
 EMC
@@ -249,7 +249,7 @@ EMC
 BT
 /F1 9.5 Tf
 0 g
-1 0 0 1 358 458 Tm
+1 0 0 1 374 458 Tm
 (Notes) Tj
 ET
 EMC
@@ -257,7 +257,7 @@ EMC
 BT
 /F1 9.5 Tf
 0 g
-1 0 0 1 58 442.6 Tm
+1 0 0 1 74 442.6 Tm
 (Design) Tj
 ET
 EMC
@@ -265,7 +265,7 @@ EMC
 BT
 /F1 9.5 Tf
 0 g
-1 0 0 1 208 442.6 Tm
+1 0 0 1 224 442.6 Tm
 (Complete) Tj
 ET
 EMC
@@ -273,7 +273,7 @@ EMC
 BT
 /F1 9.5 Tf
 0 g
-1 0 0 1 358 442.6 Tm
+1 0 0 1 374 442.6 Tm
 (Lead approved) Tj
 ET
 EMC
@@ -281,7 +281,7 @@ EMC
 BT
 /F1 9.5 Tf
 0 g
-1 0 0 1 58 427.2 Tm
+1 0 0 1 74 427.2 Tm
 (Development) Tj
 ET
 EMC
@@ -289,7 +289,7 @@ EMC
 BT
 /F1 9.5 Tf
 0 g
-1 0 0 1 208 427.2 Tm
+1 0 0 1 224 427.2 Tm
 (In Progress) Tj
 ET
 EMC
@@ -297,7 +297,7 @@ EMC
 BT
 /F1 9.5 Tf
 0 g
-1 0 0 1 358 427.2 Tm
+1 0 0 1 374 427.2 Tm
 (Sprint 3) Tj
 ET
 EMC
@@ -305,7 +305,7 @@ EMC
 BT
 /F1 9.5 Tf
 0 g
-1 0 0 1 58 411.8 Tm
+1 0 0 1 74 411.8 Tm
 (Testing) Tj
 ET
 EMC
@@ -313,7 +313,7 @@ EMC
 BT
 /F1 9.5 Tf
 0 g
-1 0 0 1 208 411.8 Tm
+1 0 0 1 224 411.8 Tm
 (Pending) Tj
 ET
 EMC
@@ -321,7 +321,7 @@ EMC
 BT
 /F1 9.5 Tf
 0 g
-1 0 0 1 358 411.8 Tm
+1 0 0 1 374 411.8 Tm
 (Starts Mon) Tj
 ET
 EMC

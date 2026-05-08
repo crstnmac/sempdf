@@ -41,7 +41,7 @@ doc.renderTemplate({
     title: "Summer Jazz Night \u2014 Admission Ticket",
     author: "City Arts Council"
   },
-  page: { size: "A5", font, margin: 36 },
+  page: { size: "A5", font },
   blocks: [
     {
       type: "heading",
