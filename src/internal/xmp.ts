@@ -10,10 +10,7 @@ export function buildXmpMetadataPacket(options: XmpMetadataOptions): string {
     creators.length === 0
       ? ''
       : `<dc:creator><rdf:Seq>${creators.map((value) => `<rdf:li>${escapeXml(value)}</rdf:li>`).join('')}</rdf:Seq></dc:creator>`;
-  const producer =
-    options.producer === undefined
-      ? ''
-      : `<pdf:Producer>${escapeXml(options.producer)}</pdf:Producer>`;
+  const producer = `<pdf:Producer>${escapeXml(options.producer ?? 'pdf-editing-lib')}</pdf:Producer>`;
   const creatorTool =
     options.creatorTool === undefined
       ? ''
