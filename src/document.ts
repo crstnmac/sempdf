@@ -37,6 +37,7 @@ import {
   addTextBlockToPage,
   addTextToPage,
   createStructureNode,
+  ensureBlockLevelParent,
   layoutList,
   layoutTable,
   measurePositionedRunHeight,
@@ -984,7 +985,7 @@ export class PdfFlow {
       this.page,
       "Link",
       normalizeStructureOptions(options.structure),
-      this.parent,
+      ensureBlockLevelParent(this.page, this.parent),
     );
     addTextToPage(
       this.page,

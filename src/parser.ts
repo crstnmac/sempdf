@@ -2974,7 +2974,7 @@ function collectEditableStructureElements(
     return output;
   }
 
-  const parsed = parseEditableStructureElement(document, resolvedValue, seen);
+  const parsed = parseEditableStructureElement(document, value, seen);
   return parsed ? [parsed] : [];
 }
 

@@ -1251,10 +1251,12 @@ test("serializes extended structure roles, role maps, metadata, and tagged links
   const parsed = parseDocument(bytes);
   const [root] = parsed.listStructureElements();
   assert.equal(root?.role, "Document");
-  assert.deepEqual(root?.children?.map((element) => element.role), ["CustomHeading", "Table", "Link"]);
+  assert.deepEqual(root?.children?.map((element) => element.role), ["CustomHeading", "Table", "P"]);
   assert.equal(root?.children?.[0]?.actualText, "Deep heading");
   assert.equal(root?.children?.[0]?.language, "en-US");
-  assert.equal(root?.children?.[2]?.altText, "Example link");
+  const linkWrapper = root?.children?.[2];
+  assert.equal(linkWrapper?.children?.[0]?.role, "Link");
+  assert.equal(linkWrapper?.children?.[0]?.altText, "Example link");
 });
 
 test("serializes tagged page links, annotations, form widgets, attributes, and path artifacts", () => {
@@ -1342,7 +1344,8 @@ test("infers structure bounding boxes and supports flow-authored tagged content"
   assert.match(text, /\/BBox \[48 [0-9.]+ 72 [0-9.]+\]/);
 
   const [root] = parseDocument(doc.toUint8Array()).listStructureElements();
-  assert.deepEqual(root?.children?.map((element) => element.role), ["H1", "P", "Link", "Figure"]);
+  assert.deepEqual(root?.children?.map((element) => element.role), ["H1", "P", "P", "Figure"]);
+  assert.equal(root?.children?.[2]?.children?.[0]?.role, "Link");
 });
 
 test("flow block margins control placement without legacy spacing props", () => {
@@ -1724,7 +1727,15 @@ test("serializes PDF/UA-1 identification metadata and validates required tagging
   const parsed = parseDocument(bytes);
   assert.equal(parsed.getConformanceProfile(), "pdfua-1");
   assert.match(parsed.getXmpMetadata() ?? "", /pdfuaid:part>\s*1\s*</);
-  assert.equal(parsed.inspectStructureElements()[0]?.children?.find((element) => element.role === "Link")?.annotations?.[0]?.contents, "Accessibility link");
+  const findLink = (nodes?: readonly any[]): any => {
+    for (const node of nodes ?? []) {
+      if (node.role === "Link") return node;
+      const inner = findLink(node.children);
+      if (inner) return inner;
+    }
+    return undefined;
+  };
+  assert.equal(findLink(parsed.inspectStructureElements()[0]?.children)?.annotations?.[0]?.contents, "Accessibility link");
 
   const invalid = createDocument({ conformance: "pdfua-1" });
   invalid.addPage({ size: "Letter" }).text("Plain", { x: 36, y: 720 });

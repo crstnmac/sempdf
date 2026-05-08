@@ -38,6 +38,36 @@ import {
   type NormalizedTableRow
 } from "./validation.js";
 
+const GROUPING_STRUCTURE_ROLES: ReadonlySet<string> = new Set([
+  "Document",
+  "DocumentFragment",
+  "Part",
+  "Art",
+  "Sect",
+  "Div",
+  "NonStruct",
+  "Private",
+  "Aside",
+  "TOC",
+  "TOCI",
+  "Index",
+  "BlockQuote"
+]);
+
+// PDF/UA-1 (and axesCheck "PossibleInappropriateUseParagraph") expect inline
+// structure types like <Link> and <Figure> to live inside a block-level
+// container such as <P>. When the caller's parent is missing or a pure
+// grouping element, insert an intermediate <P> so PAC does not warn.
+export function ensureBlockLevelParent(
+  page: InternalPageModel,
+  parent: InternalStructureNode | undefined
+): InternalStructureNode {
+  if (parent !== undefined && !GROUPING_STRUCTURE_ROLES.has(parent.role)) {
+    return parent;
+  }
+  return createStructureNode(page, "P", undefined, parent);
+}
+
 export function createStructureNode(
   page: InternalPageModel,
   role: Exclude<PdfStructureTag, "Artifact">,
@@ -203,7 +233,10 @@ export function addImageToPage(
               O: normalizedOptions.structure?.attributes?.O ?? { name: "Layout" },
               BBox:
                 normalizedOptions.structure?.attributes?.BBox
-                ?? placementBoundingBox(normalizedOptions)
+                ?? placementBoundingBox(normalizedOptions),
+              Placement:
+                normalizedOptions.structure?.attributes?.Placement
+                ?? { name: "Block" }
             },
             ...(normalizedOptions.altText === undefined
               ? {}
@@ -239,7 +272,7 @@ export function addLinkToPage(
     const node =
       parent?.role === "Link"
         ? applyStructureOptions(parent, structure)
-        : createStructureNode(page, "Link", structure, parent);
+        : createStructureNode(page, "Link", structure, ensureBlockLevelParent(page, parent));
     node.annotationIndexes.push(annotationIndex);
     structureGroupId = node.id;
   }
