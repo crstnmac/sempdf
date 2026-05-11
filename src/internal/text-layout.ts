@@ -35,6 +35,7 @@ export function layoutTextBlock(
   const lineLimit = options.maxLines ?? Number.POSITIVE_INFINITY;
   let remainingLines = lineLimit;
   let truncated = false;
+  const isVertical = options.writingMode === "vertical";
 
   for (let paragraphIndex = 0; paragraphIndex < paragraphs.length; paragraphIndex += 1) {
     const paragraph = paragraphs[paragraphIndex]!;
@@ -43,7 +44,9 @@ export function layoutTextBlock(
       break;
     }
 
-    const wrappedLines = wrapParagraph(paragraph, options, embeddedFonts);
+    const wrappedLines = isVertical
+      ? wrapParagraphVertical(paragraph, options, embeddedFonts)
+      : wrapParagraph(paragraph, options, embeddedFonts);
     if (wrappedLines.length === 0) {
       y -= options.lineHeight;
       continue;
@@ -59,14 +62,13 @@ export function layoutTextBlock(
       const isLastLine = index === wrappedLines.length - 1;
       const isLastParagraph = paragraphIndex === paragraphs.length - 1;
       const lineOptions = buildLineOptions(textLine, options, embeddedFonts, y, isLastLine);
-      // Append a trailing space when another visual line follows (wrapping
-      // within a paragraph or a hard newline before the next paragraph), so
-      // PDF reading order (copy/paste, screen readers) keeps a word boundary
-      // at the wrap point. Skip for RTL where appending past the visual end
-      // would shift the right-edge anchor.
       const lineDirection = resolveTextDirection(textLine, options.direction);
       const emitText = (isLastLine && isLastParagraph) || lineDirection === "rtl" ? textLine : `${textLine} `;
-      lines.push(...positionTextRuns(emitText, lineOptions, embeddedFonts));
+      if (isVertical) {
+        lines.push(...positionTextRunsVertical(emitText, lineOptions, embeddedFonts));
+      } else {
+        lines.push(...positionTextRuns(emitText, lineOptions, embeddedFonts));
+      }
       y -= options.lineHeight;
       remainingLines -= 1;
     }
@@ -85,6 +87,40 @@ export function layoutTextBlock(
   }
 
   return lines;
+}
+
+export function positionTextRunsVertical(
+  text: string,
+  options: NormalizedTextBaseOptions,
+  embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>
+): PositionedTextRun[] {
+  const resolvedDirection = resolveTextDirection(text, options.direction);
+  const runs = shapeTextRuns(text, options, embeddedFonts, resolvedDirection);
+  const positionedRuns: PositionedTextRun[] = [];
+  let y = options.y;
+  const charHeight = options.fontSize;
+
+  for (const run of runs) {
+    positionedRuns.push({
+      text: run.text,
+      options: {
+        x: options.x,
+        y,
+        font: run.font,
+        fontSize: options.fontSize,
+        color: options.color,
+        kerning: options.kerning,
+        ...(options.tag !== undefined ? { tag: options.tag } : {}),
+        ...(options.characterSpacing !== undefined ? { characterSpacing: options.characterSpacing } : {}),
+        ...(options.wordSpacing !== undefined ? { wordSpacing: options.wordSpacing } : {}),
+        ...(options.leading !== undefined ? { leading: options.leading } : {})
+      },
+      ...(run.glyphs ? { glyphs: run.glyphs } : {})
+    });
+    y -= charHeight;
+  }
+
+  return positionedRuns;
 }
 
 export function positionTextRuns(
@@ -569,6 +605,38 @@ function wrapParagraph(
   }
 
   return lines;
+}
+
+function wrapParagraphVertical(
+  paragraph: string,
+  options: NormalizedTextBlockOptions,
+  embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>
+): string[] {
+  const normalizedParagraph = paragraph.replace(/\t/g, "    ").trim();
+  if (normalizedParagraph.length === 0) {
+    return [];
+  }
+
+  const maxHeight = options.width;
+  const charHeight = options.fontSize;
+  const maxChars = Math.max(1, Math.floor(maxHeight / charHeight));
+  const characters = [...normalizedParagraph];
+  const lines: string[] = [];
+  let current = "";
+
+  for (const character of characters) {
+    if (current.length >= maxChars) {
+      lines.push(current);
+      current = "";
+    }
+    current += character;
+  }
+
+  if (current.length > 0) {
+    lines.push(current);
+  }
+
+  return lines.length > 0 ? lines : [normalizedParagraph];
 }
 
 function breakWord(

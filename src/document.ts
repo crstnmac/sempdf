@@ -9,6 +9,7 @@ import {
 } from "./parser.js";
 import { parseImage } from "./internal/image.js";
 import { layoutTextBlock, measureTextWidth } from "./internal/text-layout.js";
+import type { TextShaper } from "./internal/text-shaper.js";
 import {
   parseTrueTypeFont,
   type ParsedTrueTypeFont,
@@ -169,6 +170,17 @@ import type {
 import type { PdfOp } from "./internal/ops.js";
 import { createPageModel } from "./internal/page-types.js";
 
+function hashBytes(data: Uint8Array): string {
+  const sample = data.slice(0, 64);
+  let hash = data.length.toString(36);
+  for (let i = 0; i < sample.length; i++) {
+    hash += sample[i]!.toString(36);
+  }
+  return hash;
+}
+
+const fontCache = new Map<string, ParsedTrueTypeFont>();
+
 export interface PdfDocumentModel {
   /** Document information dictionary values. */
   readonly info: NormalizedDocumentInfo;
@@ -196,6 +208,8 @@ export interface PdfDocumentModel {
   readonly outputIntent?: DocumentOutputIntentOptions | undefined;
   /** Detached digital-signature options for serialized output. */
   readonly signature?: DocumentSignatureOptions | undefined;
+  /** Custom text shaper for complex script shaping. */
+  readonly textShaper?: TextShaper | undefined;
   /** Embedded fonts. */
   readonly embeddedFonts: readonly ParsedTrueTypeFont[];
   /** Named destinations. */
@@ -210,6 +224,8 @@ export interface PdfDocumentModel {
   readonly pages: readonly InternalPageModel[];
   /** Luminosity soft-mask Form XObjects referenced by ExtGState entries. */
   readonly softMasks?: readonly InternalSoftMaskModel[] | undefined;
+  /** Calculation order for form fields. */
+  readonly calculationOrder?: string[] | undefined;
 }
 
 export interface PdfIncrementalUpdateModel {
@@ -644,6 +660,8 @@ interface FlowState {
   align?: FlowOptions["align"] | undefined;
   /** Whether kerning should be applied where supported. */
   kerning?: boolean | undefined;
+  /** Text writing mode. */
+  writingMode?: "horizontal" | "vertical" | undefined;
 }
 
 interface RequiredFlowSpacingScale {
@@ -2229,6 +2247,21 @@ export class PdfDocument {
   /** Detached signature settings. When set, an empty signature placeholder is reserved and `/ByteRange`/`/Contents` filled at serialize. */
   private readonly signature?: DocumentSignatureOptions | undefined;
 
+  /** Custom text shaper for complex script shaping. */
+  private readonly textShaper?: TextShaper | undefined;
+
+  /** Calculation order for form fields. */
+  private calculationOrder?: string[] | undefined;
+
+  /** Whether the document has already been serialized. */
+  private _finalized = false;
+
+  /** Snapshot of page count captured at finalization time. */
+  private _finalizedPageCount = 0;
+
+  /** Cached serialized bytes, returned on subsequent calls when unchanged. */
+  private _finalizedBytes?: Uint8Array | undefined;
+
   /**
    * Creates a new mutable PDF document builder.
    *
@@ -2245,6 +2278,7 @@ export class PdfDocument {
     this.linearize = options.linearize;
     this.outputIntent = options.outputIntent;
     this.signature = options.signature;
+    this.textShaper = options.textShaper;
   }
 
   /**
@@ -2315,7 +2349,15 @@ export class PdfDocument {
     data: BinaryData,
     options: EmbedTrueTypeFontOptions = {},
   ): PdfEmbeddedFont {
+    const bytes = toBytes(data);
+    const cacheKey = hashBytes(bytes);
+    const cached = fontCache.get(cacheKey);
+    if (cached) {
+      this.embeddedFonts.set(cached.id, cached);
+      return cached;
+    }
     const font = parseTrueTypeFont(data, options.family);
+    fontCache.set(cacheKey, font);
     this.embeddedFonts.set(font.id, font);
     return font;
   }
@@ -2423,6 +2465,20 @@ export class PdfDocument {
   }
 
   /**
+   * Sets the calculation order for form fields. The order determines the
+   * sequence in which field calculations run when a field value changes.
+   *
+   * @param fieldNames The ordered list of form field names.
+   */
+  setCalculationOrder(fieldNames: string[]): void {
+    if (fieldNames.length === 0) {
+      this.calculationOrder = undefined;
+      return;
+    }
+    this.calculationOrder = [...fieldNames];
+  }
+
+  /**
    * Flattens form fields into static page content where possible.
    */
   flattenForms(): void {
@@ -2451,7 +2507,18 @@ export class PdfDocument {
    * @returns The serialized or collected bytes.
    */
   toUint8Array(): Uint8Array {
-    return serializeDocument(this.toModel());
+    if (this._finalized) {
+      if (this.pages.length !== this._finalizedPageCount) {
+        throw new PdfEngineError(
+          PdfErrorCode.INVALID_OPERATION,
+          "Document has been modified after serialization. Create a new document to produce additional output.",
+        );
+      }
+      return this._finalizedBytes!;
+    }
+    this._finalized = true;
+    this._finalizedPageCount = this.pages.length;
+    return this._finalizedBytes = this._serializeToBytes();
   }
 
   /**
@@ -2460,6 +2527,19 @@ export class PdfDocument {
    * @param sink The sink that receives written byte chunks.
    */
   async writeTo(sink: ByteSink): Promise<void> {
+    if (this._finalized) {
+      if (this.pages.length !== this._finalizedPageCount) {
+        throw new PdfEngineError(
+          PdfErrorCode.INVALID_OPERATION,
+          "Document has been modified after serialization. Create a new document to produce additional output.",
+        );
+      }
+      await serializeDocumentToSink(this.toModel(), sink);
+      return;
+    }
+    this._finalized = true;
+    this._finalizedPageCount = this.pages.length;
+    this._finalizedBytes = this._serializeToBytes();
     await serializeDocumentToSink(this.toModel(), sink);
   }
 
@@ -2469,9 +2549,23 @@ export class PdfDocument {
    * @returns The serialized PDF data as an ArrayBuffer.
    */
   toArrayBuffer(): ArrayBuffer {
-    const bytes = this.toUint8Array();
-    const buffer = new ArrayBuffer(bytes.byteLength);
-    new Uint8Array(buffer).set(bytes);
+    if (this._finalized) {
+      if (this.pages.length !== this._finalizedPageCount) {
+        throw new PdfEngineError(
+          PdfErrorCode.INVALID_OPERATION,
+          "Document has been modified after serialization. Create a new document to produce additional output.",
+        );
+      }
+      const bytes = this._finalizedBytes!;
+      const buffer = new ArrayBuffer(bytes.byteLength);
+      new Uint8Array(buffer).set(bytes);
+      return buffer;
+    }
+    this._finalized = true;
+    this._finalizedPageCount = this.pages.length;
+    this._finalizedBytes = this._serializeToBytes();
+    const buffer = new ArrayBuffer(this._finalizedBytes.byteLength);
+    new Uint8Array(buffer).set(this._finalizedBytes);
     return buffer;
   }
 
@@ -2481,9 +2575,26 @@ export class PdfDocument {
    * @returns The serialized PDF data as a Blob.
    */
   toBlob(): Blob {
-    return new Blob([new Uint8Array(this.toArrayBuffer())], {
-      type: "application/pdf",
-    });
+    if (this._finalized) {
+      if (this.pages.length !== this._finalizedPageCount) {
+        throw new PdfEngineError(
+          PdfErrorCode.INVALID_OPERATION,
+          "Document has been modified after serialization. Create a new document to produce additional output.",
+        );
+      }
+      return new Blob([this._finalizedBytes! as BlobPart], { type: "application/pdf" });
+    }
+    this._finalized = true;
+    this._finalizedPageCount = this.pages.length;
+    this._finalizedBytes = this._serializeToBytes();
+    return new Blob([this._finalizedBytes as BlobPart], { type: "application/pdf" });
+  }
+
+  /**
+   * Internal serialization without finalization checks.
+   */
+  private _serializeToBytes(): Uint8Array {
+    return serializeDocument(this.toModel());
   }
 
   /**
@@ -2556,6 +2667,34 @@ export class PdfDocument {
       attachmentNames.add(attachment.name);
     }
 
+    if (this.calculationOrder !== undefined) {
+      const fieldNames = new Set<string>();
+      for (const page of this.pages) {
+        for (const annotation of page.annotations) {
+          if (
+            'name' in annotation &&
+            (annotation.type === 'textField' ||
+              annotation.type === 'checkBox' ||
+              annotation.type === 'choiceField' ||
+              annotation.type === 'radioGroup' ||
+              annotation.type === 'pushButton' ||
+              annotation.type === 'signatureField')
+          ) {
+            fieldNames.add(annotation.name);
+          }
+        }
+      }
+      for (const name of this.calculationOrder) {
+        if (!fieldNames.has(name)) {
+          throw new PdfEngineError(
+            PdfErrorCode.INVALID_FORM_FIELD,
+            `Calculation order field "${name}" does not exist in the document.`,
+            { name },
+          );
+        }
+      }
+    }
+
     const complianceIssues = this.validateCompliance();
     const complianceErrors = complianceIssues.filter(
       (issue) => issue.severity === "error",
@@ -2601,6 +2740,10 @@ export class PdfDocument {
         ? {}
         : { outputIntent: this.outputIntent }),
       ...(this.signature === undefined ? {} : { signature: this.signature }),
+      ...(this.calculationOrder === undefined
+        ? {}
+        : { calculationOrder: this.calculationOrder }),
+      ...(this.textShaper === undefined ? {} : { textShaper: this.textShaper }),
       embeddedFonts: [...this.embeddedFonts.values()],
       namedDestinations: this.namedDestinations,
       pageLabels,
@@ -2672,6 +2815,15 @@ export class PdfEditableDocument {
   private readonly taggedBase: boolean;
   /** Conformance base. */
   private readonly conformanceBase: DocumentConformanceProfile | undefined;
+
+  /** Whether the document has already been serialized. */
+  private _finalized = false;
+
+  /** Snapshot of page count captured at finalization time. */
+  private _finalizedPageCount = 0;
+
+  /** Cached serialized bytes, returned on subsequent calls when unchanged. */
+  private _finalizedBytes?: Uint8Array | undefined;
 
   /**
    * Creates an editor around a parsed source PDF.
@@ -2901,7 +3053,15 @@ export class PdfEditableDocument {
     data: BinaryData,
     options: EmbedTrueTypeFontOptions = {},
   ): PdfEmbeddedFont {
+    const bytes = toBytes(data);
+    const cacheKey = hashBytes(bytes);
+    const cached = fontCache.get(cacheKey);
+    if (cached) {
+      this.embeddedFonts.set(cached.id, cached);
+      return cached;
+    }
     const font = parseTrueTypeFont(data, options.family);
+    fontCache.set(cacheKey, font);
     this.embeddedFonts.set(font.id, font);
     return font;
   }
@@ -3405,22 +3565,18 @@ export class PdfEditableDocument {
    * @returns The serialized or collected bytes.
    */
   toUint8Array(): Uint8Array {
-    if (
-      !hasEditablePageChanges(this.base, this.pageOrder) &&
-      this.updatedInfo === undefined &&
-      !this.hasUpdatedXmpMetadata &&
-      this.fieldUpdates.size === 0 &&
-      this.editedPages.size === 0 &&
-      this.flattenedFieldObjectIds.size === 0 &&
-      this.structureRoleUpdates.size === 0 &&
-      this.structureAltTextUpdates.size === 0 &&
-      this.structureChildrenOrderUpdates.size === 0 &&
-      this.signature === undefined
-    ) {
-      return this.base.getSourceBytes();
+    if (this._finalized) {
+      if (this.pageOrder.length !== this._finalizedPageCount) {
+        throw new PdfEngineError(
+          PdfErrorCode.INVALID_OPERATION,
+          "Document has been modified after serialization. Create a new document to produce additional output.",
+        );
+      }
+      return this._finalizedBytes!;
     }
-
-    return serializeIncrementalUpdate(this.toIncrementalModel());
+    this._finalized = true;
+    this._finalizedPageCount = this.pageOrder.length;
+    return this._finalizedBytes = this._serializeToBytes();
   }
 
   /**
@@ -3429,6 +3585,35 @@ export class PdfEditableDocument {
    * @param sink The sink that receives written byte chunks.
    */
   async writeTo(sink: ByteSink): Promise<void> {
+    if (this._finalized) {
+      if (this.pageOrder.length !== this._finalizedPageCount) {
+        throw new PdfEngineError(
+          PdfErrorCode.INVALID_OPERATION,
+          "Document has been modified after serialization. Create a new document to produce additional output.",
+        );
+      }
+      if (
+        !hasEditablePageChanges(this.base, this.pageOrder) &&
+        this.updatedInfo === undefined &&
+        !this.hasUpdatedXmpMetadata &&
+        this.fieldUpdates.size === 0 &&
+        this.editedPages.size === 0 &&
+        this.flattenedFieldObjectIds.size === 0 &&
+        this.structureRoleUpdates.size === 0 &&
+        this.structureAltTextUpdates.size === 0 &&
+        this.structureChildrenOrderUpdates.size === 0 &&
+        this.signature === undefined
+      ) {
+        await sink.write(this.base.getSourceBytes());
+        await sink.close();
+        return;
+      }
+      await serializeIncrementalUpdateToSink(this.toIncrementalModel(), sink);
+      return;
+    }
+    this._finalized = true;
+    this._finalizedPageCount = this.pageOrder.length;
+    this._finalizedBytes = this._serializeToBytes();
     if (
       !hasEditablePageChanges(this.base, this.pageOrder) &&
       this.updatedInfo === undefined &&
@@ -3445,7 +3630,6 @@ export class PdfEditableDocument {
       await sink.close();
       return;
     }
-
     await serializeIncrementalUpdateToSink(this.toIncrementalModel(), sink);
   }
 
@@ -3455,9 +3639,23 @@ export class PdfEditableDocument {
    * @returns The serialized PDF data as an ArrayBuffer.
    */
   toArrayBuffer(): ArrayBuffer {
-    const bytes = this.toUint8Array();
-    const buffer = new ArrayBuffer(bytes.byteLength);
-    new Uint8Array(buffer).set(bytes);
+    if (this._finalized) {
+      if (this.pageOrder.length !== this._finalizedPageCount) {
+        throw new PdfEngineError(
+          PdfErrorCode.INVALID_OPERATION,
+          "Document has been modified after serialization. Create a new document to produce additional output.",
+        );
+      }
+      const bytes = this._finalizedBytes!;
+      const buffer = new ArrayBuffer(bytes.byteLength);
+      new Uint8Array(buffer).set(bytes);
+      return buffer;
+    }
+    this._finalized = true;
+    this._finalizedPageCount = this.pageOrder.length;
+    this._finalizedBytes = this._serializeToBytes();
+    const buffer = new ArrayBuffer(this._finalizedBytes.byteLength);
+    new Uint8Array(buffer).set(this._finalizedBytes);
     return buffer;
   }
 
@@ -3467,9 +3665,41 @@ export class PdfEditableDocument {
    * @returns The serialized PDF data as a Blob.
    */
   toBlob(): Blob {
-    return new Blob([new Uint8Array(this.toArrayBuffer())], {
-      type: "application/pdf",
-    });
+    if (this._finalized) {
+      if (this.pageOrder.length !== this._finalizedPageCount) {
+        throw new PdfEngineError(
+          PdfErrorCode.INVALID_OPERATION,
+          "Document has been modified after serialization. Create a new document to produce additional output.",
+        );
+      }
+      return new Blob([this._finalizedBytes! as BlobPart], { type: "application/pdf" });
+    }
+    this._finalized = true;
+    this._finalizedPageCount = this.pageOrder.length;
+    this._finalizedBytes = this._serializeToBytes();
+    return new Blob([this._finalizedBytes as BlobPart], { type: "application/pdf" });
+  }
+
+  /**
+   * Internal serialization without finalization checks.
+   */
+  private _serializeToBytes(): Uint8Array {
+    if (
+      !hasEditablePageChanges(this.base, this.pageOrder) &&
+      this.updatedInfo === undefined &&
+      !this.hasUpdatedXmpMetadata &&
+      this.fieldUpdates.size === 0 &&
+      this.editedPages.size === 0 &&
+      this.flattenedFieldObjectIds.size === 0 &&
+      this.structureRoleUpdates.size === 0 &&
+      this.structureAltTextUpdates.size === 0 &&
+      this.structureChildrenOrderUpdates.size === 0 &&
+      this.signature === undefined
+    ) {
+      return this.base.getSourceBytes();
+    }
+
+    return serializeIncrementalUpdate(this.toIncrementalModel());
   }
 
   /**
@@ -3831,6 +4061,9 @@ function createFlowState(
       : { lineHeight: options.lineHeight }),
     ...(options.align === undefined ? {} : { align: options.align }),
     ...(options.kerning === undefined ? {} : { kerning: options.kerning }),
+    ...(options.writingMode === undefined
+      ? {}
+      : { writingMode: options.writingMode }),
   };
 }
 
@@ -3932,6 +4165,9 @@ function flowTextDefaults(state: FlowState): Partial<TextBlockOptions> {
     ...(state.lineHeight === undefined ? {} : { lineHeight: state.lineHeight }),
     ...(state.align === undefined ? {} : { align: state.align }),
     ...(state.kerning === undefined ? {} : { kerning: state.kerning }),
+    ...(state.writingMode === undefined
+      ? {}
+      : { writingMode: state.writingMode }),
   };
 }
 

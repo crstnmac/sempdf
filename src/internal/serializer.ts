@@ -339,6 +339,7 @@ function* buildSerializedPageObjects(
               item,
               annotation.options.borderWidth,
               false,
+              annotation.options.appearance,
             ),
           };
           yield {
@@ -347,6 +348,7 @@ function* buildSerializedPageObjects(
               item,
               annotation.options.borderWidth,
               true,
+              annotation.options.appearance,
             ),
           };
           yield {
@@ -1009,6 +1011,7 @@ function prepareDocumentSerialization(
         ],
         formFontResourceMap,
         builtInFontObjectIds,
+        model.calculationOrder,
       ),
     });
   }
@@ -1071,7 +1074,10 @@ function prepareDocumentSerialization(
       id: objectIds.fontFile,
       value: prepareByteStream(
         compressedStream(
-          dict([['Length1', subsetBytes.length]]),
+          dict([
+            ['Length1', subsetBytes.length],
+            ...(context.font.isCff ? [['Subtype', name('Type1C')] as [string, PdfValue]] : []),
+          ]),
           subsetBytes,
           'compress' in model
             ? (model as { compress?: boolean }).compress
@@ -1100,7 +1106,9 @@ function prepareDocumentSerialization(
           scaleMetric(context.font.capHeight, context.font.unitsPerEm),
         ],
         ['StemV', context.font.stemV],
-        ['FontFile2', ref(objectIds.fontFile)],
+        ...(context.font.isCff
+          ? [['FontFile3', ref(objectIds.fontFile)] as [string, PdfValue]]
+          : [['FontFile2', ref(objectIds.fontFile)] as [string, PdfValue]]),
         ['Metadata', ref(objectIds.metadata)],
       ]),
     });
@@ -1109,7 +1117,7 @@ function prepareDocumentSerialization(
       id: objectIds.descendant,
       value: dict([
         ['Type', name('Font')],
-        ['Subtype', name('CIDFontType2')],
+        ['Subtype', name(context.font.isCff ? 'CIDFontType0C' : 'CIDFontType2')],
         ['BaseFont', name(context.font.postScriptName)],
         [
           'CIDSystemInfo',
@@ -1653,7 +1661,10 @@ function prepareIncrementalUpdateSerialization(
       id: objectIds.fontFile,
       value: prepareByteStream(
         compressedStream(
-          dict([['Length1', subsetBytes.length]]),
+          dict([
+            ['Length1', subsetBytes.length],
+            ...(context.font.isCff ? [['Subtype', name('Type1C')] as [string, PdfValue]] : []),
+          ]),
           subsetBytes,
           'compress' in model
             ? (model as { compress?: boolean }).compress
@@ -1682,7 +1693,9 @@ function prepareIncrementalUpdateSerialization(
           scaleMetric(context.font.capHeight, context.font.unitsPerEm),
         ],
         ['StemV', context.font.stemV],
-        ['FontFile2', ref(objectIds.fontFile)],
+        ...(context.font.isCff
+          ? [['FontFile3', ref(objectIds.fontFile)] as [string, PdfValue]]
+          : [['FontFile2', ref(objectIds.fontFile)] as [string, PdfValue]]),
         ['Metadata', ref(objectIds.metadata)],
       ]),
     });
@@ -1691,7 +1704,7 @@ function prepareIncrementalUpdateSerialization(
       id: objectIds.descendant,
       value: dict([
         ['Type', name('Font')],
-        ['Subtype', name('CIDFontType2')],
+        ['Subtype', name(context.font.isCff ? 'CIDFontType0C' : 'CIDFontType2')],
         ['BaseFont', name(context.font.postScriptName)],
         [
           'CIDSystemInfo',
@@ -1840,6 +1853,7 @@ function prepareIncrementalUpdateSerialization(
         ],
         formFontResourceMap,
         builtInFontObjectIds,
+        undefined,
         existingAcroFormDict,
       ),
     });
@@ -3133,6 +3147,7 @@ function buildAnnotationDictionary(
       }
 
       const flags = buildTextFieldFlags(annotation);
+      const hasCustomAppearance = annotation.options.appearance?.normal !== undefined;
       return dict([
         ['Type', name('Annot')],
         ['Subtype', name('Widget')],
@@ -3144,13 +3159,15 @@ function buildAnnotationDictionary(
         ['Border', array([0, 0, annotation.options.borderWidth])],
         [
           'DA',
-          literalString(
-            buildTextFieldAppearance(
-              resourceName,
-              annotation.options.fontSize,
-              annotation.options.color,
-            ),
-          ),
+          hasCustomAppearance
+            ? literalString(annotation.options.appearance!.normal!)
+            : literalString(
+                buildTextFieldAppearance(
+                  resourceName,
+                  annotation.options.fontSize,
+                  annotation.options.color,
+                ),
+              ),
         ],
         [
           'V',
@@ -3173,6 +3190,7 @@ function buildAnnotationDictionary(
       }
 
       const flags = buildChoiceFieldFlags(annotation);
+      const hasCustomAppearance = annotation.options.appearance?.normal !== undefined;
       return dict([
         ['Type', name('Annot')],
         ['Subtype', name('Widget')],
@@ -3184,13 +3202,15 @@ function buildAnnotationDictionary(
         ['Border', array([0, 0, annotation.options.borderWidth])],
         [
           'DA',
-          literalString(
-            buildTextFieldAppearance(
-              resourceName,
-              annotation.options.fontSize,
-              annotation.options.color,
-            ),
-          ),
+          hasCustomAppearance
+            ? literalString(annotation.options.appearance!.normal!)
+            : literalString(
+                buildTextFieldAppearance(
+                  resourceName,
+                  annotation.options.fontSize,
+                  annotation.options.color,
+                ),
+              ),
         ],
         [
           'Opt',
@@ -3219,6 +3239,7 @@ function buildAnnotationDictionary(
       }
 
       const flags = buildPushButtonFlags(annotation);
+      const hasCustomAppearance = annotation.options.appearance?.normal !== undefined;
       return dict([
         ['Type', name('Annot')],
         ['Subtype', name('Widget')],
@@ -3230,13 +3251,15 @@ function buildAnnotationDictionary(
         ['Border', array([0, 0, annotation.options.borderWidth])],
         [
           'DA',
-          literalString(
-            buildTextFieldAppearance(
-              resourceName,
-              annotation.options.fontSize,
-              annotation.options.color,
-            ),
-          ),
+          hasCustomAppearance
+            ? literalString(annotation.options.appearance!.normal!)
+            : literalString(
+                buildTextFieldAppearance(
+                  resourceName,
+                  annotation.options.fontSize,
+                  annotation.options.color,
+                ),
+              ),
         ],
         ['MK', dict([['CA', literalString(annotation.options.label)]])],
         ['Ff', flags],
@@ -3246,6 +3269,7 @@ function buildAnnotationDictionary(
     }
     case 'signatureField': {
       const flags = buildSignatureFieldFlags(annotation);
+      const hasCustomAppearance = annotation.options.appearance?.normal !== undefined;
       return dict([
         ['Type', name('Annot')],
         ['Subtype', name('Widget')],
@@ -3258,6 +3282,12 @@ function buildAnnotationDictionary(
         ['Ff', flags !== 0 ? flags : undefined],
         ['StructParent', structParentKey],
         ['P', ref(pageObjectId)],
+        [
+          'DA',
+          hasCustomAppearance
+            ? literalString(annotation.options.appearance!.normal!)
+            : undefined,
+        ],
       ]);
     }
     case 'checkBox': {
@@ -3855,9 +3885,22 @@ function buildRadioAppearanceStream(
   >['options']['items'][number],
   borderWidth: number,
   selected: boolean,
+  appearance?: import("../internal/validation.js").NormalizedFieldAppearance | undefined,
 ): ReturnType<typeof stream> {
   const width = item.width;
   const height = item.height;
+
+  if (appearance?.normal !== undefined) {
+    return stream(
+      dict([
+        ['Type', name('XObject')],
+        ['Subtype', name('Form')],
+        ['BBox', array([0, 0, width, height])],
+      ]),
+      encoder.encode(`${appearance.normal}\n`),
+    );
+  }
+
   const centerX = width / 2;
   const centerY = height / 2;
   const outerRadiusX = Math.max(
@@ -4260,6 +4303,7 @@ function buildAcroFormDictionary(
   fieldRefs: readonly PdfValue[],
   formFontResourceMap: ReadonlyMap<FontName, string>,
   builtInFontObjectIds: ReadonlyMap<FontName, number>,
+  calculationOrder?: string[] | undefined,
   existingAcroForm?: PdfDict,
 ): PdfDict {
   const existingDr = asOptionalPdfDict(getPdfDictValue(existingAcroForm, 'DR'));
@@ -4302,6 +4346,12 @@ function buildAcroFormDictionary(
       ['NeedAppearances', true],
       ['DR', mergedDr],
       ['DA', defaultAppearance],
+      [
+        'CO',
+        calculationOrder !== undefined && calculationOrder.length > 0
+          ? array(calculationOrder.map((name) => literalString(name)))
+          : undefined,
+      ],
     ]),
   );
 }
@@ -4343,6 +4393,19 @@ function buildCheckBoxAppearanceStream(
   >['options'],
   checked: boolean,
 ): ReturnType<typeof stream> {
+  const hasCustomAppearance = options.appearance?.normal !== undefined;
+
+  if (hasCustomAppearance) {
+    return stream(
+      dict([
+        ['Type', name('XObject')],
+        ['Subtype', name('Form')],
+        ['BBox', array([0, 0, options.width, options.height])],
+      ]),
+      encoder.encode(`${options.appearance!.normal!}\n`),
+    );
+  }
+
   const borderInset = Math.max(options.borderWidth / 2, 0.5);
   const checkInset = Math.min(options.width, options.height) * 0.22;
   const lines = [
@@ -4546,12 +4609,33 @@ function* serializePageContentLines(
         );
         break;
       case 'image':
-        opLines.push('q');
-        opLines.push(
-          `${formatPdfNumber(op.options.width)} 0 0 ${formatPdfNumber(op.options.height)} ${formatPdfNumber(op.options.x)} ${formatPdfNumber(op.options.y)} cm`,
-        );
-        opLines.push(`/${resources.images.get(op.image.key)!} Do`);
-        opLines.push('Q');
+        if (op.image.kind === 'jpeg' && op.image.orientation !== 1) {
+          opLines.push('q');
+          const { x, y, width, height } = op.options;
+          const rot = op.image.orientation;
+          if (rot === 6) {
+            opLines.push(
+              `0 ${formatPdfNumber(height)} ${formatPdfNumber(-width)} 0 ${formatPdfNumber(x + width)} ${formatPdfNumber(y)} cm`,
+            );
+          } else if (rot === 8) {
+            opLines.push(
+              `0 ${formatPdfNumber(-height)} ${formatPdfNumber(width)} 0 ${formatPdfNumber(x)} ${formatPdfNumber(y + height)} cm`,
+            );
+          } else if (rot === 3) {
+            opLines.push(
+              `${formatPdfNumber(-width)} 0 0 ${formatPdfNumber(-height)} ${formatPdfNumber(x + width)} ${formatPdfNumber(y + height)} cm`,
+            );
+          }
+          opLines.push(`/${resources.images.get(op.image.key)!} Do`);
+          opLines.push('Q');
+        } else {
+          opLines.push('q');
+          opLines.push(
+            `${formatPdfNumber(op.options.width)} 0 0 ${formatPdfNumber(op.options.height)} ${formatPdfNumber(op.options.x)} ${formatPdfNumber(op.options.y)} cm`,
+          );
+          opLines.push(`/${resources.images.get(op.image.key)!} Do`);
+          opLines.push('Q');
+        }
         break;
       case 'extGState': {
         const entry = resources.extGStates.get(extGStateKey(op.options));

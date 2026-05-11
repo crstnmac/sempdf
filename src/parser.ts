@@ -2948,6 +2948,7 @@ function collectNumberTreeEntries(
 ): void {
   const nums = getDictValue(node, "Nums");
   if (Array.isArray(nums) && !isPdfDict(nums)) {
+    const keysSeen: number[] = [];
     for (let index = 0; index < nums.length; index += 2) {
       const key = nums[index];
       const value = nums[index + 1];
@@ -2955,9 +2956,23 @@ function collectNumberTreeEntries(
         continue;
       }
 
+      keysSeen.push(key);
+
       const dictValue = resolveDict(document, value);
       if (dictValue) {
         output.set(key, dictValue);
+      }
+    }
+
+    if (keysSeen.length > 1) {
+      for (let i = 1; i < keysSeen.length; i++) {
+        if (keysSeen[i]! < keysSeen[i - 1]!) {
+          throw new PdfEngineError(
+            PdfErrorCode.INVALID_NUMBER_TREE,
+            "Number tree contains unsorted keys.",
+            { keys: keysSeen },
+          );
+        }
       }
     }
   }
@@ -2971,11 +2986,24 @@ function collectNumberTreeEntries(
         }
         seen.add(kid.objectId);
       }
-      const dictValue = resolveDict(document, kid);
-      if (dictValue) {
-        collectNumberTreeEntries(document, dictValue, output, seen);
+      try {
+        const dictValue = resolveDict(document, kid);
+        if (dictValue) {
+          collectNumberTreeEntries(document, dictValue, output, seen);
+        }
+      } catch (error) {
+        if (error instanceof PdfEngineError && error.code === PdfErrorCode.INVALID_NUMBER_TREE) {
+          throw error;
+        }
       }
     }
+  }
+
+  if (!Array.isArray(nums) && !Array.isArray(kids)) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_NUMBER_TREE,
+      "Number tree node is missing both /Nums and /Kids entries.",
+    );
   }
 }
 
@@ -3061,7 +3089,10 @@ function parseStructureElement(
   const valueRef = isPdfRef(value) ? value : undefined;
   if (valueRef) {
     if (seen.has(valueRef.objectId)) {
-      return undefined;
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_PDF,
+        "Circular reference detected in structure tree.",
+      );
     }
     seen.add(valueRef.objectId);
   }
@@ -3085,7 +3116,10 @@ function parseEditableStructureElement(
   }
 
   if (seen.has(valueRef.objectId)) {
-    return undefined;
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_PDF,
+      "Circular reference detected in structure tree.",
+    );
   }
   seen.add(valueRef.objectId);
 
@@ -3111,7 +3145,10 @@ function parseInspectedStructureElement(
   const valueRef = isPdfRef(value) ? value : undefined;
   if (valueRef) {
     if (seen.has(valueRef.objectId)) {
-      return undefined;
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_PDF,
+        "Circular reference detected in structure tree.",
+      );
     }
     seen.add(valueRef.objectId);
   }
