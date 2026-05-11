@@ -427,6 +427,66 @@ test("edits existing pages by appending overlay content streams", () => {
   assert.equal(updated.listPages()[0]?.contentObjectIds.length, 2);
 });
 
+test("writePageContent appends content to existing page", () => {
+  const doc = createDocument();
+  const page = doc.addPage({ size: "A4" });
+  page.text("Original text", { x: 72, y: 720, fontSize: 12 });
+  const pdfBytes = doc.toUint8Array();
+
+  const edit = editDocument(pdfBytes);
+  edit.writePageContent(0, "BT /F1 12 Tf 72 700 Td (Overlay text) Tj ET", "append");
+  const editedBytes = edit.toUint8Array();
+  assert.ok(editedBytes.length > pdfBytes.length);
+
+  const parsed = parseDocument(editedBytes);
+  const text = new TextDecoder().decode(editedBytes);
+  assert.ok(text.includes("Original text"));
+  assert.ok(text.includes("Overlay text"));
+});
+
+test("writePageContent prepends content to existing page", () => {
+  const doc = createDocument();
+  const page = doc.addPage();
+  page.text("Body text", { x: 72, y: 720 });
+  const pdfBytes = doc.toUint8Array();
+
+  const edit = editDocument(pdfBytes);
+  edit.writePageContent(0, "BT /F1 12 Tf 72 740 Td (Header text) Tj ET", "prepend");
+  const editedBytes = edit.toUint8Array();
+
+  const text = new TextDecoder().decode(editedBytes);
+  assert.ok(text.includes("Header text"));
+  assert.ok(text.includes("Body text"));
+});
+
+test("writePageContent replaces page content", () => {
+  const doc = createDocument();
+  const page = doc.addPage();
+  page.text("Old text", { x: 72, y: 720 });
+  const pdfBytes = doc.toUint8Array();
+
+  const edit = editDocument(pdfBytes);
+  edit.writePageContent(0, "BT /F1 12 Tf 72 720 Td (New text) Tj ET", "replace");
+  const editedBytes = edit.toUint8Array();
+
+  const text = new TextDecoder().decode(editedBytes);
+  assert.ok(text.includes("New text"));
+});
+
+test("rejects writePageContent with invalid page index", () => {
+  const doc = createDocument();
+  doc.addPage().text("Content", { x: 72, y: 720 });
+  const pdfBytes = doc.toUint8Array();
+  const edit = editDocument(pdfBytes);
+
+  assert.throws(
+    () => edit.writePageContent(99, "BT /F1 12 Tf ET", "append"),
+    (error: unknown) =>
+      error instanceof PdfEngineError &&
+      error.code === PdfErrorCode.INVALID_PAGE,
+  );
+});
+
 test("extracts, splits, merges, and appends pages across PDFs", () => {
   const source = createDocument();
   source.addPage().text("Page one", { x: 36, y: 700 });

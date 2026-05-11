@@ -1,15 +1,37 @@
 import { PdfEngineError, PdfErrorCode } from "../errors.js";
 import type { BinaryData } from "../types.js";
+import type { EmbeddedBmpAsset } from "./bmp.js";
+import { parseBmp, buildEmbeddedBmpAsset } from "./bmp.js";
 import type { EmbeddedJpegAsset } from "./jpeg.js";
 import { parseJpeg } from "./jpeg.js";
 import type { EmbeddedPngAsset } from "./png.js";
 import { parsePng } from "./png.js";
 
-export type EmbeddedImageAsset = EmbeddedJpegAsset | EmbeddedPngAsset;
+export type EmbeddedImageAsset = EmbeddedJpegAsset | EmbeddedPngAsset | EmbeddedBmpAsset;
 
-export function parseImage(format: "jpeg" | "png", data: BinaryData, iccProfile?: BinaryData): EmbeddedImageAsset {
+export function parseImage(format: "jpeg" | "png" | "bmp", data: BinaryData, iccProfile?: BinaryData): EmbeddedImageAsset {
   try {
-    const asset = format === "jpeg" ? parseJpeg(data) : parsePng(data);
+    if (format === "jpeg") {
+      const asset = parseJpeg(data);
+      if (iccProfile === undefined) return asset;
+      const profileBytes = iccProfile instanceof Uint8Array
+        ? new Uint8Array(iccProfile)
+        : new Uint8Array(iccProfile);
+      const channels = asset.colorSpace === "DeviceGray" ? 1 : asset.colorSpace === "DeviceRGB" ? 3 : 4;
+      const iccDigest = simpleDigest(profileBytes);
+      return {
+        ...asset,
+        key: `${asset.key}#icc:${iccDigest}`,
+        iccProfile: { bytes: profileBytes, channels }
+      } as EmbeddedImageAsset;
+    }
+
+    if (format === "bmp") {
+      const result = parseBmp(data);
+      return buildEmbeddedBmpAsset(result, iccProfile);
+    }
+
+    const asset = parsePng(data);
     if (iccProfile === undefined) return asset;
     const profileBytes = iccProfile instanceof Uint8Array
       ? new Uint8Array(iccProfile)

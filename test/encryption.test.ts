@@ -187,3 +187,29 @@ test("rejects invalid encryption definitions", () => {
     (error: unknown) => error instanceof PdfEngineError && error.code === PdfErrorCode.INVALID_ENCRYPTION
   );
 });
+
+test("allows empty user password with non-empty owner password", () => {
+  const doc = createDocument({
+    encryption: {
+      userPassword: "",
+      ownerPassword: "owner123",
+    },
+  });
+  const page = doc.addPage();
+  page.text("Secret", { x: 72, y: 720 });
+  const bytes = doc.toUint8Array();
+  // Should generate without error
+  assert.ok(bytes.length > 0);
+});
+
+test("rejects encryption with both passwords empty", () => {
+  assert.throws(
+    () =>
+      createDocument({
+        encryption: { userPassword: "", ownerPassword: "" },
+      }),
+    (error: unknown) =>
+      error instanceof PdfEngineError &&
+      error.code === PdfErrorCode.INVALID_ENCRYPTION,
+  );
+});

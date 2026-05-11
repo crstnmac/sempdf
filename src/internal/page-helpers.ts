@@ -1,6 +1,7 @@
 import { PdfEngineError, PdfErrorCode } from "../errors.js";
 import type {
   BinaryData,
+  BmpImageOptions,
   JpegImageOptions,
   PdfBoundingBox,
   PdfStructureOptions,
@@ -199,9 +200,9 @@ export function addTextBlockToPage(
 
 export function addImageToPage(
   page: InternalPageModel,
-  format: "jpeg" | "png",
+  format: "jpeg" | "png" | "bmp",
   data: BinaryData,
-  options: JpegImageOptions | PngImageOptions,
+  options: JpegImageOptions | PngImageOptions | import("../types.js").BmpImageOptions,
   parent?: InternalStructureNode,
   defaultTag?: "Figure"
 ): void {

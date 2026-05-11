@@ -97,6 +97,7 @@ import type { ByteSink } from "./internal/byte-sink.js";
 import type {
   AttachmentOptions,
   BinaryData,
+  BmpImageOptions,
   CheckBoxOptions,
   ChoiceFieldOptions,
   CustomPageSize,
@@ -449,6 +450,16 @@ export class PdfStructureContainer {
    */
   png(data: BinaryData, options: PngImageOptions): void {
     addImageToPage(this.page, "png", data, options, this.node, "Figure");
+  }
+
+  /**
+   * Adds a tagged BMP image to this structure container.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   */
+  bmp(data: BinaryData, options: BmpImageOptions): void {
+    addImageToPage(this.page, "bmp", data, options, this.node, "Figure");
   }
 
   /**
@@ -865,6 +876,8 @@ export class PdfFlow {
         return this.estimateTableHeight(block.rows, block.options);
       case "png":
         return this.estimateImageHeight("png", block.data, block.options);
+      case "bmp":
+        return this.estimateImageHeight("bmp", block.data, block.options);
       case "jpeg":
         return this.estimateImageHeight("jpeg", block.data, block.options);
       case "link":
@@ -935,6 +948,18 @@ export class PdfFlow {
    */
   jpeg(data: BinaryData, options: FlowImageOptions = {}): this {
     return this.image("jpeg", data, options);
+  }
+
+  /**
+   * Adds a BMP image at the current flow cursor.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
+  bmp(data: BinaryData, options: FlowImageOptions = {}): this {
+    return this.image("bmp", data, options);
   }
 
   /**
@@ -1084,7 +1109,7 @@ export class PdfFlow {
    * @returns The result of the operation.
    */
   private image(
-    format: "jpeg" | "png",
+    format: "jpeg" | "png" | "bmp",
     data: BinaryData,
     options: FlowImageOptions,
   ): this {
@@ -1251,7 +1276,7 @@ export class PdfFlow {
    * @returns The estimated image height.
    */
   private estimateImageHeight(
-    format: "jpeg" | "png",
+    format: "jpeg" | "png" | "bmp",
     data: BinaryData,
     options: FlowImageOptions = {},
   ): number {
@@ -1662,6 +1687,16 @@ export class PdfPage {
   }
 
   /**
+   * Adds a BMP image to the page.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   */
+  bmp(data: BinaryData, options: BmpImageOptions): void {
+    addImageToPage(this.page, "bmp", data, options);
+  }
+
+  /**
    * Adds a URI link annotation to the page.
    *
    * @param url The URI target.
@@ -1766,12 +1801,55 @@ export class PdfPage {
   }
 
   /**
+   * Registers a potentially dotted field name, tracking parent-child
+   * relationships for hierarchical form fields. Returns the full name.
+   */
+  private registerFieldName(name: string): string {
+    const lastDot = name.lastIndexOf(".");
+    if (lastDot === -1) {
+      return name;
+    }
+
+    const childName = name.slice(lastDot + 1);
+    const parentName = name.slice(0, lastDot);
+
+    if (childName.length === 0 || parentName.length === 0) {
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_FORM_FIELD_NAME,
+        "Dotted form field names must have non-empty segments on both sides of the dot.",
+        { name },
+      );
+    }
+
+    if (name.slice(0, lastDot).includes(".")) {
+      // Recurse to register intermediate parents
+      this.registerFieldName(parentName);
+    }
+
+    if (!this.page.parentFieldKids) {
+      this.page.parentFieldKids = new Map();
+    }
+
+    const kids = this.page.parentFieldKids.get(parentName);
+    if (kids) {
+      if (!kids.includes(name)) {
+        kids.push(name);
+      }
+    } else {
+      this.page.parentFieldKids.set(parentName, [name]);
+    }
+
+    return name;
+  }
+
+  /**
    * Adds a text form field to the page.
    *
    * @param name The name to assign or look up.
    * @param options Options that control the operation.
    */
   textField(name: string, options: TextFieldOptions): void {
+    this.registerFieldName(name);
     const normalizedOptions = normalizeTextFieldOptions(name, options);
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
@@ -1797,6 +1875,7 @@ export class PdfPage {
    * @param options Options that control the operation.
    */
   checkBox(name: string, options: CheckBoxOptions): void {
+    this.registerFieldName(name);
     const normalizedOptions = normalizeCheckBoxOptions(name, options);
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
@@ -1822,6 +1901,7 @@ export class PdfPage {
    * @param options Options that control the operation.
    */
   choiceField(name: string, options: ChoiceFieldOptions): void {
+    this.registerFieldName(name);
     const normalizedOptions = normalizeChoiceFieldOptions(name, options);
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
@@ -1847,6 +1927,7 @@ export class PdfPage {
    * @param options Options that control the operation.
    */
   radioGroup(name: string, options: RadioGroupOptions): void {
+    this.registerFieldName(name);
     const normalizedOptions = normalizeRadioGroupOptions(name, options);
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
@@ -1872,6 +1953,7 @@ export class PdfPage {
    * @param options Options that control the operation.
    */
   pushButton(name: string, options: PushButtonOptions): void {
+    this.registerFieldName(name);
     const normalizedOptions = normalizePushButtonOptions(name, options);
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
@@ -1897,6 +1979,7 @@ export class PdfPage {
    * @param options Options that control the operation.
    */
   signatureField(name: string, options: SignatureFieldOptions): void {
+    this.registerFieldName(name);
     const normalizedOptions = normalizeSignatureFieldOptions(name, options);
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
@@ -2172,7 +2255,7 @@ export class PdfDocument {
    * @returns The new page builder.
    */
   addPage(options: PageOptions = {}): PdfPage {
-    const page = createPageModel(options.size ?? this.defaultPageSize, options.transparencyGroup);
+    const page = createPageModel(options.size ?? this.defaultPageSize, options.transparencyGroup, options.tabOrder);
     this.pages.push(page);
     return new PdfPage(page, this.embeddedFonts);
   }
@@ -2650,7 +2733,7 @@ export class PdfEditableDocument {
     }
 
     assertEditablePageIndex(index, this.pageOrder.length, "insert");
-    const page = createPageModel(options.size ?? this.defaultPageSize);
+    const page = createPageModel(options.size ?? this.defaultPageSize, undefined, options.tabOrder);
     this.appendedPages.push(page);
     this.pageOrder.splice(index, 0, {
       kind: "appended",
@@ -2760,6 +2843,50 @@ export class PdfEditableDocument {
     );
     this.editedPages.set(entry.objectId, overlay);
     return new PdfPage(overlay, this.embeddedFonts);
+  }
+
+  /**
+   * Writes raw PDF content operators to an existing page's content stream.
+   *
+   * @param index The page index.
+   * @param content Raw PDF content stream operators (e.g. "BT /F1 12 Tf (Hello) Tj ET").
+   * @param mode How to apply the content: replace entirely, append
+   *   after existing (wraps existing in q/Q), or prepend before existing
+   *   (wraps existing in q/Q).
+   */
+  writePageContent(
+    index: number,
+    content: string,
+    mode: "replace" | "append" | "prepend",
+  ): void {
+    assertEditablePageIndex(index, this.pageOrder.length - 1, "write content");
+    const entry = this.pageOrder[index];
+    if (!entry) {
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_PAGE,
+        "Editable page could not be resolved.",
+        { index },
+      );
+    }
+
+    if (entry.kind === "appended") {
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_OPERATION,
+        "writePageContent is only supported on existing pages. Use PdfPage methods directly for appended pages.",
+      );
+    }
+
+    const page = this.editedPages.get(entry.objectId);
+    if (page) {
+      page.contentOverlay = { mode, content };
+      return;
+    }
+
+    const overlay = createPageModel(
+      resolveEditablePageSize(this.base, entry.objectId),
+    );
+    overlay.contentOverlay = { mode, content };
+    this.editedPages.set(entry.objectId, overlay);
   }
 
   /**
@@ -3371,7 +3498,7 @@ export class PdfEditableDocument {
 
       const page =
         this.editedPages.get(entry.objectId) ??
-        createPageModel(resolveEditablePageSize(this.base, entry.objectId));
+        createPageModel(resolveEditablePageSize(this.base, entry.objectId), undefined);
       this.editedPages.set(entry.objectId, page);
       for (const field of retainedFields) {
         appendFlattenedParsedFieldOps(this.base, page, field);
@@ -3829,7 +3956,7 @@ function validateManagedPages(
   const fieldNames = new Set(reservedFieldNames);
 
   for (const [index, page] of pages.entries()) {
-    if (page.ops.length === 0 && page.annotations.length === 0) {
+    if (page.ops.length === 0 && page.annotations.length === 0 && page.contentOverlay === undefined) {
       throw new PdfEngineError(
         PdfErrorCode.EMPTY_PAGE,
         "Each page must contain at least one drawing operation or annotation.",
@@ -3889,6 +4016,18 @@ function validateManagedPages(
       }
 
       fieldNames.add(annotation.name);
+    }
+
+    if (page.parentFieldKids) {
+      for (const parentName of page.parentFieldKids.keys()) {
+        if (fieldNames.has(parentName)) {
+          throw new PdfEngineError(
+            PdfErrorCode.INVALID_FORM_FIELD_NAME,
+            "A form field name used as a parent group cannot also be a terminal field.",
+            { name: parentName },
+          );
+        }
+      }
     }
   }
 }
@@ -4031,8 +4170,8 @@ function hasTransparentImageContent(
     page.ops.some(
       (op) =>
         op.type === "image" &&
-        op.image.kind === "png" &&
-        (op.image.alphaBytes !== undefined || op.image.mask !== undefined),
+        (op.image.kind === "png" || op.image.kind === "bmp") &&
+        (op.image.alphaBytes !== undefined || (op.image.kind === "png" && op.image.mask !== undefined)),
     ),
   );
 }
