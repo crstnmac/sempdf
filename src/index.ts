@@ -34,6 +34,7 @@ export type { Pdf2ComplianceIssue } from "./internal/pdf2-validation.js";
 export { cmyk, deviceN, gray, hex, PAGE_SIZES, rgb, separation } from "./types.js";
 export type {
   BinaryData,
+  BmpImageOptions,
   BuiltInPageSize,
   CheckBoxOptions,
   ChoiceFieldMode,

@@ -1,5 +1,5 @@
 import { PdfEngineError, PdfErrorCode } from "../errors.js";
-import type { AttachmentOptions, BuiltInPageSize, CheckBoxOptions, ChoiceFieldMode, ChoiceFieldOptions, CustomPageSize, DocumentConformanceProfile, DocumentEncryptionAlgorithm, DocumentEncryptionOptions, DocumentInfo, DocumentPermissions, ExtGStateOptions, FillStyle, FontName, FreeTextAnnotationOptions, HighlightAnnotationOptions, JpegImageOptions, LineCap, LineJoin, ListItem, ListOptions, NoteAnnotationOptions, OutlineOptions, PageLabelOptions, PageLabelStyle, PageLinkOptions, PageSize, PathCommand, PathStyle, PdfColor, PdfComplianceIssue, PdfContainerTag, PdfFigureStructureTag, PdfFont, PdfRoleMap, PdfStandardStructureTag, PdfStructureAttributeValue, PdfStructureOptions, PdfStructureTag, PdfTextStructureTag, PushButtonOptions, RadioGroupOptions, SignatureFieldOptions, StrokeStyle, TableCell, TableHeaderScope, TableOptions, TextAlign, TextBlockOptions, TextDirection, TextFieldOptions, TextOptions, Transform, UriLinkOptions, XmpMetadataInput } from "../types.js";
+import type { AttachmentOptions, BmpImageOptions, BuiltInPageSize, CheckBoxOptions, ChoiceFieldMode, ChoiceFieldOptions, CustomPageSize, DocumentConformanceProfile, DocumentEncryptionAlgorithm, DocumentEncryptionOptions, DocumentInfo, DocumentPermissions, ExtGStateOptions, FillStyle, FontName, FreeTextAnnotationOptions, HighlightAnnotationOptions, JpegImageOptions, LineCap, LineJoin, ListItem, ListOptions, NoteAnnotationOptions, OutlineOptions, PageLabelOptions, PageLabelStyle, PageLinkOptions, PageSize, PathCommand, PathStyle, PdfColor, PdfComplianceIssue, PdfContainerTag, PdfFigureStructureTag, PdfFont, PdfRoleMap, PdfStandardStructureTag, PdfStructureAttributeValue, PdfStructureOptions, PdfStructureTag, PdfTextStructureTag, PngImageOptions, PushButtonOptions, RadioGroupOptions, SignatureFieldOptions, StrokeStyle, TableCell, TableHeaderScope, TableOptions, TextAlign, TextBlockOptions, TextDirection, TextFieldOptions, TextOptions, Transform, UriLinkOptions, XmpMetadataInput } from "../types.js";
 import { PAGE_SIZES, gray } from "../types.js";
 import type { NormalizedImageOptions, NormalizedPathStyle, NormalizedTextOptions } from "./ops.js";
 import { buildXmpMetadataPacket } from "./xmp.js";
@@ -343,9 +343,9 @@ export function normalizeDocumentEncryption(
     return undefined;
   }
 
-  const userPassword = encryption.userPassword;
-  const ownerPassword = encryption.ownerPassword;
-  if (userPassword === undefined && ownerPassword === undefined) {
+  const userPassword = encryption.userPassword ?? "";
+  const ownerPassword = encryption.ownerPassword ?? encryption.userPassword ?? "";
+  if (userPassword === "" && ownerPassword === "") {
     throw new PdfEngineError(
       PdfErrorCode.INVALID_ENCRYPTION,
       "Document encryption requires a user password, an owner password, or both."
@@ -353,8 +353,8 @@ export function normalizeDocumentEncryption(
   }
 
   return {
-    userPassword: userPassword ?? "",
-    ownerPassword: ownerPassword ?? userPassword ?? "",
+    userPassword,
+    ownerPassword,
     permissions: normalizeDocumentPermissions(encryption.permissions),
     ...resolveDocumentEncryptionAlgorithm(encryption.algorithm)
   };
@@ -1500,7 +1500,7 @@ export function validateExtGStateOptions(options: ExtGStateOptions): void {
   }
 }
 
-export function normalizeImageOptions(options: JpegImageOptions): NormalizedImageOptions {
+export function normalizeImageOptions(options: JpegImageOptions | PngImageOptions | BmpImageOptions): NormalizedImageOptions {
   assertFinite(options.x, "x");
   assertFinite(options.y, "y");
   assertFinite(options.width, "width");

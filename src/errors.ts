@@ -22,6 +22,8 @@ export enum PdfErrorCode {
   INVALID_FONT = "INVALID_FONT",
   /** A form field definition or update is invalid. */
   INVALID_FORM_FIELD = "INVALID_FORM_FIELD",
+  /** A form field name is invalid due to naming conflicts (e.g. parent vs terminal). */
+  INVALID_FORM_FIELD_NAME = "INVALID_FORM_FIELD_NAME",
   /** Graphics state operations are unbalanced or invalid. */
   INVALID_GRAPHICS_STATE = "INVALID_GRAPHICS_STATE",
   /** Image data or image placement options are invalid. */

@@ -6,6 +6,7 @@ import type {
   PdfDocumentModel,
   PdfIncrementalUpdateModel,
 } from '../document.js';
+import type { InternalPageModel } from './page-types.js';
 import type {
   DeviceNColor,
   ExtGStateOptions,
@@ -243,6 +244,7 @@ interface SerializedPageObjectsOptions {
   readonly conformance?: PdfDocumentModel['conformance'] | undefined;
   readonly tagged?: boolean | undefined;
   readonly compress?: boolean | undefined;
+  readonly parentFieldMapping?: ReadonlyMap<string, number> | undefined;
 }
 
 interface TaggedPdfObjectsOptions {
@@ -302,6 +304,7 @@ function* buildSerializedPageObjects(
             options.formFontResourceMap,
             page.checkBoxAppearanceObjectIds.get(index),
             options.taggedAnnotationParentTreeKeys?.get(annotationObjectId),
+            'name' in annotation ? options.parentFieldMapping?.get(annotation.name) : undefined,
           ),
         };
         continue;
@@ -375,33 +378,33 @@ function* buildSerializedPageObjects(
           options.formFontResourceMap,
           page.checkBoxAppearanceObjectIds.get(index),
           options.taggedAnnotationParentTreeKeys?.get(annotationObjectId),
+          'name' in annotation ? options.parentFieldMapping?.get(annotation.name) : undefined,
         ),
       };
     }
 
+    const overlay = page.modelPage.contentOverlay;
+    const resources = {
+      fonts: page.fontResourceMap,
+      images: page.imageResourceMap,
+      extGStates: page.extGStateResourceMap,
+      colorSpaces: page.colorSpaceResourceMap,
+      embeddedFonts: new Map(options.embeddedFontContexts),
+      taggedContentItems: page.taggedContentItems,
+    };
+    const contentOps = overlay !== undefined
+      ? applyContentOverlayToOps(page.modelPage.ops, overlay)
+      : page.modelPage.ops;
+
     const contentStreamValue =
       options.lazyPageContentStreams === true && options.compress !== true
         ? lazyStream(dict([]), options.allocateLazyLengthObjectId(), () =>
-            encodePageContentChunks(page.modelPage.ops, {
-              fonts: page.fontResourceMap,
-              images: page.imageResourceMap,
-              extGStates: page.extGStateResourceMap,
-              colorSpaces: page.colorSpaceResourceMap,
-              embeddedFonts: new Map(options.embeddedFontContexts),
-              taggedContentItems: page.taggedContentItems,
-            }),
+            encodePageContentChunks(contentOps, resources),
           )
         : compressedStream(
             dict([]),
             options.lazyPageContentStreams === true
-              ? encodePageContent(page.modelPage.ops, {
-                  fonts: page.fontResourceMap,
-                  images: page.imageResourceMap,
-                  extGStates: page.extGStateResourceMap,
-                  colorSpaces: page.colorSpaceResourceMap,
-                  embeddedFonts: new Map(options.embeddedFontContexts),
-                  taggedContentItems: page.taggedContentItems,
-                })
+              ? encodePageContent(contentOps, resources)
               : getSerializedPageContentBytes(page),
             options.compress,
           );
@@ -439,15 +442,18 @@ function* buildSerializedPageObjects(
         ],
         // PDF/UA-1 7.18.3: every page in a tagged document must declare a tab
         // order (struct order) so assistive tech can navigate annotations and
-        // form fields in reading order.
+        // form fields in reading order. Page-level tabOrder overrides the
+        // document-level default.
         [
           'Tabs',
-          options.tagged === true ||
-          options.conformance === 'pdfua-1' ||
-          options.conformance === 'pdfua-2' ||
-          options.conformance === 'wtpdf'
-            ? name('S')
-            : undefined,
+          page.modelPage.tabOrder !== undefined
+            ? name(page.modelPage.tabOrder)
+            : options.tagged === true ||
+              options.conformance === 'pdfua-1' ||
+              options.conformance === 'pdfua-2' ||
+              options.conformance === 'wtpdf'
+              ? name('S')
+              : undefined,
         ],
         ['StructParents', page.structParentsKey],
         ['Group', buildEffectiveTransparencyGroup(page, options)],
@@ -669,17 +675,23 @@ function attachSerializedPageContentBytes(
   pages: readonly PlannedPage[],
   embeddedFontContexts: ReadonlyMap<string, EmbeddedFontContext>,
 ): SerializedPage[] {
-  return pages.map((page) => ({
-    ...page,
-    contentBytes: encodePageContent(page.modelPage.ops, {
-      fonts: page.fontResourceMap,
-      images: page.imageResourceMap,
-      extGStates: page.extGStateResourceMap,
-      colorSpaces: page.colorSpaceResourceMap,
-      embeddedFonts: new Map(embeddedFontContexts),
-      taggedContentItems: page.taggedContentItems,
-    }),
-  }));
+  return pages.map((page) => {
+    const overlay = page.modelPage.contentOverlay;
+    const ops = overlay !== undefined
+      ? applyContentOverlayToOps(page.modelPage.ops, overlay)
+      : page.modelPage.ops;
+    return {
+      ...page,
+      contentBytes: encodePageContent(ops, {
+        fonts: page.fontResourceMap,
+        images: page.imageResourceMap,
+        extGStates: page.extGStateResourceMap,
+        colorSpaces: page.colorSpaceResourceMap,
+        embeddedFonts: new Map(embeddedFontContexts),
+        taggedContentItems: page.taggedContentItems,
+      }),
+    };
+  });
 }
 
 function getSerializedPageContentBytes(page: SerializedPage): Uint8Array {
@@ -763,7 +775,7 @@ function prepareDocumentSerialization(
   for (const image of images) {
     const objectIds: ImageObjectIds = { base: nextObjectId };
     nextObjectId += 1;
-    if (image.kind === 'png' && image.alphaBytes) {
+    if ((image.kind === 'png' || image.kind === 'bmp') && image.alphaBytes) {
       objectIds.smask = nextObjectId;
       nextObjectId += 1;
     }
@@ -850,6 +862,12 @@ function prepareDocumentSerialization(
   }
 
   const formFields = collectFormFieldAnnotations(serializedPages);
+  const parentFieldAllocation = collectParentFieldMapping(
+    serializedPages,
+    formFields,
+    nextObjectId,
+  );
+  nextObjectId = parentFieldAllocation.nextObjectId;
   const formFontResourceMap = buildFormFontResourceMap(
     collectFormFontNames(serializedPages),
   );
@@ -858,7 +876,7 @@ function prepareDocumentSerialization(
   const signatureDictionaryObjectId =
     model.signature !== undefined ? nextObjectId++ : undefined;
   const acroFormObjectId =
-    formFields.length > 0 || signatureFieldObjectId !== undefined
+    formFields.length > 0 || parentFieldAllocation.parentFieldObjects.length > 0 || signatureFieldObjectId !== undefined
       ? nextObjectId
       : undefined;
   if (acroFormObjectId !== undefined) {
@@ -983,6 +1001,7 @@ function prepareDocumentSerialization(
       id: acroFormObjectId,
       value: buildAcroFormDictionary(
         [
+          ...parentFieldAllocation.parentFieldObjects.map((obj) => ref(obj.id)),
           ...formFields.map((field) => ref(field.fieldObjectId)),
           ...(signatureFieldObjectId !== undefined
             ? [ref(signatureFieldObjectId)]
@@ -1140,10 +1159,10 @@ function prepareDocumentSerialization(
 
   for (const image of images) {
     const objectIds = imageObjectIds.get(image.key)!;
-    if (image.kind === 'png' && objectIds.smask !== undefined) {
+    if ((image.kind === 'png' || image.kind === 'bmp') && objectIds.smask !== undefined) {
       documentObjects.push({
         id: objectIds.smask,
-        value: prepareByteStream(buildSoftMaskStream(image)),
+        value: prepareByteStream(buildSoftMaskStream(image as Extract<EmbeddedImageAsset, { kind: 'png' | 'bmp' }>)),
       });
     }
     if (image.iccProfile && objectIds.icc !== undefined) {
@@ -1190,6 +1209,10 @@ function prepareDocumentSerialization(
     }
   }
 
+  for (const parentObj of parentFieldAllocation.parentFieldObjects) {
+    documentObjects.push(parentObj);
+  }
+
   const firstPageLazyLengthObjectId = nextLazyLengthObjectId;
 
   return {
@@ -1212,6 +1235,7 @@ function prepareDocumentSerialization(
         conformance: model.conformance,
         tagged: model.tagged,
         compress: model.compress,
+        parentFieldMapping: parentFieldAllocation.childParentMap,
       });
     },
     options: {
@@ -1436,7 +1460,7 @@ function prepareIncrementalUpdateSerialization(
   for (const image of images) {
     const objectIds: ImageObjectIds = { base: nextObjectId };
     nextObjectId += 1;
-    if (image.kind === 'png' && image.alphaBytes) {
+    if ((image.kind === 'png' || image.kind === 'bmp') && image.alphaBytes) {
       objectIds.smask = nextObjectId;
       nextObjectId += 1;
     }
@@ -1542,12 +1566,19 @@ function prepareIncrementalUpdateSerialization(
     collectFormFontNames(serializedPages),
     collectExistingFormResourceNames(existingAcroFormDict),
   );
+  const parentFieldAllocation = collectParentFieldMapping(
+    serializedPages,
+    formFields,
+    nextObjectId,
+  );
+  nextObjectId = parentFieldAllocation.nextObjectId;
   const signatureFieldObjectId =
     model.signature !== undefined ? nextObjectId++ : undefined;
   const signatureDictionaryObjectId =
     model.signature !== undefined ? nextObjectId++ : undefined;
   const shouldUpdateAcroForm =
     formFields.length > 0 ||
+    parentFieldAllocation.parentFieldObjects.length > 0 ||
     retainedExistingFieldRefs.changed ||
     model.flattenedFieldObjectIds.length > 0 ||
     signatureFieldObjectId !== undefined;
@@ -1595,6 +1626,10 @@ function prepareIncrementalUpdateSerialization(
       id: update.objectId,
       value: buildUpdatedExistingFieldDictionary(model.base, update),
     });
+  }
+
+  for (const parentObj of parentFieldAllocation.parentFieldObjects) {
+    prefixObjects.push(parentObj);
   }
 
   for (const fontName of builtInFonts) {
@@ -1710,10 +1745,10 @@ function prepareIncrementalUpdateSerialization(
 
   for (const image of images) {
     const objectIds = imageObjectIds.get(image.key)!;
-    if (image.kind === 'png' && objectIds.smask !== undefined) {
+    if ((image.kind === 'png' || image.kind === 'bmp') && objectIds.smask !== undefined) {
       prefixObjects.push({
         id: objectIds.smask,
-        value: prepareByteStream(buildSoftMaskStream(image)),
+        value: prepareByteStream(buildSoftMaskStream(image as Extract<EmbeddedImageAsset, { kind: 'png' | 'bmp' }>)),
       });
     }
     if (image.iccProfile && objectIds.icc !== undefined) {
@@ -1797,6 +1832,7 @@ function prepareIncrementalUpdateSerialization(
       value: buildAcroFormDictionary(
         [
           ...retainedExistingFieldRefs.refs,
+          ...parentFieldAllocation.parentFieldObjects.map((obj) => ref(obj.id)),
           ...formFields.map((field) => ref(field.fieldObjectId)),
           ...(signatureFieldObjectId !== undefined
             ? [ref(signatureFieldObjectId)]
@@ -1999,6 +2035,7 @@ function prepareIncrementalUpdateSerialization(
         lazyPageContentStreams: options.lazyPageContentStreams,
         allocateLazyLengthObjectId: () => nextPageLazyLengthObjectId++,
         fixedPageObjectIds,
+        parentFieldMapping: parentFieldAllocation.childParentMap,
       });
       yield* suffixObjects;
     },
@@ -2977,6 +3014,7 @@ function buildAnnotationDictionary(
   formFontResourceMap: ReadonlyMap<FontName, string>,
   checkBoxAppearanceObjectIds?: { off: number; on: number } | undefined,
   structParentKey?: number | undefined,
+  parentFieldObjectId?: number | undefined,
 ): PdfDict {
   if (annotation.type === 'radioGroup') {
     throw new PdfEngineError(
@@ -3102,6 +3140,7 @@ function buildAnnotationDictionary(
         ['FT', name('Tx')],
         ['T', literalString(annotation.name)],
         ['Rect', rect],
+        ['Parent', parentFieldObjectId !== undefined ? ref(parentFieldObjectId) : undefined],
         ['Border', array([0, 0, annotation.options.borderWidth])],
         [
           'DA',
@@ -3141,6 +3180,7 @@ function buildAnnotationDictionary(
         ['FT', name('Ch')],
         ['T', literalString(annotation.name)],
         ['Rect', rect],
+        ['Parent', parentFieldObjectId !== undefined ? ref(parentFieldObjectId) : undefined],
         ['Border', array([0, 0, annotation.options.borderWidth])],
         [
           'DA',
@@ -3186,6 +3226,7 @@ function buildAnnotationDictionary(
         ['FT', name('Btn')],
         ['T', literalString(annotation.name)],
         ['Rect', rect],
+        ['Parent', parentFieldObjectId !== undefined ? ref(parentFieldObjectId) : undefined],
         ['Border', array([0, 0, annotation.options.borderWidth])],
         [
           'DA',
@@ -3212,6 +3253,7 @@ function buildAnnotationDictionary(
         ['FT', name('Sig')],
         ['T', literalString(annotation.name)],
         ['Rect', rect],
+        ['Parent', parentFieldObjectId !== undefined ? ref(parentFieldObjectId) : undefined],
         ['Border', array([0, 0, annotation.options.borderWidth])],
         ['Ff', flags !== 0 ? flags : undefined],
         ['StructParent', structParentKey],
@@ -3234,6 +3276,7 @@ function buildAnnotationDictionary(
         ['FT', name('Btn')],
         ['T', literalString(annotation.name)],
         ['Rect', rect],
+        ['Parent', parentFieldObjectId !== undefined ? ref(parentFieldObjectId) : undefined],
         ['Border', array([0, 0, annotation.options.borderWidth])],
         ['V', name(annotation.options.checked ? 'Yes' : 'Off')],
         ['AS', name(annotation.options.checked ? 'Yes' : 'Off')],
@@ -3952,7 +3995,7 @@ function buildImageStream(
     );
   }
 
-  if (image.decodeMode === 'rawSamples') {
+  if ((image.kind === 'png' && image.decodeMode === 'rawSamples') || image.kind === 'bmp') {
     return stream(
       dict([
         ['Type', name('XObject')],
@@ -3995,12 +4038,12 @@ function buildImageStream(
 }
 
 function buildSoftMaskStream(
-  image: Extract<EmbeddedImageAsset, { kind: 'png' }>,
+  image: Extract<EmbeddedImageAsset, { kind: 'png' | 'bmp' }>,
 ): ReturnType<typeof stream> {
   if (!image.alphaBytes) {
     throw new PdfEngineError(
       PdfErrorCode.INTERNAL_ERROR,
-      'Soft mask stream requested for PNG image without alpha bytes.',
+      'Soft mask stream requested for image without alpha bytes.',
     );
   }
 
@@ -4091,6 +4134,83 @@ function collectFormFieldAnnotations(
   }
 
   return fields;
+}
+
+function collectParentFieldMapping(
+  pages: readonly SerializedPage[],
+  formFields: readonly SerializedFormField[],
+  startObjectId: number,
+): {
+  parentFieldObjectIds: Map<string, number>;
+  parentFieldObjects: PdfIndirectObject[];
+  childParentMap: Map<string, number>;
+  nextObjectId: number;
+} {
+  const parentKids = new Map<string, Set<string>>();
+  for (const page of pages) {
+    const pfk = page.modelPage.parentFieldKids;
+    if (!pfk) continue;
+    for (const [parentName, childNames] of pfk) {
+      let kids = parentKids.get(parentName);
+      if (!kids) {
+        kids = new Set();
+        parentKids.set(parentName, kids);
+      }
+      for (const childName of childNames) {
+        kids.add(childName);
+      }
+    }
+  }
+
+  if (parentKids.size === 0) {
+    return {
+      parentFieldObjectIds: new Map(),
+      parentFieldObjects: [],
+      childParentMap: new Map(),
+      nextObjectId: startObjectId,
+    };
+  }
+
+  const childToObjectId = new Map<string, number>();
+  for (const field of formFields) {
+    if ('name' in field.annotation) {
+      childToObjectId.set(field.annotation.name, field.fieldObjectId);
+    }
+  }
+
+  let nextId = startObjectId;
+  const parentFieldObjectIds = new Map<string, number>();
+  const parentFieldObjects: PdfIndirectObject[] = [];
+  const childParentMap = new Map<string, number>();
+
+  for (const [parentName, childNames] of parentKids) {
+    const parentId = nextId++;
+    parentFieldObjectIds.set(parentName, parentId);
+
+    const kidRefs: PdfValue[] = [];
+    for (const childName of childNames) {
+      const childId = childToObjectId.get(childName);
+      if (childId !== undefined) {
+        kidRefs.push(ref(childId));
+        childParentMap.set(childName, parentId);
+      }
+    }
+
+    parentFieldObjects.push({
+      id: parentId,
+      value: dict([
+        ['T', literalString(parentName)],
+        ['Kids', array(kidRefs)],
+      ]),
+    });
+  }
+
+  return {
+    parentFieldObjectIds,
+    parentFieldObjects,
+    childParentMap,
+    nextObjectId: nextId,
+  };
 }
 
 function buildFormFontResourceMap(
@@ -4252,6 +4372,30 @@ function buildCheckBoxAppearanceStream(
     ]),
     encoder.encode(`${lines.join('\n')}\n`),
   );
+}
+
+function applyContentOverlayToOps(
+  ops: readonly PdfOp[],
+  overlay: NonNullable<InternalPageModel['contentOverlay']>,
+): PdfOp[] {
+  switch (overlay.mode) {
+    case 'replace':
+      return [{ type: 'raw', content: overlay.content }];
+    case 'append':
+      return [
+        { type: 'saveState' },
+        ...ops,
+        { type: 'restoreState' },
+        { type: 'raw', content: overlay.content },
+      ];
+    case 'prepend':
+      return [
+        { type: 'raw', content: overlay.content },
+        { type: 'saveState' },
+        ...ops,
+        { type: 'restoreState' },
+      ];
+  }
 }
 
 function encodePageContent(
@@ -4416,6 +4560,9 @@ function* serializePageContentLines(
         }
         break;
       }
+      case 'raw':
+        opLines.push(op.content);
+        break;
       default:
         assertNever(op);
     }

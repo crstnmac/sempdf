@@ -432,6 +432,12 @@ export interface PageOptions {
    * modes that must compose against an explicit blending color space.
    */
   transparencyGroup?: PageTransparencyGroupOptions | undefined;
+  /**
+   * Tab order for annotations and form fields on the page.
+   * Uses PDF spec values: "R" (row order), "C" (column order), "S" (structure order).
+   * Defaults to structure order ("S") for tagged documents, row order otherwise.
+   */
+  tabOrder?: "R" | "C" | "S" | undefined;
 }
 
 /**
@@ -813,6 +819,8 @@ export interface FlowHeadingOptions extends FlowTextOptions {
 export interface FlowImageOptions
   extends
     Omit<JpegImageOptions, "x" | "y" | "width" | "height">,
+    Omit<PngImageOptions, "x" | "y" | "width" | "height">,
+    Omit<BmpImageOptions, "x" | "y" | "width" | "height">,
     FlowBlockSpacingOptions {
   /** Width in PDF points. */
   width?: number | undefined;
@@ -942,7 +950,7 @@ export interface TemplateTableBlock {
  */
 export interface TemplateImageBlock {
   /** Discriminator identifying this option or command shape. */
-  type: "png" | "jpeg";
+  type: "png" | "jpeg" | "bmp";
   /** Binary data for the image, font, PDF, or attachment. */
   data: BinaryData;
   /** Options that control this item. */
@@ -1208,6 +1216,30 @@ export interface JpegImageOptions {
  * Options for placing PNG images on a page.
  */
 export interface PngImageOptions {
+  /** Horizontal position in PDF points. */
+  x: number;
+  /** Vertical position in PDF points. */
+  y: number;
+  /** Width in PDF points. */
+  width: number;
+  /** Height in PDF points. */
+  height: number;
+  /** Alternate text for tagged non-text content. */
+  altText?: string | undefined;
+  /** Structure tag used for tagged PDF output. */
+  tag?: PdfFigureStructureTag | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
+  structure?: PdfStructureOptions | undefined;
+  /**
+   * ICC profile bytes used to tag the image's color space as ICCBased.
+   */
+  iccProfile?: BinaryData | undefined;
+}
+
+/**
+ * Options for placing BMP images on a page.
+ */
+export interface BmpImageOptions {
   /** Horizontal position in PDF points. */
   x: number;
   /** Vertical position in PDF points. */

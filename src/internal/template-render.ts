@@ -310,6 +310,9 @@ function renderTemplateBlockToFlow(flow: PdfFlow, block: TemplateBlock): void {
     case 'jpeg':
       flow.jpeg(block.data, block.options);
       return;
+    case 'bmp':
+      flow.bmp(block.data, block.options);
+      return;
     case 'link':
       flow.link(block.text, block.url, block.options);
       return;

@@ -36,6 +36,8 @@ export function parsePng(data: BinaryData): EmbeddedPngAsset {
     let colorSpace: "DeviceGray" | "DeviceRGB" | undefined;
     let sampleChannels: 1 | 2 | 3 | 4 | undefined;
     let mask: readonly number[] | undefined;
+    let palette: Uint8Array | undefined;
+    let trns: Uint8Array | undefined;
     let colorType: number | undefined;
     const idatChunks: Uint8Array[] = [];
 
@@ -82,6 +84,10 @@ export function parsePng(data: BinaryData): EmbeddedPngAsset {
           sampleChannels = 3;
           channels = 3;
           colorSpace = "DeviceRGB";
+        } else if (colorType === 3) {
+          sampleChannels = 1;
+          channels = 3;
+          colorSpace = "DeviceRGB";
         } else if (colorType === 4) {
           sampleChannels = 2;
           channels = 1;
@@ -108,6 +114,8 @@ export function parsePng(data: BinaryData): EmbeddedPngAsset {
             interlace
           });
         }
+      } else if (type === "PLTE") {
+        palette = chunkBytes;
       } else if (type === "IDAT") {
         idatChunks.push(chunkBytes);
       } else if (type === "tRNS") {
@@ -115,7 +123,11 @@ export function parsePng(data: BinaryData): EmbeddedPngAsset {
           throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "PNG tRNS chunk must appear after IHDR.");
         }
 
-        mask = parseTransparencyMask(chunkBytes, colorType, bitDepth);
+        if (colorType === 3) {
+          trns = chunkBytes;
+        } else {
+          mask = parseTransparencyMask(chunkBytes, colorType, bitDepth);
+        }
       } else if (type === "IEND") {
         break;
       }
@@ -139,6 +151,19 @@ export function parsePng(data: BinaryData): EmbeddedPngAsset {
     }
 
     const imageBytes = concatBytes(idatChunks);
+
+    if (colorType === 3) {
+      return expandIndexedPng(
+        bytes,
+        imageBytes,
+        width,
+        height,
+        bitDepth,
+        palette,
+        trns
+      );
+    }
+
     if (sampleChannels === 2 || sampleChannels === 4) {
       const rawScanlines = inflateZlib(imageBytes);
       const pixels = unfilterPngScanlines(rawScanlines, width, height, sampleChannels);
@@ -183,6 +208,96 @@ function cloneBinaryData(data: BinaryData): Uint8Array {
   }
 
   return new Uint8Array(data.slice(0));
+}
+
+function expandIndexedPng(
+  bytes: Uint8Array,
+  idatBytes: Uint8Array,
+  width: number,
+  height: number,
+  bitDepth: number,
+  palette: Uint8Array | undefined,
+  trns: Uint8Array | undefined
+): EmbeddedPngAsset {
+  if (palette === undefined) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Indexed PNG must include a PLTE palette chunk.");
+  }
+
+  const paletteEntryCount = palette.length / 3;
+  if (palette.length % 3 !== 0 || paletteEntryCount < 1) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Invalid PLTE palette length.");
+  }
+
+  const rawScanlines = inflateZlib(idatBytes);
+  const pixels = unfilterPngScanlines(rawScanlines, width, height, 1);
+
+  const hasAlpha = trns !== undefined && trns.length > 0;
+  const outputChannels = hasAlpha ? 4 : 3;
+  const rgba = new Uint8Array(width * height * outputChannels);
+
+  for (let i = 0; i < pixels.length; i += 1) {
+    const paletteIndex = pixels[i]!;
+    let r: number;
+    let g: number;
+    let b: number;
+
+    if (paletteIndex < paletteEntryCount) {
+      r = palette[paletteIndex * 3]!;
+      g = palette[paletteIndex * 3 + 1]!;
+      b = palette[paletteIndex * 3 + 2]!;
+    } else {
+      r = 0;
+      g = 0;
+      b = 0;
+    }
+
+    const alpha = (hasAlpha && paletteIndex < trns!.length) ? trns![paletteIndex]! : 0xff;
+    const dstOffset = i * outputChannels;
+    rgba[dstOffset] = r;
+    rgba[dstOffset + 1] = g;
+    rgba[dstOffset + 2] = b;
+    if (hasAlpha) {
+      rgba[dstOffset + 3] = alpha;
+    }
+  }
+
+  const channels: 3 = 3;
+
+  if (hasAlpha) {
+    const colorBytes = new Uint8Array(width * height * 3);
+    const alphaBytes = new Uint8Array(width * height);
+    for (let i = 0; i < width * height; i += 1) {
+      const srcOffset = i * 4;
+      colorBytes[i * 3] = rgba[srcOffset]!;
+      colorBytes[i * 3 + 1] = rgba[srcOffset + 1]!;
+      colorBytes[i * 3 + 2] = rgba[srcOffset + 2]!;
+      alphaBytes[i] = rgba[srcOffset + 3]!;
+    }
+    return {
+      kind: "png",
+      key: buildPngKey(bytes, width, height, outputChannels),
+      bytes: colorBytes,
+      pixelWidth: width,
+      pixelHeight: height,
+      bitsPerComponent: bitDepth,
+      colorSpace: "DeviceRGB" as const,
+      channels,
+      decodeMode: "rawSamples",
+      alphaBytes
+    };
+  }
+
+  return {
+    kind: "png",
+    key: buildPngKey(bytes, width, height, outputChannels),
+    bytes: rgba,
+    pixelWidth: width,
+    pixelHeight: height,
+    bitsPerComponent: bitDepth,
+    colorSpace: "DeviceRGB" as const,
+    channels,
+    decodeMode: "rawSamples"
+  };
 }
 
 function hasPngSignature(bytes: Uint8Array): boolean {
