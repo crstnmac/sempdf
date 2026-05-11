@@ -505,3 +505,68 @@ test("extracts, splits, merges, and appends pages across PDFs", () => {
   assert.equal(parseDocument(merged).getPageCount(), 3);
   assert.equal(parseDocument(appended).getPageCount(), 2);
 });
+
+test("supports progressive page generation with writeNextPage", async () => {
+  const doc = createDocument({ info: { title: "Progressive" } });
+  for (let i = 0; i < 3; i += 1) {
+    const page = doc.addPage({ size: "A4" });
+    page.text(`Page ${i + 1}`, { x: 36, y: 700 });
+  }
+  const sink = new BufferSink();
+  const nextPage = await doc.writeNextPage(sink);
+  nextPage.text("Streamed page", { x: 36, y: 700 });
+  const bytes = doc.toUint8Array();
+  const parsed = parseDocument(bytes);
+  assert.equal(parsed.getPageCount(), 4);
+});
+
+test("clones document without shared state", () => {
+  const original = createDocument({ info: { title: "Original" } });
+  original.addPage({ size: "A4" }).text("Original page", { x: 36, y: 700 });
+  const clone = original.clone();
+  clone.addPage({ size: "A4" }).text("Clone page", { x: 36, y: 700 });
+  const origParsed = parseDocument(original.toUint8Array());
+  const cloneParsed = parseDocument(clone.toUint8Array());
+  assert.equal(origParsed.getPageCount(), 1);
+  assert.equal(cloneParsed.getPageCount(), 2);
+});
+
+test("reports recovery mode on damaged xref", () => {
+  const doc = createDocument();
+  doc.addPage().text("Content", { x: 36, y: 700 });
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+  const xrefIdx = text.indexOf("xref\n");
+  assert.ok(xrefIdx > 0);
+  const corrupted = new Uint8Array(bytes);
+  corrupted.fill(0x30, xrefIdx + 4, xrefIdx + 12);
+  const parsed = parseDocument(corrupted);
+  assert.equal(parsed.recoveryMode, true);
+});
+
+test("handles xref table gaps in incremental saves", () => {
+  const doc = createDocument();
+  const page1 = doc.addPage({ size: "Letter" });
+  page1.text("Page 1", { x: 36, y: 700 });
+  const page2 = doc.addPage({ size: "Letter" });
+  page2.text("Page 2", { x: 36, y: 700 });
+  const bytes = doc.toUint8Array();
+
+  const editable = editDocument(bytes);
+  editable.removePage(1);
+  const result = editable.toUint8Array();
+  const parsed = parseDocument(result);
+
+  assert.equal(parsed.getPageCount(), 1);
+  assert.ok(result.length > bytes.length);
+});
+
+test("reuses unchanged page objects to prevent growth", () => {
+  const doc = createDocument();
+  doc.addPage().text("Content", { x: 36, y: 700 });
+  const bytes = doc.toUint8Array();
+
+  const editable = editDocument(bytes);
+  const result = editable.toUint8Array();
+  assert.deepEqual(result, bytes);
+});

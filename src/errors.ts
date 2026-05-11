@@ -74,6 +74,8 @@ export enum PdfErrorCode {
   INVALID_OPERATION = "INVALID_OPERATION",
   /** A ByteSink or stream operation was attempted after the sink was closed. */
   SINK_CLOSED = "SINK_CLOSED",
+  /** A ByteSink has reached its maximum configured capacity. */
+  SINK_FULL = "SINK_FULL",
   /** A TypeScript type guard failure indicates an unreachable code path. */
   UNREACHABLE = "UNREACHABLE",
   /** A script (e.g. Devanagari, Thai) cannot be shaped by the current shaper. */

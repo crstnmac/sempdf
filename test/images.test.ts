@@ -407,3 +407,211 @@ test("embeds indexed PNG images with palette expansion", () => {
   const text = new TextDecoder().decode(doc.toUint8Array());
   assert.match(text, /\/Subtype \/Image/);
 });
+
+test("respects EXIF orientation in PNG images", () => {
+  const signature = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const ihdr = pngChunk("IHDR", new Uint8Array([0,0,0,1, 0,0,0,1, 8, 2, 0, 0, 0]));
+  const exifData = new Uint8Array(22);
+  const view = new DataView(exifData.buffer);
+  view.setUint16(0, 0x4949, true);
+  view.setUint16(2, 0x002a, true);
+  view.setUint32(4, 0x00000008, true);
+  view.setUint16(8, 0x0001, true);
+  view.setUint16(10, 0x0112, true);
+  view.setUint16(12, 0x0003, true);
+  view.setUint32(14, 0x00000001, true);
+  view.setUint16(18, 6, true);
+  const eXIf = pngChunk("eXIf", exifData);
+  const compressed = deflateSync(new Uint8Array([0, 255, 0, 0, 0]));
+  const idat = pngChunk("IDAT", compressed);
+  const iend = pngChunk("IEND", new Uint8Array());
+  const pngBytes = joinBytes([signature, ihdr, eXIf, idat, iend]);
+
+  const doc = createDocument();
+  const page = doc.addPage();
+  page.png(pngBytes, { x: 40, y: 640, width: 32, height: 32 });
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /0 32 -32 0 72 640 cm/);
+});
+
+function depth16PngBytes(): Uint8Array {
+  const sig = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const ihdr = pngChunk("IHDR", new Uint8Array([
+    0,0,0,1, 0,0,0,1, 16, 0, 0, 0, 0
+  ]));
+  const raw = new Uint8Array([0, 0xff, 0xff]);
+  const idat = pngChunk("IDAT", deflateSync(raw));
+  const iend = pngChunk("IEND", new Uint8Array());
+  const out = new Uint8Array(sig.length + ihdr.length + idat.length + iend.length);
+  out.set(sig, 0);
+  out.set(ihdr, sig.length);
+  out.set(idat, sig.length + ihdr.length);
+  out.set(iend, sig.length + ihdr.length + idat.length);
+  return out;
+}
+
+test("downsamples 16-bit PNG to 8-bit", () => {
+  const doc = createDocument();
+  const page = doc.addPage();
+  page.png(depth16PngBytes(), { x: 40, y: 640, width: 32, height: 32 });
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/BitsPerComponent 8/);
+  assert.match(text, /\/Subtype \/Image/);
+});
+
+function minimalTiffBytes(): Uint8Array {
+  const width = 2, height = 2;
+  const imageData = new Uint8Array([0, 255, 128, 64]);
+  const ifdOffset = 8;
+  const tagCount = 9;
+  const ifdSize = 2 + tagCount * 12 + 4;
+  const dataOffset = ifdOffset + ifdSize;
+  const bufSize = dataOffset + imageData.length;
+  const out = new Uint8Array(bufSize);
+  const v = new DataView(out.buffer);
+  out[0] = 0x49; out[1] = 0x49;
+  v.setUint16(2, 42, true);
+  v.setUint32(4, ifdOffset, true);
+  v.setUint16(ifdOffset, tagCount, true);
+  const tags: [number, number, number, number][] = [
+    [256, 3, 1, width],
+    [257, 3, 1, height],
+    [258, 3, 1, 8],
+    [259, 3, 1, 1],
+    [262, 3, 1, 1],
+    [273, 4, 1, dataOffset],
+    [277, 3, 1, 1],
+    [278, 3, 1, height],
+    [279, 4, 1, imageData.length],
+  ];
+  let entryOff = ifdOffset + 2;
+  for (const [tag, type, count, value] of tags) {
+    v.setUint16(entryOff, tag, true);
+    v.setUint16(entryOff + 2, type, true);
+    v.setUint32(entryOff + 4, count, true);
+    v.setUint32(entryOff + 8, value, true);
+    entryOff += 12;
+  }
+  v.setUint32(entryOff, 0, true);
+  out.set(imageData, dataOffset);
+  return out;
+}
+
+test("embeds TIFF images", () => {
+  const doc = createDocument();
+  const page = doc.addPage();
+  page.tiff(minimalTiffBytes(), { x: 24, y: 640, width: 48, height: 48 });
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/Subtype \/Image/);
+  assert.match(text, /\/Filter \/FlateDecode/);
+});
+
+function jp2SignatureBytes(): Uint8Array {
+  const sig = new Uint8Array([0x00,0x00,0x00,0x0c, 0x6a,0x50,0x20,0x20, 0x0d,0x0a,0x87,0x0a]);
+  const ftyp = new Uint8Array(20);
+  const fv = new DataView(ftyp.buffer);
+  fv.setUint32(0, 20); fv.setUint32(4, 0x66747970); fv.setUint32(8, 0x6a703220); fv.setUint32(12, 0); fv.setUint32(16, 0x6a703220);
+  // jp2h box (28 bytes): 8 header + 20 byte ihdr sub-box
+  const jp2h = new Uint8Array(28);
+  const hv = new DataView(jp2h.buffer);
+  hv.setUint32(0, 28); hv.setUint32(4, 0x6a703268);
+  // ihdr sub-box: 20 bytes (8 header + 12 body)
+  hv.setUint32(8, 20); hv.setUint32(12, 0x69686472);
+  hv.setUint32(16, 2); hv.setUint32(20, 2); hv.setUint16(24, 1); hv.setUint8(26, 7); hv.setUint8(27, 7);
+  const out = new Uint8Array(sig.length + ftyp.length + jp2h.length);
+  out.set(sig, 0);
+  out.set(ftyp, sig.length);
+  out.set(jp2h, sig.length + ftyp.length);
+  return out;
+}
+
+test("embeds JPEG2000 images", () => {
+  const doc = createDocument();
+  const page = doc.addPage();
+  page.jp2(jp2SignatureBytes(), { x: 36, y: 640, width: 24, height: 24 });
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/Subtype \/Image/);
+  assert.match(text, /\/Filter \/JPXDecode/);
+});
+
+function minJbig2Bytes(): Uint8Array {
+  const head = new Uint8Array([0x97, 0x4A, 0x42, 0x49, 0x47, 0x32, 0x00, 0x00, 0x00]);
+  const segType0 = new Uint8Array([
+    0x00,0x00,0x00,0x01, 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+  ]);
+  const out = new Uint8Array(head.length + segType0.length);
+  out.set(head, 0);
+  out.set(segType0, head.length);
+  return out;
+}
+
+test("embeds JBIG2 images", () => {
+  const doc = createDocument();
+  const page = doc.addPage();
+  assert.throws(
+    () => page.jbig2(minJbig2Bytes(), { x: 36, y: 640, width: 24, height: 24 }),
+    (error: unknown) => error instanceof PdfEngineError && error.code === PdfErrorCode.UNSUPPORTED_IMAGE_FORMAT
+  );
+});
+
+function vp8WebpBytes(): Uint8Array {
+  const riff = new Uint8Array([0x52,0x49,0x46,0x46]);
+  const size = new Uint8Array([0,0,0,0]);
+  const webp = new Uint8Array([0x57,0x45,0x42,0x50]);
+  const vp8c = new Uint8Array([0x56,0x50,0x38,0x20]);
+  const vp8Size = new Uint8Array([0x0a,0x00,0x00,0x00]);
+  const frame = new Uint8Array([0x2d,0x01,0x2a,0x01,0x00,0x00,0x00,0x00,0x00,0x00]);
+  const out = new Uint8Array(riff.length + 4 + webp.length + vp8c.length + 4 + frame.length + 2);
+  out.set(riff, 0);
+  out.set(webp, 8);
+  const total = out.length - 8;
+  out[4] = total & 0xff; out[5] = (total>>8) & 0xff; out[6] = (total>>16) & 0xff; out[7] = (total>>24) & 0xff;
+  out.set(vp8c, 12);
+  out.set(vp8Size, 16);
+  out.set(frame, 20);
+  return out;
+}
+
+test("rejects WebP lossy images", () => {
+  const doc = createDocument();
+  const page = doc.addPage();
+  assert.throws(
+    () => page.webp(vp8WebpBytes(), { x: 24, y: 24, width: 50, height: 50 }),
+    (error: unknown) => error instanceof PdfEngineError && error.code === PdfErrorCode.UNSUPPORTED_IMAGE_FORMAT
+  );
+});
+
+function transparentGifBytes(): Uint8Array {
+  const header = new Uint8Array([0x47,0x49,0x46,0x38,0x39,0x61]);
+  const lsd = new Uint8Array([0x01,0x00, 0x01,0x00, 0x91, 0x00, 0x00]);
+  const gct = new Uint8Array([255,255,255, 255,0,0, 0,255,0, 0,0,255]);
+  const gce = new Uint8Array([0x21,0xf9,0x04,0x05,0x00,0x00,0x00,0x00]);
+  const imgDesc = new Uint8Array([0x2c,0x00,0x00,0x00,0x00,0x01,0x00,0x01,0x00,0x00]);
+  const lzwCode = new Uint8Array([0x02, 0x02, 0x44, 0x01, 0x00]);
+  const trailer = new Uint8Array([0x3b]);
+  const chunks = [header, lsd, gct, gce, imgDesc, lzwCode, trailer];
+  const total = chunks.reduce((s, c) => s + c.length, 0);
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const c of chunks) { out.set(c, off); off += c.length; }
+  return out;
+}
+
+test("embeds GIF with transparency", () => {
+  const doc = createDocument();
+  const page = doc.addPage();
+  page.gif(transparentGifBytes(), { x: 36, y: 640, width: 32, height: 32 });
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/Subtype \/Image/);
+  assert.match(text, /\/SMask \d+ 0 R/);
+});
+
+test("converts SVG to PDF paths", () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect x="10" y="20" width="30" height="40" fill="red"/></svg>';
+  const doc = createDocument();
+  const page = doc.addPage();
+  page.svg(svg, { x: 36, y: 640, width: 100, height: 100 });
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /re/);
+  assert.match(text, /f/);
+});

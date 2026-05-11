@@ -227,7 +227,8 @@ export function appendFlattenedParsedFieldOps(
         value: field.value,
         borderWidth: 1,
         readOnly: field.readOnly ?? false,
-        required: field.required ?? false
+        required: field.required ?? false,
+        encrypt: true
       }
     });
     return;
@@ -246,7 +247,8 @@ export function appendFlattenedParsedFieldOps(
         borderWidth: 1,
         checked: field.checked ?? false,
         readOnly: field.readOnly ?? false,
-        required: field.required ?? false
+        required: field.required ?? false,
+        encrypt: true
       }
     });
     return;
@@ -263,7 +265,8 @@ export function appendFlattenedParsedFieldOps(
         fontSize: 12,
         color: { kind: "gray", value: 0 },
         borderWidth: 1,
-        readOnly: field.readOnly ?? false
+        readOnly: field.readOnly ?? false,
+        encrypt: true
       }
     });
     return;
@@ -277,7 +280,8 @@ export function appendFlattenedParsedFieldOps(
         ...rect,
         borderWidth: 1,
         readOnly: field.readOnly ?? false,
-        required: field.required ?? false
+        required: field.required ?? false,
+        encrypt: true
       }
     });
     return;
@@ -297,7 +301,9 @@ export function appendFlattenedParsedFieldOps(
         borderWidth: 1,
         readOnly: field.readOnly ?? false,
         required: field.required ?? false,
-        mode: field.choiceMode ?? "list"
+        mode: field.choiceMode ?? "list",
+        editable: false,
+        encrypt: true
       }
     });
     return;
@@ -315,7 +321,8 @@ export function appendFlattenedParsedFieldOps(
       borderWidth: 1,
       readOnly: field.readOnly ?? false,
       required: field.required ?? false,
-      multiline: field.multiline ?? false
+      multiline: field.multiline ?? false,
+      encrypt: true
     }
   });
 }

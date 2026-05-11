@@ -1146,3 +1146,51 @@ test("PDF/UA Math: emits MathML embedded file and AF reference for Formula", () 
   // Embedded file Subtype names the MathML mime type.
   assert.match(text, /\/Subtype \/application#2Fmathml\+xml|\/Subtype \/application\/mathml\+xml/);
 });
+
+test("emits /Phoneme and /E attributes", () => {
+  const doc = createDocument({ tagged: true, language: "en-US" });
+  const page = doc.addPage({ size: "Letter" });
+  page.text("PhD", {
+    x: 36, y: 720, tag: "Span",
+    structure: { phoneme: "P H D", expansion: "Doctor of Philosophy" }
+  });
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/Phoneme \(P H D\)/);
+  assert.match(text, /\/E \(Doctor of Philosophy\)/);
+});
+
+test("emits /Summary on table structure elements", () => {
+  const doc = createDocument({ tagged: true, language: "en-US" });
+  doc.addPage({ size: "Letter" }).table(
+    [["Name"], ["Ada"]],
+    { x: 36, y: 680, width: 100, columnWidths: [100], summary: "A list of contributors" }
+  );
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/Summary \(A list of contributors\)/);
+});
+
+test("emits artifact type in marked content", () => {
+  const doc = createDocument({ tagged: true, language: "en-US" });
+  const page = doc.addPage({ size: "Letter" });
+  page.text("Page 1 of 10", {
+    x: 36, y: 720, tag: "Artifact"
+  });
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/Artifact BMC/);
+});
+
+test("emits /AF associated file references", () => {
+  const fontPath = findTrueTypeFixturePath();
+  if (!fontPath) return;
+  const doc = createDocument({ conformance: "pdfua-2", tagged: true, language: "en-US", info: { title: "AF Test" } });
+  doc.embedTrueTypeFont(readFileSync(fontPath), { family: "AFTest" });
+  const page = doc.addPage({ size: "Letter" });
+  page.structure("Formula", {
+    altText: "formula with file", mathML: "<math xmlns='http://www.w3.org/1998/Math/MathML'><mrow><mi>x</mi></mrow></math>"
+  }, (wrapper) => {
+    wrapper.png(tinyPngBytes(), { x: 36, y: 720, width: 24, height: 24 });
+  });
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/AF \[/);
+  assert.match(text, /\/Type \/EmbeddedFile/);
+});

@@ -10,6 +10,7 @@ import type { InternalPageModel } from './page-types.js';
 import type {
   DeviceNColor,
   ExtGStateOptions,
+  FieldActions,
   FontName,
   PageTransparencyGroupOptions,
   PdfFont,
@@ -38,6 +39,9 @@ import {
   maxVersion,
   type PdfVersion,
 } from './pdf-version.js';
+import {
+  computeContentHash,
+} from './incremental-serialize.js';
 import {
   array,
   dict,
@@ -801,7 +805,7 @@ function prepareDocumentSerialization(
   for (const image of images) {
     const objectIds: ImageObjectIds = { base: nextObjectId };
     nextObjectId += 1;
-    if ((image.kind === 'png' || image.kind === 'bmp') && image.alphaBytes) {
+    if ((image.kind === 'png' || image.kind === 'bmp' || image.kind === 'webp' || image.kind === 'gif') && image.alphaBytes) {
       objectIds.smask = nextObjectId;
       nextObjectId += 1;
     }
@@ -1192,10 +1196,10 @@ function prepareDocumentSerialization(
 
   for (const image of images) {
     const objectIds = imageObjectIds.get(image.key)!;
-    if ((image.kind === 'png' || image.kind === 'bmp') && objectIds.smask !== undefined) {
+    if ((image.kind === 'png' || image.kind === 'bmp' || image.kind === 'webp' || image.kind === 'gif') && objectIds.smask !== undefined) {
       documentObjects.push({
         id: objectIds.smask,
-        value: prepareByteStream(buildSoftMaskStream(image as Extract<EmbeddedImageAsset, { kind: 'png' | 'bmp' }>)),
+        value: prepareByteStream(buildSoftMaskStream(image as Extract<EmbeddedImageAsset, { kind: 'png' | 'bmp' | 'webp' | 'gif' }>)),
       });
     }
     if (image.iccProfile && objectIds.icc !== undefined) {
@@ -1498,7 +1502,7 @@ function prepareIncrementalUpdateSerialization(
   for (const image of images) {
     const objectIds: ImageObjectIds = { base: nextObjectId };
     nextObjectId += 1;
-    if ((image.kind === 'png' || image.kind === 'bmp') && image.alphaBytes) {
+    if ((image.kind === 'png' || image.kind === 'bmp' || image.kind === 'webp' || image.kind === 'gif') && image.alphaBytes) {
       objectIds.smask = nextObjectId;
       nextObjectId += 1;
     }
@@ -1789,10 +1793,10 @@ function prepareIncrementalUpdateSerialization(
 
   for (const image of images) {
     const objectIds = imageObjectIds.get(image.key)!;
-    if ((image.kind === 'png' || image.kind === 'bmp') && objectIds.smask !== undefined) {
+    if ((image.kind === 'png' || image.kind === 'bmp' || image.kind === 'webp' || image.kind === 'gif') && objectIds.smask !== undefined) {
       prefixObjects.push({
         id: objectIds.smask,
-        value: prepareByteStream(buildSoftMaskStream(image as Extract<EmbeddedImageAsset, { kind: 'png' | 'bmp' }>)),
+        value: prepareByteStream(buildSoftMaskStream(image as Extract<EmbeddedImageAsset, { kind: 'png' | 'bmp' | 'webp' | 'gif' }>)),
       });
     }
     if (image.iccProfile && objectIds.icc !== undefined) {
@@ -1818,7 +1822,19 @@ function prepareIncrementalUpdateSerialization(
   );
   for (const objectId of editedPagesByObjectId.keys()) {
     if (retainedExistingPageIds.has(objectId)) {
-      existingPageIdsToRewrite.add(objectId);
+      const overlay = editedPagesByObjectId.get(objectId);
+      if (overlay) {
+        const existingPageDict = asPdfDict(
+          model.base.getObject(objectId)?.value,
+          'Page',
+        );
+        const unchanged =
+          isPageContentUnchanged(model.base, existingPageDict, overlay) &&
+          overlay.annotationObjectIds.length === 0;
+        if (!unchanged) {
+          existingPageIdsToRewrite.add(objectId);
+        }
+      }
     }
   }
 
@@ -3259,7 +3275,15 @@ function buildAnnotationDictionary(
             ? literalString(annotation.options.value)
             : undefined,
         ],
+        [
+          'RV',
+          annotation.options.richValue !== undefined
+            ? literalString(annotation.options.richValue)
+            : undefined,
+        ],
         ['Ff', flags !== 0 ? flags : undefined],
+        ['Encrypt', annotation.options.encrypt === false ? null : undefined],
+        ['AA', buildAdditionalActionsDict(annotation.options.actions)],
         ['StructParent', structParentKey],
         ['P', ref(pageObjectId)],
       ]);
@@ -3309,6 +3333,8 @@ function buildAnnotationDictionary(
             : undefined,
         ],
         ['Ff', flags !== 0 ? flags : undefined],
+        ['Encrypt', annotation.options.encrypt === false ? null : undefined],
+        ['AA', buildAdditionalActionsDict(annotation.options.actions)],
         ['StructParent', structParentKey],
         ['P', ref(pageObjectId)],
       ]);
@@ -3347,6 +3373,8 @@ function buildAnnotationDictionary(
         ],
         ['MK', dict([['CA', literalString(annotation.options.label)]])],
         ['Ff', flags],
+        ['Encrypt', annotation.options.encrypt === false ? null : undefined],
+        ['AA', buildAdditionalActionsDict(annotation.options.actions)],
         ['StructParent', structParentKey],
         ['P', ref(pageObjectId)],
       ]);
@@ -3364,6 +3392,8 @@ function buildAnnotationDictionary(
         ['Parent', parentFieldObjectId !== undefined ? ref(parentFieldObjectId) : undefined],
         ['Border', array([0, 0, annotation.options.borderWidth])],
         ['Ff', flags !== 0 ? flags : undefined],
+        ['Encrypt', annotation.options.encrypt === false ? null : undefined],
+        ['AA', buildAdditionalActionsDict(annotation.options.actions)],
         ['StructParent', structParentKey],
         ['P', ref(pageObjectId)],
         [
@@ -3407,6 +3437,8 @@ function buildAnnotationDictionary(
           ]),
         ],
         ['Ff', flags !== 0 ? flags : undefined],
+        ['Encrypt', annotation.options.encrypt === false ? null : undefined],
+        ['AA', buildAdditionalActionsDict(annotation.options.actions)],
         ['StructParent', structParentKey],
         ['P', ref(pageObjectId)],
       ]);
@@ -3459,6 +3491,27 @@ function buildAnnotationColorArray(
     : resolved.kind === 'rgb'
       ? array([resolved.r, resolved.g, resolved.b])
       : array([resolved.c, resolved.m, resolved.y, resolved.k]);
+}
+
+function buildAdditionalActionsDict(
+  actions: FieldActions | undefined,
+): PdfDict | undefined {
+  if (!actions) return undefined;
+  const entries: Array<[string, PdfValue]> = [];
+  if (actions.keystroke !== undefined) {
+    entries.push(['K', dict([['S', name('JavaScript')], ['JS', literalString(actions.keystroke)]])]);
+  }
+  if (actions.format !== undefined) {
+    entries.push(['F', dict([['S', name('JavaScript')], ['JS', literalString(actions.format)]])]);
+  }
+  if (actions.validate !== undefined) {
+    entries.push(['V', dict([['S', name('JavaScript')], ['JS', literalString(actions.validate)]])]);
+  }
+  if (actions.calculate !== undefined) {
+    entries.push(['C', dict([['S', name('JavaScript')], ['JS', literalString(actions.calculate)]])]);
+  }
+  if (entries.length === 0) return undefined;
+  return dict(entries);
 }
 
 function buildDetachedSignatureFieldDictionary(
@@ -3706,6 +3759,54 @@ function buildEffectiveTransparencyGroup(
   return undefined;
 }
 
+function getOriginalPageContentStreamBytes(
+  base: PdfIncrementalUpdateModel['base'],
+  existingPageDict: PdfDict,
+): Uint8Array | undefined {
+  const contentsValue = resolvePdfValue(
+    base,
+    getPdfDictValue(existingPageDict, 'Contents'),
+  );
+  if (contentsValue === undefined) {
+    return undefined;
+  }
+
+  if (Array.isArray(contentsValue) && !isPdfDictValue(contentsValue)) {
+    const last = contentsValue[contentsValue.length - 1];
+    if (last && typeof last === 'object' && 'kind' in last && last.kind === 'ref') {
+      const resolved = resolvePdfValue(base, last);
+      if (resolved !== undefined && isPdfStream(resolved)) {
+        return resolved.bytes;
+      }
+    }
+    return undefined;
+  }
+
+  if (isPdfStream(contentsValue)) {
+    return contentsValue.bytes;
+  }
+
+  return undefined;
+}
+
+function isPageContentUnchanged(
+  base: PdfIncrementalUpdateModel['base'],
+  existingPageDict: PdfDict,
+  overlay: SerializedPage,
+): boolean {
+  if (overlay.contentBytes === undefined) {
+    return false;
+  }
+  const originalBytes = getOriginalPageContentStreamBytes(base, existingPageDict);
+  if (originalBytes === undefined) {
+    return false;
+  }
+  return (
+    computeContentHash(overlay.contentBytes) ===
+    computeContentHash(originalBytes)
+  );
+}
+
 function buildUpdatedExistingPageDictionary(
   base: PdfIncrementalUpdateModel['base'],
   existingPageDict: PdfDict,
@@ -3751,7 +3852,7 @@ function buildUpdatedExistingPageDictionary(
       ['StructParents', overlay?.structParentsKey ?? existingStructParentsKey],
       [
         'Contents',
-        overlay
+        overlay && !isPageContentUnchanged(base, existingPageDict, overlay)
           ? mergeExistingPageContents(
               base,
               existingPageDict,
@@ -4122,7 +4223,52 @@ function buildImageStream(
     );
   }
 
-  if ((image.kind === 'png' && image.decodeMode === 'rawSamples') || image.kind === 'bmp') {
+  if (image.kind === 'jbig2') {
+    return stream(
+      dict([
+        ['Type', name('XObject')],
+        ['Subtype', name('Image')],
+        ['Width', image.pixelWidth],
+        ['Height', image.pixelHeight],
+        ['ColorSpace', name('DeviceGray')],
+        ['BitsPerComponent', 1],
+        ['Filter', name('JBIG2Decode')],
+      ]),
+      image.bytes,
+    );
+  }
+
+  if (image.kind === 'tiff') {
+    return stream(
+      dict([
+        ['Type', name('XObject')],
+        ['Subtype', name('Image')],
+        ['Width', image.pixelWidth],
+        ['Height', image.pixelHeight],
+        ['ColorSpace', imageColorSpace(image, iccObjectId)],
+        ['BitsPerComponent', image.bitsPerComponent],
+        ['Filter', name('FlateDecode')],
+      ]),
+      image.bytes,
+    );
+  }
+
+  if (image.kind === 'jp2') {
+    return stream(
+      dict([
+        ['Type', name('XObject')],
+        ['Subtype', name('Image')],
+        ['Width', image.pixelWidth],
+        ['Height', image.pixelHeight],
+        ['ColorSpace', imageColorSpace(image, iccObjectId)],
+        ['BitsPerComponent', image.bitsPerComponent],
+        ['Filter', name('JPXDecode')],
+      ]),
+      image.bytes,
+    );
+  }
+
+  if ((image.kind === 'png' && image.decodeMode === 'rawSamples') || image.kind === 'bmp' || image.kind === 'webp' || image.kind === 'gif') {
     return stream(
       dict([
         ['Type', name('XObject')],
@@ -4165,7 +4311,7 @@ function buildImageStream(
 }
 
 function buildSoftMaskStream(
-  image: Extract<EmbeddedImageAsset, { kind: 'png' | 'bmp' }>,
+  image: Extract<EmbeddedImageAsset, { kind: 'png' | 'bmp' | 'webp' | 'gif' }>,
 ): ReturnType<typeof stream> {
   if (!image.alphaBytes) {
     throw new PdfEngineError(
@@ -4693,7 +4839,7 @@ function* serializePageContentLines(
         );
         break;
       case 'image':
-        if (op.image.kind === 'jpeg' && op.image.orientation !== 1) {
+        if ((op.image.kind === 'jpeg' || op.image.kind === 'png') && op.image.orientation !== 1) {
           opLines.push('q');
           const { x, y, width, height } = op.options;
           const rot = op.image.orientation;
@@ -5207,6 +5353,9 @@ function buildChoiceFieldFlags(
   );
   if (annotation.options.mode === 'combo') {
     flags |= 1 << 17;
+  }
+  if (annotation.options.editable) {
+    flags |= 1 << 18;
   }
   return flags;
 }

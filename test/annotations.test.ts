@@ -277,3 +277,22 @@ test("serializes highlight, note, and free text annotations", () => {
   assert.match(text, /\/Subtype \/Text/);
   assert.match(text, /\/Subtype \/FreeText/);
 });
+
+test("rejects PDFs without %PDF- header", () => {
+  const nonPdfBytes = new TextEncoder().encode("This is not a PDF file.\nSome garbage data.\n");
+  assert.throws(
+    () => parseDocument(nonPdfBytes),
+    (error: unknown) => error instanceof PdfEngineError && error.code === PdfErrorCode.INVALID_PDF
+  );
+});
+
+test("handles truncated PDF objects at EOF gracefully", () => {
+  const doc = createDocument();
+  doc.addPage().text("Content", { x: 36, y: 700 });
+  const fullBytes = doc.toUint8Array();
+  const truncated = fullBytes.subarray(0, Math.floor(fullBytes.length * 0.6));
+  assert.throws(
+    () => parseDocument(truncated),
+    (error: unknown) => error instanceof PdfEngineError
+  );
+});

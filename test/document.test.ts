@@ -144,7 +144,7 @@ function findArabicJoiningFixture(): { path: string; sample: string } | undefine
       continue;
     }
 
-    const font = parseTrueTypeFont(readFileSync(path), "FixtureArabicJoinScan");
+    const font = parseTrueTypeFont(readFileSync(path), { family: "FixtureArabicJoinScan" });
     for (const sample of samples) {
       if (sampleHasJoiningSubstitution(font, sample)) {
         return { path, sample };
@@ -169,7 +169,7 @@ function findLigatureFixture(): { path: string; sequence: string } | undefined {
       continue;
     }
 
-    const font = parseTrueTypeFont(readFileSync(path), "FixtureLigatureScan");
+    const font = parseTrueTypeFont(readFileSync(path), { family: "FixtureLigatureScan" });
     for (const sequence of sequences) {
       const glyphIds = [...sequence].map((character) => {
         const codePoint = character.codePointAt(0);
@@ -712,7 +712,7 @@ test("auto-detects rtl direction for Hebrew embedded text", () => {
 
   const sample = "שלום";
   const fontBytes = readFileSync(fontPath);
-  const parsedFont = parseTrueTypeFont(fontBytes, "FixtureRTL");
+  const parsedFont = parseTrueTypeFont(fontBytes, { family: "FixtureRTL" });
   for (const character of sample) {
     const codePoint = character.codePointAt(0);
     if (codePoint === undefined || parsedFont.cmap.getGlyphId(codePoint) === 0) {
@@ -751,7 +751,7 @@ test("applies contextual GSUB joining forms for embedded Arabic text", () => {
   }
 
   const fontBytes = readFileSync(fixture.path);
-  const parsedFont = parseTrueTypeFont(fontBytes, "FixtureArabicJoin");
+  const parsedFont = parseTrueTypeFont(fontBytes, { family: "FixtureArabicJoin" });
   const nominalVisualHex = [...fixture.sample]
     .reverse()
     .map((character) => parsedFont.cmap.getGlyphId(character.codePointAt(0)!))
@@ -1530,4 +1530,59 @@ test("vertical writing mode via flow cursor", () => {
 
   assert.ok(text.includes("/Helvetica"));
   assert.ok(text.includes("BT"));
+});
+
+test("handles 4-byte Unicode supplementary plane characters", () => {
+  const doc = createDocument();
+  const page = doc.addPage();
+  assert.throws(
+    () => page.text("\u{1F600}", { x: 36, y: 700 }),
+    (error: unknown) => error instanceof PdfEngineError && error.code === PdfErrorCode.UNSUPPORTED_CHARACTER
+  );
+});
+
+test("breaks text at soft hyphens in justified paragraphs", () => {
+  const doc = createDocument();
+  const page = doc.addPage({ size: "Letter" });
+  page.textBlock("supercali\u00ADfragilistic", {
+    x: 36, y: 720, width: 60, fontSize: 12, align: "justify"
+  });
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.ok(text.includes("-"));
+});
+
+test("prevents mutation after document finalization", () => {
+  const doc = createDocument();
+  doc.addPage({ size: "A4" }).text("Locked", { x: 36, y: 700 });
+  doc.toUint8Array();
+  assert.throws(
+    () => doc.addPage({ size: "A4" }),
+    (error: unknown) => error instanceof PdfEngineError && error.code === PdfErrorCode.INVALID_OPERATION
+  );
+});
+
+test("supports lazy object loading", () => {
+  const doc = createDocument();
+  doc.addPage({ size: "A4" }).text("Lazy", { x: 36, y: 700 });
+  const parsed = parseDocument(doc.toUint8Array());
+  const pageIds = parsed.getObjectIds().filter((id) => {
+    const obj = parsed.getObject(id);
+    return obj?.value !== undefined;
+  });
+  assert.ok(pageIds.length > 0);
+});
+
+test("detects concurrent access with debug flag", () => {
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (msg: string) => warnings.push(msg);
+  try {
+    const doc = createDocument();
+    (doc as any)._debugThreadSafe = true;
+    const page = doc.addPage({ size: "A4" });
+    page.text("Concurrent", { x: 36, y: 700 });
+    assert.equal(warnings.length, 0);
+  } finally {
+    console.warn = originalWarn;
+  }
 });

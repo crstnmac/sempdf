@@ -313,6 +313,24 @@ function renderTemplateBlockToFlow(flow: PdfFlow, block: TemplateBlock): void {
     case 'bmp':
       flow.bmp(block.data, block.options);
       return;
+    case 'tiff':
+      flow.tiff(block.data, block.options);
+      return;
+    case 'jp2':
+      flow.jp2(block.data, block.options);
+      return;
+    case 'jbig2':
+      flow.jbig2(block.data, block.options);
+      return;
+    case 'webp':
+      flow.webp(block.data, block.options);
+      return;
+    case 'gif':
+      flow.gif(block.data, block.options);
+      return;
+    case 'svg':
+      flow.svg(block.data, block.options);
+      return;
     case 'link':
       flow.link(block.text, block.url, block.options);
       return;

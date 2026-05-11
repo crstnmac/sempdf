@@ -155,6 +155,9 @@ export interface InternalStructureNode {
   associatedFiles?:
     | Array<{ name: string; data: Uint8Array | ArrayBuffer; mimeType?: string }>
     | undefined;
+  phoneme?: string | undefined;
+  expansion?: string | undefined;
+  summary?: string | undefined;
 }
 
 export interface InternalPageModel {

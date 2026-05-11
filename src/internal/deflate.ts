@@ -431,3 +431,255 @@ function readUint32Be(bytes: Uint8Array, offset: number): number {
 
   return (((b1 << 24) >>> 0) | (b2 << 16) | (b3 << 8) | b4) >>> 0;
 }
+
+const STREAMING_MIN_THRESHOLD = 1048576;
+
+export function inflateZlibStreaming(data: Uint8Array, chunkSize: number): Uint8Array[] {
+  if (data.length < STREAMING_MIN_THRESHOLD) {
+    return [inflateZlib(data)];
+  }
+
+  if (data.length < 6) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Zlib data is too short.");
+  }
+
+  const cmf = data[0];
+  const flg = data[1];
+  if (cmf === undefined || flg === undefined) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Zlib header is incomplete.");
+  }
+
+  if ((cmf & 0x0f) !== 8) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Only deflate-compressed zlib streams are supported.", {
+      compressionMethod: cmf & 0x0f
+    });
+  }
+
+  if ((((cmf << 8) | flg) % 31) !== 0) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Invalid zlib header checksum.");
+  }
+
+  if ((flg & 0x20) !== 0) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Preset dictionaries are not supported in zlib streams.");
+  }
+
+  const compressed = data.subarray(2, data.length - 4);
+  const reader = new BitReader(compressed);
+  const chunks: Uint8Array[] = [];
+  let currentChunk: number[] = [];
+  let currentChunkBytes = 0;
+
+  function flushChunk(): void {
+    if (currentChunk.length > 0) {
+      chunks.push(Uint8Array.from(currentChunk));
+      currentChunk = [];
+      currentChunkBytes = 0;
+    }
+  }
+
+  function pushByte(byte: number): void {
+    currentChunk.push(byte);
+    currentChunkBytes += 1;
+    if (currentChunkBytes >= chunkSize) {
+      flushChunk();
+    }
+  }
+
+  let isFinalBlock = false;
+  while (!isFinalBlock) {
+    isFinalBlock = reader.readBits(1) === 1;
+    const blockType = reader.readBits(2);
+
+    if (blockType === 0) {
+      readStoredBlockStreaming(reader, pushByte);
+    } else if (blockType === 1) {
+      const fixedLiteralTable = buildFixedLiteralLengthTable();
+      const fixedDistanceTable = buildFixedDistanceTable();
+      readCompressedBlockStreaming(reader, pushByte, currentChunk, fixedLiteralTable, fixedDistanceTable);
+    } else if (blockType === 2) {
+      const { literalTable, distanceTable } = readDynamicTables(reader);
+      readCompressedBlockStreaming(reader, pushByte, currentChunk, literalTable, distanceTable);
+    } else {
+      throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Reserved deflate block type encountered.", {
+        blockType
+      });
+    }
+  }
+
+  flushChunk();
+
+  const allBytes = concatStreamingChunks(chunks);
+  const expectedChecksum = readUint32Be(data, data.length - 4);
+  const actualChecksum = adler32(allBytes);
+  if (actualChecksum !== expectedChecksum) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Zlib Adler-32 checksum mismatch.");
+  }
+
+  return chunks;
+}
+
+export function* inflateZlibChunked(
+  data: Uint8Array,
+  chunkSize: number,
+): Generator<Uint8Array, void, undefined> {
+  if (data.length < STREAMING_MIN_THRESHOLD) {
+    yield inflateZlib(data);
+    return;
+  }
+
+  if (data.length < 6) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Zlib data is too short.");
+  }
+
+  const cmf = data[0];
+  const flg = data[1];
+  if (cmf === undefined || flg === undefined) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Zlib header is incomplete.");
+  }
+
+  if ((cmf & 0x0f) !== 8) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Only deflate-compressed zlib streams are supported.", {
+      compressionMethod: cmf & 0x0f,
+    });
+  }
+
+  if ((((cmf << 8) | flg) % 31) !== 0) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Invalid zlib header checksum.");
+  }
+
+  if ((flg & 0x20) !== 0) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Preset dictionaries are not supported in zlib streams.");
+  }
+
+  const compressed = data.subarray(2, data.length - 4);
+  const reader = new BitReader(compressed);
+  const fullOutput: number[] = [];
+  let currentChunk: number[] = [];
+  let currentChunkBytes = 0;
+  const pendingChunks: Uint8Array[] = [];
+
+  function pushByte(byte: number): void {
+    currentChunk.push(byte);
+    fullOutput.push(byte);
+    currentChunkBytes += 1;
+    if (currentChunkBytes >= chunkSize) {
+      pendingChunks.push(Uint8Array.from(currentChunk));
+      currentChunk = [];
+      currentChunkBytes = 0;
+    }
+  }
+
+  let isFinalBlock = false;
+  while (!isFinalBlock) {
+    isFinalBlock = reader.readBits(1) === 1;
+    const blockType = reader.readBits(2);
+
+    if (blockType === 0) {
+      readStoredBlockStreaming(reader, pushByte);
+    } else if (blockType === 1) {
+      const fixedLiteralTable = buildFixedLiteralLengthTable();
+      const fixedDistanceTable = buildFixedDistanceTable();
+      readCompressedBlockStreaming(reader, pushByte, fullOutput, fixedLiteralTable, fixedDistanceTable);
+    } else if (blockType === 2) {
+      const { literalTable, distanceTable } = readDynamicTables(reader);
+      readCompressedBlockStreaming(reader, pushByte, fullOutput, literalTable, distanceTable);
+    } else {
+      throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Reserved deflate block type encountered.", {
+        blockType,
+      });
+    }
+
+    while (pendingChunks.length > 0) {
+      yield pendingChunks.shift()!;
+    }
+  }
+
+  if (currentChunk.length > 0) {
+    yield Uint8Array.from(currentChunk);
+  }
+
+  const allBytes = Uint8Array.from(fullOutput);
+  const expectedChecksum = readUint32Be(data, data.length - 4);
+  const actualChecksum = adler32(allBytes);
+  if (actualChecksum !== expectedChecksum) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Zlib Adler-32 checksum mismatch.");
+  }
+}
+
+function concatStreamingChunks(chunks: readonly Uint8Array[]): Uint8Array {
+  let totalLength = 0;
+  for (const chunk of chunks) {
+    totalLength += chunk.length;
+  }
+  const output = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return output;
+}
+
+function readStoredBlockStreaming(reader: BitReader, pushByte: (byte: number) => void): void {
+  reader.alignToByte();
+  const len = reader.readByte() | (reader.readByte() << 8);
+  const nlen = reader.readByte() | (reader.readByte() << 8);
+  if ((len ^ 0xffff) !== nlen) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Stored deflate block checksum mismatch.");
+  }
+
+  for (let index = 0; index < len; index += 1) {
+    pushByte(reader.readByte());
+  }
+}
+
+function readCompressedBlockStreaming(
+  reader: BitReader,
+  pushByte: (byte: number) => void,
+  output: number[],
+  literalTable: HuffmanTable,
+  distanceTable: HuffmanTable,
+): void {
+  while (true) {
+    const symbol = decodeSymbol(reader, literalTable);
+    if (symbol < 256) {
+      pushByte(symbol);
+      output.push(symbol);
+      continue;
+    }
+
+    if (symbol === 256) {
+      return;
+    }
+
+    const lengthIndex = symbol - 257;
+    const lengthBase = LENGTH_BASES[lengthIndex];
+    const extraLengthBits = LENGTH_EXTRA_BITS[lengthIndex];
+    if (lengthBase === undefined || extraLengthBits === undefined) {
+      throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Invalid deflate length symbol.", { symbol });
+    }
+
+    const length = lengthBase + (extraLengthBits > 0 ? reader.readBits(extraLengthBits) : 0);
+    const distanceSymbol = decodeSymbol(reader, distanceTable);
+    const distanceBase = DISTANCE_BASES[distanceSymbol];
+    const extraDistanceBits = DISTANCE_EXTRA_BITS[distanceSymbol];
+    if (distanceBase === undefined || extraDistanceBits === undefined) {
+      throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Invalid deflate distance symbol.", { distanceSymbol });
+    }
+
+    const distance = distanceBase + (extraDistanceBits > 0 ? reader.readBits(extraDistanceBits) : 0);
+    if (distance > output.length) {
+      throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Deflate back-reference exceeds output size.", {
+        distance,
+        outputLength: output.length
+      });
+    }
+
+    const start = output.length - distance;
+    for (let index = 0; index < length; index += 1) {
+      const byte = output[start + index]!;
+      pushByte(byte);
+      output.push(byte);
+    }
+  }
+}
