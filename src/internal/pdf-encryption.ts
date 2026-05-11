@@ -1,4 +1,5 @@
 import type { NormalizedDocumentEncryption, NormalizedDocumentPermissions } from "./validation.js";
+import { PdfEngineError, PdfErrorCode } from "../errors.js";
 
 const PASSWORD_PADDING = Uint8Array.from([
   0x28, 0xbf, 0x4e, 0x5e, 0x4e, 0x75, 0x8a, 0x41,
@@ -468,7 +469,7 @@ function createAesCbcCipher(key: Uint8Array): PdfObjectCipher {
   return {
     update(data: Uint8Array): Uint8Array {
       if (used) {
-        throw new Error("AES PDF object ciphers must be used with a single update call.");
+        throw new PdfEngineError(PdfErrorCode.UNSUPPORTED_ENCRYPTION, "AES PDF object ciphers must be used with a single update call.");
       }
       used = true;
       const crypto = getNodeCrypto();
@@ -499,7 +500,7 @@ function getNodeCrypto(): {
   const getBuiltinModule = (globalThis as { process?: { getBuiltinModule?: (name: string) => unknown } }).process?.getBuiltinModule;
   const crypto = getBuiltinModule?.("node:crypto") as ReturnType<typeof getNodeCrypto> | undefined;
   if (!crypto) {
-    throw new Error("AES PDF encryption requires Node.js crypto support in this build.");
+    throw new PdfEngineError(PdfErrorCode.UNSUPPORTED_ENCRYPTION, "AES PDF encryption requires Node.js crypto support in this build.");
   }
   return crypto;
 }

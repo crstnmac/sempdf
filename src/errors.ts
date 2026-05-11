@@ -62,6 +62,14 @@ export enum PdfErrorCode {
   UNSUPPORTED_ENCRYPTION = "UNSUPPORTED_ENCRYPTION",
   /** Cross-reference format is not supported. */
   UNSUPPORTED_XREF_FORMAT = "UNSUPPORTED_XREF_FORMAT",
+  /** An internal serialization invariant was violated. */
+  INTERNAL_ERROR = "INTERNAL_ERROR",
+  /** A document-level operation was attempted in an unsupported state or combination. */
+  INVALID_OPERATION = "INVALID_OPERATION",
+  /** A ByteSink or stream operation was attempted after the sink was closed. */
+  SINK_CLOSED = "SINK_CLOSED",
+  /** A TypeScript type guard failure indicates an unreachable code path. */
+  UNREACHABLE = "UNREACHABLE",
 }
 
 /**
