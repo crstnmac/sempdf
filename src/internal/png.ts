@@ -17,6 +17,7 @@ export interface EmbeddedPngAsset {
   readonly alphaBytes?: Uint8Array | undefined;
   readonly mask?: readonly number[] | undefined;
   readonly iccProfile?: { readonly bytes: Uint8Array; readonly channels: number } | undefined;
+  readonly orientation: 1 | 3 | 6 | 8;
 }
 
 export function parsePng(data: BinaryData): EmbeddedPngAsset {
@@ -39,6 +40,7 @@ export function parsePng(data: BinaryData): EmbeddedPngAsset {
     let palette: Uint8Array | undefined;
     let trns: Uint8Array | undefined;
     let colorType: number | undefined;
+    let orientation: 1 | 3 | 6 | 8 = 1;
     const idatChunks: Uint8Array[] = [];
 
     while (offset < bytes.length) {
@@ -70,8 +72,8 @@ export function parsePng(data: BinaryData): EmbeddedPngAsset {
         const filter = chunkBytes[11];
         const interlace = chunkBytes[12];
 
-        if (bitDepth !== 8) {
-          throw new PdfEngineError(PdfErrorCode.UNSUPPORTED_IMAGE_BIT_DEPTH, "Only 8-bit PNG images are supported.", {
+        if (bitDepth !== 8 && bitDepth !== 16) {
+          throw new PdfEngineError(PdfErrorCode.UNSUPPORTED_IMAGE_BIT_DEPTH, "Only 8-bit and 16-bit PNG images are supported.", {
             bitDepth
           });
         }
@@ -116,6 +118,11 @@ export function parsePng(data: BinaryData): EmbeddedPngAsset {
         }
       } else if (type === "PLTE") {
         palette = chunkBytes;
+      } else if (type === "eXIf") {
+        const parsed = parseExifOrientation(chunkBytes);
+        if (parsed !== undefined) {
+          orientation = parsed;
+        }
       } else if (type === "IDAT") {
         idatChunks.push(chunkBytes);
       } else if (type === "tRNS") {
@@ -165,20 +172,43 @@ export function parsePng(data: BinaryData): EmbeddedPngAsset {
     }
 
     if (sampleChannels === 2 || sampleChannels === 4) {
+      const bytesPerPixel = sampleChannels * (bitDepth / 8);
       const rawScanlines = inflateZlib(imageBytes);
-      const pixels = unfilterPngScanlines(rawScanlines, width, height, sampleChannels);
-      const { colorBytes, alphaBytes } = splitAlphaChannel(pixels, width, height, channels, sampleChannels);
+      const pixels = unfilterPngScanlines(rawScanlines, width, height, bytesPerPixel);
+      const downsampled = bitDepth === 16 ? downsample16to8(pixels, sampleChannels) : pixels;
+      const { colorBytes, alphaBytes } = splitAlphaChannel(downsampled, width, height, channels, sampleChannels);
       return {
         kind: "png",
         key: buildPngKey(bytes, width, height, sampleChannels),
         bytes: colorBytes,
         pixelWidth: width,
         pixelHeight: height,
-        bitsPerComponent: bitDepth,
+        bitsPerComponent: 8,
         colorSpace,
         channels,
         decodeMode: "rawSamples",
-        alphaBytes
+        alphaBytes,
+        orientation
+      };
+    }
+
+    if (bitDepth === 16) {
+      const bytesPerPixel = sampleChannels * 2;
+      const rawScanlines = inflateZlib(imageBytes);
+      const pixels = unfilterPngScanlines(rawScanlines, width, height, bytesPerPixel);
+      const downsampled = downsample16to8(pixels, sampleChannels);
+      return {
+        kind: "png",
+        key: buildPngKey(bytes, width, height, sampleChannels),
+        bytes: downsampled,
+        pixelWidth: width,
+        pixelHeight: height,
+        bitsPerComponent: 8,
+        colorSpace,
+        channels,
+        decodeMode: "rawSamples",
+        mask,
+        orientation
       };
     }
 
@@ -192,7 +222,8 @@ export function parsePng(data: BinaryData): EmbeddedPngAsset {
       colorSpace,
       channels,
       decodeMode: "pngPredictor",
-      mask
+      mask,
+      orientation
     };
   } catch (error) {
     if (error instanceof PdfEngineError) {
@@ -200,6 +231,70 @@ export function parsePng(data: BinaryData): EmbeddedPngAsset {
     }
     throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Failed to parse PNG image data.", { cause: error });
   }
+}
+
+function downsample16to8(pixels: Uint8Array, sampleChannels: number): Uint8Array {
+  const pixelCount = pixels.length / (sampleChannels * 2);
+  const result = new Uint8Array(pixelCount * sampleChannels);
+  for (let i = 0; i < pixelCount; i += 1) {
+    const srcOffset = i * sampleChannels * 2;
+    const dstOffset = i * sampleChannels;
+    for (let ch = 0; ch < sampleChannels; ch += 1) {
+      result[dstOffset + ch] = pixels[srcOffset + ch * 2]!;
+    }
+  }
+  return result;
+}
+
+function parseExifOrientation(chunkBytes: Uint8Array): 1 | 3 | 6 | 8 | undefined {
+  if (chunkBytes.length < 14) {
+    return undefined;
+  }
+
+  const isBE = chunkBytes[0] === 0x4d && chunkBytes[1] === 0x4d;
+  const isLE = chunkBytes[0] === 0x49 && chunkBytes[1] === 0x49;
+  if (!isBE && !isLE) {
+    return undefined;
+  }
+
+  const read16 = isBE
+    ? (offset: number) => (chunkBytes[offset]! << 8) | chunkBytes[offset + 1]!
+    : (offset: number) => chunkBytes[offset]! | (chunkBytes[offset + 1]! << 8);
+
+  if (read16(2) !== 0x002a) {
+    return undefined;
+  }
+
+  const ifdOffset = isBE
+    ? (chunkBytes[4]! << 24) | (chunkBytes[5]! << 16) | (chunkBytes[6]! << 8) | chunkBytes[7]!
+    : chunkBytes[4]! | (chunkBytes[5]! << 8) | (chunkBytes[6]! << 16) | (chunkBytes[7]! << 24);
+
+  if (ifdOffset <= 0 || ifdOffset > chunkBytes.length - 2) {
+    return undefined;
+  }
+
+  const entryCount = read16(ifdOffset);
+  const entriesEnd = ifdOffset + 2 + entryCount * 12;
+
+  for (let i = 0; i < entryCount; i += 1) {
+    const entryOffset = ifdOffset + 2 + i * 12;
+    if (entryOffset + 12 > chunkBytes.length) {
+      break;
+    }
+
+    const tag = read16(entryOffset);
+    if (tag === 0x0112) {
+      const type = read16(entryOffset + 2);
+      if (type === 3) {
+        const value = read16(entryOffset + 8);
+        if (value === 1 || value === 3 || value === 6 || value === 8) {
+          return value as 1 | 3 | 6 | 8;
+        }
+      }
+    }
+  }
+
+  return undefined;
 }
 
 function cloneBinaryData(data: BinaryData): Uint8Array {
@@ -283,7 +378,8 @@ function expandIndexedPng(
       colorSpace: "DeviceRGB" as const,
       channels,
       decodeMode: "rawSamples",
-      alphaBytes
+      alphaBytes,
+      orientation: 1
     };
   }
 
@@ -296,7 +392,8 @@ function expandIndexedPng(
     bitsPerComponent: bitDepth,
     colorSpace: "DeviceRGB" as const,
     channels,
-    decodeMode: "rawSamples"
+    decodeMode: "rawSamples",
+    orientation: 1
   };
 }
 

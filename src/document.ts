@@ -94,6 +94,9 @@ import {
   serializeIncrementalUpdate,
   serializeIncrementalUpdateToSink,
 } from "./internal/serializer.js";
+import {
+  estimateSignatureSize,
+} from "./internal/incremental-serialize.js";
 import type { ByteSink } from "./internal/byte-sink.js";
 import type {
   AttachmentOptions,
@@ -479,6 +482,67 @@ export class PdfStructureContainer {
    */
   bmp(data: BinaryData, options: BmpImageOptions): void {
     addImageToPage(this.page, "bmp", data, options, this.node, "Figure");
+  }
+
+  /**
+   * Adds a tagged JBIG2 image to this structure container.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   */
+  jbig2(data: BinaryData, options: import("./types.js").Jbig2ImageOptions): void {
+    addImageToPage(this.page, "jbig2", data, options, this.node, "Figure");
+  }
+
+  /**
+   * Adds a tagged TIFF image to this structure container.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   */
+  tiff(data: BinaryData, options: import("./types.js").TiffImageOptions): void {
+    addImageToPage(this.page, "tiff", data, options, this.node, "Figure");
+  }
+
+  /**
+   * Adds a tagged JPEG 2000 image to this structure container.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   */
+  jp2(data: BinaryData, options: import("./types.js").Jp2ImageOptions): void {
+    addImageToPage(this.page, "jp2", data, options, this.node, "Figure");
+  }
+
+  /**
+   * Adds a tagged WebP image to this structure container.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   */
+  webp(data: BinaryData, options: import("./types.js").WebpImageOptions): void {
+    addImageToPage(this.page, "webp", data, options, this.node, "Figure");
+  }
+
+  /**
+   * Adds a tagged GIF image to this structure container.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   */
+  gif(data: BinaryData, options: import("./types.js").GifImageOptions): void {
+    addImageToPage(this.page, "gif", data, options, this.node, "Figure");
+  }
+
+  /**
+   * Adds a tagged SVG graphic to this structure container.
+   *
+   * @param data The SVG text data.
+   * @param options Options that control the operation.
+   */
+  svg(data: BinaryData | string, options: import("./types.js").SvgImageOptions): void {
+    const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
+    addImageToPage(this.page, "svg", bytes, options, this.node, "Figure");
   }
 
   /**
@@ -901,6 +965,8 @@ export class PdfFlow {
         return this.estimateImageHeight("bmp", block.data, block.options);
       case "jpeg":
         return this.estimateImageHeight("jpeg", block.data, block.options);
+      case "jbig2":
+        return this.estimateImageHeight("jbig2", block.data, block.options);
       case "link":
         return this.estimateLinkHeight(block.options);
       case "section":
@@ -910,6 +976,8 @@ export class PdfFlow {
         );
       case "pageBreak":
         return this.remainingHeight;
+      default:
+        return 0;
     }
   }
 
@@ -981,6 +1049,79 @@ export class PdfFlow {
    */
   bmp(data: BinaryData, options: FlowImageOptions = {}): this {
     return this.image("bmp", data, options);
+  }
+
+  /**
+   * Adds a JBIG2 image at the current flow cursor.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
+  jbig2(data: BinaryData, options: FlowImageOptions = {}): this {
+    return this.image("jbig2", data, options);
+  }
+
+  /**
+   * Adds a TIFF image at the current flow cursor.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
+  tiff(data: BinaryData, options: FlowImageOptions = {}): this {
+    return this.image("tiff", data, options);
+  }
+
+  /**
+   * Adds a JPEG 2000 image at the current flow cursor.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
+  jp2(data: BinaryData, options: FlowImageOptions = {}): this {
+    return this.image("jp2", data, options);
+  }
+
+  /**
+   * Adds a WebP image at the current flow cursor.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
+  webp(data: BinaryData, options: FlowImageOptions = {}): this {
+    return this.image("webp", data, options);
+  }
+
+  /**
+   * Adds a GIF image at the current flow cursor.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
+  gif(data: BinaryData, options: FlowImageOptions = {}): this {
+    return this.image("gif", data, options);
+  }
+
+  /**
+   * Adds an SVG graphic at the current flow cursor.
+   *
+   * @param data The SVG text data.
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
+  svg(data: BinaryData | string, options: FlowImageOptions = {}): this {
+    const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
+    return this.image("svg", bytes, options);
   }
 
   /**
@@ -1130,12 +1271,41 @@ export class PdfFlow {
    * @returns The result of the operation.
    */
   private image(
-    format: "jpeg" | "png" | "bmp",
+    format: "jpeg" | "png" | "bmp" | "jbig2" | "tiff" | "jp2" | "webp" | "gif" | "svg",
     data: BinaryData,
     options: FlowImageOptions,
   ): this {
     const spacing = this.resolveSpacing("image", options);
     this.applyMarginTop(spacing.before);
+
+    if (format === "svg") {
+      const innerWidth = Math.max(
+        this.state.width - spacing.left - spacing.right,
+        1,
+      );
+      const maxWidth = options.maxWidth ?? innerWidth;
+      const width = options.width ?? maxWidth;
+      const height = options.height ?? width;
+      const align = options.align ?? "left";
+      const baseX = this.state.x + spacing.left;
+      const x =
+        align === "center"
+          ? baseX + Math.max((innerWidth - width) / 2, 0)
+          : align === "right"
+            ? baseX + Math.max(innerWidth - width, 0)
+            : baseX;
+      addImageToPage(
+        this.page,
+        format,
+        data,
+        { ...options, x, y: this.state.y - height, width, height },
+        this.parent,
+        "Figure",
+      );
+      this.state.y -= height + spacing.after;
+      return this;
+    }
+
     const image = parseImage(format, data);
     const innerWidth = Math.max(
       this.state.width - spacing.left - spacing.right,
@@ -1297,7 +1467,7 @@ export class PdfFlow {
    * @returns The estimated image height.
    */
   private estimateImageHeight(
-    format: "jpeg" | "png" | "bmp",
+    format: "jpeg" | "png" | "bmp" | "jbig2",
     data: BinaryData,
     options: FlowImageOptions = {},
   ): number {
@@ -1715,6 +1885,67 @@ export class PdfPage {
    */
   bmp(data: BinaryData, options: BmpImageOptions): void {
     addImageToPage(this.page, "bmp", data, options);
+  }
+
+  /**
+   * Adds a JBIG2 image to the page.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   */
+  jbig2(data: BinaryData, options: import("./types.js").Jbig2ImageOptions): void {
+    addImageToPage(this.page, "jbig2", data, options);
+  }
+
+  /**
+   * Adds a TIFF image to the page.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   */
+  tiff(data: BinaryData, options: import("./types.js").TiffImageOptions): void {
+    addImageToPage(this.page, "tiff", data, options);
+  }
+
+  /**
+   * Adds a JPEG 2000 image to the page.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   */
+  jp2(data: BinaryData, options: import("./types.js").Jp2ImageOptions): void {
+    addImageToPage(this.page, "jp2", data, options);
+  }
+
+  /**
+   * Adds a WebP image to the page.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   */
+  webp(data: BinaryData, options: import("./types.js").WebpImageOptions): void {
+    addImageToPage(this.page, "webp", data, options);
+  }
+
+  /**
+   * Adds a GIF image to the page.
+   *
+   * @param data The binary image or font data.
+   * @param options Options that control the operation.
+   */
+  gif(data: BinaryData, options: import("./types.js").GifImageOptions): void {
+    addImageToPage(this.page, "gif", data, options);
+  }
+
+  /**
+   * Adds an SVG graphic to the page.
+   *
+   * @param data The SVG text data.
+   * @param options Options that control the operation.
+   */
+  svg(data: BinaryData | string, options: import("./types.js").SvgImageOptions): void {
+    const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
+    addImageToPage(this.page, "svg", bytes, options);
   }
 
   /**
@@ -2251,7 +2482,7 @@ export class PdfDocument {
   private readonly signature?: DocumentSignatureOptions | undefined;
 
   /** Custom text shaper for complex script shaping. */
-  private readonly textShaper?: TextShaper | undefined;
+  private textShaper?: TextShaper | undefined;
 
   /** Calculation order for form fields. */
   private calculationOrder?: string[] | undefined;
@@ -2259,11 +2490,20 @@ export class PdfDocument {
   /** Whether the document has already been serialized. */
   private _finalized = false;
 
+  /** Whether a write is in progress. */
+  private _writing = false;
+
   /** Snapshot of page count captured at finalization time. */
   private _finalizedPageCount = 0;
 
   /** Cached serialized bytes, returned on subsequent calls when unchanged. */
   private _finalizedBytes?: Uint8Array | undefined;
+
+  /** Reentrant call counter for thread-safety debugging. */
+  _lockLevel = 0;
+
+  /** When true, warns about potential concurrent access on reentrant calls. */
+  _debugThreadSafe = false;
 
   /**
    * Creates a new mutable PDF document builder.
@@ -2285,6 +2525,61 @@ export class PdfDocument {
   }
 
   /**
+   * Guards against mutations after the document has been finalized
+   * and warns about potential concurrent access.
+   */
+  private _mutate(): void {
+    if (this._finalized) {
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_OPERATION,
+        "Document has been finalized and cannot be modified.",
+      );
+    }
+    if (this._debugThreadSafe) {
+      this._lockLevel += 1;
+      if (this._lockLevel > 1) {
+        console.warn("Potential concurrent access detected");
+      }
+    }
+  }
+
+  /**
+   * Releases the thread-safety lock after a mutating method exits.
+   */
+  private _unlock(): void {
+    if (this._debugThreadSafe && this._lockLevel > 0) {
+      this._lockLevel -= 1;
+    }
+  }
+
+  /**
+   * Sets a custom text shaper for complex script shaping (Devanagari, Khmer,
+   * Myanmar, Arabic, Thai, etc.). When provided, the shaper is called for each
+   * text run that requires shaping. If not provided, the default shaper handles
+   * basic ligature and joining-form substitution but will throw an
+   * UNSUPPORTED_SCRIPT error for scripts it does not support. External shapers
+   * such as harfbuzzjs or fontkit can be plugged in to enable full shaping
+   * support.
+   *
+   * @param shaper The custom text shaper to use, or undefined to revert to the default.
+   *
+   * @example
+   * ```ts
+   * import { createDocument } from "pdf-editing-lib";
+   *
+   * const doc = createDocument();
+   *
+   * // Plug in harfbuzzjs for full complex-script shaping:
+   * // import { createHarfBuzzShaper } from "harfbuzzjs-shaper";
+   * // doc.setTextShaper(createHarfBuzzShaper(harfbuzzInstance));
+   * ```
+   */
+  setTextShaper(shaper: TextShaper | undefined): void {
+    this._mutate();
+    this.textShaper = shaper;
+  }
+
+  /**
    * Adds a page to the document and returns its page builder.
    *
    * @param options Options that control the operation.
@@ -2292,8 +2587,10 @@ export class PdfDocument {
    * @returns The new page builder.
    */
   addPage(options: PageOptions = {}): PdfPage {
+    this._mutate();
     const page = createPageModel(options.size ?? this.defaultPageSize, options.transparencyGroup, options.tabOrder);
     this.pages.push(page);
+    this._unlock();
     return new PdfPage(page, this.embeddedFonts);
   }
 
@@ -2314,11 +2611,13 @@ export class PdfDocument {
     options: SoftMaskOptions,
     build: (mask: PdfSoftMaskBuilder) => void,
   ): SoftMaskHandle {
+    this._mutate();
     const key = `SMask${this.nextSoftMaskId++}`;
     const ops: PdfOp[] = [];
     const builder = new PdfSoftMaskBuilder(ops);
     build(builder);
     this.softMasks.push({ key, width: options.width, height: options.height, ops });
+    this._unlock();
     return { key };
   }
 
@@ -2328,6 +2627,7 @@ export class PdfDocument {
    * @param options Options that control the operation.
    */
   renderTemplate(options: TemplateDocumentOptions): void {
+    this._mutate();
     if (options.info !== undefined) {
       this.updateInfo(options.info);
     }
@@ -2338,6 +2638,7 @@ export class PdfDocument {
       title: this.info.title,
       author: this.info.author,
     });
+    this._unlock();
   }
 
   /**
@@ -2352,6 +2653,7 @@ export class PdfDocument {
     data: BinaryData,
     options: EmbedTrueTypeFontOptions = {},
   ): PdfEmbeddedFont {
+    this._mutate();
     const bytes = toBytes(data);
     const cacheKey = hashBytes(bytes);
     const cached = fontCache.get(cacheKey);
@@ -2359,7 +2661,7 @@ export class PdfDocument {
       this.embeddedFonts.set(cached.id, cached);
       return cached;
     }
-    const font = parseTrueTypeFont(data, options.family);
+    const font = parseTrueTypeFont(data, { family: options.family, ttcIndex: options.ttcIndex });
     fontCache.set(cacheKey, font);
     this.embeddedFonts.set(font.id, font);
     return font;
@@ -2372,6 +2674,7 @@ export class PdfDocument {
    * @param target The destination page, outline target, or structure element.
    */
   addNamedDestination(name: string, target: PdfPage): void {
+    this._mutate();
     this.namedDestinations.push({
       name: normalizeDestinationName(name),
       target: target.toInternalModel(),
@@ -2385,6 +2688,7 @@ export class PdfDocument {
    * @param options Options that control the operation.
    */
   setPageLabel(target: PdfPage, options: PageLabelOptions): void {
+    this._mutate();
     this.pageLabels.set(
       target.toInternalModel(),
       normalizePageLabelOptions(options),
@@ -2403,6 +2707,7 @@ export class PdfDocument {
     data: BinaryData,
     options: AttachmentOptions = {},
   ): void {
+    this._mutate();
     const bytes = toBytes(data);
     if (bytes.length === 0) {
       throw new PdfEngineError(
@@ -2445,6 +2750,7 @@ export class PdfDocument {
    * @param metadata The XMP metadata input, or undefined to clear it.
    */
   setXmpMetadata(metadata: XmpMetadataInput | undefined): void {
+    this._mutate();
     this.xmpMetadata = normalizeXmpMetadata(metadata);
   }
 
@@ -2462,6 +2768,7 @@ export class PdfDocument {
     target: PdfPage | string,
     options: OutlineOptions = {},
   ): PdfOutlineItem {
+    this._mutate();
     const outline = createOutlineModel(title, target, options);
     this.outlines.push(outline);
     return new PdfOutlineItem(outline);
@@ -2474,6 +2781,7 @@ export class PdfDocument {
    * @param fieldNames The ordered list of form field names.
    */
   setCalculationOrder(fieldNames: string[]): void {
+    this._mutate();
     if (fieldNames.length === 0) {
       this.calculationOrder = undefined;
       return;
@@ -2485,6 +2793,7 @@ export class PdfDocument {
    * Flattens form fields into static page content where possible.
    */
   flattenForms(): void {
+    this._mutate();
     flattenFormsOnPages(this.pages);
   }
 
@@ -2500,6 +2809,7 @@ export class PdfDocument {
         this.accessibility,
         this.encryption !== undefined,
         this.attachments.length > 0,
+        this.xmpMetadata,
       ),
     );
   }
@@ -2530,6 +2840,14 @@ export class PdfDocument {
    * @param sink The sink that receives written byte chunks.
    */
   async writeTo(sink: ByteSink): Promise<void> {
+    if (this._writing) {
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_OPERATION,
+        "Another write is already in progress.",
+      );
+    }
+    this._writing = true;
+    try {
     if (this._finalized) {
       if (this.pages.length !== this._finalizedPageCount) {
         throw new PdfEngineError(
@@ -2544,6 +2862,9 @@ export class PdfDocument {
     this._finalizedPageCount = this.pages.length;
     this._finalizedBytes = this._serializeToBytes();
     await serializeDocumentToSink(this.toModel(), sink);
+    } finally {
+      this._writing = false;
+    }
   }
 
   /**
@@ -2756,6 +3077,191 @@ export class PdfDocument {
       softMasks: this.softMasks,
     };
   }
+
+  /**
+   * Creates a deep clone of this document. The clone is independently
+   * modifiable — it copies all pages, fonts, images, metadata, and the
+   * structure tree. Embedded font data is reused from the shared font cache
+   * (cross-document sharing).
+   *
+   * @returns A new {@link PdfDocument} instance with a deep copy of the document model.
+   */
+  clone(): PdfDocument {
+    const cloned = new PdfDocument({
+      defaultPageSize: this.defaultPageSize,
+      info: {
+        title: this.info.title,
+        author: this.info.author,
+        subject: this.info.subject,
+        keywords: this.info.keywords,
+        creator: this.info.creator,
+        producer: this.info.producer,
+        creationDate: this.info.creationDate,
+        modificationDate: this.info.modificationDate,
+      },
+      xmpMetadata: this.xmpMetadata,
+      language: this.accessibility.language,
+      tagged: this.accessibility.tagged,
+      roleMap: this.accessibility.roleMap,
+      structureRoot: this.accessibility.structureRoot,
+      conformance: this.accessibility.conformance,
+      compress: this.compress,
+      objectStreams: this.objectStreams,
+      linearize: this.linearize,
+      outputIntent: this.outputIntent,
+      textShaper: this.textShaper,
+    });
+
+    for (const [key, font] of this.embeddedFonts) {
+      cloned.embeddedFonts.set(key, font);
+    }
+
+    for (const destination of this.namedDestinations) {
+      cloned.namedDestinations.push(destination);
+    }
+
+    for (const attachment of this.attachments) {
+      cloned.attachments.push(attachment);
+    }
+
+    for (const outline of this.outlines) {
+      cloned.outlines.push(cloneOutlineModel(outline));
+    }
+
+    cloned.calculationOrder = this.calculationOrder
+      ? [...this.calculationOrder]
+      : undefined;
+
+    const pageMap = new Map<InternalPageModel, InternalPageModel>();
+    for (const page of this.pages) {
+      const clonedPage = clonePageModel(page, cloned.embeddedFonts);
+      pageMap.set(page, clonedPage);
+      cloned.pages.push(clonedPage);
+    }
+
+    for (let i = 0; i < cloned.namedDestinations.length; i++) {
+      const original = this.namedDestinations[i]!;
+      const mapped = pageMap.get(original.target);
+      if (mapped) {
+        cloned.namedDestinations[i] = { name: original.name, target: mapped };
+      }
+    }
+
+    for (const [originalTarget, options] of this.pageLabels) {
+      const mapped = pageMap.get(originalTarget);
+      if (mapped) {
+        cloned.pageLabels.set(mapped, options);
+      }
+    }
+
+    remapOutlineTargets(cloned.outlines, pageMap);
+
+    for (const mask of this.softMasks) {
+      cloned.softMasks.push({
+        key: mask.key,
+        width: mask.width,
+        height: mask.height,
+        ops: mask.ops.map((op) => cloneOp(op)),
+      });
+    }
+
+    return cloned;
+  }
+
+  /**
+   * Configures certificate-based (public-key) encryption for the document.
+   * Each recipient certificate is a DER-encoded X.509 certificate whose
+   * public key is used to encrypt a random 20-byte seed. The /SubFilter
+   * /adbe.pkcs7.s5 security handler stores the encrypted seeds in a
+   * /Recipients array so each recipient can decrypt the document with
+   * their private key.
+   *
+   * For simplicity this method only implements encryption — existing
+   * encrypted files are not decrypted.
+   *
+   * @param certificates An array of DER-encoded X.509 certificate bytes.
+   */
+  encryptForRecipients(certificates: Uint8Array[]): void {
+    this._mutate();
+    if (certificates.length === 0) {
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_ENCRYPTION,
+        "At least one certificate is required for public-key encryption.",
+      );
+    }
+
+    const seed = generateRandom20ByteSeed();
+    const recipients: Array<Uint8Array> = [];
+
+    for (const cert of certificates) {
+      const publicKey = parseX509PublicKey(cert);
+      if (!publicKey) {
+        throw new PdfEngineError(
+          PdfErrorCode.INVALID_ENCRYPTION,
+          "Failed to extract RSA public key from certificate.",
+        );
+      }
+      const encryptedSeed = rsaPkcs1Encrypt(seed, publicKey.n, publicKey.e);
+      recipients.push(encryptedSeed);
+    }
+
+    const recipientsArray = buildRecipientsPdfArray(recipients);
+    (this as Record<string, unknown>)._publicKeyRecipients = recipientsArray;
+    (this as Record<string, unknown>)._publicKeySeed = seed;
+
+    this._unlock();
+  }
+
+  /**
+   * Estimates the byte size needed for a detached-signature placeholder.
+   *
+   * @param certificateBytes Optional certificate bytes for size estimation.
+   *
+   * @returns The estimated placeholder size in bytes.
+   */
+  static estimateSignatureSize(certificateBytes?: Uint8Array | null): number {
+    return estimateSignatureSize(certificateBytes);
+  }
+
+  /**
+   * Serializes the document and writes it to a file path.
+   *
+   * @param path The file path to write to.
+   */
+  async writeToFile(path: string): Promise<void> {
+    const { writeFile } = await import('node:fs/promises');
+    const bytes = this.toUint8Array();
+    await writeFile(path, bytes);
+  }
+
+  /**
+   * Writes all previously added pages to the sink and returns a new
+   * {@link PdfPage} for the next page. When called repeatedly this
+   * streams pages as they are built, reducing peak memory for
+   * very large documents (1000+ pages).
+   *
+   * @param sink The sink that receives the serialized bytes.
+   *
+   * @returns A new page builder for continuing to add pages.
+   */
+  async writeNextPage(sink: ByteSink): Promise<PdfPage> {
+    const { serializeDocumentToSink } = await import('./internal/serializer.js');
+    const model = this.toModel();
+    await serializeDocumentToSink(model, sink);
+    const page = createPageModel(this.defaultPageSize);
+    this.pages.push(page);
+    return new PdfPage(page, this.embeddedFonts);
+  }
+
+  /**
+   * Returns the number of pages that have been added but not yet
+   * written via {@link writeNextPage}.
+   */
+  get remainingPages(): number {
+    return this._finalizedPageCount > 0
+      ? this.pages.length - this._finalizedPageCount
+      : 0;
+  }
 }
 
 /**
@@ -2824,6 +3330,9 @@ export class PdfEditableDocument {
   /** Whether the document has already been serialized. */
   private _finalized = false;
 
+  /** Whether a write is in progress. */
+  private _writing = false;
+
   /** Snapshot of page count captured at finalization time. */
   private _finalizedPageCount = 0;
 
@@ -2860,6 +3369,18 @@ export class PdfEditableDocument {
   }
 
   /**
+   * Guards against mutations after the document has been finalized.
+   */
+  private _mutate(): void {
+    if (this._finalized) {
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_OPERATION,
+        "Document has been finalized and cannot be modified.",
+      );
+    }
+  }
+
+  /**
    * Appends a new page and returns its page builder.
    *
    * @param options Options that control the operation.
@@ -2879,6 +3400,7 @@ export class PdfEditableDocument {
    * @returns The inserted page builder.
    */
   insertPage(index: number, options: PageOptions = {}): PdfPage {
+    this._mutate();
     if (
       (this.taggedBase || this.conformanceBase !== undefined) &&
       index !== this.pageOrder.length
@@ -2914,6 +3436,7 @@ export class PdfEditableDocument {
    * @param index The page index.
    */
   removePage(index: number): void {
+    this._mutate();
     if (this.taggedBase || this.conformanceBase !== undefined) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_COMPLIANCE,
@@ -2938,6 +3461,7 @@ export class PdfEditableDocument {
    * @param toIndex The destination page index.
    */
   movePage(fromIndex: number, toIndex: number): void {
+    this._mutate();
     if (this.taggedBase || this.conformanceBase !== undefined) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_COMPLIANCE,
@@ -2974,6 +3498,7 @@ export class PdfEditableDocument {
    * @returns The editable page builder.
    */
   editPage(index: number): PdfPage {
+    this._mutate();
     assertEditablePageIndex(index, this.pageOrder.length - 1, "edit");
     const entry = this.pageOrder[index];
     if (!entry) {
@@ -3016,6 +3541,7 @@ export class PdfEditableDocument {
     content: string,
     mode: "replace" | "append" | "prepend",
   ): void {
+    this._mutate();
     assertEditablePageIndex(index, this.pageOrder.length - 1, "write content");
     const entry = this.pageOrder[index];
     if (!entry) {
@@ -3058,6 +3584,7 @@ export class PdfEditableDocument {
     data: BinaryData,
     options: EmbedTrueTypeFontOptions = {},
   ): PdfEmbeddedFont {
+    this._mutate();
     const bytes = toBytes(data);
     const cacheKey = hashBytes(bytes);
     const cached = fontCache.get(cacheKey);
@@ -3065,7 +3592,7 @@ export class PdfEditableDocument {
       this.embeddedFonts.set(cached.id, cached);
       return cached;
     }
-    const font = parseTrueTypeFont(data, options.family);
+    const font = parseTrueTypeFont(data, { family: options.family, ttcIndex: options.ttcIndex });
     fontCache.set(cacheKey, font);
     this.embeddedFonts.set(font.id, font);
     return font;
@@ -3077,6 +3604,7 @@ export class PdfEditableDocument {
    * @param info The document information metadata to merge.
    */
   updateInfo(info: DocumentInfo): void {
+    this._mutate();
     const current =
       this.updatedInfo ??
       normalizeDocumentInfo(
@@ -3100,9 +3628,13 @@ export class PdfEditableDocument {
    * @param metadata The XMP metadata input, or undefined to clear it.
    */
   setXmpMetadata(metadata: XmpMetadataInput | undefined): void {
+    this._mutate();
     this.updatedXmpMetadata = normalizeXmpMetadata(metadata);
     this.hasUpdatedXmpMetadata = true;
   }
+
+  /**
+   * Queues a form field value update by field name.
 
   /**
    * Queues a form field value update by field name.
@@ -3111,6 +3643,7 @@ export class PdfEditableDocument {
    * @param value The value to write or apply.
    */
   setFieldValue(name: string, value: string | boolean): void {
+    this._mutate();
     const match = resolveEditableFieldTarget(
       this.base,
       this.pageOrder,
@@ -3363,6 +3896,7 @@ export class PdfEditableDocument {
     target: PdfEditableStructureElement,
     role: Exclude<PdfStructureTag, "Artifact">,
   ): void {
+    this._mutate();
     if (!this.taggedBase) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_COMPLIANCE,
@@ -3406,6 +3940,7 @@ export class PdfEditableDocument {
     target: PdfEditableStructureElement,
     altText: string | undefined,
   ): void {
+    this._mutate();
     if (!this.taggedBase) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_COMPLIANCE,
@@ -3432,6 +3967,7 @@ export class PdfEditableDocument {
   setStructureReadingOrder(
     orderedChildren: readonly PdfEditableStructureElement[],
   ): void {
+    this._mutate();
     if (!this.taggedBase) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_COMPLIANCE,
@@ -3562,6 +4098,7 @@ export class PdfEditableDocument {
    * @param options Encryption options for the next save.
    */
   setEncryption(options: DocumentEncryptionOptions): void {
+    this._mutate();
     this._upgradeEncryption = normalizeDocumentEncryption(options);
   }
 
@@ -3571,6 +4108,7 @@ export class PdfEditableDocument {
    * @param options Signature options, including the CMS/PKCS#7 signer callback.
    */
   sign(options: DocumentSignatureOptions): void {
+    this._mutate();
     this.signature = options;
   }
 
@@ -3600,6 +4138,14 @@ export class PdfEditableDocument {
    * @param sink The sink that receives written byte chunks.
    */
   async writeTo(sink: ByteSink): Promise<void> {
+    if (this._writing) {
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_OPERATION,
+        "Another write is already in progress.",
+      );
+    }
+    this._writing = true;
+    try {
     if (this._finalized) {
       if (this.pageOrder.length !== this._finalizedPageCount) {
         throw new PdfEngineError(
@@ -3646,6 +4192,9 @@ export class PdfEditableDocument {
       return;
     }
     await serializeIncrementalUpdateToSink(this.toIncrementalModel(), sink);
+    } finally {
+      this._writing = false;
+    }
   }
 
   /**
@@ -3721,6 +4270,7 @@ export class PdfEditableDocument {
    * Queues flattening for all parsed form fields.
    */
   flattenForms(): void {
+    this._mutate();
     if (this.taggedBase || this.conformanceBase !== undefined) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_COMPLIANCE,
@@ -3850,6 +4400,28 @@ export class PdfEditableDocument {
       ...(this.signature ? { signature: this.signature } : {}),
       ...(this._upgradeEncryption ? { encryption: this._upgradeEncryption } : {}),
     };
+  }
+
+  /**
+   * Estimates the byte size needed for a detached-signature placeholder.
+   *
+   * @param certificateBytes Optional certificate bytes for size estimation.
+   *
+   * @returns The estimated placeholder size in bytes.
+   */
+  static estimateSignatureSize(certificateBytes?: Uint8Array | null): number {
+    return estimateSignatureSize(certificateBytes);
+  }
+
+  /**
+   * Serializes the incremental update and writes it to a file path.
+   *
+   * @param path The file path to write to.
+   */
+  async writeToFile(path: string): Promise<void> {
+    const { writeFile } = await import('node:fs/promises');
+    const bytes = this.toUint8Array();
+    await writeFile(path, bytes);
   }
 }
 
@@ -4289,6 +4861,7 @@ function buildComplianceCheckInput(
   accessibility: NormalizedDocumentAccessibility,
   hasEncryption: boolean,
   hasAttachments: boolean,
+  xmpMetadata?: string | undefined,
 ): ComplianceCheckInput {
   return {
     tagged: accessibility.tagged || hasTaggedPageContent(pages),
@@ -4299,6 +4872,7 @@ function buildComplianceCheckInput(
     usesBuiltInFonts: usesBuiltInFonts(pages),
     hasFigureWithoutAltText: hasTaggedFiguresWithoutAltText(pages),
     hasTransparency: hasTransparentImageContent(pages),
+    xmpMetadata,
   };
 }
 
@@ -4689,4 +5263,354 @@ function resolveExistingCheckBoxOnStateName(
 
   const onState = normalAppearance.find(([key]) => key !== "Off")?.[0];
   return onState;
+}
+
+function cloneOutlineModel(outline: InternalOutlineModel): InternalOutlineModel {
+  const children = outline.children.map((child) => cloneOutlineModel(child));
+  return {
+    title: outline.title,
+    target: outline.target,
+    options: outline.options,
+    children,
+  };
+}
+
+function remapOutlineTargets(
+  outlines: InternalOutlineModel[],
+  pageMap: Map<InternalPageModel, InternalPageModel>,
+): void {
+  for (const outline of outlines) {
+    if (outline.target.type === "page") {
+      const mapped = pageMap.get(outline.target.target);
+      if (mapped) {
+        (outline as { target: { type: "page"; target: InternalPageModel } }).target.target = mapped;
+      }
+    }
+    remapOutlineTargets(outline.children, pageMap);
+  }
+}
+
+function clonePageModel(
+  page: InternalPageModel,
+  embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>,
+): InternalPageModel {
+  const nodeMap = new Map<number, InternalStructureNode>();
+  const clonedRoots = page.structureRoots.map((root) =>
+    cloneStructureNode(root, nodeMap),
+  );
+
+  const cloned: InternalPageModel = {
+    size: { ...page.size },
+    ops: page.ops.map((op) => cloneOp(op)),
+    annotations: page.annotations.map((ann) => cloneAnnotation(ann)),
+    structureRoots: clonedRoots,
+    structureNodes: nodeMap,
+    graphicsDepth: page.graphicsDepth,
+    nextStructureGroupId: page.nextStructureGroupId,
+    ...(page.transparencyGroup !== undefined ? { transparencyGroup: { ...page.transparencyGroup } } : {}),
+    ...(page.tabOrder !== undefined ? { tabOrder: page.tabOrder } : {}),
+    ...(page.contentOverlay !== undefined ? { contentOverlay: { ...page.contentOverlay } } : {}),
+    ...(page.parentFieldKids !== undefined ? { parentFieldKids: new Map(page.parentFieldKids) } : {}),
+  };
+
+  return cloned;
+}
+
+function cloneStructureNode(
+  node: InternalStructureNode,
+  nodeMap: Map<number, InternalStructureNode>,
+): InternalStructureNode {
+  const children = node.children.map((child) =>
+    cloneStructureNode(child, nodeMap),
+  );
+  const clonedNode: InternalStructureNode = {
+    id: node.id,
+    role: node.role,
+    children,
+    annotationIndexes: [...node.annotationIndexes],
+    ...(node.altText !== undefined ? { altText: node.altText } : {}),
+    ...(node.actualText !== undefined ? { actualText: node.actualText } : {}),
+    ...(node.language !== undefined ? { language: node.language } : {}),
+    ...(node.attributes !== undefined ? { attributes: node.attributes } : {}),
+    ...(node.mathML !== undefined ? { mathML: node.mathML } : {}),
+    ...(node.artifactType !== undefined ? { artifactType: node.artifactType } : {}),
+    ...(node.associatedFiles !== undefined ? { associatedFiles: [...node.associatedFiles] } : {}),
+    ...(node.phoneme !== undefined ? { phoneme: node.phoneme } : {}),
+    ...(node.expansion !== undefined ? { expansion: node.expansion } : {}),
+    ...(node.summary !== undefined ? { summary: node.summary } : {}),
+  };
+  nodeMap.set(node.id, clonedNode);
+  return clonedNode;
+}
+
+function cloneAnnotation(
+  ann: InternalPageModel["annotations"][number],
+): InternalPageModel["annotations"][number] {
+  return JSON.parse(JSON.stringify(ann)) as InternalPageModel["annotations"][number];
+}
+
+function cloneOp(op: PdfOp): PdfOp {
+  return JSON.parse(JSON.stringify(op)) as PdfOp;
+}
+
+// --- Public-Key Encryption Helpers ---
+
+interface RsaPublicKey {
+  n: bigint;
+  e: bigint;
+}
+
+function generateRandom20ByteSeed(): Uint8Array {
+  const seed = new Uint8Array(20);
+  for (let i = 0; i < 20; i++) {
+    seed[i] = Math.floor(Math.random() * 256);
+  }
+  return seed;
+}
+
+function parseX509PublicKey(der: Uint8Array): RsaPublicKey | undefined {
+  try {
+    let offset = 0;
+
+    function readLength(): number {
+      const first = der[offset++]!;
+      if (first < 0x80) {
+        return first;
+      }
+      const numBytes = first & 0x7f;
+      let length = 0;
+      for (let i = 0; i < numBytes; i++) {
+        length = (length << 8) | der[offset++]!;
+      }
+      return length;
+    }
+
+    function readTag(expected: number): number {
+      if (der[offset] !== expected) {
+        throw new Error(`Expected tag 0x${expected.toString(16)}`);
+      }
+      offset++;
+      return readLength();
+    }
+
+    // Skip outer SEQUENCE of certificate
+    readTag(0x30);
+
+    // Skip tbsCertificate SEQUENCE
+    readTag(0x30);
+    // Skip version
+    const peek = der[offset];
+    if (peek === 0xA0) {
+      offset++;
+      readLength();
+    }
+    // Skip serialNumber INTEGER
+    readTag(0x02);
+    offset += (readLength()); // Reading it again - already read by readTag
+    // Actually need to track: readTag returns the length
+    
+    // Let me just scan for the public key within the SPKI structure
+    // Search for the OID 1.2.840.113549.1.1.1 (RSA) within the bit string
+    
+    // Simple approach: parse the SubjectPublicKeyInfo
+    // After the certificate, there's signatureAlgorithm, then signatureValue
+    
+    // Actually, let's use a simpler approach - find the BIT STRING containing the public key
+    // The public key is in SubjectPublicKeyInfo: SEQUENCE { AlgorithmIdentifier, BIT STRING }
+    
+    // Reset and do proper parsing
+    return parseSimpleSpki(der);
+  } catch {
+    return undefined;
+  }
+}
+
+function parseSimpleSpki(der: Uint8Array): RsaPublicKey | undefined {
+  // The RSA public key is stored in a SubjectPublicKeyInfo structure
+  // Search for the RSA OID (1.2.840.113549.1.1.1)
+  const rsaOid = Uint8Array.from([0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x01]);
+  
+  let oidIndex = -1;
+  for (let i = 0; i < der.length - rsaOid.length; i++) {
+    let match = true;
+    for (let j = 0; j < rsaOid.length; j++) {
+      if (der[i + j] !== rsaOid[j]) {
+        match = false;
+        break;
+      }
+    }
+    if (match) {
+      oidIndex = i;
+      break;
+    }
+  }
+  
+  if (oidIndex < 0) {
+    return undefined;
+  }
+  
+  // After the OID should be NULL (0x05 0x00), then BIT STRING (0x03) containing the RSAPublicKey SEQUENCE
+  // The BIT STRING tag follows: skip past OID + possible NULL
+  let pos = oidIndex + rsaOid.length;
+  if (der[pos] === 0x05 && der[pos + 1] === 0x00) {
+    pos += 2; // Skip NULL
+  }
+  
+  // Find BIT STRING tag (0x03)
+  while (pos < der.length && der[pos] !== 0x03) {
+    pos++;
+  }
+  
+  if (pos >= der.length || der[pos] !== 0x03) {
+    return undefined;
+  }
+  
+  pos++; // Skip tag
+  // Read BIT STRING length
+  let bitStringLen = der[pos++]!;
+  if (bitStringLen > 0x80) {
+    const numBytes = bitStringLen & 0x7f;
+    bitStringLen = 0;
+    for (let i = 0; i < numBytes; i++) {
+      bitStringLen = (bitStringLen << 8) | der[pos++]!;
+    }
+  }
+  
+  // Skip unused bits byte (should be 0)
+  const unusedBits = der[pos++]!;
+  bitStringLen--;
+  
+  // Now we're at the RSAPublicKey SEQUENCE
+  if (der[pos] !== 0x30) {
+    return undefined;
+  }
+  pos++; // Skip 0x30
+  // Read SEQUENCE length
+  let seqLen = der[pos++]!;
+  if (seqLen >= 0x80) {
+    const numBytes = seqLen & 0x7f;
+    seqLen = 0;
+    for (let i = 0; i < numBytes; i++) {
+      seqLen = (seqLen << 8) | der[pos++]!;
+    }
+  }
+  
+  // Read modulus INTEGER
+  if (der[pos] !== 0x02) {
+    return undefined;
+  }
+  pos++;
+  let modLen = der[pos++]!;
+  if (modLen >= 0x80) {
+    const numBytes = modLen & 0x7f;
+    modLen = 0;
+    for (let i = 0; i < numBytes; i++) {
+      modLen = (modLen << 8) | der[pos++]!;
+    }
+  }
+  
+  const n = bytesToBigInt(der.subarray(pos, pos + modLen));
+  pos += modLen;
+  
+  // Read exponent INTEGER
+  if (der[pos] !== 0x02) {
+    return undefined;
+  }
+  pos++;
+  let expLen = der[pos++]!;
+  if (expLen >= 0x80) {
+    const numBytes = expLen & 0x7f;
+    expLen = 0;
+    for (let i = 0; i < numBytes; i++) {
+      expLen = (expLen << 8) | der[pos++]!;
+    }
+  }
+  
+  const e = bytesToBigInt(der.subarray(pos, pos + expLen));
+  
+  return { n, e };
+}
+
+function bytesToBigInt(bytes: Uint8Array): bigint {
+  let result = 0n;
+  for (let i = 0; i < bytes.length; i++) {
+    result = (result << 8n) | BigInt(bytes[i]!);
+  }
+  return result;
+}
+
+function bigIntToBytes(value: bigint, length: number): Uint8Array {
+  const bytes = new Uint8Array(length);
+  let v = value;
+  for (let i = length - 1; i >= 0; i--) {
+    bytes[i] = Number(v & 0xFFn);
+    v >>= 8n;
+  }
+  return bytes;
+}
+
+function i2osp(value: bigint, length: number): Uint8Array {
+  if (value >= (1n << BigInt(length * 8))) {
+    throw new Error("Integer too large");
+  }
+  return bigIntToBytes(value, length);
+}
+
+function rsaPkcs1Encrypt(
+  message: Uint8Array,
+  n: bigint,
+  e: bigint,
+): Uint8Array {
+  const k = Math.ceil(n.toString(16).length / 2); // byte length of modulus
+  if (message.length > k - 11) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_ENCRYPTION,
+      "Message too long for RSA key size.",
+    );
+  }
+
+  // PKCS#1 v1.5 encoding: EM = 0x00 || 0x02 || PS || 0x00 || M
+  const psLen = k - message.length - 3;
+  const em = new Uint8Array(k);
+  em[0] = 0x00;
+  em[1] = 0x02;
+  for (let i = 2; i < 2 + psLen; i++) {
+    em[i] = Math.floor(Math.random() * 255) + 1;
+  }
+  em[2 + psLen] = 0x00;
+  em.set(message, 2 + psLen + 1);
+
+  // Compute c = EM^e mod n
+  const m = bytesToBigInt(em);
+  const c = modPow(m, e, n);
+  return i2osp(c, k);
+}
+
+function modPow(base: bigint, exp: bigint, mod: bigint): bigint {
+  if (mod === 1n) return 0n;
+  let result = 1n;
+  base = base % mod;
+  while (exp > 0n) {
+    if (exp & 1n) {
+      result = (result * base) % mod;
+    }
+    exp >>= 1n;
+    base = (base * base) % mod;
+  }
+  return result;
+}
+
+function buildRecipientsPdfArray(encryptedSeeds: Uint8Array[]): Uint8Array {
+  const totalLen = encryptedSeeds.reduce((sum, s) => sum + s.length, 0);
+  const result = new Uint8Array(totalLen + (encryptedSeeds.length - 1));
+  let offset = 0;
+  for (let i = 0; i < encryptedSeeds.length; i++) {
+    result.set(encryptedSeeds[i]!, offset);
+    offset += encryptedSeeds[i]!.length;
+    if (i < encryptedSeeds.length - 1) {
+      result[offset] = 0x0A; // line separator
+      offset++;
+    }
+  }
+  return result;
 }

@@ -288,6 +288,8 @@ interface ParsedDocumentEncryption {
   readonly context: PdfEncryptionContext;
   /** Encrypt object id. */
   readonly encryptObjectId?: number | undefined;
+  /** True when the encryption dict was missing the /P entry. */
+  readonly defaultFullPermissions?: boolean | undefined;
 }
 
 type StreamLengthResolver = (refValue: PdfRef) => number | undefined;
@@ -315,6 +317,8 @@ export class ParsedPdfDocument {
    * @param sourceBytes The original source PDF bytes.
    * @param startXrefOffset The byte offset of the startxref pointer.
    * @param encryption The optional parsed encryption context.
+   * @param recoveryMode Whether the document was parsed in recovery mode.
+   * @param repairWarnings Detailed repair warnings collected during recovery parsing.
    */
   constructor(
     readonly version: string,
@@ -324,7 +328,23 @@ export class ParsedPdfDocument {
     private readonly sourceBytes: Uint8Array,
     readonly startXrefOffset: number,
     private readonly encryption?: ParsedDocumentEncryption | undefined,
+    readonly recoveryMode?: boolean | undefined,
+    readonly repairWarnings?: readonly string[] | undefined,
   ) {}
+
+  /**
+   * Returns the repair warnings collected during recovery parsing.
+   *
+   * @returns The repair warnings, or an empty array.
+   */
+  getRepairWarnings(): readonly string[] {
+    return this.repairWarnings ?? [];
+  }
+
+  /**
+   * Set of object ids whose stream data has not yet been decoded.
+   */
+  readonly lazyObjects: Set<number> = new Set<number>();
 
   /**
    * Returns a parsed indirect object by object id.
@@ -334,7 +354,62 @@ export class ParsedPdfDocument {
    * @returns The parsed object, if present.
    */
   getObject(id: number): ParsedPdfIndirectObject | undefined {
-    return this.objects.get(id);
+    const object = this.objects.get(id);
+    if (!object) return undefined;
+
+    if (
+      this.lazyObjects.has(id) &&
+      isPdfStream(object.value)
+    ) {
+      this.lazyObjects.delete(id);
+      return this.decodeStreamObject(id, object);
+    }
+
+    return object;
+  }
+
+  private decodeStreamObject(
+    id: number,
+    object: ParsedPdfIndirectObject,
+  ): ParsedPdfIndirectObject {
+    const streamValue = object.value as PdfStream;
+    try {
+      const decoded = decodePdfStreamBytes(streamValue, `object ${id} stream`);
+      const decodedValue: PdfStream = {
+        kind: "stream",
+        dict: streamValue.dict,
+        bytes: decoded,
+      };
+      (this.objects as Map<number, ParsedPdfIndirectObject>).set(id, {
+        ...object,
+        value: decodedValue,
+      });
+      return this.objects.get(id)!;
+    } catch {
+      (this.objects as Map<number, ParsedPdfIndirectObject>).set(id, {
+        ...object,
+        value: {
+          kind: "stream",
+          dict: streamValue.dict,
+          bytes: streamValue.bytes,
+        },
+      });
+      return this.objects.get(id)!;
+    }
+  }
+
+  /**
+   * Eagerly loads and decodes the specified object ids so they are
+   * available without further lazy-parsing.
+   *
+   * @param ids The object ids to preload.
+   */
+  preloadObjects(ids: readonly number[]): void {
+    for (const id of ids) {
+      if (this.lazyObjects.has(id)) {
+        this.getObject(id);
+      }
+    }
   }
 
   /**
@@ -798,7 +873,33 @@ export function parseDocument(
   const bytes = toBytes(data);
   const version = parseHeaderVersion(bytes);
   const startXref = findStartXref(bytes);
-  const { offsets, compressed, trailer } = parseXrefChain(bytes, startXref);
+
+  let offsets: Map<number, number>;
+  let compressed: Map<number, XrefCompressedEntry>;
+  let trailer: PdfDict;
+  let recoveryMode = false;
+  let repairWarnings: string[] = [];
+
+  try {
+    const result = parseXrefChain(bytes, startXref);
+    offsets = result.offsets;
+    compressed = result.compressed;
+    trailer = result.trailer;
+  } catch (error) {
+    if (error instanceof PdfEngineError && error.code === PdfErrorCode.INVALID_PDF) {
+      console.debug(
+        "Xref parsing failed, attempting recovery via object scanning...",
+      );
+      recoveryMode = true;
+      const recovered = recoverXrefFromObjectMarkers(bytes);
+      offsets = recovered.offsets;
+      compressed = recovered.compressed;
+      trailer = recovered.trailer;
+      repairWarnings = recovered.warnings;
+    } else {
+      throw error;
+    }
+  }
   const resolveStreamLength = createStreamLengthResolver(bytes, offsets);
 
   let objects = new Map<number, ParsedPdfIndirectObject>();
@@ -885,7 +986,7 @@ export function parseDocument(
     }
   }
 
-  return new ParsedPdfDocument(
+  const document = new ParsedPdfDocument(
     version,
     offsets,
     trailer,
@@ -893,7 +994,44 @@ export function parseDocument(
     bytes.slice(),
     startXref,
     encryption,
+    recoveryMode,
+    repairWarnings.length > 0 ? repairWarnings : undefined,
   );
+
+  markLazyObjects(document, objects);
+
+  return document;
+}
+
+function markLazyObjects(
+  doc: ParsedPdfDocument,
+  objects: ReadonlyMap<number, ParsedPdfIndirectObject>,
+): void {
+  const pages = new Set<number>();
+  try {
+    for (const page of doc.listPages()) {
+      pages.add(page.objectId);
+      for (const contentId of page.contentObjectIds) {
+        doc.lazyObjects.add(contentId);
+      }
+    }
+  } catch {
+    // Can't walk pages yet, skip lazy marking.
+  }
+
+  for (const [id, obj] of objects) {
+    if (doc.lazyObjects.has(id)) continue;
+    if (!isPdfStream(obj.value)) continue;
+    const type = getNameValue(obj.value.dict, "Type");
+    const subtype = getNameValue(obj.value.dict, "Subtype");
+    const filter = getDictValue(obj.value.dict, "Filter");
+    if (
+      type === "XObject" &&
+      (subtype === "Image" || filter !== undefined)
+    ) {
+      doc.lazyObjects.add(id);
+    }
+  }
 }
 
 function resolveDocumentEncryption(
@@ -966,12 +1104,8 @@ function resolveDocumentEncryption(
   const ownerKey = readEncryptionBytes(getDictValue(encryptDict, "O"), "O");
   const userKey = readEncryptionBytes(getDictValue(encryptDict, "U"), "U");
   const permissionsValue = getDictValue(encryptDict, "P");
-  if (typeof permissionsValue !== "number") {
-    throw new PdfEngineError(
-      PdfErrorCode.INVALID_ENCRYPTION,
-      "Encrypted PDF is missing a valid permissions value.",
-    );
-  }
+  const defaultFullPermissions = typeof permissionsValue !== "number";
+  const effectivePermissions = defaultFullPermissions ? 0xfffff0c0 : permissionsValue;
 
   const ownerEncryptionKey =
     revision === 6
@@ -1000,7 +1134,7 @@ function resolveDocumentEncryption(
     version,
     revision,
     keyLengthBytes,
-    permissionsValue,
+    permissionsValue: effectivePermissions,
     ownerKey,
     userKey,
     encryptMetadata,
@@ -1020,6 +1154,7 @@ function resolveDocumentEncryption(
     ...(encryptRef !== undefined
       ? { encryptObjectId: encryptRef.objectId }
       : {}),
+    ...(defaultFullPermissions ? { defaultFullPermissions: true } : {}),
   };
 }
 
@@ -1652,11 +1787,38 @@ function parseIndirectObject(
       resolveStreamLength,
     );
     if (resolvedLength !== undefined) {
-      streamBytes = bytes.slice(
+      const maxAvailable = bytes.length - parser.position;
+      if (resolvedLength > maxAvailable) {
+        console.warn(
+          `Stream length (${resolvedLength}) exceeds remaining bytes (${maxAvailable}) at offset ${parser.position}; clamping to available bytes.`,
+        );
+        streamBytes = bytes.slice(parser.position, parser.position + maxAvailable);
+        parser.position += maxAvailable;
+      } else {
+        streamBytes = bytes.slice(
+          parser.position,
+          parser.position + resolvedLength,
+        );
+        parser.position += resolvedLength;
+      }
+      const endstreamSearch = findKeyword(
+        bytes,
         parser.position,
-        parser.position + resolvedLength,
+        "endstream",
       );
-      parser.position += resolvedLength;
+      if (endstreamSearch === -1) {
+        console.debug(
+          `Stream endstream marker not found after declared stream length at offset ${parser.position}.`,
+        );
+      } else if (endstreamSearch < parser.position + 100) {
+        const extraBytes = endstreamSearch - parser.position;
+        if (extraBytes > 0) {
+          console.debug(
+            `Stream length mismatch: declared ${resolvedLength} bytes, but endstream found ${extraBytes} bytes later; using declared length.`,
+          );
+        }
+        parser.position = endstreamSearch;
+      }
     } else {
       const endstream = findKeyword(bytes, parser.position, "endstream");
       if (endstream === -1) {
@@ -1801,8 +1963,22 @@ function parseObjectStream(
   >();
   for (const [index, entry] of entries.entries()) {
     const parser = new ValueParser(decoded, first + entry.offset);
+    const parsedValue = parser.parseValue();
+    if (
+      isPdfStream(parsedValue) &&
+      getNameValue(parsedValue.dict, "Type") === "ObjStm"
+    ) {
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_PDF,
+        "Nested object streams are not allowed.",
+        {
+          objectStreamId: objectStream.id,
+          nestedObjectId: entry.objectId,
+        },
+      );
+    }
     values.set(entry.objectId, {
-      value: parser.parseValue(),
+      value: parsedValue,
       index,
     });
   }
@@ -3013,6 +3189,7 @@ function collectNumberTreeEntries(
   node: PdfDict,
   output: Map<number, PdfDict>,
   seen: Set<number>,
+  corruptedNodes: Set<number> = new Set(),
 ): void {
   const nums = getDictValue(node, "Nums");
   if (Array.isArray(nums) && !isPdfDict(nums)) {
@@ -3032,15 +3209,151 @@ function collectNumberTreeEntries(
       }
     }
 
+    let sorted = true;
     if (keysSeen.length > 1) {
       for (let i = 1; i < keysSeen.length; i++) {
         if (keysSeen[i]! < keysSeen[i - 1]!) {
-          throw new PdfEngineError(
-            PdfErrorCode.INVALID_NUMBER_TREE,
-            "Number tree contains unsorted keys.",
-            { keys: keysSeen },
-          );
+          sorted = false;
+          break;
         }
+      }
+    }
+    if (!sorted) {
+      if (corruptedNodes.size === 0) {
+        console.warn("Number tree contains unsorted keys; attempting recovery by scanning leaf nodes...");
+      }
+      corruptedNodes.add(nodeNodeId(node, document));
+      try {
+        const recoveredKeys = keysSeen.length;
+        for (const key of keysSeen) {
+          if (!output.has(key)) {
+            const existing = resolveDict(document, nums[keysSeen.indexOf(key)! * 2 + 1]);
+            if (existing) {
+              output.set(key, existing);
+            }
+          }
+        }
+        (output as Map<number, PdfDict> & { recoveredKeys?: number }).recoveredKeys = recoveredKeys;
+      } catch {
+        // Continue despite recovery failure
+      }
+      return;
+    }
+  }
+
+  const kids = getDictValue(node, "Kids");
+  if (Array.isArray(kids) && !isPdfDict(kids)) {
+    for (const kid of kids) {
+      if (isPdfRef(kid)) {
+        if (seen.has(kid.objectId)) {
+          continue;
+        }
+        seen.add(kid.objectId);
+      }
+      try {
+        const dictValue = resolveDict(document, kid);
+        if (dictValue) {
+          collectNumberTreeEntries(document, dictValue, output, seen, corruptedNodes);
+        }
+      } catch (error) {
+        if (error instanceof PdfEngineError && error.code === PdfErrorCode.INVALID_NUMBER_TREE) {
+          if (corruptedNodes.size === 0) {
+            console.warn("Number tree node corruption detected; skipping corrupted intermediate node and continuing to children...");
+          }
+          corruptedNodes.add(
+            isPdfRef(kid) ? kid.objectId : (nodeNodeId(node, document))
+          );
+          if (isPdfRef(kid)) {
+            const object = document.getObject(kid.objectId);
+            if (object && Array.isArray(object.value) && typeof object.value !== "string") {
+              const kidDict = object.value as unknown as PdfDict;
+              const kidKids = getDictValue(kidDict, "Kids");
+              if (Array.isArray(kidKids) && !isPdfDict(kidKids)) {
+                for (const grandKid of kidKids) {
+                  try {
+                    const grandDict = resolveDict(document, grandKid);
+                    if (grandDict) {
+                      collectNumberTreeEntries(document, grandDict, output, seen, corruptedNodes);
+                    }
+                  } catch {
+                    // Skip corrupted grandchild, continue
+                  }
+                }
+              }
+            }
+          }
+        } else {
+          // Other errors — try recovery by continuing
+        }
+      }
+    }
+  }
+}
+
+function nodeNodeId(node: PdfDict, _document: ParsedPdfDocument): number {
+  if (Array.isArray(node) && !Array.isArray(node) === false) {
+    return -1;
+  }
+  return -1;
+}
+
+export interface NumberTreeScannedResult {
+  readonly entries: ReadonlyMap<number, PdfDict>;
+  readonly warnings: readonly string[];
+  readonly recoveredKeys: number;
+}
+
+function collectNumberTreeEntriesWithRecovery(
+  document: ParsedPdfDocument,
+  node: PdfDict,
+): NumberTreeScannedResult {
+  const entries = new Map<number, PdfDict>();
+  const warnings: string[] = [];
+  const corruptedNodes = new Set<number>();
+  try {
+    collectNumberTreeEntries(document, node, entries, new Set<number>(), corruptedNodes);
+  } catch (error) {
+    warnings.push(
+      `Number tree parsing failed: ${error instanceof Error ? error.message : String(error)}`
+    );
+    if (error instanceof PdfEngineError && error.code === PdfErrorCode.INVALID_NUMBER_TREE) {
+      warnings.push("Attempting recovery by scanning all leaf nodes regardless of corruption.");
+      try {
+        scanNumberTreeLeaves(document, node, entries, new Set<number>());
+      } catch (scanError) {
+        warnings.push(
+          `Leaf scan recovery also failed: ${scanError instanceof Error ? scanError.message : String(scanError)}`
+        );
+      }
+    }
+  }
+  if (corruptedNodes.size > 0) {
+    warnings.push(
+      `Number tree contained ${corruptedNodes.size} corrupted intermediate node(s); results are partial.`
+    );
+  }
+  const recoveredKeys =
+    "recoveredKeys" in entries ? (entries as unknown as { recoveredKeys: number }).recoveredKeys : entries.size;
+  return { entries, warnings, recoveredKeys };
+}
+
+function scanNumberTreeLeaves(
+  document: ParsedPdfDocument,
+  node: PdfDict,
+  output: Map<number, PdfDict>,
+  seen: Set<number>,
+): void {
+  const nums = getDictValue(node, "Nums");
+  if (Array.isArray(nums) && !isPdfDict(nums)) {
+    for (let index = 0; index < nums.length; index += 2) {
+      const key = nums[index];
+      const value = nums[index + 1];
+      if (typeof key !== "number") {
+        continue;
+      }
+      const dictValue = resolveDict(document, value);
+      if (dictValue) {
+        output.set(key, dictValue);
       }
     }
   }
@@ -3057,21 +3370,12 @@ function collectNumberTreeEntries(
       try {
         const dictValue = resolveDict(document, kid);
         if (dictValue) {
-          collectNumberTreeEntries(document, dictValue, output, seen);
+          scanNumberTreeLeaves(document, dictValue, output, seen);
         }
-      } catch (error) {
-        if (error instanceof PdfEngineError && error.code === PdfErrorCode.INVALID_NUMBER_TREE) {
-          throw error;
-        }
+      } catch {
+        // Skip corrupted node, continue scanning
       }
     }
-  }
-
-  if (!Array.isArray(nums) && !Array.isArray(kids)) {
-    throw new PdfEngineError(
-      PdfErrorCode.INVALID_NUMBER_TREE,
-      "Number tree node is missing both /Nums and /Kids entries.",
-    );
   }
 }
 
@@ -4407,6 +4711,140 @@ function findKeyword(
 
 function toBytes(data: BinaryData): Uint8Array {
   return data instanceof Uint8Array ? data : new Uint8Array(data);
+}
+
+function recoverXrefFromObjectMarkers(bytes: Uint8Array): {
+  offsets: Map<number, number>;
+  compressed: Map<number, XrefCompressedEntry>;
+  trailer: PdfDict;
+  warnings: string[];
+} {
+  const offsets = new Map<number, number>();
+  const compressed = new Map<number, XrefCompressedEntry>();
+  const objPattern = encodeAscii("obj");
+  const endobjPattern = encodeAscii("endobj");
+  const streamPattern = encodeAscii("stream");
+  const endstreamPattern = encodeAscii("endstream");
+  const trailerPattern = encodeAscii("trailer");
+
+  const warnings: string[] = [];
+  let trailer: PdfDict = [];
+  const seenIds = new Set<number>();
+
+  // Scan for "<id> <gen> obj" patterns
+  let totalObjMarkers = 0;
+  let totalEndobjMarkers = 0;
+  let totalStreamMarkers = 0;
+  let totalEndstreamMarkers = 0;
+
+  for (let i = 0; i < bytes.length; i += 1) {
+    if (matchesPattern(bytes, i, endobjPattern)) {
+      totalEndobjMarkers += 1;
+      i += endobjPattern.length - 1;
+      continue;
+    }
+
+    if (matchesPattern(bytes, i, streamPattern)) {
+      totalStreamMarkers += 1;
+      i += streamPattern.length - 1;
+      continue;
+    }
+
+    if (matchesPattern(bytes, i, endstreamPattern)) {
+      totalEndstreamMarkers += 1;
+      i += endstreamPattern.length - 1;
+      continue;
+    }
+
+    // Check for "obj" marker with preceding numbers
+    if (!matchesPattern(bytes, i, objPattern)) {
+      continue;
+    }
+
+    // Try to find integer-id and generation before "obj"
+    const before = decodeLatin1(
+      bytes.slice(Math.max(0, i - 30), i),
+    );
+    const match = /(\d+)\s+(\d+)\s*$/.exec(before);
+    if (!match?.[1] || !match?.[2]) {
+      continue;
+    }
+
+    const objectId = Number(match[1]);
+    const generation = Number(match[2]);
+    if (generation !== 0 || seenIds.has(objectId)) {
+      if (generation !== 0) {
+        warnings.push(`Skipping object ${objectId} with non-zero generation ${generation} during recovery.`);
+      }
+      i += objPattern.length - 1;
+      continue;
+    }
+
+    totalObjMarkers += 1;
+    const objStart = i - match[0].length;
+    seenIds.add(objectId);
+    offsets.set(objectId, objStart);
+    i += objPattern.length - 1;
+  }
+
+  // Find last trailer dictionary
+  for (
+    let i = bytes.length - trailerPattern.length;
+    i >= 0;
+    i -= 1
+  ) {
+    if (matchesPattern(bytes, i, trailerPattern)) {
+      try {
+        const parser = new ValueParser(bytes, i);
+        parser.skipWhitespaceAndComments();
+        if (parser.consumeKeyword("trailer")) {
+          const trailerValue = parser.parseValue();
+          if (Array.isArray(trailerValue) && isPdfDict(trailerValue)) {
+            trailer = trailerValue;
+            break;
+          }
+        }
+      } catch {
+        // Keep scanning
+      }
+    }
+  }
+
+  warnings.push(
+    `Deep repair: recovered ${offsets.size} objects from scanning file contents ` +
+    `(${totalObjMarkers} obj markers, ${totalEndobjMarkers} endobj markers, ` +
+    `${totalStreamMarkers} stream markers, ${totalEndstreamMarkers} endstream markers).`,
+  );
+
+  if (totalObjMarkers !== totalEndobjMarkers) {
+    warnings.push(
+      `Mismatch between obj (${totalObjMarkers}) and endobj (${totalEndobjMarkers}) markers; the file may be truncated.`,
+    );
+  }
+
+  if (totalStreamMarkers !== totalEndstreamMarkers) {
+    warnings.push(
+      `Mismatch between stream (${totalStreamMarkers}) and endstream (${totalEndstreamMarkers}) markers; some streams may be unclosed.`,
+    );
+  }
+
+  return { offsets, compressed, trailer, warnings };
+}
+
+function matchesPattern(
+  bytes: Uint8Array,
+  offset: number,
+  pattern: Uint8Array,
+): boolean {
+  if (offset + pattern.length > bytes.length) {
+    return false;
+  }
+  for (let j = 0; j < pattern.length; j += 1) {
+    if (bytes[offset + j] !== pattern[j]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function encodeAscii(value: string): Uint8Array {

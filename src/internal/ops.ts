@@ -1,4 +1,4 @@
-import type { BmpImageOptions, ExtGStateOptions, JpegImageOptions, PathCommand, PathStyle, PdfColor, PdfFigureStructureTag, PdfFont, PdfStructureOptions, PdfStructureTag, PngImageOptions, Transform } from "../types.js";
+import type { BmpImageOptions, ExtGStateOptions, Jbig2ImageOptions, JpegImageOptions, Jp2ImageOptions, PathCommand, PathStyle, PdfColor, PdfFigureStructureTag, PdfFont, PdfStructureOptions, PdfStructureTag, PngImageOptions, TiffImageOptions, Transform } from "../types.js";
 import type { EmbeddedImageAsset } from "./image.js";
 
 export interface EmbeddedTextGlyph {
@@ -40,7 +40,11 @@ export interface NormalizedPathStyle {
   } | undefined;
 }
 
-export interface NormalizedImageOptions extends JpegImageOptions, PngImageOptions, BmpImageOptions {
+export interface NormalizedImageOptions {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
   altText?: string | undefined;
   tag?: PdfFigureStructureTag | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;

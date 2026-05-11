@@ -1,6 +1,6 @@
 import { PdfEngineError, PdfErrorCode } from "../errors.js";
 import type { BinaryData, PdfEmbeddedFont } from "../types.js";
-import { parseCffTable, type ParsedCffFont } from "./cff.js";
+import { parseCffTable, parseCff2Table, type ParsedCffFont } from "./cff.js";
 
 export interface ParsedTrueTypeFont extends PdfEmbeddedFont {
   readonly bytes: Uint8Array;
@@ -20,6 +20,9 @@ export interface ParsedTrueTypeFont extends PdfEmbeddedFont {
   readonly ligatures: ReadonlyMap<number, readonly TrueTypeLigatureSubstitution[]>;
   readonly joiningForms: TrueTypeJoiningForms;
   readonly isCff: boolean;
+  readonly hasDevanagariFeatures: boolean;
+  readonly hasKhmerFeatures: boolean;
+  readonly hasMyanmarFeatures: boolean;
   readonly cffData?: ParsedCffFont | undefined;
 }
 
@@ -39,8 +42,21 @@ export interface TrueTypeJoiningForms {
   readonly final: ReadonlyMap<number, number>;
 }
 
-export function parseTrueTypeFont(data: BinaryData, family?: string): ParsedTrueTypeFont {
+export interface ParseTrueTypeFontOptions {
+  family?: string | undefined;
+  ttcIndex?: number | undefined;
+}
+
+export function parseTrueTypeFont(data: BinaryData, options?: ParseTrueTypeFontOptions): ParsedTrueTypeFont {
   const bytes = toBytes(data);
+  const family = options?.family;
+  const ttcIndex = options?.ttcIndex ?? 0;
+
+  // Handle TrueType Collection (.ttc)
+  if (readTag(bytes, 0) === "ttcf") {
+    return parseTtc(bytes, family, ttcIndex);
+  }
+
   const versionTag = readTag(bytes, 0);
   const isOpenType = versionTag === "OTTO";
   if (versionTag !== "\u0000\u0001\u0000\u0000" && versionTag !== "true" && !isOpenType) {
@@ -78,6 +94,8 @@ export function parseTrueTypeFont(data: BinaryData, family?: string): ParsedTrue
   let cffData: ParsedCffFont | undefined;
   if (cffTable) {
     cffData = parseCffTable(bytes, cffTable.offset, cffTable.length);
+  } else if (cff2Table) {
+    cffData = parseCff2Table(bytes, cff2Table.offset, cff2Table.length);
   }
 
   const unitsPerEm = readUint16(bytes, head.offset + 18);
@@ -100,6 +118,9 @@ export function parseTrueTypeFont(data: BinaryData, family?: string): ParsedTrue
   const kerningPairs = kernTable ? parseKerningPairs(bytes, kernTable.offset, kernTable.length) : new Map<number, number>();
   const ligatures = gsubTable ? parseLigatureSubstitutions(bytes, gsubTable.offset, gsubTable.length) : new Map<number, readonly TrueTypeLigatureSubstitution[]>();
   const joiningForms = gsubTable ? parseJoiningForms(bytes, gsubTable.offset, gsubTable.length) : createEmptyJoiningForms();
+  const hasDevanagariFeatures = gsubTable ? checkDevanagariGsubFeatures(bytes, gsubTable.offset, gsubTable.length) : false;
+  const hasKhmerFeatures = gsubTable ? checkKhmerGsubFeatures(bytes, gsubTable.offset, gsubTable.length) : false;
+  const hasMyanmarFeatures = gsubTable ? checkMyanmarGsubFeatures(bytes, gsubTable.offset, gsubTable.length) : false;
 
   return {
     kind: "embedded-font",
@@ -121,6 +142,9 @@ export function parseTrueTypeFont(data: BinaryData, family?: string): ParsedTrue
     kerningPairs,
     ligatures,
     joiningForms,
+    hasDevanagariFeatures,
+    hasKhmerFeatures,
+    hasMyanmarFeatures,
     isCff,
     ...(cffData !== undefined ? { cffData } : {})
   };
@@ -624,6 +648,81 @@ function createEmptyJoiningForms(): TrueTypeJoiningForms {
   };
 }
 
+function checkDevanagariGsubFeatures(bytes: Uint8Array, offset: number, length: number): boolean {
+  if (length < 10) {
+    return false;
+  }
+
+  const majorVersion = readUint16(bytes, offset);
+  if (majorVersion !== 1) {
+    return false;
+  }
+
+  const featureListOffset = readUint16(bytes, offset + 6);
+  const featureListPosition = offset + featureListOffset;
+  const featureCount = readUint16(bytes, featureListPosition);
+  const devaFeatures = new Set(["akhn", "rphf", "blwf", "half", "pstf", "vatu"]);
+
+  for (let i = 0; i < featureCount; i += 1) {
+    const tag = readTag(bytes, featureListPosition + 2 + i * 6);
+    if (devaFeatures.has(tag)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function checkKhmerGsubFeatures(bytes: Uint8Array, offset: number, length: number): boolean {
+  if (length < 10) {
+    return false;
+  }
+
+  const majorVersion = readUint16(bytes, offset);
+  if (majorVersion !== 1) {
+    return false;
+  }
+
+  const featureListOffset = readUint16(bytes, offset + 6);
+  const featureListPosition = offset + featureListOffset;
+  const featureCount = readUint16(bytes, featureListPosition);
+  const khmerFeatures = new Set(["blwf", "abvf", "pres", "blws", "abvs"]);
+
+  for (let i = 0; i < featureCount; i += 1) {
+    const tag = readTag(bytes, featureListPosition + 2 + i * 6);
+    if (khmerFeatures.has(tag)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function checkMyanmarGsubFeatures(bytes: Uint8Array, offset: number, length: number): boolean {
+  if (length < 10) {
+    return false;
+  }
+
+  const majorVersion = readUint16(bytes, offset);
+  if (majorVersion !== 1) {
+    return false;
+  }
+
+  const featureListOffset = readUint16(bytes, offset + 6);
+  const featureListPosition = offset + featureListOffset;
+  const featureCount = readUint16(bytes, featureListPosition);
+  const myanmarFeatures = new Set(["blwf", "abvf", "pres", "blws", "abvs", "pstf", "rphf"]);
+
+  for (let i = 0; i < featureCount; i += 1) {
+    const tag = readTag(bytes, featureListPosition + 2 + i * 6);
+    if (myanmarFeatures.has(tag)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function requireTable(tables: Map<string, { offset: number; length: number }>, tag: string): { offset: number; length: number } {
   const table = tables.get(tag);
   if (!table) {
@@ -634,6 +733,39 @@ function requireTable(tables: Map<string, { offset: number; length: number }>, t
 
 function toBytes(data: BinaryData): Uint8Array {
   return data instanceof Uint8Array ? data.slice() : new Uint8Array(data.slice(0));
+}
+
+function parseTtc(bytes: Uint8Array, family?: string, ttcIndex = 0): ParsedTrueTypeFont {
+  const version = readUint32(bytes, 4);
+  const fontCount = readUint32(bytes, 8);
+
+  if (fontCount === 0) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_FONT,
+      "TrueType Collection contains no fonts."
+    );
+  }
+
+  if (ttcIndex >= fontCount) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_FONT,
+      `TrueType Collection index ${ttcIndex} is out of bounds (${fontCount} fonts available).`
+    );
+  }
+
+  const offsetOffset = 12 + ttcIndex * 4;
+  const fontOffset = readUint32(bytes, offsetOffset);
+
+  if (fontOffset >= bytes.length) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_FONT,
+      `TrueType Collection font offset ${fontOffset} is out of bounds.`
+    );
+  }
+
+  // Extract the single font and process as normal
+  const fontBytes = bytes.slice(fontOffset);
+  return parseTrueTypeFont(fontBytes, { family });
 }
 
 function readTag(bytes: Uint8Array, offset: number): string {

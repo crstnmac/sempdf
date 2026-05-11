@@ -1,5 +1,5 @@
 import { PdfEngineError, PdfErrorCode } from "../errors.js";
-import type { AttachmentOptions, BmpImageOptions, BuiltInPageSize, CheckBoxOptions, ChoiceFieldMode, ChoiceFieldOptions, CustomPageSize, DocumentConformanceProfile, DocumentEncryptionAlgorithm, DocumentEncryptionOptions, DocumentInfo, DocumentPermissions, ExtGStateOptions, FillStyle, FontName, FreeTextAnnotationOptions, HighlightAnnotationOptions, JpegImageOptions, LineCap, LineJoin, ListItem, ListOptions, NoteAnnotationOptions, OutlineOptions, PageLabelOptions, PageLabelStyle, PageLinkOptions, PageSize, PathCommand, PathStyle, PdfColor, PdfComplianceIssue, PdfContainerTag, PdfFigureStructureTag, PdfFont, PdfRoleMap, PdfStandardStructureTag, PdfStructureAttributeValue, PdfStructureOptions, PdfStructureTag, PdfTextStructureTag, PngImageOptions, PushButtonOptions, RadioGroupOptions, SignatureFieldOptions, StrokeStyle, TableCell, TableHeaderScope, TableOptions, TextAlign, TextBlockOptions, TextDirection, TextFieldOptions, TextOptions, Transform, UriLinkOptions, XmpMetadataInput } from "../types.js";
+import type { AttachmentOptions, BmpImageOptions, BuiltInPageSize, CheckBoxOptions, ChoiceFieldMode, ChoiceFieldOptions, CustomPageSize, DocumentConformanceProfile, DocumentEncryptionAlgorithm, DocumentEncryptionOptions, DocumentInfo, DocumentPermissions, ExtGStateOptions, FieldActions, FillStyle, FontName, FreeTextAnnotationOptions, HighlightAnnotationOptions, JpegImageOptions, LineCap, LineJoin, ListItem, ListOptions, NoteAnnotationOptions, OutlineOptions, PageLabelOptions, PageLabelStyle, PageLinkOptions, PageSize, PathCommand, PathStyle, PdfColor, PdfComplianceIssue, PdfContainerTag, PdfFigureStructureTag, PdfFont, PdfRoleMap, PdfStandardStructureTag, PdfStructureAttributeValue, PdfStructureOptions, PdfStructureTag, PdfTextStructureTag, PngImageOptions, PushButtonOptions, RadioGroupOptions, SignatureFieldOptions, StrokeStyle, TableCell, TableHeaderScope, TableOptions, TextAlign, TextBlockOptions, TextDirection, TextFieldOptions, TextOptions, Transform, UriLinkOptions, XmpMetadataInput } from "../types.js";
 import { PAGE_SIZES, gray } from "../types.js";
 import type { NormalizedImageOptions, NormalizedPathStyle, NormalizedTextOptions } from "./ops.js";
 import { buildXmpMetadataPacket } from "./xmp.js";
@@ -69,6 +69,7 @@ export interface ComplianceCheckInput {
   hasFigureWithoutAltText: boolean;
   hasTransparency: boolean;
   hasAttachments: boolean;
+  xmpMetadata?: string | undefined;
 }
 
 export interface NormalizedAttachmentOptions {
@@ -99,6 +100,7 @@ export interface NormalizedTextBaseOptions extends NormalizedTextOptions {
   fallbackFonts: PdfFont[];
   direction: TextDirection;
   writingMode?: "horizontal" | "vertical" | undefined;
+  tateChuYoko?: boolean | undefined;
 }
 
 export interface NormalizedUriLinkOptions {
@@ -166,10 +168,13 @@ export interface NormalizedTextFieldOptions {
   color: PdfColor;
   borderWidth: number;
   value?: string | undefined;
+  richValue?: string | undefined;
   readOnly: boolean;
   required: boolean;
   multiline: boolean;
+  encrypt: boolean;
   appearance?: NormalizedFieldAppearance | undefined;
+  actions?: FieldActions | undefined;
   tag?: "Annot" | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;
 }
@@ -180,6 +185,7 @@ export interface NormalizedTextBlockOptions extends NormalizedTextBaseOptions {
   align: TextAlign;
   maxLines?: number | undefined;
   writingMode?: "horizontal" | "vertical" | undefined;
+  tateChuYoko?: boolean | undefined;
 }
 
 export interface NormalizedListItem {
@@ -221,6 +227,7 @@ export interface NormalizedTableOptions extends NormalizedTextBaseOptions {
   lineHeight: number;
   align: TextAlign;
   structure?: PdfStructureOptions | undefined;
+  summary?: string | undefined;
 }
 
 export interface NormalizedCheckBoxOptions {
@@ -232,7 +239,9 @@ export interface NormalizedCheckBoxOptions {
   checked: boolean;
   readOnly: boolean;
   required: boolean;
+  encrypt: boolean;
   appearance?: NormalizedFieldAppearance | undefined;
+  actions?: FieldActions | undefined;
   tag?: "Annot" | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;
 }
@@ -251,7 +260,10 @@ export interface NormalizedChoiceFieldOptions {
   readOnly: boolean;
   required: boolean;
   mode: ChoiceFieldMode;
+  editable: boolean;
+  encrypt: boolean;
   appearance?: NormalizedFieldAppearance | undefined;
+  actions?: FieldActions | undefined;
   tag?: "Annot" | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;
 }
@@ -270,7 +282,9 @@ export interface NormalizedRadioGroupOptions {
   borderWidth: number;
   readOnly: boolean;
   required: boolean;
+  encrypt: boolean;
   appearance?: NormalizedFieldAppearance | undefined;
+  actions?: FieldActions | undefined;
   tag?: "Annot" | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;
 }
@@ -286,7 +300,9 @@ export interface NormalizedPushButtonOptions {
   color: PdfColor;
   borderWidth: number;
   readOnly: boolean;
+  encrypt: boolean;
   appearance?: NormalizedFieldAppearance | undefined;
+  actions?: FieldActions | undefined;
   tag?: "Annot" | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;
 }
@@ -299,7 +315,9 @@ export interface NormalizedSignatureFieldOptions {
   borderWidth: number;
   readOnly: boolean;
   required: boolean;
+  encrypt: boolean;
   appearance?: NormalizedFieldAppearance | undefined;
+  actions?: FieldActions | undefined;
   tag?: "Annot" | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;
 }
@@ -515,7 +533,9 @@ export function normalizeStructureOptions(options: PdfStructureOptions | undefin
           ...(options.boundingBox !== undefined ? { BBox: options.boundingBox } : {})
         }) }
       : {}),
-    ...(options.mathML !== undefined ? { mathML: options.mathML } : {})
+    ...(options.mathML !== undefined ? { mathML: options.mathML } : {}),
+    ...(options.phoneme !== undefined ? { phoneme: normalizeOptionalStructureText(options.phoneme, "phoneme") } : {}),
+    ...(options.expansion !== undefined ? { expansion: normalizeOptionalStructureText(options.expansion, "expansion") } : {})
   };
   return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
@@ -735,6 +755,45 @@ export function collectComplianceIssues(input: ComplianceCheckInput): PdfComplia
     }
   }
 
+  // PDF/A-4 specific XMP extension schema validation
+  if (profile === "pdfa-4") {
+    const hasXmp = input.xmpMetadata !== undefined;
+    if (!hasXmp) {
+      issues.push({
+        code: "PDFA4_XMP_REQUIRED",
+        severity: "warning",
+        message: "PDF/A-4 output should include XMP metadata with pdfaid:part=4 and pdfaid:conformance declarations."
+      });
+    }
+    if (hasXmp) {
+      const xmp = typeof input.xmpMetadata === "string" ? input.xmpMetadata : "";
+      const hasPdfaidPart = /pdfaid:part>\s*4\s*</.test(xmp);
+      const hasPdfaidConf = /pdfaid:conformance>\s*[AB]\s*</.test(xmp);
+      if (!hasPdfaidPart) {
+        issues.push({
+          code: "PDFA4_PART_MISSING",
+          severity: "warning",
+          message: "PDF/A-4 XMP metadata is missing pdfaid:part=4 declaration."
+        });
+      }
+      if (!hasPdfaidConf) {
+        issues.push({
+          code: "PDFA4_CONFORMANCE_MISSING",
+          severity: "warning",
+          message: "PDF/A-4 XMP metadata is missing pdfaid:conformance declaration."
+        });
+      }
+      const hasPdfaExtensionSchemas = /pdfaExtension:schemas/.test(xmp);
+      if (!hasPdfaExtensionSchemas) {
+        issues.push({
+          code: "PDFA4_EXTENSION_SCHEMAS_MISSING",
+          severity: "warning",
+          message: "PDF/A-4 output may require pdfaExtension:schemas for custom XMP extension metadata."
+        });
+      }
+    }
+  }
+
   if (isPdfua) {
     if (!input.tagged) {
       issues.push({
@@ -847,7 +906,8 @@ export function normalizeTextBaseOptions(options: TextOptions | TextBlockOptions
     ...(options.tag !== undefined ? { tag: normalizeTextStructureTag(options.tag) } : {}),
     ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {}),
     ...(encoding !== undefined ? { encoding } : {}),
-    ...(('artifactType' in options && options.artifactType !== undefined) ? { artifactType: options.artifactType } : {})
+    ...(('artifactType' in options && options.artifactType !== undefined) ? { artifactType: options.artifactType } : {}),
+    tateChuYoko: options.writingMode === "vertical" ? true : undefined,
   };
 
   const characterSpacing = normalizeOptionalNumber(options.characterSpacing, "characterSpacing");
@@ -1031,7 +1091,8 @@ export function normalizeTableOptions(rows: readonly NormalizedTableRow[], optio
     rowGap,
     lineHeight,
     align: options.align ?? "left",
-    ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
+    ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {}),
+    ...(options.summary !== undefined ? { summary: options.summary } : {})
   };
 }
 
@@ -1204,9 +1265,12 @@ export function normalizeTextFieldOptions(fieldName: string, options: TextFieldO
     color: normalizeColor(options.color ?? DEFAULT_COLOR),
     borderWidth,
     ...(options.value !== undefined ? { value: options.value } : {}),
+    ...(options.richValue !== undefined ? { richValue: options.richValue } : {}),
     readOnly: options.readOnly ?? false,
     required: options.required ?? false,
     multiline: options.multiline ?? false,
+    encrypt: options.encrypt ?? true,
+    ...(options.actions !== undefined ? { actions: options.actions } : {}),
     ...(options.appearance !== undefined ? { appearance: normalizeFieldAppearance(options.appearance) } : {}),
     ...(options.tag !== undefined ? { tag: normalizeAnnotationStructureTag(options.tag) } : {}),
     ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
@@ -1248,6 +1312,8 @@ export function normalizeCheckBoxOptions(fieldName: string, options: CheckBoxOpt
     checked: options.checked ?? false,
     readOnly: options.readOnly ?? false,
     required: options.required ?? false,
+    encrypt: options.encrypt ?? true,
+    ...(options.actions !== undefined ? { actions: options.actions } : {}),
     ...(options.appearance !== undefined ? { appearance: normalizeFieldAppearance(options.appearance) } : {}),
     ...(options.tag !== undefined ? { tag: normalizeAnnotationStructureTag(options.tag) } : {}),
     ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
@@ -1317,6 +1383,9 @@ export function normalizeChoiceFieldOptions(fieldName: string, options: ChoiceFi
     readOnly: options.readOnly ?? false,
     required: options.required ?? false,
     mode: options.mode ?? "combo",
+    editable: options.editable ?? false,
+    encrypt: options.encrypt ?? true,
+    ...(options.actions !== undefined ? { actions: options.actions } : {}),
     ...(options.appearance !== undefined ? { appearance: normalizeFieldAppearance(options.appearance) } : {}),
     ...(options.tag !== undefined ? { tag: normalizeAnnotationStructureTag(options.tag) } : {}),
     ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
@@ -1387,6 +1456,8 @@ export function normalizeRadioGroupOptions(fieldName: string, options: RadioGrou
     borderWidth,
     readOnly: options.readOnly ?? false,
     required: options.required ?? false,
+    encrypt: options.encrypt ?? true,
+    ...(options.actions !== undefined ? { actions: options.actions } : {}),
     ...(options.appearance !== undefined ? { appearance: normalizeFieldAppearance(options.appearance) } : {}),
     ...(options.tag !== undefined ? { tag: normalizeAnnotationStructureTag(options.tag) } : {}),
     ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
@@ -1427,6 +1498,8 @@ export function normalizePushButtonOptions(fieldName: string, options: PushButto
     color: normalizeColor(options.color ?? DEFAULT_COLOR),
     borderWidth,
     readOnly: options.readOnly ?? false,
+    encrypt: options.encrypt ?? true,
+    ...(options.actions !== undefined ? { actions: options.actions } : {}),
     ...(options.appearance !== undefined ? { appearance: normalizeFieldAppearance(options.appearance) } : {}),
     ...(options.tag !== undefined ? { tag: normalizeAnnotationStructureTag(options.tag) } : {}),
     ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
@@ -1453,6 +1526,8 @@ export function normalizeSignatureFieldOptions(fieldName: string, options: Signa
     borderWidth,
     readOnly: options.readOnly ?? false,
     required: options.required ?? false,
+    encrypt: options.encrypt ?? true,
+    ...(options.actions !== undefined ? { actions: options.actions } : {}),
     ...(options.appearance !== undefined ? { appearance: normalizeFieldAppearance(options.appearance) } : {}),
     ...(options.tag !== undefined ? { tag: normalizeAnnotationStructureTag(options.tag) } : {}),
     ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
@@ -1566,13 +1641,22 @@ export function validateExtGStateOptions(options: ExtGStateOptions): void {
   }
 }
 
-export function normalizeImageOptions(options: JpegImageOptions | PngImageOptions | BmpImageOptions): NormalizedImageOptions {
+export function normalizeImageOptions(options: JpegImageOptions | PngImageOptions | BmpImageOptions | import("../types.js").Jbig2ImageOptions | import("../types.js").TiffImageOptions | import("../types.js").Jp2ImageOptions | {
+  x: number;
+  y: number;
+  width?: number | undefined;
+  height?: number | undefined;
+  altText?: string | undefined;
+  tag?: import("../types.js").PdfFigureStructureTag | "Artifact" | undefined;
+  structure?: import("../types.js").PdfStructureOptions | undefined;
+}): NormalizedImageOptions {
   assertFinite(options.x, "x");
   assertFinite(options.y, "y");
-  assertFinite(options.width, "width");
-  assertFinite(options.height, "height");
 
-  if (options.width <= 0 || options.height <= 0) {
+  if (options.width !== undefined) assertFinite(options.width, "width");
+  if (options.height !== undefined) assertFinite(options.height, "height");
+
+  if ((options.width ?? 0) <= 0 || (options.height ?? 0) <= 0) {
     throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Image placement width and height must be greater than zero.", {
       options
     });
@@ -1581,8 +1665,8 @@ export function normalizeImageOptions(options: JpegImageOptions | PngImageOption
   return {
     x: options.x,
     y: options.y,
-    width: options.width,
-    height: options.height,
+    width: options.width ?? 0,
+    height: options.height ?? 0,
     ...("altText" in options && typeof options.altText === "string" && options.altText.trim().length > 0
       ? { altText: options.altText.trim() }
       : {}),

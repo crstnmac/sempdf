@@ -2,12 +2,22 @@ import { PdfEngineError, PdfErrorCode } from "../errors.js";
 import type { BinaryData } from "../types.js";
 import type { EmbeddedBmpAsset } from "./bmp.js";
 import { parseBmp, buildEmbeddedBmpAsset } from "./bmp.js";
+import type { EmbeddedJbig2Asset } from "./jbig2.js";
+import { parseJbig2 } from "./jbig2.js";
 import type { EmbeddedJpegAsset } from "./jpeg.js";
 import { parseJpeg } from "./jpeg.js";
 import type { EmbeddedPngAsset } from "./png.js";
 import { parsePng } from "./png.js";
+import type { EmbeddedTiffAsset } from "./tiff.js";
+import { parseTiff } from "./tiff.js";
+import type { EmbeddedJp2Asset } from "./jpeg2000.js";
+import { parseJp2 } from "./jpeg2000.js";
+import type { EmbeddedGifAsset } from "./gif.js";
+import { parseGif } from "./gif.js";
+import type { EmbeddedWebpAsset } from "./webp.js";
+import { parseWebp } from "./webp.js";
 
-export type EmbeddedImageAsset = EmbeddedJpegAsset | EmbeddedPngAsset | EmbeddedBmpAsset;
+export type EmbeddedImageAsset = EmbeddedJpegAsset | EmbeddedPngAsset | EmbeddedBmpAsset | EmbeddedJbig2Asset | EmbeddedTiffAsset | EmbeddedJp2Asset | EmbeddedGifAsset | EmbeddedWebpAsset;
 
 function toUint8Array(data: BinaryData): Uint8Array {
   if (data instanceof Uint8Array) return data;
@@ -25,7 +35,7 @@ function hashBytes(data: Uint8Array): string {
 
 const imageCache = new Map<string, EmbeddedImageAsset>();
 
-export function parseImage(format: "jpeg" | "png" | "bmp", data: BinaryData, iccProfile?: BinaryData): EmbeddedImageAsset {
+export function parseImage(format: "jpeg" | "png" | "bmp" | "jbig2" | "tiff" | "jp2" | "webp" | "gif", data: BinaryData, iccProfile?: BinaryData): EmbeddedImageAsset {
   try {
     const dataBytes = toUint8Array(data);
     const profileBytes = iccProfile ? toUint8Array(iccProfile) : null;
@@ -58,6 +68,80 @@ export function parseImage(format: "jpeg" | "png" | "bmp", data: BinaryData, icc
       const asset = buildEmbeddedBmpAsset(result, iccProfile);
       imageCache.set(cacheKey, asset);
       return asset;
+    }
+
+    if (format === "jbig2") {
+      const asset = parseJbig2(data);
+      imageCache.set(cacheKey, asset);
+      return asset;
+    }
+
+    if (format === "tiff") {
+      const asset = parseTiff(data);
+      let result: EmbeddedImageAsset;
+      if (iccProfile === undefined) {
+        result = asset;
+      } else {
+        const iccDigest = simpleDigest(profileBytes!);
+        result = {
+          ...asset,
+          key: `${asset.key}#icc:${iccDigest}`,
+          iccProfile: { bytes: profileBytes!, channels: asset.channels }
+        } as EmbeddedImageAsset;
+      }
+      imageCache.set(cacheKey, result);
+      return result;
+    }
+
+    if (format === "jp2") {
+      const asset = parseJp2(data);
+      let result: EmbeddedImageAsset;
+      if (iccProfile === undefined) {
+        result = asset;
+      } else {
+        const iccDigest = simpleDigest(profileBytes!);
+        result = {
+          ...asset,
+          key: `${asset.key}#icc:${iccDigest}`,
+          iccProfile: { bytes: profileBytes!, channels: asset.channels }
+        } as EmbeddedImageAsset;
+      }
+      imageCache.set(cacheKey, result);
+      return result;
+    }
+
+    if (format === "webp") {
+      const asset = parseWebp(data);
+      let result: EmbeddedImageAsset;
+      if (iccProfile === undefined) {
+        result = asset;
+      } else {
+        const iccDigest = simpleDigest(profileBytes!);
+        result = {
+          ...asset,
+          key: `${asset.key}#icc:${iccDigest}`,
+          iccProfile: { bytes: profileBytes!, channels: 3 }
+        } as EmbeddedImageAsset;
+      }
+      imageCache.set(cacheKey, result);
+      return result;
+    }
+
+    if (format === "gif") {
+      const asset = parseGif(data);
+      let result: EmbeddedImageAsset;
+      if (iccProfile === undefined) {
+        result = asset;
+      } else {
+        const iccDigest = simpleDigest(profileBytes!);
+        result = {
+          ...asset,
+          key: `${asset.key}#icc:${iccDigest}`,
+          iccProfile: { bytes: profileBytes!, channels: 3 }
+        } as EmbeddedImageAsset;
+      }
+      imageCache.set(cacheKey, result);
+      return result;
     }
 
     const asset = parsePng(data);

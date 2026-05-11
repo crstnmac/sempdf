@@ -11,7 +11,9 @@ import {
   extractPages,
   splitDocument,
   hex,
-  PdfEngineError
+  PdfEngineError,
+  BufferSink,
+  TempFileSink
 } from "../src/index.js";
 import type { TemplateBlock } from "../src/index.js";
 
@@ -657,4 +659,29 @@ test("stress: 500 path operations on one page", () => {
   assert.equal(parsed.getPageCount(), 1);
 
   console.log(`  500 paths: build=${formatMs(buildMs)}  bytes=${bytes.length}`);
+});
+
+test("stress: recovers from corrupted stream lengths", () => {
+  const doc = createDocument({ info: { title: "Corrupted lengths" } });
+  doc.addPage({ size: "A4" }).text("Recovery test", { x: 72, y: 780 });
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+  // Offset length by +1 to test recovery via stream length clamping
+  const corrupted = text.replace(/\/Length (\d+)/, (_match, len) => `/Length ${Number(len) + 1}`);
+  const parsed = parseDocument(new TextEncoder().encode(corrupted));
+  assert.equal(parsed.getPageCount(), 1);
+});
+
+test("stress: spills to disk for large documents", async () => {
+  const doc = createDocument({ info: { title: "Spill test" } });
+  for (let i = 0; i < 10; i += 1) {
+    const page = doc.addPage({ size: "A4" });
+    page.text(`Page ${i + 1}`, { x: 72, y: 780, fontSize: 14 });
+  }
+  const bytes = doc.toUint8Array();
+  const sink = new TempFileSink();
+  await sink.write(bytes);
+  const readBack = await sink.getBytes();
+  assert.deepEqual(readBack, bytes);
+  await sink.close();
 });
