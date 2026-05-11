@@ -21,153 +21,160 @@ export interface EmbeddedPngAsset {
 
 export function parsePng(data: BinaryData): EmbeddedPngAsset {
   const bytes = cloneBinaryData(data);
-  if (!hasPngSignature(bytes)) {
-    throw new PdfEngineError(PdfErrorCode.UNSUPPORTED_IMAGE_FORMAT, "Only PNG image data is supported.", {
-      signature: Array.from(bytes.slice(0, 8))
-    });
-  }
-
-  let offset = PNG_SIGNATURE.length;
-  let width: number | undefined;
-  let height: number | undefined;
-  let bitDepth: number | undefined;
-  let channels: 1 | 3 | undefined;
-  let colorSpace: "DeviceGray" | "DeviceRGB" | undefined;
-  let sampleChannels: 1 | 2 | 3 | 4 | undefined;
-  let mask: readonly number[] | undefined;
-  let colorType: number | undefined;
-  const idatChunks: Uint8Array[] = [];
-
-  while (offset < bytes.length) {
-    const length = readUint32(bytes, offset);
-    const type = readChunkType(bytes, offset + 4);
-    const dataStart = offset + 8;
-    const dataEnd = dataStart + length;
-    const crcEnd = dataEnd + 4;
-
-    if (crcEnd > bytes.length) {
-      throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "PNG chunk extends beyond the end of the file.", {
-        type,
-        offset,
-        length
+  try {
+    if (!hasPngSignature(bytes)) {
+      throw new PdfEngineError(PdfErrorCode.UNSUPPORTED_IMAGE_FORMAT, "Only PNG image data is supported.", {
+        signature: Array.from(bytes.slice(0, 8))
       });
     }
 
-    const chunkBytes = bytes.slice(dataStart, dataEnd);
-    if (type === "IHDR") {
-      if (length !== 13) {
-        throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "PNG IHDR chunk must be 13 bytes long.");
-      }
+    let offset = PNG_SIGNATURE.length;
+    let width: number | undefined;
+    let height: number | undefined;
+    let bitDepth: number | undefined;
+    let channels: 1 | 3 | undefined;
+    let colorSpace: "DeviceGray" | "DeviceRGB" | undefined;
+    let sampleChannels: 1 | 2 | 3 | 4 | undefined;
+    let mask: readonly number[] | undefined;
+    let colorType: number | undefined;
+    const idatChunks: Uint8Array[] = [];
 
-      width = readUint32(chunkBytes, 0);
-      height = readUint32(chunkBytes, 4);
-      bitDepth = chunkBytes[8];
-      colorType = chunkBytes[9];
-      const compression = chunkBytes[10];
-      const filter = chunkBytes[11];
-      const interlace = chunkBytes[12];
+    while (offset < bytes.length) {
+      const length = readUint32(bytes, offset);
+      const type = readChunkType(bytes, offset + 4);
+      const dataStart = offset + 8;
+      const dataEnd = dataStart + length;
+      const crcEnd = dataEnd + 4;
 
-      if (bitDepth !== 8) {
-        throw new PdfEngineError(PdfErrorCode.UNSUPPORTED_IMAGE_BIT_DEPTH, "Only 8-bit PNG images are supported.", {
-          bitDepth
+      if (crcEnd > bytes.length) {
+        throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "PNG chunk extends beyond the end of the file.", {
+          type,
+          offset,
+          length
         });
       }
 
-      if (colorType === 0) {
-        sampleChannels = 1;
-        channels = 1;
-        colorSpace = "DeviceGray";
-      } else if (colorType === 2) {
-        sampleChannels = 3;
-        channels = 3;
-        colorSpace = "DeviceRGB";
-      } else if (colorType === 4) {
-        sampleChannels = 2;
-        channels = 1;
-        colorSpace = "DeviceGray";
-      } else if (colorType === 6) {
-        sampleChannels = 4;
-        channels = 3;
-        colorSpace = "DeviceRGB";
-      } else {
-        throw new PdfEngineError(PdfErrorCode.UNSUPPORTED_IMAGE_COLOR_SPACE, "Only grayscale and RGB PNG images are supported, with optional alpha channels.", {
-          colorType
-        });
+      const chunkBytes = bytes.slice(dataStart, dataEnd);
+      if (type === "IHDR") {
+        if (length !== 13) {
+          throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "PNG IHDR chunk must be 13 bytes long.");
+        }
+
+        width = readUint32(chunkBytes, 0);
+        height = readUint32(chunkBytes, 4);
+        bitDepth = chunkBytes[8];
+        colorType = chunkBytes[9];
+        const compression = chunkBytes[10];
+        const filter = chunkBytes[11];
+        const interlace = chunkBytes[12];
+
+        if (bitDepth !== 8) {
+          throw new PdfEngineError(PdfErrorCode.UNSUPPORTED_IMAGE_BIT_DEPTH, "Only 8-bit PNG images are supported.", {
+            bitDepth
+          });
+        }
+
+        if (colorType === 0) {
+          sampleChannels = 1;
+          channels = 1;
+          colorSpace = "DeviceGray";
+        } else if (colorType === 2) {
+          sampleChannels = 3;
+          channels = 3;
+          colorSpace = "DeviceRGB";
+        } else if (colorType === 4) {
+          sampleChannels = 2;
+          channels = 1;
+          colorSpace = "DeviceGray";
+        } else if (colorType === 6) {
+          sampleChannels = 4;
+          channels = 3;
+          colorSpace = "DeviceRGB";
+        } else {
+          throw new PdfEngineError(PdfErrorCode.UNSUPPORTED_IMAGE_COLOR_SPACE, "Only grayscale and RGB PNG images are supported, with optional alpha channels.", {
+            colorType
+          });
+        }
+
+        if (compression !== 0 || filter !== 0) {
+          throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Unsupported PNG compression or filter method.", {
+            compression,
+            filter
+          });
+        }
+
+        if (interlace !== 0) {
+          throw new PdfEngineError(PdfErrorCode.UNSUPPORTED_IMAGE_INTERLACE, "Interlaced PNG images are not supported.", {
+            interlace
+          });
+        }
+      } else if (type === "IDAT") {
+        idatChunks.push(chunkBytes);
+      } else if (type === "tRNS") {
+        if (bitDepth === undefined || colorType === undefined) {
+          throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "PNG tRNS chunk must appear after IHDR.");
+        }
+
+        mask = parseTransparencyMask(chunkBytes, colorType, bitDepth);
+      } else if (type === "IEND") {
+        break;
       }
 
-      if (compression !== 0 || filter !== 0) {
-        throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Unsupported PNG compression or filter method.", {
-          compression,
-          filter
-        });
-      }
-
-      if (interlace !== 0) {
-        throw new PdfEngineError(PdfErrorCode.UNSUPPORTED_IMAGE_INTERLACE, "Interlaced PNG images are not supported.", {
-          interlace
-        });
-      }
-    } else if (type === "IDAT") {
-      idatChunks.push(chunkBytes);
-    } else if (type === "tRNS") {
-      if (bitDepth === undefined || colorType === undefined) {
-        throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "PNG tRNS chunk must appear after IHDR.");
-      }
-
-      mask = parseTransparencyMask(chunkBytes, colorType, bitDepth);
-    } else if (type === "IEND") {
-      break;
+      offset = crcEnd;
     }
 
-    offset = crcEnd;
-  }
+    if (
+      width === undefined ||
+      height === undefined ||
+      bitDepth === undefined ||
+      channels === undefined ||
+      colorSpace === undefined ||
+      sampleChannels === undefined
+    ) {
+      throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "PNG file is missing an IHDR header.");
+    }
 
-  if (
-    width === undefined ||
-    height === undefined ||
-    bitDepth === undefined ||
-    channels === undefined ||
-    colorSpace === undefined ||
-    sampleChannels === undefined
-  ) {
-    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "PNG file is missing an IHDR header.");
-  }
+    if (idatChunks.length === 0) {
+      throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "PNG file is missing IDAT data.");
+    }
 
-  if (idatChunks.length === 0) {
-    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "PNG file is missing IDAT data.");
-  }
+    const imageBytes = concatBytes(idatChunks);
+    if (sampleChannels === 2 || sampleChannels === 4) {
+      const rawScanlines = inflateZlib(imageBytes);
+      const pixels = unfilterPngScanlines(rawScanlines, width, height, sampleChannels);
+      const { colorBytes, alphaBytes } = splitAlphaChannel(pixels, width, height, channels, sampleChannels);
+      return {
+        kind: "png",
+        key: buildPngKey(bytes, width, height, sampleChannels),
+        bytes: colorBytes,
+        pixelWidth: width,
+        pixelHeight: height,
+        bitsPerComponent: bitDepth,
+        colorSpace,
+        channels,
+        decodeMode: "rawSamples",
+        alphaBytes
+      };
+    }
 
-  const imageBytes = concatBytes(idatChunks);
-  if (sampleChannels === 2 || sampleChannels === 4) {
-    const rawScanlines = inflateZlib(imageBytes);
-    const pixels = unfilterPngScanlines(rawScanlines, width, height, sampleChannels);
-    const { colorBytes, alphaBytes } = splitAlphaChannel(pixels, width, height, channels, sampleChannels);
     return {
       kind: "png",
       key: buildPngKey(bytes, width, height, sampleChannels),
-      bytes: colorBytes,
+      bytes: imageBytes,
       pixelWidth: width,
       pixelHeight: height,
       bitsPerComponent: bitDepth,
       colorSpace,
       channels,
-      decodeMode: "rawSamples",
-      alphaBytes
+      decodeMode: "pngPredictor",
+      mask
     };
+  } catch (error) {
+    if (error instanceof PdfEngineError) {
+      throw error;
+    }
+    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Failed to parse PNG image data.", { cause: error });
   }
-
-  return {
-    kind: "png",
-    key: buildPngKey(bytes, width, height, sampleChannels),
-    bytes: imageBytes,
-    pixelWidth: width,
-    pixelHeight: height,
-    bitsPerComponent: bitDepth,
-    colorSpace,
-    channels,
-    decodeMode: "pngPredictor",
-    mask
-  };
 }
 
 function cloneBinaryData(data: BinaryData): Uint8Array {
