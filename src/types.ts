@@ -1,6 +1,8 @@
 /**
  * Names of the built-in PDF base fonts supported without embedding a font file.
  */
+import { PdfEngineError, PdfErrorCode } from "./errors.js";
+
 export type FontName =
   | "Courier"
   | "Courier-Bold"
@@ -367,7 +369,12 @@ export interface DocumentOptions {
   compress?: boolean | undefined;
   /** Whether to emit compressed object streams and xref streams. */
   objectStreams?: boolean | undefined;
-  /** Whether to emit a linearization dictionary for Fast Web View style delivery. */
+  /**
+   * Whether to emit a linearization dictionary for Fast Web View style delivery.
+   *
+   * @experimental — limited to single-page unencrypted documents. Not compatible
+   * with object streams, encryption, or detached signatures.
+   */
   linearize?: boolean | undefined;
   /** ICC output intent required by color-managed profiles such as PDF/A. */
   outputIntent?: DocumentOutputIntentOptions | undefined;
@@ -440,7 +447,25 @@ export interface PageTransparencyGroupOptions {
 }
 
 /**
- * Binary input accepted by the library, such as Uint8Array, ArrayBuffer, Buffer, or Blob-like data.
+ * Binary input accepted by the library.
+ *
+ * Accepted types:
+ * - `Uint8Array`
+ * - `ArrayBuffer`
+ *
+ * Node.js `Buffer` (which extends `Uint8Array`) works directly. Browser `Blob`
+ * values must be converted first:
+ *
+ * @example
+ * ```ts
+ * // Node.js Buffer — works directly
+ * import { readFileSync } from "node:fs";
+ * const fontBytes: BinaryData = readFileSync("font.ttf"); // Buffer extends Uint8Array
+ *
+ * // Browser Blob — convert first
+ * const blob = await fetch("image.png").then(r => r.blob());
+ * const imageBytes: BinaryData = await blob.arrayBuffer();
+ * ```
  */
 export type BinaryData = Uint8Array | ArrayBuffer;
 
@@ -1756,7 +1781,7 @@ export function separation(name: string, tint: number, alternate: ProcessColor):
  */
 export function deviceN(names: readonly string[], tints: readonly number[], alternate: ProcessColor): DeviceNColor {
   if (names.length !== tints.length || names.length === 0) {
-    throw new Error("deviceN requires equal-length, non-empty names and tints arrays.");
+    throw new PdfEngineError(PdfErrorCode.INVALID_COLOR, "deviceN requires equal-length, non-empty names and tints arrays.");
   }
   return { kind: "deviceN", names: [...names], tints: [...tints], alternate };
 }
@@ -1778,7 +1803,7 @@ export function hex(value: string): RgbColor {
           .join("")
       : trimmed;
   if (!/^[0-9a-fA-F]{6}$/.test(expanded)) {
-    throw new Error(`Invalid hex color: "${value}". Expected #RGB or #RRGGBB.`);
+    throw new PdfEngineError(PdfErrorCode.INVALID_COLOR, `Invalid hex color: "${value}". Expected #RGB or #RRGGBB.`);
   }
   const intValue = Number.parseInt(expanded, 16);
   return {

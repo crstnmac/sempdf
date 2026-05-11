@@ -1960,5 +1960,5 @@ function normalizeDate(value: Date | string | undefined): string | undefined {
 }
 
 function assertNever(value: never): never {
-  throw new Error(`Unhandled path command: ${JSON.stringify(value)}`);
+  throw new PdfEngineError(PdfErrorCode.INVALID_COMPLIANCE, `Unhandled path command: ${JSON.stringify(value)}`);
 }

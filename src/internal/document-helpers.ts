@@ -1,4 +1,5 @@
 import type { BinaryData } from "../types.js";
+import { PdfEngineError, PdfErrorCode } from "../errors.js";
 
 export function sumNumbers(values: readonly number[]): number {
   return values.reduce((sum, value) => sum + value, 0);
@@ -43,7 +44,7 @@ export function isPdfDictEntries(value: unknown): value is Array<[string, unknow
 }
 
 export function assertNever(value: never): never {
-  throw new Error(`Unhandled document branch: ${JSON.stringify(value)}`);
+  throw new PdfEngineError(PdfErrorCode.UNREACHABLE, `Unhandled document branch: ${JSON.stringify(value)}`);
 }
 
 export function toBytes(data: BinaryData): Uint8Array {

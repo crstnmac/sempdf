@@ -601,7 +601,7 @@ function writePdf(
 
 function writeObjectValue(writer: ByteWriter, value: PdfValue): void {
   if (isPdfLazyStream(value)) {
-    throw new Error("Lazy PDF streams require sink serialization.");
+    throw new PdfEngineError(PdfErrorCode.INTERNAL_ERROR, "Lazy PDF streams require sink serialization.");
   }
 
   if (isPdfStream(value)) {

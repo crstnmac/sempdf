@@ -5,7 +5,7 @@ Zero-dependency PDF generation engine written in TypeScript.
 ## Features
 
 - Pure `Uint8Array` PDF writer
-- PDF 1.4 output with classic xref tables
+- PDF 1.4 output (with optional PDF 1.5 object streams, PDF 2.0 encryption, and PDF/UA-1 tagged PDF) with classic xref tables and xref streams
 - Text rendering with standard 14 fonts
 - Wrapped and aligned text blocks
 - Embedded TrueType fonts with Unicode text, common GSUB ligatures, and kerning-aware `TJ` serialization
@@ -97,6 +97,13 @@ await doc.writeTo(new NodeStreamSink(createWriteStream("hello.pdf")));
 const memorySink = new BufferSink();
 await doc.writeTo(memorySink);
 const memoryBytes = memorySink.collect();
+```
+
+For browser environments, use `toArrayBuffer()` or `toBlob()`:
+
+```ts
+const arrayBuffer = doc.toArrayBuffer();
+const blob = doc.toBlob("application/pdf");
 ```
 
 ```ts
