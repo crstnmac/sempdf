@@ -162,9 +162,13 @@ export interface InternalPageModel {
   graphicsDepth: number;
   nextStructureGroupId: number;
   transparencyGroup?: PageTransparencyGroupOptions | undefined;
+  tabOrder?: "R" | "C" | "S" | undefined;
+  contentOverlay?: { mode: "replace" | "append" | "prepend"; content: string } | undefined;
+  /** Hierarchical form field parent-child tracking. Maps parent field name to array of child field names. */
+  parentFieldKids?: Map<string, string[]> | undefined;
 }
 
-export function createPageModel(size: PageSize, transparencyGroup?: PageTransparencyGroupOptions): InternalPageModel {
+export function createPageModel(size: PageSize, transparencyGroup?: PageTransparencyGroupOptions, tabOrder?: "R" | "C" | "S"): InternalPageModel {
   return {
     size: resolvePageSize(size),
     ops: [],
@@ -173,7 +177,8 @@ export function createPageModel(size: PageSize, transparencyGroup?: PageTranspar
     structureNodes: new Map(),
     graphicsDepth: 0,
     nextStructureGroupId: 0,
-    ...(transparencyGroup === undefined ? {} : { transparencyGroup })
+    ...(transparencyGroup === undefined ? {} : { transparencyGroup }),
+    ...(tabOrder === undefined ? {} : { tabOrder })
   };
 }
 

@@ -1,4 +1,4 @@
-import type { ExtGStateOptions, JpegImageOptions, PathCommand, PathStyle, PdfColor, PdfFigureStructureTag, PdfFont, PdfStructureOptions, PdfStructureTag, PngImageOptions, Transform } from "../types.js";
+import type { BmpImageOptions, ExtGStateOptions, JpegImageOptions, PathCommand, PathStyle, PdfColor, PdfFigureStructureTag, PdfFont, PdfStructureOptions, PdfStructureTag, PngImageOptions, Transform } from "../types.js";
 import type { EmbeddedImageAsset } from "./image.js";
 
 export interface EmbeddedTextGlyph {
@@ -38,7 +38,7 @@ export interface NormalizedPathStyle {
   } | undefined;
 }
 
-export interface NormalizedImageOptions extends JpegImageOptions, PngImageOptions {
+export interface NormalizedImageOptions extends JpegImageOptions, PngImageOptions, BmpImageOptions {
   altText?: string | undefined;
   tag?: PdfFigureStructureTag | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;
@@ -52,4 +52,5 @@ export type PdfOp =
   | { type: "text"; text: string; options: NormalizedTextOptions; glyphs?: readonly EmbeddedTextGlyph[] | undefined }
   | { type: "path"; commands: PathCommand[]; style: NormalizedPathStyle }
   | { type: "image"; image: EmbeddedImageAsset; options: NormalizedImageOptions }
-  | { type: "extGState"; options: ExtGStateOptions };
+  | { type: "extGState"; options: ExtGStateOptions }
+  | { type: "raw"; content: string };

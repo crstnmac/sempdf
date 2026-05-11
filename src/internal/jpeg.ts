@@ -8,7 +8,7 @@ export interface EmbeddedJpegAsset {
   readonly pixelWidth: number;
   readonly pixelHeight: number;
   readonly bitsPerComponent: number;
-  readonly colorSpace: "DeviceGray" | "DeviceRGB";
+  readonly colorSpace: "DeviceGray" | "DeviceRGB" | "DeviceCMYK";
   readonly iccProfile?: { readonly bytes: Uint8Array; readonly channels: number } | undefined;
 }
 
@@ -63,11 +63,17 @@ export function parseJpeg(data: BinaryData): EmbeddedJpegAsset {
           throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "JPEG frame header is truncated.");
         }
 
-        if (componentCount !== 1 && componentCount !== 3) {
-          throw new PdfEngineError(PdfErrorCode.UNSUPPORTED_IMAGE_COLOR_SPACE, "Only grayscale and RGB JPEG images are supported.", {
+        if (componentCount !== 1 && componentCount !== 3 && componentCount !== 4) {
+          throw new PdfEngineError(PdfErrorCode.UNSUPPORTED_IMAGE_COLOR_SPACE, "Only grayscale, RGB, and CMYK JPEG images are supported.", {
             componentCount
           });
         }
+
+        const colorSpace = componentCount === 1
+          ? "DeviceGray" as const
+          : componentCount === 4
+            ? "DeviceCMYK" as const
+            : "DeviceRGB" as const;
 
         return {
           kind: "jpeg",
@@ -76,7 +82,7 @@ export function parseJpeg(data: BinaryData): EmbeddedJpegAsset {
           pixelWidth,
           pixelHeight,
           bitsPerComponent,
-          colorSpace: componentCount === 1 ? "DeviceGray" : "DeviceRGB"
+          colorSpace
         };
       }
 

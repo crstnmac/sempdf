@@ -228,7 +228,7 @@ test("rejects unsupported PNG color modes and interlace settings", () => {
 
   assert.throws(
     () => page.png(palettePng, { x: 24, y: 24, width: 50, height: 50 }),
-    (error: unknown) => error instanceof PdfEngineError && error.code === PdfErrorCode.UNSUPPORTED_IMAGE_COLOR_SPACE
+    (error: unknown) => error instanceof PdfEngineError && error.code === PdfErrorCode.INVALID_IMAGE
   );
 
   assert.throws(
@@ -321,4 +321,89 @@ test("identical PNG bytes with different iccProfiles produce distinct image XObj
   const text = new TextDecoder().decode(doc.toUint8Array());
   assert.equal((text.match(/\/Subtype \/Image/g) ?? []).length, 2);
   assert.equal((text.match(/\/ColorSpace \[\/ICCBased \d+ 0 R\]/g) ?? []).length, 2);
+});
+
+function tinyBmpBytes(): Uint8Array {
+  const width = 2, height = 2, bpp = 24;
+  const rowSize = Math.floor((width * bpp / 8 + 3) / 4) * 4;
+  const pixelDataSize = rowSize * height;
+  const fileSize = 54 + pixelDataSize;
+  const buf = new Uint8Array(fileSize);
+  const view = new DataView(buf.buffer);
+  buf[0] = 0x42; buf[1] = 0x4D;
+  view.setUint32(2, fileSize, true);
+  view.setUint32(10, 54, true);
+  view.setUint32(14, 40, true);
+  view.setInt32(18, width, true);
+  view.setInt32(22, height, true);
+  view.setUint16(26, 1, true);
+  view.setUint16(28, bpp, true);
+  const pixels = new Uint8Array([
+    255,0,0, 0,255,0, 0,0,255, 255,255,0,
+    255,255,255, 128,128,128, 0,0,0, 64,64,64,
+  ]);
+  for (let y = 0; y < height; y++) {
+    const srcRow = y * width * 3;
+    const dstRow = (height - 1 - y) * rowSize;
+    buf.set(pixels.slice(srcRow, srcRow + width * 3), 54 + dstRow);
+  }
+  return buf;
+}
+
+function indexedPngBytes(): Uint8Array {
+  const signature = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+  const ihdrData = new Uint8Array([0,0,0,2, 0,0,0,2, 8, 3, 0, 0, 0]);
+  const ihdr = pngChunk("IHDR", ihdrData);
+  const plteData = new Uint8Array([255,0,0, 0,255,0, 0,0,255, 255,255,255]);
+  const plte = pngChunk("PLTE", plteData);
+  const raw = new Uint8Array([0,0,1, 0,2,3]);
+  const compressed = deflateSync(raw);
+  const idat = pngChunk("IDAT", compressed);
+  const iend = pngChunk("IEND", new Uint8Array());
+  const result = new Uint8Array(signature.length + ihdr.length + plte.length + idat.length + iend.length);
+  let offset = 0;
+  for (const chunk of [signature, ihdr, plte, idat, iend]) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return result;
+}
+
+test("embeds 24-bit BMP images as FlateDecode XObjects", () => {
+  const doc = createDocument();
+  const page = doc.addPage();
+  page.bmp(tinyBmpBytes(), { x: 24, y: 640, width: 48, height: 48 });
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/Subtype \/Image/);
+  assert.match(text, /\/ColorSpace \/DeviceRGB/);
+  assert.match(text, /\/BitsPerComponent 8/);
+});
+
+test("rejects 1-bit BMP images", () => {
+  const width = 1, height = 1, bpp = 1;
+  const rowSize = Math.floor((width * bpp / 8 + 3) / 4) * 4;
+  const buf = new Uint8Array(54 + rowSize * height);
+  const view = new DataView(buf.buffer);
+  buf[0] = 0x42; buf[1] = 0x4D;
+  view.setUint32(2, buf.length, true);
+  view.setUint32(10, 54, true);
+  view.setUint32(14, 40, true);
+  view.setInt32(18, width, true);
+  view.setInt32(22, height, true);
+  view.setUint16(26, 1, true);
+  view.setUint16(28, bpp, true);
+  const doc = createDocument();
+  const page = doc.addPage();
+  assert.throws(
+    () => page.bmp(buf, { x: 24, y: 24, width: 48, height: 48 }),
+    (error: unknown) => error instanceof PdfEngineError && error.code === PdfErrorCode.UNSUPPORTED_IMAGE_BIT_DEPTH,
+  );
+});
+
+test("embeds indexed PNG images with palette expansion", () => {
+  const doc = createDocument();
+  const page = doc.addPage();
+  page.png(indexedPngBytes(), { x: 40, y: 640, width: 32, height: 32 });
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/Subtype \/Image/);
 });

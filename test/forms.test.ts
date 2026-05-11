@@ -464,3 +464,58 @@ test("flattens existing AcroForm widgets into static page content", () => {
   assert.equal(flattened.listFormFields().length, 0);
 });
 
+test("creates parent-child field hierarchy from dotted names", () => {
+  const doc = createDocument();
+  const page = doc.addPage({ size: "A4" });
+
+  page.textField("address.street", { x: 72, y: 720, width: 200, height: 20 });
+  page.textField("address.city", { x: 72, y: 690, width: 200, height: 20 });
+
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+
+  assert.ok(text.includes("/T (address)"));
+  assert.ok(text.includes("/Kids ["));
+  assert.ok(text.includes("/Parent"));
+  assert.ok(text.includes("address.street"));
+  assert.ok(text.includes("address.city"));
+});
+
+test("rejects field name conflict between parent and terminal", () => {
+  const doc = createDocument();
+  const page = doc.addPage({ size: "A4" });
+
+  page.textField("address.street", { x: 72, y: 720, width: 200, height: 20 });
+  page.textField("address", { x: 72, y: 700, width: 200, height: 20 });
+
+  assert.throws(
+    () => doc.toUint8Array(),
+    (error: unknown) =>
+      error instanceof PdfEngineError &&
+      error.code === PdfErrorCode.INVALID_FORM_FIELD_NAME,
+  );
+});
+
+test("emits /Tabs entry on page with form fields", () => {
+  const doc = createDocument();
+  const page = doc.addPage({ size: "A4", tabOrder: "S" });
+  page.textField("name", { x: 72, y: 720, width: 200, height: 20 });
+  page.textField("email", { x: 72, y: 690, width: 200, height: 20 });
+
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+
+  assert.ok(text.includes("/Tabs /S"));
+});
+
+test("tabOrder defaults are per spec", () => {
+  const doc = createDocument();
+  const page = doc.addPage({ size: "A4" });
+  page.textField("test", { x: 72, y: 720, width: 200, height: 20 });
+
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+
+  assert.ok(!text.includes("/Tabs"));
+});
+
