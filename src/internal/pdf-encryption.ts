@@ -33,6 +33,7 @@ export interface PdfEncryptionContext {
   readonly ownerEncryptionKey?: Uint8Array | undefined;
   readonly userEncryptionKey?: Uint8Array | undefined;
   readonly permsEncrypted?: Uint8Array | undefined;
+  readonly encryptMetadata: boolean;
 }
 
 export interface PdfObjectCipher {
@@ -52,6 +53,7 @@ export interface OpenPdfEncryptionContextOptions {
   readonly ownerEncryptionKey?: Uint8Array | undefined;
   readonly userEncryptionKey?: Uint8Array | undefined;
   readonly permsEncrypted?: Uint8Array | undefined;
+  readonly encryptMetadata?: boolean | undefined;
 }
 
 export function createDocumentFileId(seed: Uint8Array): Uint8Array {
@@ -93,7 +95,8 @@ export function createPdfEncryptionContext(
     permissionsValue,
     ownerKey,
     userKey,
-    documentKey
+    documentKey,
+    encryptMetadata: encryption.encryptMetadata
   };
 }
 
@@ -121,7 +124,8 @@ export function openPdfEncryptionContext(options: OpenPdfEncryptionContextOption
       permissionsValue: options.permissionsValue,
       ownerKey: options.ownerKey,
       userKey: options.userKey,
-      documentKey: userPasswordDocumentKey
+      documentKey: userPasswordDocumentKey,
+      encryptMetadata: options.encryptMetadata ?? true
     };
   }
 
@@ -152,7 +156,8 @@ export function openPdfEncryptionContext(options: OpenPdfEncryptionContextOption
     permissionsValue: options.permissionsValue,
     ownerKey: options.ownerKey,
     userKey: options.userKey,
-    documentKey: ownerPasswordDocumentKey
+    documentKey: ownerPasswordDocumentKey,
+    encryptMetadata: options.encryptMetadata ?? true
   };
 }
 
@@ -244,10 +249,13 @@ export function latin1Bytes(value: string): Uint8Array {
 function computePermissionsValue(permissions: NormalizedDocumentPermissions): number {
   const value =
     0xffffffc0
-    | (permissions.printing ? 0x00000004 : 0)
+    | ((permissions.printing || permissions.accessibility) ? 0x00000004 : 0)
     | (permissions.modifying ? 0x00000008 : 0)
     | (permissions.copying ? 0x00000010 : 0)
-    | (permissions.annotating ? 0x00000020 : 0);
+    | (permissions.annotating ? 0x00000020 : 0)
+    | (permissions.assemble ? 0x00000400 : 0)
+    | (permissions.highQualityPrint ? 0x00000800 : 0)
+    | (permissions.fillForms ? 0x00001000 : 0);
   return value | 0;
 }
 
@@ -713,7 +721,7 @@ function createR6EncryptionContext(
   const ownerEncryptionKey = aesCbcNoPad(ownerIntermediate, new Uint8Array(16), fileEncryptionKey, true);
 
   const permissionsValue = computePermissionsValue(encryption.permissions);
-  const permsBlock = buildR6PermsBlock(permissionsValue, true);
+  const permsBlock = buildR6PermsBlock(permissionsValue, encryption.encryptMetadata);
   const permsEncrypted = aesCbcNoPad(fileEncryptionKey, new Uint8Array(16), permsBlock, true);
 
   return {
@@ -728,7 +736,8 @@ function createR6EncryptionContext(
     documentKey: fileEncryptionKey,
     ownerEncryptionKey,
     userEncryptionKey,
-    permsEncrypted
+    permsEncrypted,
+    encryptMetadata: encryption.encryptMetadata
   };
 }
 
@@ -814,6 +823,7 @@ function openR6EncryptionContext(options: OpenPdfEncryptionContextOptions): PdfE
     documentKey: fileEncryptionKey,
     ...(options.ownerEncryptionKey !== undefined ? { ownerEncryptionKey: options.ownerEncryptionKey } : {}),
     ...(options.userEncryptionKey !== undefined ? { userEncryptionKey: options.userEncryptionKey } : {}),
-    ...(options.permsEncrypted !== undefined ? { permsEncrypted: options.permsEncrypted } : {})
+    ...(options.permsEncrypted !== undefined ? { permsEncrypted: options.permsEncrypted } : {}),
+    encryptMetadata: options.encryptMetadata ?? true
   };
 }

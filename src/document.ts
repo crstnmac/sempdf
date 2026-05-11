@@ -107,6 +107,7 @@ import type {
   SoftMaskHandle,
   SoftMaskOptions,
   DocumentOutputIntentOptions,
+  DocumentEncryptionOptions,
   DocumentSignatureOptions,
   DocumentInfo,
   DocumentOptions,
@@ -263,6 +264,8 @@ export interface PdfIncrementalUpdateModel {
   readonly info?: NormalizedDocumentInfo | undefined;
   /** Detached digital-signature options for serialized output. */
   readonly signature?: DocumentSignatureOptions | undefined;
+  /** Encryption upgrade for the next save. */
+  readonly encryption?: NormalizedDocumentEncryption | undefined;
 }
 
 export interface ExistingPageEdit {
@@ -2811,6 +2814,8 @@ export class PdfEditableDocument {
   private hasUpdatedXmpMetadata = false;
   /** Detached digital-signature options for serialized output. */
   private signature?: DocumentSignatureOptions | undefined;
+  /** Encryption upgrade options for the next save. */
+  private _upgradeEncryption?: NormalizedDocumentEncryption | undefined;
   /** Tagged base. */
   private readonly taggedBase: boolean;
   /** Conformance base. */
@@ -3551,6 +3556,16 @@ export class PdfEditableDocument {
   }
 
   /**
+   * Sets encryption options for the next save, upgrading the encryption algorithm.
+   * New and modified objects will use the new encryption.
+   *
+   * @param options Encryption options for the next save.
+   */
+  setEncryption(options: DocumentEncryptionOptions): void {
+    this._upgradeEncryption = normalizeDocumentEncryption(options);
+  }
+
+  /**
    * Adds a detached digital signature as an incremental update.
    *
    * @param options Signature options, including the CMS/PKCS#7 signer callback.
@@ -3833,6 +3848,7 @@ export class PdfEditableDocument {
         : {}),
       ...(this.updatedInfo ? { info: this.updatedInfo } : {}),
       ...(this.signature ? { signature: this.signature } : {}),
+      ...(this._upgradeEncryption ? { encryption: this._upgradeEncryption } : {}),
     };
   }
 }

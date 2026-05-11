@@ -805,9 +805,17 @@ export function parseDocument(
   for (const [objectId, offset] of [...offsets.entries()].sort(
     (left, right) => left[0] - right[0],
   )) {
+    const parsed = parseIndirectObject(bytes, offset, resolveStreamLength);
+    if (parsed.id !== objectId) {
+      console.warn(
+        `Object number mismatch at offset ${offset}: ` +
+          `xref expects ${objectId}, object declares ${parsed.id}. ` +
+          `Using xref value.`,
+      );
+    }
     objects.set(
       objectId,
-      parseIndirectObject(bytes, offset, resolveStreamLength),
+      parsed,
     );
   }
 
@@ -981,6 +989,10 @@ function resolveDocumentEncryption(
       : undefined;
 
   const fileId = readEncryptionFileId(trailer);
+  const encryptMetadata =
+    version !== undefined && version >= 4
+      ? (getDictValue(encryptDict, "EncryptMetadata") as boolean | undefined) ?? true
+      : true;
   const context = openPdfEncryptionContext({
     password: options.password,
     fileId,
@@ -991,6 +1003,7 @@ function resolveDocumentEncryption(
     permissionsValue,
     ownerKey,
     userKey,
+    encryptMetadata,
     ...(ownerEncryptionKey !== undefined ? { ownerEncryptionKey } : {}),
     ...(userEncryptionKey !== undefined ? { userEncryptionKey } : {}),
     ...(permsEncrypted !== undefined ? { permsEncrypted } : {}),
@@ -1221,7 +1234,16 @@ function compareVersionStrings(a: string, b: string): number {
 }
 
 function parseHeaderVersion(bytes: Uint8Array): string {
-  const header = decodeLatin1(bytes.slice(0, Math.min(bytes.length, 32)));
+  let start = 0;
+  if (
+    bytes.length >= 3 &&
+    bytes[0] === 0xef &&
+    bytes[1] === 0xbb &&
+    bytes[2] === 0xbf
+  ) {
+    start = 3;
+  }
+  const header = decodeLatin1(bytes.slice(start, Math.min(bytes.length, start + 32)));
   const match = /%PDF-(\d+\.\d+)/.exec(header);
   if (!match?.[1]) {
     throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "PDF header not found.");
@@ -1453,9 +1475,44 @@ function parseXrefSection(
 ): ParsedXrefSection {
   const parser = new ValueParser(bytes, offset);
   parser.skipWhitespaceAndComments();
-  return parser.consumeKeyword("xref")
-    ? parseClassicXrefSection(bytes, offset)
-    : parseXrefStreamSection(bytes, offset);
+  if (parser.consumeKeyword("xref")) {
+    return parseClassicXrefSection(bytes, offset);
+  }
+
+  try {
+    return parseXrefStreamSection(bytes, offset);
+  } catch (error) {
+    if (
+      error instanceof PdfEngineError &&
+      error.code === PdfErrorCode.UNSUPPORTED_XREF_FORMAT
+    ) {
+      const recovered = findXrefBefore(bytes, offset);
+      if (recovered !== undefined) {
+        return parseXrefSection(bytes, recovered);
+      }
+    }
+    throw error;
+  }
+}
+
+function findXrefBefore(bytes: Uint8Array, offset: number): number | undefined {
+  const keyword = encodeAscii("xref");
+  for (let i = offset - 1; i >= 0; i -= 1) {
+    if (i + keyword.length > offset) {
+      continue;
+    }
+    let matches = true;
+    for (let j = 0; j < keyword.length; j += 1) {
+      if (bytes[i + j] !== keyword[j]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches && (i === 0 || isWhitespace(bytes[i - 1]!))) {
+      return i;
+    }
+  }
+  return undefined;
 }
 
 function parseXrefChain(
@@ -1626,7 +1683,18 @@ function parseIndirectObject(
     parser.skipWhitespaceAndComments();
   }
 
-  parser.expectKeyword("endobj");
+  if (!parser.consumeKeyword("endobj")) {
+    parser.skipWhitespaceAndComments();
+    if (parser.position < bytes.length) {
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_PDF,
+        `Expected keyword "endobj".`,
+        {
+          position: parser.position,
+        },
+      );
+    }
+  }
 
   return {
     id,

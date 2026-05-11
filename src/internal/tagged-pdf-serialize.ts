@@ -27,6 +27,7 @@ export interface TaggedPageContentItem {
   readonly mcid?: number | undefined;
   readonly structureGroupId?: number | undefined;
   readonly altText?: string | undefined;
+  readonly artifactType?: "Pagination" | "Layout" | "Page" | undefined;
 }
 
 export interface PlannedPage {
@@ -85,6 +86,15 @@ export interface StructElementAllocation {
   readonly mathML?: string | undefined;
   readonly mathmlFilespecObjectId?: number | undefined;
   readonly mathmlFileObjectId?: number | undefined;
+  readonly associatedFileSpecIds?: readonly number[] | undefined;
+  readonly associatedFileObjectIds?: readonly number[] | undefined;
+  readonly associatedFiles?:
+    | readonly {
+        name: string;
+        data: Uint8Array | ArrayBuffer;
+        mimeType?: string;
+      }[]
+    | undefined;
 }
 
 export interface TaggedPdfAllocation {
@@ -120,7 +130,15 @@ export function collectTaggedPageContent(
       if (op.options.tag === 'Artifact') {
         groupId = undefined;
         groupMcid = undefined;
-        items.push({ opIndex, kind: 'artifact' });
+        items.push({
+          opIndex,
+          kind: 'artifact',
+          ...(op.options.artifactType !== undefined
+            ? { artifactType: op.options.artifactType }
+            : op.options.structure?.artifactType !== undefined
+              ? { artifactType: op.options.structure.artifactType }
+              : {}),
+        });
         continue;
       }
       const sid = op.options.structureGroupId;
@@ -163,6 +181,9 @@ export function collectTaggedPageContent(
       items.push({
         opIndex,
         kind: 'artifact',
+        ...(op.options.structure?.artifactType !== undefined
+          ? { artifactType: op.options.structure.artifactType }
+          : {}),
       });
       continue;
     }
@@ -308,6 +329,23 @@ export function allocateTaggedPdf(
       rootElementObjectIds.push(nextObjectId);
       nextObjectId += 1;
     }
+
+    const pageMcids = page.taggedContentItems
+      .filter((item) => item.kind === 'struct' && item.mcid !== undefined)
+      .map((item) => item.mcid!)
+      .sort((a, b) => a - b);
+    if (pageMcids.length > 0) {
+      const uniqueMcids = [...new Set(pageMcids)];
+      for (let i = 0; i < uniqueMcids.length; i++) {
+        if (uniqueMcids[i] !== i) {
+          console.warn(
+            `MCID sequence gap on page ${page.pageObjectId}: expected MCID ${i}, found ${uniqueMcids[i]}. ` +
+              `Sequence should be contiguous (0,1,2,...N).`,
+          );
+          break;
+        }
+      }
+    }
   }
 
   if (rootWrapperObjectId !== undefined && structureRoot) {
@@ -405,6 +443,18 @@ function allocateStructElementTree(
     mathmlFileObjectId = nextObjectId;
     nextObjectId += 1;
   }
+  let associatedFileSpecIds: number[] | undefined;
+  let associatedFileObjectIds: number[] | undefined;
+  if (node.associatedFiles !== undefined && node.associatedFiles.length > 0) {
+    associatedFileSpecIds = [];
+    associatedFileObjectIds = [];
+    for (const _file of node.associatedFiles) {
+      associatedFileSpecIds.push(nextObjectId);
+      nextObjectId += 1;
+      associatedFileObjectIds.push(nextObjectId);
+      nextObjectId += 1;
+    }
+  }
   elements.push({
     objectId,
     parentObjectId,
@@ -422,6 +472,9 @@ function allocateStructElementTree(
     ...(node.mathML !== undefined ? { mathML: node.mathML } : {}),
     ...(mathmlFilespecObjectId !== undefined ? { mathmlFilespecObjectId } : {}),
     ...(mathmlFileObjectId !== undefined ? { mathmlFileObjectId } : {}),
+    ...(associatedFileSpecIds !== undefined ? { associatedFileSpecIds } : {}),
+    ...(associatedFileObjectIds !== undefined ? { associatedFileObjectIds } : {}),
+    ...(node.associatedFiles !== undefined ? { associatedFiles: node.associatedFiles } : {}),
   });
   return {
     objectId,
@@ -523,6 +576,28 @@ function buildParentTreeNums(
       existing[mcid] = ref(element.objectId);
     }
     entriesByKey.set(element.parentTreeKey, existing);
+  }
+
+  const elementObjectIds = new Set(
+    allocation.elements.map((element) => element.objectId),
+  );
+  for (const entry of entriesByKey.values()) {
+    if (Array.isArray(entry) && !isPdfDictValue(entry)) {
+      for (const [mcid, value] of entry.entries()) {
+        if (
+          value != null &&
+          typeof value === 'object' &&
+          'objectId' in value
+        ) {
+          const refId = (value as { objectId: number }).objectId;
+          if (!elementObjectIds.has(refId)) {
+            console.warn(
+              `Orphan MCID ${mcid}: parent tree references element object ${refId} which does not exist in the allocation elements array.`,
+            );
+          }
+        }
+      }
+    }
   }
 
   const nums: PdfValue[] = [];
@@ -669,9 +744,18 @@ export function buildStructElementDictionary(
     ],
     [
       'AF',
-      element.mathmlFilespecObjectId !== undefined
-        ? array([ref(element.mathmlFilespecObjectId)])
-        : undefined,
+      (() => {
+        const refs: PdfValue[] = [];
+        if (element.mathmlFilespecObjectId !== undefined) {
+          refs.push(ref(element.mathmlFilespecObjectId));
+        }
+        if (element.associatedFileSpecIds !== undefined) {
+          for (const specId of element.associatedFileSpecIds) {
+            refs.push(ref(specId));
+          }
+        }
+        return refs.length > 0 ? array(refs) : undefined;
+      })(),
     ],
     [
       'NS',
@@ -712,6 +796,46 @@ export function buildMathmlEmbeddedFileStream(
       ['Subtype', name('application/mathml+xml')],
     ]),
     new TextEncoder().encode(mathML),
+  );
+}
+
+export function buildAssociatedFilespecDictionary(
+  fileObjectId: number,
+  specName: string,
+  mimeType?: string,
+): PdfDict {
+  return dict([
+    ['Type', name('Filespec')],
+    ['F', literalString(specName)],
+    ['UF', literalString(specName)],
+    ['AFRelationship', name('Supplement')],
+    ...(mimeType !== undefined
+      ? [['Desc', literalString(mimeType)] as [string, PdfValue]]
+      : []),
+    [
+      'EF',
+      dict([
+        ['F', ref(fileObjectId)],
+        ['UF', ref(fileObjectId)],
+      ]),
+    ],
+  ]);
+}
+
+export function buildAssociatedFileStream(
+  data: Uint8Array | ArrayBuffer,
+  mimeType?: string,
+): ReturnType<typeof stream> {
+  const bytes =
+    data instanceof Uint8Array ? data : new Uint8Array(data.slice(0));
+  return stream(
+    dict([
+      ['Type', name('EmbeddedFile')],
+      ...(mimeType !== undefined
+        ? [['Subtype', name(mimeType)] as [string, PdfValue]]
+        : []),
+    ]),
+    bytes,
   );
 }
 

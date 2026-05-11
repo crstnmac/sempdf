@@ -148,6 +148,14 @@ export interface DocumentPermissions {
   copying?: boolean | undefined;
   /** Whether annotation and form editing is permitted for encrypted output. */
   annotating?: boolean | undefined;
+  /** Whether text/graphics extraction for accessibility is permitted (bit 3). */
+  accessibility?: boolean | undefined;
+  /** Whether document assembly (insert/rotate/delete pages) is permitted (bit 9). */
+  assemble?: boolean | undefined;
+  /** Whether high-quality printing is permitted (bit 10). */
+  highQualityPrint?: boolean | undefined;
+  /** Whether filling in form fields is permitted (bit 12). */
+  fillForms?: boolean | undefined;
 }
 
 /**
@@ -278,6 +286,20 @@ export interface PdfStructureOptions {
    * Required by PDF/UA Mathematics for accessible mathematical content.
    */
   mathML?: string | undefined;
+  /**
+   * Artifact type classification for tagged PDF content.
+   * "Pagination" for headers/footers, "Layout" for typographic ornaments,
+   * "Page" for watermarks. Emitted as /Type in the /Artifact BMC/EMC pair.
+   */
+  artifactType?: "Pagination" | "Layout" | "Page" | undefined;
+  /**
+   * Associated files embedded in the structure element.
+   * Each file is emitted as an EmbeddedFile stream and Filespec, and
+   * referenced from the StructElem /AF array.
+   */
+  associatedFiles?:
+    | Array<{ name: string; data: BinaryData; mimeType?: string }>
+    | undefined;
 }
 
 /**
@@ -304,6 +326,8 @@ export interface DocumentEncryptionOptions {
   permissions?: DocumentPermissions | undefined;
   /** Encryption algorithm to use when writing encrypted output. */
   algorithm?: DocumentEncryptionAlgorithm | undefined;
+  /** Whether to encrypt the metadata stream. Defaults to true. When false, the metadata stream is left unencrypted. */
+  encryptMetadata?: boolean | undefined;
 }
 
 /**
@@ -667,6 +691,18 @@ export interface TextOptions {
   tag?: PdfTextStructureTag | "Artifact" | undefined;
   /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
+  /**
+   * Artifact type classification for tagged PDF content.
+   * "Pagination" for headers/footers, "Layout" for typographic ornaments,
+   * "Page" for watermarks. Emitted as /Type in the /Artifact BMC/EMC pair.
+   */
+  artifactType?: "Pagination" | "Layout" | "Page" | undefined;
+  /**
+   * Built-in font encoding. When set, the font dictionary emits an /Encoding
+   * entry with the specified encoding (e.g. /WinAnsiEncoding). When undefined,
+   * the default encoding is used.
+   */
+  encoding?: "winansi" | "macroman" | "pdfdoc" | undefined;
 }
 
 /**
@@ -715,6 +751,12 @@ export interface TextBlockOptions {
   tag?: PdfTextStructureTag | "Artifact" | undefined;
   /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
+  /**
+   * Built-in font encoding. When set, the font dictionary emits an /Encoding
+   * entry with the specified encoding (e.g. /WinAnsiEncoding). When undefined,
+   * the default encoding is used.
+   */
+  encoding?: "winansi" | "macroman" | "pdfdoc" | undefined;
 }
 
 /**

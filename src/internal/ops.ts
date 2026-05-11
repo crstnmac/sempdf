@@ -15,10 +15,12 @@ export interface NormalizedTextOptions {
   tag?: PdfStructureTag | undefined;
   structure?: PdfStructureOptions | undefined;
   structureGroupId?: number | undefined;
+  artifactType?: "Pagination" | "Layout" | "Page" | undefined;
   characterSpacing?: number | undefined;
   wordSpacing?: number | undefined;
   leading?: number | undefined;
   kerning: boolean;
+  encoding?: "winansi" | "macroman" | "pdfdoc" | undefined;
 }
 
 export interface NormalizedPathStyle {

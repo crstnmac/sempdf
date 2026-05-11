@@ -16,7 +16,11 @@ test("serializes password-protected PDFs with permissions and hides plaintext", 
         printing: false,
         modifying: false,
         copying: false,
-        annotating: false
+        annotating: false,
+        accessibility: false,
+        assemble: false,
+        highQualityPrint: false,
+        fillForms: false
       }
     }
   });
