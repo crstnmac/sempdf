@@ -8,12 +8,19 @@ export interface PdfInspection {
 
 export function inspectPdf(bytes: Uint8Array): PdfInspection {
   const text = new TextDecoder().decode(bytes);
-  const startXrefMatch = /startxref\s+(\d+)\s+%%EOF/s.exec(text);
+  const startXrefMatch = /startxref\s+(\d+)\s*%%EOF/.exec(text);
   if (!startXrefMatch) {
     throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Missing startxref section.");
   }
 
   const startXref = Number(startXrefMatch[1]);
+  if (startXref < 0 || startXref >= bytes.length) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_PDF,
+      "startxref offset is out of file bounds.",
+    );
+  }
+
   const xrefOffsets = parseXrefOffsets(text.slice(startXref));
   const objects = new Map<number, string>();
 

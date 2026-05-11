@@ -1,3 +1,4 @@
+import { PdfEngineError, PdfErrorCode } from "../errors.js";
 import type { BinaryData } from "../types.js";
 import type { EmbeddedJpegAsset } from "./jpeg.js";
 import { parseJpeg } from "./jpeg.js";
@@ -7,18 +8,25 @@ import { parsePng } from "./png.js";
 export type EmbeddedImageAsset = EmbeddedJpegAsset | EmbeddedPngAsset;
 
 export function parseImage(format: "jpeg" | "png", data: BinaryData, iccProfile?: BinaryData): EmbeddedImageAsset {
-  const asset = format === "jpeg" ? parseJpeg(data) : parsePng(data);
-  if (iccProfile === undefined) return asset;
-  const profileBytes = iccProfile instanceof Uint8Array
-    ? new Uint8Array(iccProfile)
-    : new Uint8Array(iccProfile);
-  const channels = asset.colorSpace === "DeviceGray" ? 1 : asset.colorSpace === "DeviceRGB" ? 3 : 4;
-  const iccDigest = simpleDigest(profileBytes);
-  return {
-    ...asset,
-    key: `${asset.key}#icc:${iccDigest}`,
-    iccProfile: { bytes: profileBytes, channels }
-  } as EmbeddedImageAsset;
+  try {
+    const asset = format === "jpeg" ? parseJpeg(data) : parsePng(data);
+    if (iccProfile === undefined) return asset;
+    const profileBytes = iccProfile instanceof Uint8Array
+      ? new Uint8Array(iccProfile)
+      : new Uint8Array(iccProfile);
+    const channels = asset.colorSpace === "DeviceGray" ? 1 : asset.colorSpace === "DeviceRGB" ? 3 : 4;
+    const iccDigest = simpleDigest(profileBytes);
+    return {
+      ...asset,
+      key: `${asset.key}#icc:${iccDigest}`,
+      iccProfile: { bytes: profileBytes, channels }
+    } as EmbeddedImageAsset;
+  } catch (error) {
+    if (error instanceof PdfEngineError) {
+      throw error;
+    }
+    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Failed to parse image data.", { cause: error });
+  }
 }
 
 function simpleDigest(bytes: Uint8Array): string {

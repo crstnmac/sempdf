@@ -1232,9 +1232,16 @@ function parseHeaderVersion(bytes: Uint8Array): string {
 
 function findStartXref(bytes: Uint8Array): number {
   const text = decodeLatin1(bytes);
+  const hasEof = /\s*%%EOF\s*$/.test(text);
   const marker = "startxref";
   const index = text.lastIndexOf(marker);
   if (index === -1) {
+    if (!hasEof) {
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_PDF,
+        "PDF appears truncated: missing %%EOF marker and startxref section.",
+      );
+    }
     throw new PdfEngineError(
       PdfErrorCode.INVALID_PDF,
       "startxref section not found.",
@@ -1249,7 +1256,15 @@ function findStartXref(bytes: Uint8Array): number {
     );
   }
 
-  return Number(match[1]);
+  const offset = Number(match[1]);
+  if (offset < 0 || offset >= bytes.length) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_PDF,
+      "startxref offset is out of file bounds.",
+    );
+  }
+
+  return offset;
 }
 
 function parseClassicXrefSection(
@@ -2738,61 +2753,89 @@ function getCatalogDict(document: ParsedPdfDocument): PdfDict {
   return catalog;
 }
 
+const MAX_PAGE_TREE_DEPTH = 50;
+
+interface WalkPagesEntry {
+  readonly ref: PdfRef;
+  readonly inheritedResources?: PdfDict | undefined;
+  readonly depth: number;
+}
+
 function walkPages(
   document: ParsedPdfDocument,
   refValue: PdfRef,
   output: ParsedPdfPage[],
   inheritedResources?: PdfDict,
 ): void {
-  const dict = resolveDict(document, refValue);
-  if (!dict) {
-    throw new PdfEngineError(
-      PdfErrorCode.INVALID_PDF,
-      "Page tree reference could not be resolved.",
-      {
-        objectId: refValue.objectId,
-      },
-    );
-  }
+  const stack: WalkPagesEntry[] = [
+    { ref: refValue, inheritedResources, depth: 0 },
+  ];
 
-  const ownResources = resolveDict(document, getDictValue(dict, "Resources"));
-  const resources = ownResources ?? inheritedResources;
-
-  const type = getNameValue(dict, "Type");
-  if (type === "Page") {
-    const contents = getDictValue(dict, "Contents");
-    let contentObjectIds: number[] = [];
-    if (Array.isArray(contents) && !isPdfDict(contents)) {
-      contentObjectIds = contents
-        .filter((entry): entry is PdfRef => isPdfRef(entry))
-        .map((entry) => entry.objectId);
-    } else if (isPdfRef(contents)) {
-      contentObjectIds = [contents.objectId];
+  while (stack.length > 0) {
+    const entry = stack.pop()!;
+    if (entry.depth > MAX_PAGE_TREE_DEPTH) {
+      throw new PdfEngineError(
+        PdfErrorCode.UNSUPPORTED_PAGE_TREE,
+        "Page tree nesting exceeds maximum supported depth.",
+        { maxDepth: MAX_PAGE_TREE_DEPTH },
+      );
     }
-    const mediaBox = getArrayNumbers(getDictValue(dict, "MediaBox"));
-    output.push({
-      objectId: refValue.objectId,
-      mediaBox,
-      contentObjectIds,
-      ...(resources === undefined ? {} : { resources }),
-    });
-    return;
-  }
 
-  const kids = getDictValue(dict, "Kids");
-  if (!Array.isArray(kids) || isPdfDict(kids)) {
-    throw new PdfEngineError(
-      PdfErrorCode.INVALID_PDF,
-      "Page tree node is missing Kids.",
-      {
-        objectId: refValue.objectId,
-      },
-    );
-  }
+    const dict = resolveDict(document, entry.ref);
+    if (!dict) {
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_PDF,
+        "Page tree reference could not be resolved.",
+        {
+          objectId: entry.ref.objectId,
+        },
+      );
+    }
 
-  for (const kid of kids) {
-    if (isPdfRef(kid)) {
-      walkPages(document, kid, output);
+    const ownResources = resolveDict(document, getDictValue(dict, "Resources"));
+    const resources = ownResources ?? entry.inheritedResources;
+
+    const type = getNameValue(dict, "Type");
+    if (type === "Page") {
+      const contents = getDictValue(dict, "Contents");
+      let contentObjectIds: number[] = [];
+      if (Array.isArray(contents) && !isPdfDict(contents)) {
+        contentObjectIds = contents
+          .filter((entry): entry is PdfRef => isPdfRef(entry))
+          .map((entry) => entry.objectId);
+      } else if (isPdfRef(contents)) {
+        contentObjectIds = [contents.objectId];
+      }
+      const mediaBox = getArrayNumbers(getDictValue(dict, "MediaBox"));
+      output.push({
+        objectId: entry.ref.objectId,
+        mediaBox,
+        contentObjectIds,
+        ...(resources === undefined ? {} : { resources }),
+      });
+      continue;
+    }
+
+    const kids = getDictValue(dict, "Kids");
+    if (!Array.isArray(kids) || isPdfDict(kids)) {
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_PDF,
+        "Page tree node is missing Kids.",
+        {
+          objectId: entry.ref.objectId,
+        },
+      );
+    }
+
+    for (let i = kids.length - 1; i >= 0; i--) {
+      const kid = kids[i];
+      if (isPdfRef(kid)) {
+        stack.push({
+          ref: kid,
+          inheritedResources: resources,
+          depth: entry.depth + 1,
+        });
+      }
     }
   }
 }

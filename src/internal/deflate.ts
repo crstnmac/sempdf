@@ -42,8 +42,12 @@ function loadDeflateSync(): ((data: Uint8Array) => Uint8Array) | null {
 
   const deflateSync = zlib.deflateSync;
   cachedDeflateSync = (data: Uint8Array) => {
-    const result = deflateSync(data);
-    return result instanceof Uint8Array ? result : new Uint8Array(result);
+    try {
+      const result = deflateSync(data);
+      return result instanceof Uint8Array ? result : new Uint8Array(result);
+    } catch (error) {
+      throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Corrupted compressed stream data.", { cause: error });
+    }
   };
   return cachedDeflateSync;
 }
@@ -72,9 +76,10 @@ interface HuffmanTable {
 }
 
 export function inflateZlib(data: Uint8Array): Uint8Array {
-  if (data.length < 6) {
-    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Zlib data is too short.");
-  }
+  try {
+    if (data.length < 6) {
+      throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Zlib data is too short.");
+    }
 
   const cmf = data[0];
   const flg = data[1];
@@ -128,7 +133,13 @@ export function inflateZlib(data: Uint8Array): Uint8Array {
     throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Zlib Adler-32 checksum mismatch.");
   }
 
-  return inflated;
+    return inflated;
+  } catch (error) {
+    if (error instanceof PdfEngineError) {
+      throw error;
+    }
+    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Corrupted compressed stream data.", { cause: error });
+  }
 }
 
 /**
