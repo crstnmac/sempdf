@@ -10,6 +10,7 @@ export interface EmbeddedJpegAsset {
   readonly bitsPerComponent: number;
   readonly colorSpace: "DeviceGray" | "DeviceRGB" | "DeviceCMYK";
   readonly iccProfile?: { readonly bytes: Uint8Array; readonly channels: number } | undefined;
+  readonly orientation: 1 | 3 | 6 | 8;
 }
 
 const SOF_MARKERS = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
@@ -25,6 +26,7 @@ export function parseJpeg(data: BinaryData): EmbeddedJpegAsset {
     }
 
     let offset = 2;
+    let orientation: 1 | 3 | 6 | 8 = 1;
     while (offset < bytes.length) {
       if (bytes[offset] !== 0xff) {
         throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Invalid JPEG marker alignment.", { offset });
@@ -51,6 +53,13 @@ export function parseJpeg(data: BinaryData): EmbeddedJpegAsset {
       const segmentLength = readUint16(bytes, offset);
       if (segmentLength < 2 || offset + segmentLength > bytes.length) {
         throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Invalid JPEG segment length.", { marker, offset, segmentLength });
+      }
+
+      if (marker === 0xe1 && segmentLength > 10) {
+        const parsed = parseExifOrientation(bytes, offset, segmentLength);
+        if (parsed !== undefined) {
+          orientation = parsed;
+        }
       }
 
       if (SOF_MARKERS.has(marker)) {
@@ -82,7 +91,8 @@ export function parseJpeg(data: BinaryData): EmbeddedJpegAsset {
           pixelWidth,
           pixelHeight,
           bitsPerComponent,
-          colorSpace
+          colorSpace,
+          orientation
         };
       }
 
@@ -124,4 +134,70 @@ function buildJpegKey(bytes: Uint8Array, pixelWidth: number, pixelHeight: number
   }
 
   return `jpeg:${pixelWidth}x${pixelHeight}:${componentCount}:${bytes.length}:${(hash >>> 0).toString(16)}`;
+}
+
+function parseExifOrientation(bytes: Uint8Array, app1Offset: number, segmentLength: number): 1 | 3 | 6 | 8 | undefined {
+  const dataOffset = app1Offset + 2;
+  if (
+    bytes[dataOffset] !== 0x45 ||
+    bytes[dataOffset + 1] !== 0x78 ||
+    bytes[dataOffset + 2] !== 0x69 ||
+    bytes[dataOffset + 3] !== 0x66 ||
+    bytes[dataOffset + 4] !== 0x00 ||
+    bytes[dataOffset + 5] !== 0x00
+  ) {
+    return undefined;
+  }
+
+  const tiffOffset = dataOffset + 6;
+  const tiffEnd = app1Offset + segmentLength;
+  if (tiffOffset + 8 > tiffEnd) {
+    return undefined;
+  }
+
+  const isBE = bytes[tiffOffset] === 0x4d && bytes[tiffOffset + 1] === 0x4d;
+  const isLE = bytes[tiffOffset] === 0x49 && bytes[tiffOffset + 1] === 0x49;
+  if (!isBE && !isLE) {
+    return undefined;
+  }
+
+  const read16 = isBE
+    ? (offset: number) => (bytes[tiffOffset + offset]! << 8) | bytes[tiffOffset + offset + 1]!
+    : (offset: number) => bytes[tiffOffset + offset]! | (bytes[tiffOffset + offset + 1]! << 8);
+
+  const ifdOffset = isBE
+    ? (bytes[tiffOffset + 4]! << 24) | (bytes[tiffOffset + 5]! << 16) | (bytes[tiffOffset + 6]! << 8) | bytes[tiffOffset + 7]!
+    : bytes[tiffOffset + 4]! | (bytes[tiffOffset + 5]! << 8) | (bytes[tiffOffset + 6]! << 16) | (bytes[tiffOffset + 7]! << 24);
+
+  if (read16(2) !== 0x002a) {
+    return undefined;
+  }
+
+  let cursor = ifdOffset;
+  if (cursor <= 0 || cursor > tiffEnd - tiffOffset - 2) {
+    return undefined;
+  }
+
+  const entryCount = read16(cursor);
+  const entriesEnd = cursor + 2 + entryCount * 12;
+
+  for (let i = 0; i < entryCount; i++) {
+    const entryOffset = cursor + 2 + i * 12;
+    if (entryOffset + 12 > tiffEnd - tiffOffset) {
+      break;
+    }
+
+    const tag = read16(entryOffset);
+    if (tag === 0x0112) {
+      const type = read16(entryOffset + 2);
+      if (type === 3) {
+        const value = read16(entryOffset + 8);
+        if (value === 1 || value === 3 || value === 6 || value === 8) {
+          return value as 1 | 3 | 6 | 8;
+        }
+      }
+    }
+  }
+
+  return undefined;
 }

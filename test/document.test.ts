@@ -1466,3 +1466,48 @@ test("setExtGState rejects out-of-range alpha and empty options", () => {
   assert.throws(() => page.setExtGState({ fillAlpha: 1.5 }), /between 0 and 1/i);
   assert.throws(() => page.setExtGState({ strokeAlpha: -0.1 }), /between 0 and 1/i);
 });
+
+test("vertical writing mode positions characters vertically", () => {
+  const doc = createDocument();
+  const page = doc.addPage({ size: "Letter" });
+  page.text("ABC", { x: 100, y: 500, fontSize: 20, writingMode: "vertical" });
+
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+
+  assert.ok(text.includes("/Helvetica"));
+  assert.ok(text.includes("BT"));
+  assert.ok(text.includes("ET"));
+});
+
+test("vertical writing mode in text blocks stacks characters", () => {
+  const doc = createDocument();
+  const page = doc.addPage({ size: "Letter" });
+  page.textBlock("Hello", {
+    x: 100,
+    y: 500,
+    width: 200,
+    fontSize: 20,
+    writingMode: "vertical",
+  });
+
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+
+  assert.ok(text.includes("/Helvetica"));
+  assert.ok(text.includes("BT"));
+  assert.ok(text.includes("ET"));
+});
+
+test("vertical writing mode via flow cursor", () => {
+  const doc = createDocument();
+  const page = doc.addPage({ size: "A4" });
+  const flow = page.flow({ writingMode: "vertical" });
+  flow.paragraph("Vertical text");
+
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+
+  assert.ok(text.includes("/Helvetica"));
+  assert.ok(text.includes("BT"));
+});

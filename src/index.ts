@@ -13,6 +13,10 @@ export type {
   PdfEditableStructureQuery,
   PdfEditableStructureSimilarityOptions,
 } from "./document.js";
+export type {
+  ShapedGlyph,
+  TextShaper,
+} from "./internal/text-shaper.js";
 export { PdfEngineError, PdfErrorCode } from "./errors.js";
 export {
   appendPages,

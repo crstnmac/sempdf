@@ -2,6 +2,7 @@
  * Names of the built-in PDF base fonts supported without embedding a font file.
  */
 import { PdfEngineError, PdfErrorCode } from "./errors.js";
+import type { TextShaper } from "./internal/text-shaper.js";
 
 export type FontName =
   | "Courier"
@@ -380,6 +381,15 @@ export interface DocumentOptions {
   outputIntent?: DocumentOutputIntentOptions | undefined;
   /** Detached digital-signature options for serialized output. */
   signature?: DocumentSignatureOptions | undefined;
+  /**
+   * Custom text shaper for complex script shaping (Devanagari, Arabic, Thai, etc.).
+   * When provided, the shaper is called for each text run that requires shaping.
+   * If not provided, the default shaper handles basic ligature and joining-form
+   * substitution but will throw an UNSUPPORTED_SCRIPT error for Devanagari and
+   * other complex scripts. External shapers such as harfbuzzjs or fontkit can
+   * be plugged in to enable full shaping support.
+   */
+  textShaper?: TextShaper | undefined;
 }
 
 /**
@@ -648,6 +658,11 @@ export interface TextOptions {
   leading?: number | undefined;
   /** Whether kerning should be applied where supported. */
   kerning?: boolean | undefined;
+  /**
+   * Text writing mode. "horizontal" (default) places characters left-to-right.
+   * "vertical" stacks characters top-to-bottom.
+   */
+  writingMode?: "horizontal" | "vertical" | undefined;
   /** Structure tag used for tagged PDF output. */
   tag?: PdfTextStructureTag | "Artifact" | undefined;
   /** Additional structure metadata for tagged PDF output. */
@@ -691,6 +706,11 @@ export interface TextBlockOptions {
   maxLines?: number | undefined;
   /** Whether kerning should be applied where supported. */
   kerning?: boolean | undefined;
+  /**
+   * Text writing mode. "horizontal" (default) places characters left-to-right.
+   * "vertical" stacks characters top-to-bottom.
+   */
+  writingMode?: "horizontal" | "vertical" | undefined;
   /** Structure tag used for tagged PDF output. */
   tag?: PdfTextStructureTag | "Artifact" | undefined;
   /** Additional structure metadata for tagged PDF output. */
@@ -737,6 +757,11 @@ export interface FlowOptions {
   align?: TextAlign | undefined;
   /** Whether kerning should be applied where supported. */
   kerning?: boolean | undefined;
+  /**
+   * Text writing mode. "horizontal" (default) places characters left-to-right.
+   * "vertical" stacks characters top-to-bottom.
+   */
+  writingMode?: "horizontal" | "vertical" | undefined;
 }
 
 /**
@@ -1398,6 +1423,13 @@ export interface TextFieldOptions {
   required?: boolean | undefined;
   /** Whether the text field accepts multiple lines. */
   multiline?: boolean | undefined;
+  /**
+   * Custom appearance stream content. When provided, this raw PDF content
+   * stream is used instead of the auto-generated appearance for the /N
+   * (normal) appearance state.
+   * Example: `"1 0 0 rg 0 0 16 16 re f"`
+   */
+  appearance?: string | undefined;
   /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;
   /** Additional structure metadata for tagged PDF output. */
@@ -1424,6 +1456,13 @@ export interface CheckBoxOptions {
   readOnly?: boolean | undefined;
   /** Whether the form field is required. */
   required?: boolean | undefined;
+  /**
+   * Custom appearance stream for the checkbox. Can be a raw PDF content
+   * stream string (used for all states), or an object with optional
+   * normal (/N), down (/D), and rollover (/R) appearance strings.
+   * Example string: `"1 0 0 0 0 1 2 10 14 6 re s"` (a check mark at any size)
+   */
+  appearance?: string | { normal?: string; down?: string; rollover?: string } | undefined;
   /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;
   /** Additional structure metadata for tagged PDF output. */
@@ -1465,6 +1504,11 @@ export interface ChoiceFieldOptions {
   required?: boolean | undefined;
   /** Choice field display mode. */
   mode?: ChoiceFieldMode | undefined;
+  /**
+   * Custom appearance stream content for the choice field.
+   * Example: `"1 0 0 rg 0 0 100 20 re f"`
+   */
+  appearance?: string | undefined;
   /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;
   /** Additional structure metadata for tagged PDF output. */
@@ -1501,6 +1545,12 @@ export interface RadioGroupOptions {
   readOnly?: boolean | undefined;
   /** Whether the form field is required. */
   required?: boolean | undefined;
+  /**
+   * Custom appearance stream for the radio group. Can be a raw PDF content
+   * stream string, or an object with optional normal (/N), down (/D),
+   * and rollover (/R) appearance strings.
+   */
+  appearance?: string | { normal?: string; down?: string; rollover?: string } | undefined;
   /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;
   /** Additional structure metadata for tagged PDF output. */
@@ -1531,6 +1581,11 @@ export interface PushButtonOptions {
   borderWidth?: number | undefined;
   /** Whether the form field is read-only. */
   readOnly?: boolean | undefined;
+  /**
+   * Custom appearance stream content for the push button.
+   * Example: `"1 0 0 rg 0 0 100 20 re f"`
+   */
+  appearance?: string | undefined;
   /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;
   /** Additional structure metadata for tagged PDF output. */
@@ -1555,6 +1610,11 @@ export interface SignatureFieldOptions {
   readOnly?: boolean | undefined;
   /** Whether the form field is required. */
   required?: boolean | undefined;
+  /**
+   * Custom appearance stream content for the signature field.
+   * Example: `"1 0 0 rg 0 0 100 20 re f"`
+   */
+  appearance?: string | undefined;
   /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;
   /** Additional structure metadata for tagged PDF output. */
