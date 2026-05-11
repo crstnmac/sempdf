@@ -631,3 +631,56 @@ test("custom appearance supports normal/down/rollover structure", () => {
   assert.ok(text.includes("0 0 1 rg"));
 });
 
+test("emits /RV rich text value on text fields", () => {
+  const doc = createDocument();
+  const page = doc.addPage({ size: "Letter" });
+  page.textField("note", {
+    x: 36, y: 640, width: 180, height: 24,
+    richValue: "<p>Rich text content</p>"
+  });
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/RV \(<p>Rich text content<\/p>\)/);
+});
+
+test("emits editable flag on combo box choice fields", () => {
+  const doc = createDocument();
+  const page = doc.addPage({ size: "Letter" });
+  page.choiceField("state", {
+    x: 36, y: 560, width: 140, height: 24,
+    options: ["NY", "CA", "TX"],
+    value: "CA",
+    mode: "combo",
+    editable: true
+  });
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/Ff 393216/);
+});
+
+test("emits /Encrypt null on fields with encryption disabled", () => {
+  const doc = createDocument({
+    encryption: {
+      userPassword: "reader",
+      ownerPassword: "owner-secret"
+    }
+  });
+  const page = doc.addPage({ size: "Letter" });
+  page.textField("searchable", {
+    x: 36, y: 640, width: 180, height: 24,
+    encrypt: false
+  });
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/Encrypt null/);
+});
+
+test("emits /AA JavaScript actions on form fields", () => {
+  const doc = createDocument();
+  const page = doc.addPage({ size: "Letter" });
+  page.textField("validated", {
+    x: 36, y: 520, width: 140, height: 24,
+    actions: { validate: "AFSimple_Calculate(\"SUM\", new Array(\"a\"));" }
+  });
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/AA <<[^>]*\/V <<[^>]*\/S \/JavaScript/);
+  assert.match(text, /\/JS\s*\(AFSimple_Calculate/);
+});
+

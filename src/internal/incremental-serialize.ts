@@ -344,6 +344,21 @@ export function applyDetachedSignature(
   const rangeLength = contentsHexStart;
   const rangeResume = contentsHexEnd;
   const rangeResumeLength = bytes.length - rangeResume;
+
+  if (rangeLength < 0 || rangeResumeLength < 0) {
+    throw new PdfEngineError(
+      PdfErrorCode.INTERNAL_ERROR,
+      'Signature byte range is invalid: negative range segment.',
+    );
+  }
+
+  if (rangeLength + rangeResumeLength + (contentsHexEnd - contentsHexStart) !== bytes.length) {
+    throw new PdfEngineError(
+      PdfErrorCode.INTERNAL_ERROR,
+      'Signature byte range does not cover the entire file. The placeholder Contents field must be the only excluded content.',
+    );
+  }
+
   const byteRange = `/ByteRange [0 ${padByteRangeNumber(rangeLength)} ${padByteRangeNumber(rangeResume)} ${padByteRangeNumber(rangeResumeLength)}]`;
   const output = bytes.slice();
   output.set(latin1Bytes(byteRange), byteRangeMatch.index);
@@ -358,7 +373,7 @@ export function applyDetachedSignature(
   if (signatureHex.length > placeholderHexLength) {
     throw new PdfEngineError(
       PdfErrorCode.INTERNAL_ERROR,
-      `Detached signature is ${cms.length} bytes, which exceeds the reserved ${placeholderHexLength / 2} byte placeholder.`,
+      `Detached signature is ${cms.length} bytes, which exceeds the reserved ${placeholderHexLength / 2} byte placeholder. Use estimateSignatureSize() to determine the needed placeholder size.`,
     );
   }
 
@@ -371,10 +386,57 @@ function padByteRangeNumber(value: number): string {
   return String(value).padStart(10, '0');
 }
 
+/**
+ * Estimates the placeholder byte size needed for a detached signature.
+ *
+ * For a self-signed PKCS#7 detached signature (SHA-256), the typical
+ * DER-encoded CMS message is roughly:
+ *   - 3000 bytes for a single signer with one certificate chain entry
+ *   - 5000 bytes for a signer with intermediate CA certificates
+ *   - Additional 1000-2000 bytes per extra certificate
+ *
+ * If `certificateBytes` is provided, this estimates based on the
+ * certificate size; otherwise a conservative default of 8192 bytes
+ * is returned (which is also the library default for placeholderBytes).
+ *
+ * The returned value is the **byte** count (not hex characters). The
+ * serialized placeholder will be twice this size (hex encoding).
+ */
+export function estimateSignatureSize(
+  certificateBytes?: Uint8Array | null,
+): number {
+  if (certificateBytes && certificateBytes.length > 0) {
+    return Math.max(certificateBytes.length * 4 + 4096, 4096);
+  }
+  return 8192;
+}
+
 export function bytesToHex(bytes: Uint8Array): string {
   return [...bytes]
     .map((byte) => byte.toString(16).toUpperCase().padStart(2, '0'))
     .join('');
+}
+
+export function computeContentHash(data: Uint8Array): string {
+  let hash = data.length.toString(36);
+  const step = Math.max(Math.floor(data.length / 64), 1);
+  for (let i = 0; i < data.length; i += step) {
+    hash += data[i]!.toString(36);
+  }
+  return hash;
+}
+
+export function canReuseContentStream(
+  newContent: Uint8Array,
+  originalContent: Uint8Array | undefined,
+): boolean {
+  if (originalContent === undefined) {
+    return false;
+  }
+  if (newContent.length !== originalContent.length) {
+    return false;
+  }
+  return computeContentHash(newContent) === computeContentHash(originalContent);
 }
 
 export function getObjectEncryptionContext(
@@ -494,16 +556,73 @@ function buildFullXrefStreamValue(
   xrefStreamObjectId: number,
   options: WritePdfOptions,
 ): PdfStream {
+  const widths = [1, 8, 2] as const;
   const sortedObjectIds = [...xrefEntries.keys()].sort(
     (left, right) => left - right,
   );
-  const widths = [1, 8, 2] as const;
+
+  const indexValues: number[] = [];
+  const allEntries: Array<{
+    objectId: number;
+    type: 0 | 1 | 2;
+    field2: number;
+    field3: number;
+  }> = [];
+  let rangeStart = 0;
+  let previous = -1;
+  let rangeLength = 0;
+
+  for (let objectId = 0; objectId <= xrefStreamObjectId; objectId += 1) {
+    const hasEntry = xrefEntries.has(objectId);
+    const entry = xrefEntries.get(objectId);
+
+    if (rangeLength === 0) {
+      rangeStart = objectId;
+      previous = objectId;
+      rangeLength = 1;
+      if (hasEntry && entry) {
+        allEntries.push({ objectId, type: entry.type, field2: entry.field2, field3: entry.field3 });
+      } else {
+        allEntries.push({ objectId, type: 0, field2: 0, field3: 65535 });
+      }
+      continue;
+    }
+
+    const sameGroup =
+      (hasEntry && entry !== undefined) ===
+      (xrefEntries.has(previous) && xrefEntries.get(previous) !== undefined);
+
+    if (sameGroup && objectId === previous + 1) {
+      previous = objectId;
+      rangeLength += 1;
+      if (hasEntry && entry) {
+        allEntries.push({ objectId, type: entry.type, field2: entry.field2, field3: entry.field3 });
+      } else {
+        allEntries.push({ objectId, type: 0, field2: 0, field3: 65535 });
+      }
+      continue;
+    }
+
+    indexValues.push(rangeStart, rangeLength);
+    rangeStart = objectId;
+    previous = objectId;
+    rangeLength = 1;
+    if (hasEntry && entry) {
+      allEntries.push({ objectId, type: entry.type, field2: entry.field2, field3: entry.field3 });
+    } else {
+      allEntries.push({ objectId, type: 0, field2: 0, field3: 65535 });
+    }
+  }
+
+  if (rangeLength > 0) {
+    indexValues.push(rangeStart, rangeLength);
+  }
+
   const bytes = new Uint8Array(
-    sortedObjectIds.length * (widths[0] + widths[1] + widths[2]),
+    allEntries.length * (widths[0] + widths[1] + widths[2]),
   );
   let cursor = 0;
-  for (const objectId of sortedObjectIds) {
-    const entry = xrefEntries.get(objectId)!;
+  for (const entry of allEntries) {
     writeBigEndian(bytes, cursor, widths[0], entry.type);
     cursor += widths[0];
     writeBigEndian(bytes, cursor, widths[1], entry.field2);
@@ -531,7 +650,7 @@ function buildFullXrefStreamValue(
           : undefined,
       ],
       ['W', array([...widths])],
-      ['Index', array([0, xrefStreamObjectId + 1])],
+      ['Index', array(indexValues)] as [string, PdfValue],
     ]),
     bytes,
   );
@@ -839,19 +958,7 @@ export function writeIncrementalPdf(
     objects,
     model.base.getMaxObjectId(),
   );
-  writer.writeLine('xref');
-  writer.writeLine(`0 ${maxObjectId + 1}`);
-  writer.writeLine('0000000000 65535 f ');
-
-  for (let objectId = 1; objectId <= maxObjectId; objectId += 1) {
-    const offset = offsets.get(objectId);
-    if (offset === undefined) {
-      writer.writeLine('0000000000 65535 f ');
-      continue;
-    }
-
-    writer.writeLine(`${String(offset).padStart(10, '0')} 00000 n `);
-  }
+  writeClassicXref(writer, offsets, maxObjectId);
 
   const trailer = mergePdfDict(
     model.base.trailer,
@@ -937,19 +1044,7 @@ export async function writeIncrementalPdfToSink(
     offsets,
     model.base.getMaxObjectId(),
   );
-  await writer.writeLine('xref');
-  await writer.writeLine(`0 ${maxObjectId + 1}`);
-  await writer.writeLine('0000000000 65535 f ');
-
-  for (let objectId = 1; objectId <= maxObjectId; objectId += 1) {
-    const offset = offsets.get(objectId);
-    if (offset === undefined) {
-      await writer.writeLine('0000000000 65535 f ');
-      continue;
-    }
-
-    await writer.writeLine(`${String(offset).padStart(10, '0')} 00000 n `);
-  }
+  await writeClassicXrefToSink(writer, offsets, maxObjectId);
 
   const trailer = mergePdfDict(
     model.base.trailer,
@@ -1127,4 +1222,100 @@ async function writeIncrementalXrefStreamPdfToSink(
   await writer.writeLine(String(xrefStreamOffset));
   await writer.writeLine('%%EOF');
   await writer.close();
+}
+
+interface XrefSubsection {
+  /** Start. */
+  readonly start: number;
+  /** Entries. */
+  readonly entries: readonly (readonly [number, number])[];
+}
+
+function buildXrefSubsections(
+  offsets: ReadonlyMap<number, number>,
+  maxObjectId: number,
+): XrefSubsection[] {
+  const objectIds: number[] = [];
+  for (let objectId = 1; objectId <= maxObjectId; objectId += 1) {
+    objectIds.push(objectId);
+  }
+  if (objectIds.length === 0) {
+    return [{ start: 0, entries: [] }];
+  }
+
+  const subsections: XrefSubsection[] = [];
+  let subsectionStart = 0;
+  let currentEntries: (readonly [number, number])[] = [];
+  let prevHadEntry = false;
+  let isFirst = true;
+
+  for (const objectId of objectIds) {
+    const offset = offsets.get(objectId);
+    const hasEntry = offset !== undefined;
+
+    if (isFirst) {
+      subsectionStart = objectId;
+      currentEntries = hasEntry ? [[offset!, 0] as const] : [[0, 65535] as const];
+      prevHadEntry = hasEntry;
+      isFirst = false;
+      continue;
+    }
+
+    const sameGroup = prevHadEntry === hasEntry && objectId === subsectionStart + currentEntries.length;
+
+    if (sameGroup) {
+      currentEntries.push(hasEntry ? [offset!, 0] as const : [0, 65535] as const);
+    } else {
+      subsections.push({ start: subsectionStart, entries: currentEntries });
+      subsectionStart = objectId;
+      currentEntries = hasEntry ? [[offset!, 0] as const] : [[0, 65535] as const];
+      prevHadEntry = hasEntry;
+    }
+  }
+
+  if (currentEntries.length > 0) {
+    subsections.push({ start: subsectionStart, entries: currentEntries });
+  }
+
+  return subsections;
+}
+
+function writeClassicXref(
+  writer: ByteWriter,
+  offsets: ReadonlyMap<number, number>,
+  maxObjectId: number,
+): void {
+  writer.writeLine('xref');
+  const subsections = buildXrefSubsections(offsets, maxObjectId);
+  const freeEntry = '0000000000 65535 f ';
+  for (const subsection of subsections) {
+    writer.writeLine(`${subsection.start} ${subsection.entries.length}`);
+    for (const [field2, field3] of subsection.entries) {
+      if (field3 === 65535) {
+        writer.writeLine(freeEntry);
+      } else {
+        writer.writeLine(`${String(field2).padStart(10, '0')} 00000 n `);
+      }
+    }
+  }
+}
+
+async function writeClassicXrefToSink(
+  writer: StreamingByteWriter,
+  offsets: ReadonlyMap<number, number>,
+  maxObjectId: number,
+): Promise<void> {
+  await writer.writeLine('xref');
+  const subsections = buildXrefSubsections(offsets, maxObjectId);
+  const freeEntry = '0000000000 65535 f ';
+  for (const subsection of subsections) {
+    await writer.writeLine(`${subsection.start} ${subsection.entries.length}`);
+    for (const [field2, field3] of subsection.entries) {
+      if (field3 === 65535) {
+        await writer.writeLine(freeEntry);
+      } else {
+        await writer.writeLine(`${String(field2).padStart(10, '0')} 00000 n `);
+      }
+    }
+  }
 }

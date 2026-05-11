@@ -2,17 +2,21 @@ import { PdfEngineError, PdfErrorCode } from "../errors.js";
 import type {
   BinaryData,
   BmpImageOptions,
+  GifImageOptions,
   JpegImageOptions,
   PdfBoundingBox,
   PdfStructureOptions,
   PdfStructureTag,
   PngImageOptions,
+  SvgImageOptions,
   TextBlockOptions,
   TextOptions,
-  UriLinkOptions
+  UriLinkOptions,
+  WebpImageOptions
 } from "../types.js";
 import { decrementRowSpanOccupancy, sumNumbers } from "./document-helpers.js";
 import { parseImage } from "./image.js";
+import { parseSvg } from "./svg.js";
 import {
   allocateStructureGroupId,
   type InternalPageModel,
@@ -86,7 +90,9 @@ export function createStructureNode(
     ...(options?.attributes === undefined ? {} : { attributes: options.attributes }),
     ...(options?.mathML === undefined ? {} : { mathML: options.mathML }),
     ...(options?.artifactType === undefined ? {} : { artifactType: options.artifactType }),
-    ...(options?.associatedFiles === undefined ? {} : { associatedFiles: options.associatedFiles })
+    ...(options?.associatedFiles === undefined ? {} : { associatedFiles: options.associatedFiles }),
+    ...(options?.phoneme === undefined ? {} : { phoneme: options.phoneme }),
+    ...(options?.expansion === undefined ? {} : { expansion: options.expansion })
   };
 
   if (parent) {
@@ -202,12 +208,26 @@ export function addTextBlockToPage(
 
 export function addImageToPage(
   page: InternalPageModel,
-  format: "jpeg" | "png" | "bmp",
+  format: "jpeg" | "png" | "bmp" | "jbig2" | "tiff" | "jp2" | "webp" | "gif" | "svg",
   data: BinaryData,
-  options: JpegImageOptions | PngImageOptions | import("../types.js").BmpImageOptions,
+  options: JpegImageOptions | PngImageOptions | import("../types.js").BmpImageOptions | import("../types.js").Jbig2ImageOptions | import("../types.js").TiffImageOptions | import("../types.js").Jp2ImageOptions | WebpImageOptions | GifImageOptions | SvgImageOptions,
   parent?: InternalStructureNode,
   defaultTag?: "Figure"
 ): void {
+  if (format === "svg") {
+    const svgOptions = options as SvgImageOptions;
+    const text = new TextDecoder().decode(
+      data instanceof Uint8Array ? data : new Uint8Array(data)
+    );
+    const svgWidth = svgOptions.width ?? 0;
+    const parsed = parseSvg(text, svgWidth > 0 ? svgWidth : undefined, svgOptions.height);
+    page.ops.push({
+      type: "raw",
+      content: parsed.content
+    });
+    return;
+  }
+
   const normalizedOptions = normalizeImageOptions(options);
   let structureTag:
     | Exclude<NonNullable<ReturnType<typeof normalizeImageOptions>["tag"]>, "Artifact">
@@ -248,9 +268,10 @@ export function addImageToPage(
           parent
         )
       : undefined;
+  const iccProfile = "iccProfile" in options ? (options as JpegImageOptions | PngImageOptions).iccProfile : undefined;
   page.ops.push({
     type: "image",
-    image: parseImage(format, data, options.iccProfile),
+    image: parseImage(format, data, iccProfile),
     options: {
       ...normalizedOptions,
       ...(structureNode === undefined ? {} : { structureGroupId: structureNode.id })
@@ -457,6 +478,9 @@ export function layoutTable(
   options: NormalizedTableOptions,
   embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>
 ): number {
+  if (options.summary !== undefined) {
+    tableNode.summary = options.summary;
+  }
   let y = options.y;
   const rowSpanOccupancy = new Map<number, number>();
 

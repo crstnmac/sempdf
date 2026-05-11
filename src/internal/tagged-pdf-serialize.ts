@@ -95,6 +95,9 @@ export interface StructElementAllocation {
         mimeType?: string;
       }[]
     | undefined;
+  readonly phoneme?: string | undefined;
+  readonly expansion?: string | undefined;
+  readonly summary?: string | undefined;
 }
 
 export interface TaggedPdfAllocation {
@@ -338,7 +341,7 @@ export function allocateTaggedPdf(
       const uniqueMcids = [...new Set(pageMcids)];
       for (let i = 0; i < uniqueMcids.length; i++) {
         if (uniqueMcids[i] !== i) {
-          console.warn(
+          console.debug(
             `MCID sequence gap on page ${page.pageObjectId}: expected MCID ${i}, found ${uniqueMcids[i]}. ` +
               `Sequence should be contiguous (0,1,2,...N).`,
           );
@@ -475,6 +478,9 @@ function allocateStructElementTree(
     ...(associatedFileSpecIds !== undefined ? { associatedFileSpecIds } : {}),
     ...(associatedFileObjectIds !== undefined ? { associatedFileObjectIds } : {}),
     ...(node.associatedFiles !== undefined ? { associatedFiles: node.associatedFiles } : {}),
+    ...(node.phoneme !== undefined ? { phoneme: node.phoneme } : {}),
+    ...(node.expansion !== undefined ? { expansion: node.expansion } : {}),
+    ...(node.summary !== undefined ? { summary: node.summary } : {}),
   });
   return {
     objectId,
@@ -591,7 +597,7 @@ function buildParentTreeNums(
         ) {
           const refId = (value as { objectId: number }).objectId;
           if (!elementObjectIds.has(refId)) {
-            console.warn(
+            console.debug(
               `Orphan MCID ${mcid}: parent tree references element object ${refId} which does not exist in the allocation elements array.`,
             );
           }
@@ -734,6 +740,24 @@ export function buildStructElementDictionary(
       'Lang',
       element.language !== undefined
         ? literalString(element.language)
+        : undefined,
+    ],
+    [
+      'Phoneme',
+      element.phoneme !== undefined
+        ? literalString(element.phoneme)
+        : undefined,
+    ],
+    [
+      'E',
+      element.expansion !== undefined
+        ? literalString(element.expansion)
+        : undefined,
+    ],
+    [
+      'Summary',
+      element.summary !== undefined
+        ? literalString(element.summary)
         : undefined,
     ],
     [

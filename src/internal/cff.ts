@@ -162,6 +162,96 @@ export function parseCffTable(bytes: Uint8Array, tableOffset: number, tableLengt
   };
 }
 
+export function parseCff2Table(bytes: Uint8Array, tableOffset: number, tableLength: number): ParsedCffFont {
+  const end = tableOffset + tableLength;
+  const majorVersion = readUint8(bytes, tableOffset);
+  const minorVersion = readUint8(bytes, tableOffset + 1);
+  const headerSize = readUint8(bytes, tableOffset + 2);
+  const topDictLength = readUint16(bytes, tableOffset + 3);
+
+  if (headerSize < 5) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Invalid CFF2 header size.", { headerSize });
+  }
+
+  if (majorVersion !== 2) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Invalid CFF2 major version.", { majorVersion });
+  }
+
+  const topDictOffset = tableOffset + headerSize;
+  const topDictData = bytes.slice(topDictOffset, topDictOffset + topDictLength);
+  const rawTopDictData = topDictData;
+
+  const topDictEntries = parseTopDict(topDictData);
+
+  let charStringsRaw: Uint8Array = new Uint8Array(0);
+  let charset: number[] = [];
+  let fontMatrix: number[] = [0.001, 0, 0, 0.001, 0, 0];
+  let privateDictData: Uint8Array | undefined;
+
+  const charStringsIndexData = new Map<number, Uint8Array>();
+
+  for (let i = 0; i < topDictEntries.length; i += 2) {
+    const operator = topDictEntries[i];
+    const operands = topDictEntries[i + 1] as DictOperand[];
+    if (operator === undefined || operands === undefined) continue;
+
+    if (operator === 17 && operands.length >= 1 && typeof operands[0]!.value === "number") {
+      const charStringsOffset = operands[0]!.value;
+      const csData = readCffIndex(bytes, tableOffset + charStringsOffset, end);
+      charStringsIndexData.set(0, new Uint8Array(0));
+      for (let ci = 0; ci < csData.length; ci += 1) {
+        charStringsIndexData.set(ci, csData[ci]!);
+        if (ci === 0) {
+          charStringsRaw = csData[ci]!;
+        }
+      }
+    }
+
+    if (operator === 15 && operands.length >= 1 && typeof operands[0]!.value === "number") {
+      const charsetOffset = operands[0]!.value;
+      const glyphCount = charStringsIndexData.size > 0 ? charStringsIndexData.size - 1 : 0;
+      charset = parseCharset(bytes, tableOffset + charsetOffset, Math.max(glyphCount, 1), end);
+    }
+
+    if (operator === 1207 && operands.length >= 6) {
+      fontMatrix = operands.slice(0, 6).map((op) => {
+        if (typeof op.value === "number") return op.value;
+        return 0;
+      });
+    }
+
+    if (operator === 18 && operands.length >= 2) {
+      const privateSize = typeof operands[0]!.value === "number" ? operands[0]!.value : 0;
+      const privateOffset = typeof operands[1]!.value === "number" ? operands[1]!.value : 0;
+      if (privateSize > 0) {
+        privateDictData = bytes.slice(tableOffset + privateOffset, tableOffset + privateOffset + privateSize);
+      }
+    }
+  }
+
+  const rawCharStringsData = charStringsRaw;
+  const rawPrivateDictData = privateDictData;
+  const glyphCount = charStringsIndexData.size > 0 ? charStringsIndexData.size - 1 : 0;
+
+  return {
+    majorVersion,
+    minorVersion,
+    headerSize,
+    nameIndex: [],
+    topDictIndex: [topDictData],
+    stringIndex: [],
+    globalSubrIndex: [],
+    chars: [],
+    charsets: charset,
+    fontMatrix,
+    unitsPerEm: 1000,
+    glyphCount,
+    rawTopDictData,
+    rawCharStringsData,
+    rawPrivateDictData
+  };
+}
+
 function readCffIndex(bytes: Uint8Array, offset: number, end: number): Uint8Array[] {
   const count = readUint16(bytes, offset);
   if (count === 0) {

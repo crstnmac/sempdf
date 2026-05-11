@@ -100,6 +100,59 @@ export function positionTextRunsVertical(
   let y = options.y;
   const charHeight = options.fontSize;
 
+  if (options.tateChuYoko !== false && runs.some((r) => hasHorizontalInVerticalChars(r.text))) {
+    const tcyGroups = buildTateChuYokoGroups(runs);
+
+    for (const group of tcyGroups) {
+      if (group.kind === "vertical") {
+        for (const run of group.runs) {
+          positionedRuns.push({
+            text: run.text,
+            options: {
+              x: options.x,
+              y,
+              font: run.font,
+              fontSize: options.fontSize,
+              color: options.color,
+              kerning: options.kerning,
+              ...(options.tag !== undefined ? { tag: options.tag } : {}),
+              ...(options.characterSpacing !== undefined ? { characterSpacing: options.characterSpacing } : {}),
+              ...(options.wordSpacing !== undefined ? { wordSpacing: options.wordSpacing } : {}),
+              ...(options.leading !== undefined ? { leading: options.leading } : {})
+            },
+            ...(run.glyphs ? { glyphs: run.glyphs } : {})
+          });
+          y -= charHeight;
+        }
+      } else {
+        const combinedText = group.runs.map((r) => r.text).join("");
+        const combinedGlyphs = group.runs.every((r) => r.glyphs)
+          ? group.runs.flatMap((r) => r.glyphs!)
+          : undefined;
+
+        positionedRuns.push({
+          text: combinedText,
+          options: {
+            x: options.x,
+            y,
+            font: group.runs[0]!.font,
+            fontSize: options.fontSize,
+            color: options.color,
+            kerning: options.kerning,
+            ...(options.tag !== undefined ? { tag: options.tag } : {}),
+            ...(options.characterSpacing !== undefined ? { characterSpacing: options.characterSpacing } : {}),
+            ...(options.wordSpacing !== undefined ? { wordSpacing: options.wordSpacing } : {}),
+            ...(options.leading !== undefined ? { leading: options.leading } : {})
+          },
+          ...(combinedGlyphs ? { glyphs: combinedGlyphs } : {})
+        });
+        y -= charHeight * group.runs.length;
+      }
+    }
+
+    return positionedRuns;
+  }
+
   for (const run of runs) {
     positionedRuns.push({
       text: run.text,
@@ -121,6 +174,62 @@ export function positionTextRunsVertical(
   }
 
   return positionedRuns;
+}
+
+interface TateChuYokoGroup {
+  kind: "vertical" | "horizontal";
+  runs: ShapedTextRun[];
+}
+
+function buildTateChuYokoGroups(runs: readonly ShapedTextRun[]): TateChuYokoGroup[] {
+  const groups: TateChuYokoGroup[] = [];
+  let currentHorizontal: ShapedTextRun[] = [];
+
+  for (const run of runs) {
+    if (isHorizontalInVertical(run.text)) {
+      currentHorizontal.push(run);
+    } else {
+      if (currentHorizontal.length > 0) {
+        groups.push({ kind: "horizontal", runs: currentHorizontal });
+        currentHorizontal = [];
+      }
+      groups.push({ kind: "vertical", runs: [run] });
+    }
+  }
+
+  if (currentHorizontal.length > 0) {
+    groups.push({ kind: "horizontal", runs: currentHorizontal });
+  }
+
+  return groups;
+}
+
+function hasHorizontalInVerticalChars(text: string): boolean {
+  for (const char of codePoints(text)) {
+    if (isHorizontalInVertical(char)) return true;
+  }
+  return false;
+}
+
+function isHorizontalInVertical(char: string): boolean {
+  const cp = char.codePointAt(0);
+  if (cp === undefined) return false;
+
+  if (cp >= 0x30 && cp <= 0x39) return true;
+  if (cp >= 0x41 && cp <= 0x5a) return true;
+  if (cp >= 0x61 && cp <= 0x7a) return true;
+
+  if (cp >= 0x21 && cp <= 0x2f) return true;
+  if (cp >= 0x3a && cp <= 0x40) return true;
+  if (cp >= 0x5b && cp <= 0x60) return true;
+  if (cp >= 0x7b && cp <= 0x7e) return true;
+
+  if (cp >= 0x00c0 && cp <= 0x024f) return true;
+  if (cp >= 0xff10 && cp <= 0xff19) return true;
+  if (cp >= 0xff21 && cp <= 0xff3a) return true;
+  if (cp >= 0xff41 && cp <= 0xff5a) return true;
+
+  return false;
 }
 
 export function positionTextRuns(
@@ -556,7 +665,10 @@ function wrapParagraph(
     return [];
   }
 
-  const words = normalizedParagraph.split(/\s+/).filter((word) => word.length > 0);
+  const hasThai = containsThaiScript(normalizedParagraph);
+  const words = hasThai
+    ? segmentThaiWords(normalizedParagraph)
+    : normalizedParagraph.split(/\s+/).filter((word) => word.length > 0);
   const lines: string[] = [];
   const charSpacing = options.characterSpacing ?? 0;
   const spaceWidth = measureTextWidth(" ", options, embeddedFonts);
@@ -967,4 +1079,159 @@ function codePoints(text: string): string[] {
     }
   }
   return result;
+}
+
+const THAI_RANGE_START = 0x0e00;
+const THAI_RANGE_END = 0x0e7f;
+
+function isThai(codePoint: number): boolean {
+  return codePoint >= THAI_RANGE_START && codePoint <= THAI_RANGE_END;
+}
+
+function containsThaiScript(text: string): boolean {
+  for (const character of codePoints(text)) {
+    const cp = character.codePointAt(0);
+    if (cp !== undefined && isThai(cp)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+const COMMON_THAI_WORDS = new Set([
+  "\u0e01\u0e31\u0e1a",
+  "\u0e44\u0e14\u0e49",
+  "\u0e44\u0e21\u0e48",
+  "\u0e41\u0e25\u0e30",
+  "\u0e41\u0e25\u0e49\u0e27",
+  "\u0e43\u0e19",
+  "\u0e17\u0e35\u0e48",
+  "\u0e21\u0e35",
+  "\u0e04\u0e27\u0e32\u0e21",
+  "\u0e01\u0e32\u0e23",
+  "\u0e02\u0e2d\u0e07",
+  "\u0e40\u0e1b\u0e47\u0e19",
+  "\u0e44\u0e14\u0e49\u0e23\u0e31\u0e1a",
+  "\u0e15\u0e32\u0e21",
+  "\u0e2d\u0e22\u0e48\u0e32\u0e07",
+  "\u0e08\u0e32\u0e01",
+  "\u0e2b\u0e23\u0e37\u0e2d",
+  "\u0e2b\u0e23\u0e37\u0e2d\u0e27\u0e48\u0e32",
+  "\u0e40\u0e21\u0e37\u0e48\u0e2d",
+  "\u0e42\u0e14\u0e22",
+  "\u0e16\u0e36\u0e07",
+  "\u0e16\u0e49\u0e32",
+  "\u0e21\u0e32\u0e01",
+  "\u0e19\u0e35\u0e49",
+  "\u0e19\u0e31\u0e49\u0e19",
+  "\u0e19\u0e31\u0e48\u0e19",
+  "\u0e1a\u0e17",
+  "\u0e1a\u0e17\u0e04\u0e27\u0e32\u0e21",
+  "\u0e1a\u0e38\u0e04\u0e04\u0e25",
+  "\u0e1b\u0e23\u0e30\u0e40\u0e17\u0e28",
+  "\u0e1c\u0e21",
+  "\u0e1c\u0e39\u0e49",
+  "\u0e1e\u0e23\u0e30",
+  "\u0e1e\u0e23\u0e30\u0e40\u0e08\u0e49\u0e32",
+  "\u0e21\u0e31\u0e19",
+  "\u0e23\u0e27\u0e21",
+  "\u0e23\u0e30\u0e2b\u0e27\u0e48\u0e32\u0e07",
+  "\u0e27\u0e34\u0e18\u0e35",
+  "\u0e27\u0e48\u0e32",
+  "\u0e2a\u0e33\u0e2b\u0e23\u0e31\u0e1a",
+  "\u0e2a\u0e48\u0e27\u0e19",
+  "\u0e2b\u0e19\u0e36\u0e48\u0e07",
+  "\u0e2b\u0e23\u0e37\u0e2d",
+  "\u0e2d\u0e22\u0e48\u0e32\u0e07",
+  "\u0e40\u0e01\u0e35\u0e48\u0e22\u0e27",
+  "\u0e40\u0e01\u0e35\u0e48\u0e22\u0e27\u0e01\u0e31\u0e1a",
+  "\u0e40\u0e02\u0e49\u0e32",
+  "\u0e40\u0e04\u0e23\u0e37\u0e48\u0e2d\u0e07",
+  "\u0e40\u0e0a\u0e48\u0e19",
+  "\u0e40\u0e0a\u0e48\u0e19\u0e40\u0e14\u0e35\u0e22\u0e27",
+  "\u0e40\u0e14\u0e47\u0e01",
+  "\u0e40\u0e19\u0e37\u0e48\u0e2d\u0e07",
+  "\u0e40\u0e19\u0e37\u0e48\u0e2d\u0e07\u0e08\u0e32\u0e01",
+  "\u0e40\u0e1b\u0e25\u0e48\u0e32",
+  "\u0e40\u0e1e\u0e23\u0e32\u0e30",
+  "\u0e40\u0e21\u0e37\u0e48\u0e2d",
+  "\u0e40\u0e21\u0e37\u0e48\u0e2d\u0e01\u0e48\u0e2d\u0e19",
+  "\u0e40\u0e21\u0e48\u0e37\u0e2d",
+  "\u0e40\u0e27\u0e25\u0e32",
+  "\u0e40\u0e2a\u0e23\u0e47\u0e08",
+  "\u0e40\u0e2b\u0e21\u0e37\u0e2d\u0e19",
+  "\u0e40\u0e2b\u0e25\u0e48\u0e32",
+  "\u0e41\u0e15\u0e48",
+  "\u0e41\u0e15\u0e48\u0e25\u0e30",
+  "\u0e41\u0e1a\u0e1a",
+  "\u0e41\u0e25\u0e49\u0e27\u0e01\u0e47",
+  "\u0e41\u0e2a\u0e14\u0e07",
+  "\u0e42\u0e14\u0e22",
+  "\u0e43\u0e19",
+  "\u0e43\u0e2b\u0e0d\u0e48",
+  "\u0e43\u0e2b\u0e49",
+]);
+
+function segmentThaiWords(text: string): string[] {
+  const chars = codePoints(text);
+  const words: string[] = [];
+  let current = "";
+
+  for (const character of chars) {
+    const cp = character.codePointAt(0)!;
+
+    if (!isThai(cp)) {
+      if (current.length > 0) {
+        words.push(...segmentThaiToWords(current));
+        current = "";
+      }
+      const lastWord = words[words.length - 1];
+      if (lastWord !== undefined && !isThai(lastWord.codePointAt(0)!)) {
+        words[words.length - 1] = lastWord + character;
+      } else {
+        words.push(character);
+      }
+      continue;
+    }
+
+    current += character;
+  }
+
+  if (current.length > 0) {
+    words.push(...segmentThaiToWords(current));
+  }
+
+  return words.filter((w) => w.length > 0);
+}
+
+function segmentThaiToWords(thaiText: string): string[] {
+  const chars = codePoints(thaiText);
+  if (chars.length === 0) {
+    return [];
+  }
+
+  const words: string[] = [];
+  let i = 0;
+
+  while (i < chars.length) {
+    let bestLen = 0;
+
+    for (let len = Math.min(chars.length - i, 20); len >= 1; len -= 1) {
+      const candidate = chars.slice(i, i + len).join("");
+      if (COMMON_THAI_WORDS.has(candidate)) {
+        bestLen = len;
+        break;
+      }
+    }
+
+    if (bestLen > 0) {
+      words.push(chars.slice(i, i + bestLen).join(""));
+      i += bestLen;
+    } else {
+      words.push(chars[i]!);
+      i += 1;
+    }
+  }
+
+  return words;
 }

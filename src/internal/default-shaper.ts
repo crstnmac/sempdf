@@ -6,6 +6,10 @@ import type { ParsedTrueTypeFont, TrueTypeJoiningForms } from "./truetype.js";
 
 const DEVANAGARI_RANGE_START = 0x0900;
 const DEVANAGARI_RANGE_END = 0x097f;
+const KHMER_RANGE_START = 0x1780;
+const KHMER_RANGE_END = 0x17FF;
+const MYANMAR_RANGE_START = 0x1000;
+const MYANMAR_RANGE_END = 0x109F;
 const DEVA_HALF_FORMS: ReadonlyMap<number, number> = new Map<number, number>([
   [0x0915, 0x0958],
   [0x0916, 0x0959],
@@ -26,11 +30,21 @@ function isDevanagari(codePoint: number): boolean {
   return codePoint >= DEVANAGARI_RANGE_START && codePoint <= DEVANAGARI_RANGE_END;
 }
 
+function isKhmer(codePoint: number): boolean {
+  return codePoint >= KHMER_RANGE_START && codePoint <= KHMER_RANGE_END;
+}
+
+function isMyanmar(codePoint: number): boolean {
+  return codePoint >= MYANMAR_RANGE_START && codePoint <= MYANMAR_RANGE_END;
+}
+
 function detectScript(text: string): string | undefined {
   for (const character of text) {
     const codePoint = character.codePointAt(0);
     if (codePoint === undefined) continue;
     if (isDevanagari(codePoint)) return "deva";
+    if (isKhmer(codePoint)) return "khmr";
+    if (isMyanmar(codePoint)) return "mymr";
   }
   return undefined;
 }
@@ -220,7 +234,19 @@ function applyJoiningFormSubstitutions(tokens: readonly ShapingToken[], embedded
 const defaultTextShaper: TextShaper = {
   shape(text, font, direction, script) {
     const detectedScript = script ?? detectScript(text);
-    if (detectedScript) {
+    if (detectedScript === "deva") {
+      if (font.hasDevanagariFeatures) {
+        return shapeDevanagari(text, font);
+      }
+    } else if (detectedScript === "khmr") {
+      if (font.hasKhmerFeatures) {
+        return shapeKhmer(text, font);
+      }
+    } else if (detectedScript === "mymr") {
+      if (font.hasMyanmarFeatures) {
+        return shapeMyanmar(text, font);
+      }
+    } else if (detectedScript) {
       throw new PdfEngineError(
         PdfErrorCode.UNSUPPORTED_SCRIPT,
         `The default text shaper does not support the "${detectedScript}" script. Plug in an external text shaper (e.g. harfbuzzjs) via the 'textShaper' document option.`,
@@ -256,6 +282,209 @@ const defaultTextShaper: TextShaper = {
   }
 };
 
+function shapeDevanagari(text: string, font: ParsedTrueTypeFont): ShapedGlyph[] {
+  const result: ShapedGlyph[] = [];
+  const chars = [...text];
+  let i = 0;
+
+  while (i < chars.length) {
+    const character = chars[i]!;
+    const cp = character.codePointAt(0)!;
+
+    if (cp === 0x094D) {
+      i += 1;
+      continue;
+    }
+
+    if (isDevanagariConsonant(cp) && i + 2 < chars.length) {
+      const nextCp = chars[i + 1]!.codePointAt(0)!;
+      if (nextCp === 0x094D) {
+        const afterCp = chars[i + 2]!.codePointAt(0)!;
+        if (isDevanagariConsonant(afterCp) || afterCp === 0x0930 || afterCp === 0x092F || afterCp === 0x0935 || afterCp === 0x0930 || afterCp === 0x0932) {
+          const halfFormCp = DEVA_HALF_FORMS.get(cp);
+          if (halfFormCp !== undefined) {
+            const glyphId = font.cmap.getGlyphId(halfFormCp);
+            if (glyphId !== 0) {
+              const advance = font.widths[glyphId] ?? font.widths[0] ?? font.unitsPerEm;
+              result.push({
+                glyphId,
+                xOffset: 0,
+                yOffset: 0,
+                xAdvance: advance,
+                yAdvance: 0
+              });
+              i += 2;
+              continue;
+            }
+          }
+        }
+      }
+    }
+
+    if (isDevanagariMark(cp)) {
+      i += 1;
+      continue;
+    }
+
+    const glyphId = font.cmap.getGlyphId(cp);
+    if (glyphId !== 0) {
+      const advance = font.widths[glyphId] ?? font.widths[0] ?? font.unitsPerEm;
+      result.push({
+        glyphId,
+        xOffset: 0,
+        yOffset: 0,
+        xAdvance: advance,
+        yAdvance: 0
+      });
+    }
+
+    i += 1;
+  }
+
+  return result;
+}
+
+function isDevanagariConsonant(cp: number): boolean {
+  return (cp >= 0x0915 && cp <= 0x0939) || (cp >= 0x0958 && cp <= 0x095F);
+}
+
+function isDevanagariMark(cp: number): boolean {
+  return (cp >= 0x0900 && cp <= 0x0914)
+    || cp === 0x093C
+    || (cp >= 0x093E && cp <= 0x094C)
+    || cp === 0x094E
+    || cp === 0x094F
+    || (cp >= 0x0951 && cp <= 0x0957)
+    || (cp >= 0x0960 && cp <= 0x0963)
+    || cp === 0x0962
+    || cp === 0x0963;
+}
+
+function shapeKhmer(text: string, font: ParsedTrueTypeFont): ShapedGlyph[] {
+  const result: ShapedGlyph[] = [];
+  const chars = [...text];
+  let i = 0;
+
+  while (i < chars.length) {
+    const character = chars[i]!;
+    const cp = character.codePointAt(0)!;
+
+    if (cp === 0x17D2) {
+      i += 1;
+      continue;
+    }
+
+    if (isKhmerCoengSubscript(cp, chars, i, font)) {
+      const coengGlyphId = font.cmap.getGlyphId(cp);
+      if (coengGlyphId !== 0) {
+        const advance = font.widths[coengGlyphId] ?? font.widths[0] ?? font.unitsPerEm;
+        result.push({ glyphId: coengGlyphId, xOffset: 0, yOffset: 0, xAdvance: advance, yAdvance: 0 });
+      }
+      i += 1;
+      continue;
+    }
+
+    if (isKhmerMark(cp)) {
+      i += 1;
+      continue;
+    }
+
+    const glyphId = font.cmap.getGlyphId(cp);
+    if (glyphId !== 0) {
+      const advance = font.widths[glyphId] ?? font.widths[0] ?? font.unitsPerEm;
+      result.push({ glyphId, xOffset: 0, yOffset: 0, xAdvance: advance, yAdvance: 0 });
+    }
+
+    i += 1;
+  }
+
+  return result;
+}
+
+function isKhmerConsonant(cp: number): boolean {
+  return cp >= 0x1780 && cp <= 0x17B3;
+}
+
+function isKhmerCoengSubscript(cp: number, chars: string[], i: number, font: ParsedTrueTypeFont): boolean {
+  if (!isKhmerConsonant(cp) || i + 1 >= chars.length) return false;
+  const nextCp = chars[i + 1]!.codePointAt(0)!;
+  if (nextCp !== 0x17D2) return false;
+  if (i + 2 >= chars.length) return false;
+  const afterCp = chars[i + 2]!.codePointAt(0)!;
+  return isKhmerConsonantSubscript(afterCp) && font.cmap.getGlyphId(cp) !== 0;
+}
+
+function isKhmerConsonantSubscript(cp: number): boolean {
+  return (cp >= 0x1780 && cp <= 0x17B3) || cp === 0x17A2;
+}
+
+function isKhmerMark(cp: number): boolean {
+  return (cp >= 0x17B6 && cp <= 0x17D3)
+    || (cp >= 0x17DD && cp <= 0x17E9);
+}
+
+function shapeMyanmar(text: string, font: ParsedTrueTypeFont): ShapedGlyph[] {
+  const result: ShapedGlyph[] = [];
+  const chars = [...text];
+  let i = 0;
+
+  while (i < chars.length) {
+    const character = chars[i]!;
+    const cp = character.codePointAt(0)!;
+
+    if (cp === 0x1039) {
+      i += 1;
+      continue;
+    }
+
+    if (isMyanmarMark(cp)) {
+      i += 1;
+      continue;
+    }
+
+    if (isMyanmarConsonant(cp) && i + 2 < chars.length) {
+      const nextCp = chars[i + 1]!.codePointAt(0)!;
+      if (nextCp === 0x1039) {
+        const afterCp = chars[i + 2]!.codePointAt(0)!;
+        if (isMyanmarConsonant(afterCp)) {
+          const glyphId = font.cmap.getGlyphId(cp);
+          if (glyphId !== 0) {
+            const advance = font.widths[glyphId] ?? font.widths[0] ?? font.unitsPerEm;
+            result.push({ glyphId, xOffset: 0, yOffset: 0, xAdvance: advance, yAdvance: 0 });
+            i += 2;
+            continue;
+          }
+        }
+      }
+    }
+
+    const glyphId = font.cmap.getGlyphId(cp);
+    if (glyphId !== 0) {
+      const advance = font.widths[glyphId] ?? font.widths[0] ?? font.unitsPerEm;
+      result.push({ glyphId, xOffset: 0, yOffset: 0, xAdvance: advance, yAdvance: 0 });
+    }
+
+    i += 1;
+  }
+
+  return result;
+}
+
+function isMyanmarConsonant(cp: number): boolean {
+  return cp >= 0x1000 && cp <= 0x1021;
+}
+
+function isMyanmarMark(cp: number): boolean {
+  return (cp >= 0x102B && cp <= 0x103E)
+    || (cp >= 0x1056 && cp <= 0x1059)
+    || (cp >= 0x1036 && cp <= 0x103A)
+    || cp === 0x1031
+    || cp === 0x103B
+    || cp === 0x103C
+    || cp === 0x103D
+    || cp === 0x103E;
+}
+
 export function createDefaultTextShaper(): TextShaper {
   return defaultTextShaper;
 }
@@ -273,4 +502,4 @@ export function shapeEmbeddedGlyphsWithShaper(
   }));
 }
 
-export { detectScript, isDevanagari, DEVA_HALF_FORMS, DEVANAGARI_RANGE_START, DEVANAGARI_RANGE_END };
+export { detectScript, isDevanagari, isKhmer, isMyanmar, DEVA_HALF_FORMS, DEVANAGARI_RANGE_START, DEVANAGARI_RANGE_END, KHMER_RANGE_START, KHMER_RANGE_END, MYANMAR_RANGE_START, MYANMAR_RANGE_END };

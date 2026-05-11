@@ -32,6 +32,11 @@ export interface NodeWritableLike {
  *
  * An in-memory byte sink that collects streamed PDF output chunks and exposes them as a single Uint8Array when needed.
  */
+export interface BufferSinkOptions {
+  /** Maximum total bytes the sink will accept before throwing SINK_FULL. */
+  readonly maxSize?: number | undefined;
+}
+
 export class BufferSink implements ByteSink {
   /** Chunks. */
   private readonly chunks: Uint8Array[] = [];
@@ -39,6 +44,19 @@ export class BufferSink implements ByteSink {
   private length = 0;
   /** Closed. */
   private closed = false;
+  /** Max size. */
+  private readonly maxSize: number | undefined;
+  /** Total bytes written so far. */
+  private totalBytes = 0;
+
+  /**
+   * Creates a memory-backed byte sink with an optional capacity limit.
+   *
+   * @param options Options that control the sink behavior.
+   */
+  constructor(options: BufferSinkOptions = {}) {
+    this.maxSize = options.maxSize;
+  }
 
   /**
    * Stores a streamed byte chunk in memory.
@@ -48,6 +66,11 @@ export class BufferSink implements ByteSink {
   async write(chunk: Uint8Array): Promise<void> {
     if (this.closed) {
       throw new PdfEngineError(PdfErrorCode.SINK_CLOSED, "Cannot write to a closed BufferSink.");
+    }
+
+    this.totalBytes += chunk.length;
+    if (this.maxSize !== undefined && this.totalBytes > this.maxSize) {
+      throw new PdfEngineError(PdfErrorCode.SINK_FULL, "BufferSink capacity exceeded.");
     }
 
     this.chunks.push(chunk);
@@ -187,5 +210,103 @@ export class WebStreamSink implements ByteSink {
    */
   async close(): Promise<void> {
     await this.writer.close();
+  }
+}
+
+/**
+ *
+ * A byte sink that writes data to a temporary file, reducing memory
+ * pressure for very large documents. The temp file is automatically
+ * deleted on {@link close} (or {@link dispose}).
+ */
+export class TempFileSink implements ByteSink {
+  private writeStream: import('node:fs').WriteStream | null = null;
+  private filePath: string | null = null;
+  private _closed = false;
+
+  /**
+   * Creates a TempFileSink backed by a temporary file.
+   */
+  constructor() {
+    // Path set lazily on first write
+  }
+
+  /**
+   * Returns the underlying file path once writing has started.
+   */
+  get path(): string | null {
+    return this.filePath;
+  }
+
+  async write(chunk: Uint8Array): Promise<void> {
+    if (this._closed) {
+      throw new PdfEngineError(PdfErrorCode.SINK_CLOSED, 'Cannot write to a closed TempFileSink.');
+    }
+    if (!this.writeStream) {
+      const { createWriteStream } = await import('node:fs');
+      const { tmpdir } = await import('node:os');
+      const { join } = await import('node:path');
+      const { randomUUID } = await import('node:crypto');
+      this.filePath = join(tmpdir(), `pdf-temp-${randomUUID()}.bin`);
+      this.writeStream = createWriteStream(this.filePath);
+    }
+    return new Promise((resolve, reject) => {
+      const ready = this.writeStream!.write(chunk, (err) => {
+        if (err) { reject(err); return; }
+        resolve();
+      });
+      if (!ready) {
+        this.writeStream!.once('drain', () => resolve());
+      }
+    });
+  }
+
+  /**
+   * Closes the write stream and deletes the temporary file.
+   */
+  async close(): Promise<void> {
+    if (this._closed) return;
+    this._closed = true;
+    if (this.writeStream) {
+      await new Promise<void>((resolve, reject) => {
+        this.writeStream!.end((err: Error | null) => {
+          if (err) { reject(err); return; }
+          resolve();
+        });
+      });
+      try {
+        const { unlink } = await import('node:fs/promises');
+        await unlink(this.filePath!);
+      } catch {
+        // Temp file may already be gone
+      }
+      this.writeStream = null;
+      this.filePath = null;
+    }
+  }
+
+  /**
+   * Reads the temp file contents back into memory. The file must still
+   * be open (i.e. {@link close} must not have been called yet).
+   *
+   * @returns The full temp file contents as a Uint8Array.
+   */
+  async getBytes(): Promise<Uint8Array> {
+    if (!this.filePath) {
+      throw new PdfEngineError(PdfErrorCode.INTERNAL_ERROR, 'TempFileSink has no data written yet.');
+    }
+    if (this._closed) {
+      throw new PdfEngineError(PdfErrorCode.SINK_CLOSED, 'Cannot read from a closed TempFileSink.');
+    }
+    const { readFile } = await import('node:fs/promises');
+    const buffer = await readFile(this.filePath);
+    return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  }
+
+  /**
+   * Deletes the temp file without closing the sink cleanly.
+   */
+  async dispose(): Promise<void> {
+    return this.close();
   }
 }

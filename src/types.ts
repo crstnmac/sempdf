@@ -300,6 +300,16 @@ export interface PdfStructureOptions {
   associatedFiles?:
     | Array<{ name: string; data: BinaryData; mimeType?: string }>
     | undefined;
+  /**
+   * Pronunciation guide for the structure element (/Phoneme).
+   * Used by screen readers (PDF/UA accessibility attribute).
+   */
+  phoneme?: string | undefined;
+  /**
+   * Abbreviation or acronym expansion for the structure element (/E).
+   * Used by screen readers (PDF/UA accessibility attribute).
+   */
+  expansion?: string | undefined;
 }
 
 /**
@@ -422,6 +432,8 @@ export interface DocumentOptions {
 export interface EmbedTrueTypeFontOptions {
   /** Family. */
   family?: string | undefined;
+  /** Index of the font to extract from a TrueType Collection (.ttc). Defaults to 0. */
+  ttcIndex?: number | undefined;
 }
 
 /**
@@ -888,6 +900,8 @@ export interface FlowImageOptions
     Omit<JpegImageOptions, "x" | "y" | "width" | "height">,
     Omit<PngImageOptions, "x" | "y" | "width" | "height">,
     Omit<BmpImageOptions, "x" | "y" | "width" | "height">,
+    Omit<TiffImageOptions, "x" | "y" | "width" | "height">,
+    Omit<Jp2ImageOptions, "x" | "y" | "width" | "height">,
     FlowBlockSpacingOptions {
   /** Width in PDF points. */
   width?: number | undefined;
@@ -1013,11 +1027,11 @@ export interface TemplateTableBlock {
 }
 
 /**
- * Template block for rendering a PNG or JPEG image.
+ * Template block for rendering a PNG, JPEG, BMP, JBIG2, TIFF, or JPEG2000 image.
  */
 export interface TemplateImageBlock {
   /** Discriminator identifying this option or command shape. */
-  type: "png" | "jpeg" | "bmp";
+  type: "png" | "jpeg" | "bmp" | "jbig2" | "tiff" | "jp2" | "webp" | "gif" | "svg";
   /** Binary data for the image, font, PDF, or attachment. */
   data: BinaryData;
   /** Options that control this item. */
@@ -1251,6 +1265,11 @@ export interface TableOptions {
   kerning?: boolean | undefined;
   /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
+  /**
+   * Table summary for accessibility (/Summary attribute on the table
+   * structure element). Provides a description of the table for screen readers.
+   */
+  summary?: string | undefined;
 }
 
 /**
@@ -1328,6 +1347,26 @@ export interface BmpImageOptions {
 }
 
 /**
+ * Options for placing JBIG2 images on a page.
+ */
+export interface Jbig2ImageOptions {
+  /** Horizontal position in PDF points. */
+  x: number;
+  /** Vertical position in PDF points. */
+  y: number;
+  /** Width in PDF points. */
+  width: number;
+  /** Height in PDF points. */
+  height: number;
+  /** Alternate text for tagged non-text content. */
+  altText?: string | undefined;
+  /** Structure tag used for tagged PDF output. */
+  tag?: PdfFigureStructureTag | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
+  structure?: PdfStructureOptions | undefined;
+}
+
+/**
  * Options for creating an external URI link annotation.
  */
 export interface UriLinkOptions {
@@ -1368,7 +1407,124 @@ export interface PageLinkOptions {
 }
 
 /**
- * Options for creating a highlight annotation.
+ * Options for placing TIFF images on a page.
+ */
+export interface TiffImageOptions {
+  /** Horizontal position in PDF points. */
+  x: number;
+  /** Vertical position in PDF points. */
+  y: number;
+  /** Width in PDF points. */
+  width: number;
+  /** Height in PDF points. */
+  height: number;
+  /** Alternate text for tagged non-text content. */
+  altText?: string | undefined;
+  /** Structure tag used for tagged PDF output. */
+  tag?: PdfFigureStructureTag | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
+  structure?: PdfStructureOptions | undefined;
+  /**
+   * ICC profile bytes used to tag the image's color space as ICCBased.
+   */
+  iccProfile?: BinaryData | undefined;
+}
+
+/**
+ * Options for placing JPEG 2000 (JP2) images on a page.
+ * PDF spec supports JPXDecode filter for JPEG 2000 image data.
+ */
+export interface Jp2ImageOptions {
+  /** Horizontal position in PDF points. */
+  x: number;
+  /** Vertical position in PDF points. */
+  y: number;
+  /** Width in PDF points. */
+  width: number;
+  /** Height in PDF points. */
+  height: number;
+  /** Alternate text for tagged non-text content. */
+  altText?: string | undefined;
+  /** Structure tag used for tagged PDF output. */
+  tag?: PdfFigureStructureTag | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
+  structure?: PdfStructureOptions | undefined;
+  /**
+   * ICC profile bytes used to tag the image's color space as ICCBased.
+   */
+  iccProfile?: BinaryData | undefined;
+}
+
+/**
+ * Options for placing WebP images on a page.
+ */
+export interface WebpImageOptions {
+  /** Horizontal position in PDF points. */
+  x: number;
+  /** Vertical position in PDF points. */
+  y: number;
+  /** Width in PDF points. */
+  width: number;
+  /** Height in PDF points. */
+  height: number;
+  /** Alternate text for tagged non-text content. */
+  altText?: string | undefined;
+  /** Structure tag used for tagged PDF output. */
+  tag?: PdfFigureStructureTag | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
+  structure?: PdfStructureOptions | undefined;
+  /**
+   * ICC profile bytes used to tag the image's color space as ICCBased.
+   */
+  iccProfile?: BinaryData | undefined;
+}
+
+/**
+ * Options for placing GIF images on a page.
+ */
+export interface GifImageOptions {
+  /** Horizontal position in PDF points. */
+  x: number;
+  /** Vertical position in PDF points. */
+  y: number;
+  /** Width in PDF points. */
+  width: number;
+  /** Height in PDF points. */
+  height: number;
+  /** Alternate text for tagged non-text content. */
+  altText?: string | undefined;
+  /** Structure tag used for tagged PDF output. */
+  tag?: PdfFigureStructureTag | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
+  structure?: PdfStructureOptions | undefined;
+  /**
+   * ICC profile bytes used to tag the image's color space as ICCBased.
+   */
+  iccProfile?: BinaryData | undefined;
+}
+
+/**
+ * Options for rendering SVG vector graphics on a page.
+ */
+export interface SvgImageOptions {
+  /** Horizontal position in PDF points. */
+  x: number;
+  /** Vertical position in PDF points. */
+  y: number;
+  /** Width in PDF points. */
+  width?: number | undefined;
+  /** Height in PDF points. */
+  height?: number | undefined;
+  /** Alternate text for tagged non-text content. */
+  altText?: string | undefined;
+  /** Structure tag used for tagged PDF output. */
+  tag?: PdfFigureStructureTag | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
+  structure?: PdfStructureOptions | undefined;
+}
+
+/**
+ * Options for creating a URI link annotation.
  */
 export interface HighlightAnnotationOptions {
   /** Horizontal position in PDF points. */
@@ -1438,6 +1594,30 @@ export interface FreeTextAnnotationOptions {
 }
 
 /**
+ * JavaScript actions attached to a form field.
+ *
+ * Key mapping (ISO 32000-2 Table 217):
+ *   - keystroke  → /K (Keystroke action)
+ *   - format     → /F (Format action)
+ *   - validate   → /V (Validate action)
+ *   - calculate  → /C (Calculate action)
+ *
+ * Each string is raw PDF JavaScript source code. The library
+ * emits each non-null action as a PDF stream object referenced
+ * from the /AA dictionary on the field annotation.
+ */
+export interface FieldActions {
+  /** Keystroke JS → /K in the /AA dict. */
+  keystroke?: string | undefined;
+  /** Format JS → /F in the /AA dict. */
+  format?: string | undefined;
+  /** Validate JS → /V in the /AA dict. */
+  validate?: string | undefined;
+  /** Calculate JS → /C in the /AA dict. */
+  calculate?: string | undefined;
+}
+
+/**
  * Options for creating a text form field.
  */
 export interface TextFieldOptions {
@@ -1466,12 +1646,28 @@ export interface TextFieldOptions {
   /** Whether the text field accepts multiple lines. */
   multiline?: boolean | undefined;
   /**
+   * Rich text value (XML string in XFA rich text format).
+   * When set, emitted as /RV in the field dictionary.
+   */
+  richValue?: string | undefined;
+  /**
+   * Whether the field value follows document encryption.
+   * When false, the field value is not encrypted (useful for searchable fields).
+   * Defaults to true (follow document encryption).
+   */
+  encrypt?: boolean | undefined;
+  /**
    * Custom appearance stream content. When provided, this raw PDF content
    * stream is used instead of the auto-generated appearance for the /N
    * (normal) appearance state.
    * Example: `"1 0 0 rg 0 0 16 16 re f"`
    */
   appearance?: string | undefined;
+  /**
+   * JavaScript actions attached to this field's /AA dictionary.
+   * Each action value is raw PDF JavaScript source code.
+   */
+  actions?: FieldActions | undefined;
   /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;
   /** Additional structure metadata for tagged PDF output. */
@@ -1499,12 +1695,23 @@ export interface CheckBoxOptions {
   /** Whether the form field is required. */
   required?: boolean | undefined;
   /**
+   * Whether the field value follows document encryption.
+   * When false, the field value is not encrypted (useful for searchable fields).
+   * Defaults to true (follow document encryption).
+   */
+  encrypt?: boolean | undefined;
+  /**
    * Custom appearance stream for the checkbox. Can be a raw PDF content
    * stream string (used for all states), or an object with optional
    * normal (/N), down (/D), and rollover (/R) appearance strings.
    * Example string: `"1 0 0 0 0 1 2 10 14 6 re s"` (a check mark at any size)
    */
   appearance?: string | { normal?: string; down?: string; rollover?: string } | undefined;
+  /**
+   * JavaScript actions attached to this field's /AA dictionary.
+   * Each action value is raw PDF JavaScript source code.
+   */
+  actions?: FieldActions | undefined;
   /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;
   /** Additional structure metadata for tagged PDF output. */
@@ -1547,10 +1754,27 @@ export interface ChoiceFieldOptions {
   /** Choice field display mode. */
   mode?: ChoiceFieldMode | undefined;
   /**
+   * When true, the combo box allows user to type custom values.
+   * When false (default), combo box is select-only.
+   * Has no effect on list boxes.
+   */
+  editable?: boolean | undefined;
+  /**
+   * Whether the field value follows document encryption.
+   * When false, the field value is not encrypted (useful for searchable fields).
+   * Defaults to true (follow document encryption).
+   */
+  encrypt?: boolean | undefined;
+  /**
    * Custom appearance stream content for the choice field.
    * Example: `"1 0 0 rg 0 0 100 20 re f"`
    */
   appearance?: string | undefined;
+  /**
+   * JavaScript actions attached to this field's /AA dictionary.
+   * Each action value is raw PDF JavaScript source code.
+   */
+  actions?: FieldActions | undefined;
   /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;
   /** Additional structure metadata for tagged PDF output. */
@@ -1588,11 +1812,22 @@ export interface RadioGroupOptions {
   /** Whether the form field is required. */
   required?: boolean | undefined;
   /**
+   * Whether the field value follows document encryption.
+   * When false, the field value is not encrypted (useful for searchable fields).
+   * Defaults to true (follow document encryption).
+   */
+  encrypt?: boolean | undefined;
+  /**
    * Custom appearance stream for the radio group. Can be a raw PDF content
    * stream string, or an object with optional normal (/N), down (/D),
    * and rollover (/R) appearance strings.
    */
   appearance?: string | { normal?: string; down?: string; rollover?: string } | undefined;
+  /**
+   * JavaScript actions attached to this field's /AA dictionary.
+   * Each action value is raw PDF JavaScript source code.
+   */
+  actions?: FieldActions | undefined;
   /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;
   /** Additional structure metadata for tagged PDF output. */
@@ -1624,10 +1859,21 @@ export interface PushButtonOptions {
   /** Whether the form field is read-only. */
   readOnly?: boolean | undefined;
   /**
+   * Whether the field value follows document encryption.
+   * When false, the field value is not encrypted (useful for searchable fields).
+   * Defaults to true (follow document encryption).
+   */
+  encrypt?: boolean | undefined;
+  /**
    * Custom appearance stream content for the push button.
    * Example: `"1 0 0 rg 0 0 100 20 re f"`
    */
   appearance?: string | undefined;
+  /**
+   * JavaScript actions attached to this field's /AA dictionary.
+   * Each action value is raw PDF JavaScript source code.
+   */
+  actions?: FieldActions | undefined;
   /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;
   /** Additional structure metadata for tagged PDF output. */
@@ -1653,10 +1899,21 @@ export interface SignatureFieldOptions {
   /** Whether the form field is required. */
   required?: boolean | undefined;
   /**
+   * Whether the field value follows document encryption.
+   * When false, the field value is not encrypted (useful for searchable fields).
+   * Defaults to true (follow document encryption).
+   */
+  encrypt?: boolean | undefined;
+  /**
    * Custom appearance stream content for the signature field.
    * Example: `"1 0 0 rg 0 0 100 20 re f"`
    */
   appearance?: string | undefined;
+  /**
+   * JavaScript actions attached to this field's /AA dictionary.
+   * Each action value is raw PDF JavaScript source code.
+   */
+  actions?: FieldActions | undefined;
   /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;
   /** Additional structure metadata for tagged PDF output. */

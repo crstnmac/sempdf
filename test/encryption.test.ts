@@ -217,3 +217,75 @@ test("rejects encryption with both passwords empty", () => {
       error.code === PdfErrorCode.INVALID_ENCRYPTION,
   );
 });
+test("encrypts for certificate recipients", () => {
+  const doc = createDocument({
+    info: { title: "Cert Encrypted" }
+  });
+  doc.addPage({ size: "Letter" }).text("Cert", { x: 24, y: 700 });
+  assert.throws(
+    () => doc.encryptForRecipients([]),
+    (error: unknown) => error instanceof PdfEngineError && error.code === PdfErrorCode.INVALID_ENCRYPTION
+  );
+  assert.throws(
+    () => doc.encryptForRecipients([new Uint8Array(10)]),
+    (error: unknown) => error instanceof PdfEngineError && error.code === PdfErrorCode.INVALID_ENCRYPTION
+  );
+});
+
+test("emits /EncryptMetadata false when metadata encryption is disabled", () => {
+  const doc = createDocument({
+    encryption: {
+      algorithm: "aes-128",
+      userPassword: "reader",
+      ownerPassword: "owner-secret",
+      encryptMetadata: false
+    }
+  });
+  doc.addPage({ size: "Letter" }).text("Data", { x: 24, y: 700 });
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/EncryptMetadata false/);
+});
+
+test("supports all permission bits including accessibility and assembly", () => {
+  const doc = createDocument({
+    encryption: {
+      userPassword: "reader",
+      ownerPassword: "owner-secret",
+      permissions: {
+        printing: true,
+        modifying: true,
+        copying: true,
+        annotating: true,
+        accessibility: true,
+        assemble: true,
+        highQualityPrint: true,
+        fillForms: true
+      }
+    }
+  });
+  doc.addPage().text("All perms", { x: 24, y: 700 });
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/P -4\b/);
+});
+
+test("upgrades encryption from RC4 to AES on incremental save", () => {
+  const base = createDocument({
+    encryption: {
+      algorithm: "rc4-40",
+      userPassword: "reader",
+      ownerPassword: "owner-secret"
+    }
+  });
+  base.addPage().text("RC4 base", { x: 36, y: 700 });
+  const baseBytes = base.toUint8Array();
+
+  const editable = editDocument(baseBytes, { password: "reader" });
+  editable.updateInfo({ title: "AES Upgrade" });
+  editable.setEncryption({ algorithm: "aes-128", userPassword: "reader" });
+  editable.addPage().text("AES new page", { x: 36, y: 700 });
+
+  const bytes = editable.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+  assert.match(text, /\/V 4\b/);
+  assert.match(text, /\/CFM \/AESV2/);
+});
