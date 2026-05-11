@@ -151,6 +151,10 @@ export interface InternalStructureNode {
   language?: string | undefined;
   attributes?: Record<string, PdfStructureAttributeValue> | undefined;
   mathML?: string | undefined;
+  artifactType?: "Pagination" | "Layout" | "Page" | undefined;
+  associatedFiles?:
+    | Array<{ name: string; data: Uint8Array | ArrayBuffer; mimeType?: string }>
+    | undefined;
 }
 
 export interface InternalPageModel {

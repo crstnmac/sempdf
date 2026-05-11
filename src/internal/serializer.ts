@@ -103,6 +103,8 @@ import {
   buildStructTreeRootDictionary,
   collectTaggedPageContent,
   pageHasTaggedContent,
+  buildAssociatedFilespecDictionary,
+  buildAssociatedFileStream,
 } from './tagged-pdf-serialize.js';
 
 interface SerializedTextField {
@@ -181,6 +183,7 @@ interface OutlineAllocation {
 interface WritePdfOptions {
   encryption?: PdfEncryptionContext | undefined;
   encryptionObjectId?: number | undefined;
+  metadataObjectId?: number | undefined;
   fileId?: Uint8Array | undefined;
   objectStreams?: boolean | undefined;
   linearize?: boolean | undefined;
@@ -214,6 +217,8 @@ type PreparedIncrementalSerialization =
       readonly kind: 'changed';
       readonly objects: () => Iterable<PdfIndirectObject>;
       readonly infoObjectId?: number | undefined;
+      readonly metadataObjectId?: number | undefined;
+      readonly newEncryptObjectId?: number | undefined;
     };
 
 interface PrepareIncrementalSerializationOptions {
@@ -545,6 +550,25 @@ function* buildTaggedPdfObjects(
         value: buildMathmlEmbeddedFileStream(element.mathML),
       };
     }
+    if (
+      element.associatedFiles !== undefined &&
+      element.associatedFileSpecIds !== undefined &&
+      element.associatedFileObjectIds !== undefined
+    ) {
+      for (let i = 0; i < element.associatedFiles.length; i++) {
+        const file = element.associatedFiles[i]!;
+        const specId = element.associatedFileSpecIds[i]!;
+        const fileId = element.associatedFileObjectIds[i]!;
+        yield {
+          id: specId,
+          value: buildAssociatedFilespecDictionary(fileId, file.name, file.mimeType),
+        };
+        yield {
+          id: fileId,
+          value: buildAssociatedFileStream(file.data, file.mimeType),
+        };
+      }
+    }
   }
 }
 
@@ -754,7 +778,7 @@ function prepareDocumentSerialization(
       : value;
 
   const builtInFontToUnicodeObjectIds = new Map<FontName, number>();
-  for (const fontName of builtInFonts) {
+  for (const [fontName] of builtInFonts) {
     builtInFontObjectIds.set(fontName, nextObjectId);
     nextObjectId += 1;
     if (model.tagged === true) {
@@ -1043,7 +1067,7 @@ function prepareDocumentSerialization(
     );
   }
 
-  for (const fontName of builtInFonts) {
+  for (const [fontName, encoding] of builtInFonts) {
     const toUnicodeId = builtInFontToUnicodeObjectIds.get(fontName);
     documentObjects.push({
       id: builtInFontObjectIds.get(fontName)!,
@@ -1051,6 +1075,7 @@ function prepareDocumentSerialization(
         ['Type', name('Font')],
         ['Subtype', name('Type1')],
         ['BaseFont', name(fontName)],
+        ...(encoding !== undefined ? [['Encoding', name(encodingToName(encoding))] as [string, PdfValue]] : []),
         ['ToUnicode', toUnicodeId !== undefined ? ref(toUnicodeId) : undefined],
       ]),
     });
@@ -1252,6 +1277,11 @@ function prepareDocumentSerialization(
         : {}),
       ...(encryptionObjectId !== undefined ? { encryptionObjectId } : {}),
       ...(encryptionFileId !== undefined ? { fileId: encryptionFileId } : {}),
+      ...(encryptionContext !== undefined &&
+        encryptionContext.encryptMetadata === false &&
+        metadataObjectId !== undefined
+        ? { metadataObjectId }
+        : {}),
       ...(model.objectStreams !== undefined
         ? { objectStreams: model.objectStreams }
         : {}),
@@ -1447,7 +1477,7 @@ function prepareIncrementalUpdateSerialization(
     }
   }
 
-  for (const fontName of builtInFonts) {
+  for (const [fontName] of builtInFonts) {
     builtInFontObjectIds.set(fontName, nextObjectId);
     nextObjectId += 1;
   }
@@ -1640,13 +1670,14 @@ function prepareIncrementalUpdateSerialization(
     prefixObjects.push(parentObj);
   }
 
-  for (const fontName of builtInFonts) {
+  for (const [fontName, encoding] of builtInFonts) {
     prefixObjects.push({
       id: builtInFontObjectIds.get(fontName)!,
       value: dict([
         ['Type', name('Font')],
         ['Subtype', name('Type1')],
         ['BaseFont', name(fontName)],
+        ...(encoding !== undefined ? [['Encoding', name(encodingToName(encoding))] as [string, PdfValue]] : []),
       ]),
     });
   }
@@ -1975,13 +2006,31 @@ function prepareIncrementalUpdateSerialization(
       return rm! > bm! || (rm === bm && rn! > bn!);
     })();
 
+  let newEncryptObjectId: number | undefined;
+  if (model.encryption !== undefined) {
+    newEncryptObjectId = nextObjectId;
+    nextObjectId += 1;
+    const encryptFileId =
+      model.base.getEncryptionContext()?.fileId ??
+      createDocumentFileId(latin1Bytes('pdf-editing-lib-upgrade'));
+    const newEncryptContext = createPdfEncryptionContext(
+      model.encryption,
+      encryptFileId,
+    );
+    suffixObjects.push({
+      id: newEncryptObjectId,
+      value: buildEncryptionDictionary(newEncryptContext),
+    });
+  }
+
   const shouldUpdateCatalog =
     (!existingAcroFormRef &&
       shouldUpdateAcroForm &&
       acroFormObjectId !== undefined) ||
     hasXmpMetadataChange ||
     (taggedPdfAllocation !== undefined && existingTaggedState === undefined) ||
-    needsVersionBump;
+    needsVersionBump ||
+    newEncryptObjectId !== undefined;
   if (shouldUpdateCatalog) {
     suffixObjects.push({
       id: model.base.getRootObjectId(),
@@ -2025,6 +2074,12 @@ function prepareIncrementalUpdateSerialization(
             'Version',
             needsVersionBump ? name(incrementalRequiredVersion) : undefined,
           ],
+          [
+            'Encrypt',
+            newEncryptObjectId !== undefined
+              ? ref(newEncryptObjectId)
+              : undefined,
+          ],
         ]),
         hasXmpMetadataChange && model.xmpMetadata === undefined
           ? ['Metadata']
@@ -2054,6 +2109,11 @@ function prepareIncrementalUpdateSerialization(
       yield* suffixObjects;
     },
     ...(infoObjectId !== undefined ? { infoObjectId } : {}),
+    ...(model.base.getEncryptionContext()?.encryptMetadata === false &&
+      xmpMetadataObjectId !== undefined
+      ? { metadataObjectId: xmpMetadataObjectId }
+      : {}),
+    ...(newEncryptObjectId !== undefined ? { newEncryptObjectId } : {}),
   };
 }
 
@@ -2069,6 +2129,8 @@ export function serializeIncrementalUpdate(
     model,
     [...prepared.objects()],
     prepared.infoObjectId,
+    prepared.metadataObjectId,
+    prepared.newEncryptObjectId,
   );
   return model.signature !== undefined
     ? applyDetachedSignature(bytes, model.signature)
@@ -2101,6 +2163,8 @@ export async function serializeIncrementalUpdateToSink(
     prepared.objects(),
     sink,
     prepared.infoObjectId,
+    prepared.metadataObjectId,
+    prepared.newEncryptObjectId,
   );
 }
 
@@ -2139,6 +2203,7 @@ function writePdf(
         options.encryption,
         options.encryptionObjectId,
         object.id,
+        options.metadataObjectId,
       ),
     );
     writer.writeLine();
@@ -2211,6 +2276,7 @@ async function writePdfToSink(
         options.encryption,
         options.encryptionObjectId,
         object.id,
+        options.metadataObjectId,
       ),
     );
     await writer.writeLine();
@@ -2267,12 +2333,17 @@ async function writePdfToSink(
   await writer.close();
 }
 
-function collectBuiltInFonts(model: PdfDocumentModel): FontName[] {
-  const fonts = new Set<FontName>();
+function collectBuiltInFonts(model: PdfDocumentModel): Map<FontName, "winansi" | "macroman" | "pdfdoc" | undefined> {
+  const fonts = new Map<FontName, "winansi" | "macroman" | "pdfdoc" | undefined>();
   for (const page of model.pages) {
     for (const op of page.ops) {
       if (op.type === 'text' && typeof op.options.font === 'string') {
-        fonts.add(op.options.font);
+        const existing = fonts.get(op.options.font);
+        if (existing === undefined && op.options.encoding !== undefined) {
+          fonts.set(op.options.font, op.options.encoding);
+        } else if (!fonts.has(op.options.font)) {
+          fonts.set(op.options.font, undefined);
+        }
       }
     }
 
@@ -2283,11 +2354,24 @@ function collectBuiltInFonts(model: PdfDocumentModel): FontName[] {
         annotation.type === 'freeText' ||
         annotation.type === 'pushButton'
       ) {
-        fonts.add(annotation.options.font);
+        if (!fonts.has(annotation.options.font)) {
+          fonts.set(annotation.options.font, undefined);
+        }
       }
     }
   }
-  return [...fonts].sort();
+  return fonts;
+}
+
+function encodingToName(encoding: "winansi" | "macroman" | "pdfdoc"): string {
+  switch (encoding) {
+    case "winansi":
+      return "WinAnsiEncoding";
+    case "macroman":
+      return "MacRomanEncoding";
+    case "pdfdoc":
+      return "PDFDocEncoding";
+  }
 }
 
 function buildFontResourceMap(ops: readonly PdfOp[]): Map<string, string> {
@@ -2695,7 +2779,7 @@ function buildEncryptionDictionary(encryption: PdfEncryptionContext): PdfDict {
         : undefined,
     ],
     ['P', encryption.permissionsValue],
-    ['EncryptMetadata', aes ? true : undefined],
+    ['EncryptMetadata', aes ? encryption.encryptMetadata : undefined],
     ['StmF', aes ? name('StdCF') : undefined],
     ['StrF', aes ? name('StdCF') : undefined],
     [
@@ -4653,7 +4737,11 @@ function* serializePageContentLines(
 
     const taggedItem = taggedContentByOpIndex.get(opIndex);
     if (taggedItem?.kind === 'artifact') {
-      yield '/Artifact BMC';
+      if (taggedItem.artifactType !== undefined) {
+        yield `/Artifact /Type /${taggedItem.artifactType} BMC`;
+      } else {
+        yield '/Artifact BMC';
+      }
       yield* opLines;
       yield 'EMC';
       continue;

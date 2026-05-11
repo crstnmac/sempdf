@@ -6,6 +6,8 @@ import type { PdfDocumentModel, PdfIncrementalUpdateModel } from '../document.js
 import { deflateZlib } from './deflate.js';
 import {
   createCipherForObject,
+  createDocumentFileId,
+  createPdfEncryptionContext,
   encryptBytesForObject,
   latin1Bytes,
   type PdfEncryptionContext,
@@ -43,6 +45,7 @@ interface WritePdfOptions {
   readonly fileId?: Uint8Array | undefined;
   readonly encryption?: PdfEncryptionContext | undefined;
   readonly encryptionObjectId?: number | undefined;
+  readonly metadataObjectId?: number | undefined;
 }
 
 export interface PdfObjectEncryptionContext {
@@ -378,8 +381,13 @@ export function getObjectEncryptionContext(
   encryption: PdfEncryptionContext | undefined,
   excludedObjectId: number | undefined,
   objectId: number,
+  metadataObjectId?: number | undefined,
 ): PdfObjectEncryptionContext | undefined {
   if (encryption === undefined || objectId === excludedObjectId) {
+    return undefined;
+  }
+
+  if (encryption.encryptMetadata === false && objectId === metadataObjectId) {
     return undefined;
   }
 
@@ -448,6 +456,12 @@ function getIncrementalEncryption(
 ):
   | { context: PdfEncryptionContext; encryptObjectId?: number | undefined }
   | undefined {
+  if (model.encryption !== undefined) {
+    const fileId = model.base.getEncryptionContext()?.fileId ?? createDocumentFileId(latin1Bytes('pdf-editing-lib-upgrade'));
+    const context = createPdfEncryptionContext(model.encryption, fileId);
+    return { context };
+  }
+
   const context = model.base.getEncryptionContext();
   if (context === undefined) {
     return undefined;
@@ -531,6 +545,7 @@ function buildIncrementalXrefStreamValue(
   >,
   xrefStreamObjectId: number,
   infoObjectId: number | undefined,
+  newEncryptObjectId: number | undefined,
 ): ReturnType<typeof stream> {
   const sortedObjectIds = [...xrefEntries.keys()].sort(
     (left, right) => left - right,
@@ -588,7 +603,11 @@ function buildIncrementalXrefStreamValue(
       ['Size', Math.max(model.base.getMaxObjectId(), xrefStreamObjectId) + 1],
       ['Root', ref(model.base.getRootObjectId())],
       ['Info', infoObjectId !== undefined ? ref(infoObjectId) : undefined],
-      ['Encrypt', getPdfDictValue(model.base.trailer, 'Encrypt')],
+      ['Encrypt',
+        newEncryptObjectId !== undefined
+          ? ref(newEncryptObjectId)
+          : getPdfDictValue(model.base.trailer, 'Encrypt'),
+      ],
       ['ID', buildIncrementalFileIdValue(model)],
       ['Prev', model.base.startXrefOffset],
       ['W', array([...widths])],
@@ -723,6 +742,7 @@ export function writePdfWithObjectStreams(
         options.encryption,
         options.encryptionObjectId,
         object.id,
+        options.metadataObjectId,
       ),
     );
     writer.writeLine();
@@ -781,9 +801,11 @@ export function writeIncrementalPdf(
   model: PdfIncrementalUpdateModel,
   objects: PdfIndirectObject[],
   infoObjectId: number | undefined,
+  metadataObjectId?: number | undefined,
+  newEncryptObjectId?: number | undefined,
 ): Uint8Array {
   if (isXrefStreamDocument(model.base.trailer)) {
-    return writeIncrementalXrefStreamPdf(model, objects, infoObjectId);
+    return writeIncrementalXrefStreamPdf(model, objects, infoObjectId, metadataObjectId, newEncryptObjectId);
   }
 
   const baseBytes = model.base.getSourceBytes();
@@ -805,6 +827,7 @@ export function writeIncrementalPdf(
         encryption?.context,
         encryption?.encryptObjectId,
         object.id,
+        metadataObjectId,
       ),
     );
     writer.writeLine();
@@ -838,6 +861,12 @@ export function writeIncrementalPdf(
       ['Info', infoObjectId !== undefined ? ref(infoObjectId) : undefined],
       ['ID', buildIncrementalFileIdValue(model)],
       ['Prev', model.base.startXrefOffset],
+      [
+        'Encrypt',
+        newEncryptObjectId !== undefined
+          ? ref(newEncryptObjectId)
+          : undefined,
+      ],
     ]),
   );
 
@@ -855,6 +884,8 @@ export async function writeIncrementalPdfToSink(
   objects: Iterable<PdfIndirectObject>,
   sink: ByteSink,
   infoObjectId: number | undefined,
+  metadataObjectId?: number | undefined,
+  newEncryptObjectId?: number | undefined,
 ): Promise<void> {
   if (isXrefStreamDocument(model.base.trailer)) {
     await writeIncrementalXrefStreamPdfToSink(
@@ -862,6 +893,7 @@ export async function writeIncrementalPdfToSink(
       objects,
       sink,
       infoObjectId,
+      metadataObjectId,
     );
     return;
   }
@@ -887,6 +919,7 @@ export async function writeIncrementalPdfToSink(
         encryption?.context,
         encryption?.encryptObjectId,
         object.id,
+        metadataObjectId,
       ),
     );
     await writer.writeLine();
@@ -926,6 +959,12 @@ export async function writeIncrementalPdfToSink(
       ['Info', infoObjectId !== undefined ? ref(infoObjectId) : undefined],
       ['ID', buildIncrementalFileIdValue(model)],
       ['Prev', model.base.startXrefOffset],
+      [
+        'Encrypt',
+        newEncryptObjectId !== undefined
+          ? ref(newEncryptObjectId)
+          : undefined,
+      ],
     ]),
   );
 
@@ -941,6 +980,8 @@ function writeIncrementalXrefStreamPdf(
   model: PdfIncrementalUpdateModel,
   objects: PdfIndirectObject[],
   infoObjectId: number | undefined,
+  metadataObjectId?: number | undefined,
+  newEncryptObjectId?: number | undefined,
 ): Uint8Array {
   const baseBytes = model.base.getSourceBytes();
   const encryption = getIncrementalEncryption(model);
@@ -961,6 +1002,7 @@ function writeIncrementalXrefStreamPdf(
         encryption?.context,
         encryption?.encryptObjectId,
         object.id,
+        metadataObjectId,
       ),
     );
     writer.writeLine();
@@ -998,6 +1040,7 @@ function writeIncrementalXrefStreamPdf(
     xrefEntries,
     xrefStreamObjectId,
     infoObjectId,
+    newEncryptObjectId,
   );
   writer.writeLine(`${xrefStreamObjectId} 0 obj`);
   writeObjectValue(writer, xrefStreamValue);
@@ -1015,6 +1058,8 @@ async function writeIncrementalXrefStreamPdfToSink(
   objects: Iterable<PdfIndirectObject>,
   sink: ByteSink,
   infoObjectId: number | undefined,
+  metadataObjectId?: number | undefined,
+  newEncryptObjectId?: number | undefined,
 ): Promise<void> {
   const baseBytes = model.base.getSourceBytes();
   await sink.write(baseBytes);
@@ -1037,6 +1082,7 @@ async function writeIncrementalXrefStreamPdfToSink(
         encryption?.context,
         encryption?.encryptObjectId,
         object.id,
+        metadataObjectId,
       ),
     );
     await writer.writeLine();
@@ -1071,6 +1117,7 @@ async function writeIncrementalXrefStreamPdfToSink(
     xrefEntries,
     xrefStreamObjectId,
     infoObjectId,
+    newEncryptObjectId,
   );
   await writer.writeLine(`${xrefStreamObjectId} 0 obj`);
   await writeObjectValueToSink(writer, xrefStreamValue);
