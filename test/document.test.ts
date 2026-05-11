@@ -583,6 +583,26 @@ test("justifies non-terminal text block lines using word spacing", () => {
   assert.match(text, /12 Tw/);
 });
 
+test("breaks justified text at soft hyphens", () => {
+  const doc = createDocument();
+  const page = doc.addPage();
+  page.textBlock("AA\u00ADBB CC\u00ADDD", {
+    x: 36,
+    y: 700,
+    width: 20,
+    font: "Courier",
+    fontSize: 10,
+    lineHeight: 12,
+    align: "justify"
+  });
+
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\(AA- \) Tj/);
+  assert.match(text, /\(BB \) Tj/);
+  assert.match(text, /\(CC- \) Tj/);
+  assert.match(text, /\(DD\) Tj/);
+});
+
 test("uses embedded fallback fonts for mixed-script single-line text", () => {
   const fontPath = findTrueTypeFixturePath();
   if (!fontPath) {

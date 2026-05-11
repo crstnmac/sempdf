@@ -84,7 +84,9 @@ export function createStructureNode(
     ...(options?.actualText === undefined ? {} : { actualText: options.actualText }),
     ...(options?.language === undefined ? {} : { language: options.language }),
     ...(options?.attributes === undefined ? {} : { attributes: options.attributes }),
-    ...(options?.mathML === undefined ? {} : { mathML: options.mathML })
+    ...(options?.mathML === undefined ? {} : { mathML: options.mathML }),
+    ...(options?.artifactType === undefined ? {} : { artifactType: options.artifactType }),
+    ...(options?.associatedFiles === undefined ? {} : { associatedFiles: options.associatedFiles })
   };
 
   if (parent) {

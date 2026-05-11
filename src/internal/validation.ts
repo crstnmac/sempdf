@@ -35,6 +35,10 @@ export interface NormalizedDocumentPermissions {
   modifying: boolean;
   copying: boolean;
   annotating: boolean;
+  accessibility: boolean;
+  assemble: boolean;
+  highQualityPrint: boolean;
+  fillForms: boolean;
 }
 
 export interface NormalizedDocumentEncryption {
@@ -45,6 +49,7 @@ export interface NormalizedDocumentEncryption {
   version: 1 | 2 | 4 | 5;
   revision: 2 | 3 | 4 | 5 | 6;
   keyLengthBytes: 5 | 16 | 32;
+  encryptMetadata: boolean;
 }
 
 export interface NormalizedDocumentAccessibility {
@@ -404,6 +409,7 @@ export function normalizeDocumentEncryption(
     userPassword,
     ownerPassword,
     permissions: normalizeDocumentPermissions(encryption.permissions),
+    encryptMetadata: encryption.encryptMetadata ?? true,
     ...resolveDocumentEncryptionAlgorithm(encryption.algorithm)
   };
 }
@@ -810,7 +816,8 @@ export function normalizeTextOptions(text: string, options: TextOptions): Normal
     kerning: normalized.kerning,
     ...(normalized.characterSpacing !== undefined ? { characterSpacing: normalized.characterSpacing } : {}),
     ...(normalized.wordSpacing !== undefined ? { wordSpacing: normalized.wordSpacing } : {}),
-    ...(normalized.leading !== undefined ? { leading: normalized.leading } : {})
+    ...(normalized.leading !== undefined ? { leading: normalized.leading } : {}),
+    ...(normalized.encoding !== undefined ? { encoding: normalized.encoding } : {})
   };
 }
 
@@ -825,6 +832,8 @@ export function normalizeTextBaseOptions(options: TextOptions | TextBlockOptions
     throw new PdfEngineError(PdfErrorCode.INVALID_TEXT, "Font size must be greater than zero.", { options });
   }
 
+  const encoding = "encoding" in options ? options.encoding : undefined;
+
   const normalized: NormalizedTextBaseOptions = {
     x: options.x,
     y: options.y,
@@ -836,7 +845,9 @@ export function normalizeTextBaseOptions(options: TextOptions | TextBlockOptions
     kerning: options.kerning ?? true,
     ...(options.writingMode !== undefined ? { writingMode: options.writingMode } : {}),
     ...(options.tag !== undefined ? { tag: normalizeTextStructureTag(options.tag) } : {}),
-    ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
+    ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {}),
+    ...(encoding !== undefined ? { encoding } : {}),
+    ...(('artifactType' in options && options.artifactType !== undefined) ? { artifactType: options.artifactType } : {})
   };
 
   const characterSpacing = normalizeOptionalNumber(options.characterSpacing, "characterSpacing");
@@ -1684,7 +1695,11 @@ function normalizeDocumentPermissions(permissions: DocumentPermissions | undefin
     printing: permissions?.printing ?? true,
     modifying: permissions?.modifying ?? true,
     copying: permissions?.copying ?? true,
-    annotating: permissions?.annotating ?? true
+    annotating: permissions?.annotating ?? true,
+    accessibility: permissions?.accessibility ?? true,
+    assemble: permissions?.assemble ?? true,
+    highQualityPrint: permissions?.highQualityPrint ?? true,
+    fillForms: permissions?.fillForms ?? true
   };
 }
 

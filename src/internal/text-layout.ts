@@ -180,7 +180,7 @@ function shapeTextRuns(
     return [];
   }
 
-  const characters = [...reorderTextForDirection(text, resolvedDirection)];
+  const characters = codePoints(reorderTextForDirection(text, resolvedDirection));
   const resolvedFonts = characters.map((character) => resolveFontForCharacter(character, options.font, options.fallbackFonts, embeddedFonts));
   const runs: Array<{ text: string; font: PdfFont; hasFollowingCharacter: boolean }> = [];
 
@@ -281,12 +281,12 @@ function measureSingleFontTextWidth(
     return 0;
   }
 
-  const glyphCount = [...text].length;
-  const spaces = [...text].filter((character) => character === " ").length;
+  const glyphCount = codePoints(text).length;
+  const spaces = codePoints(text).filter((character) => character === " ").length;
 
   if (typeof font === "string") {
     let advance = 0;
-    for (const character of text) {
+    for (const character of codePoints(text)) {
       advance += getBuiltInAdvanceWidth(font, character);
     }
 
@@ -323,7 +323,7 @@ function measureEmbeddedGlyphWidth(
     previousGlyphId = glyphId;
   }
 
-  const spaces = glyphs.reduce((total, glyph) => total + [...glyph.unicode].filter((character) => character === " ").length, 0);
+  const spaces = glyphs.reduce((total, glyph) => total + codePoints(glyph.unicode).filter((character) => character === " ").length, 0);
 
   return (advance / embeddedFont.unitsPerEm) * options.fontSize
     + (options.characterSpacing ?? 0) * Math.max(glyphs.length - 1, 0)
@@ -342,7 +342,7 @@ function shapeEmbeddedGlyphs(
     });
   }
 
-  const tokens: ShapingToken[] = [...text].map((character) => {
+  const tokens: ShapingToken[] = codePoints(text).map((character) => {
     const codePoint = character.codePointAt(0);
     if (codePoint === undefined) {
       throw new PdfEngineError(PdfErrorCode.UNSUPPORTED_CHARACTER, "Embedded font text contains an unsupported character.", {
@@ -543,7 +543,7 @@ function isTransparentShapingToken(token: Pick<ShapingToken, "unicode">): boolea
 }
 
 function isShapingControlCodePoint(codePoint: number): boolean {
-  return codePoint === 0x200c || codePoint === 0x200d;
+  return codePoint === 0x200c || codePoint === 0x200d || codePoint === 0x202a || codePoint === 0x202b || codePoint === 0x202c;
 }
 
 function wrapParagraph(
@@ -563,7 +563,9 @@ function wrapParagraph(
   let currentLine = "";
   let currentWidth = 0;
 
-  for (const word of words) {
+  for (const rawWord of words) {
+    const softHyphenSegments = rawWord.split("\u00AD").filter((s) => s.length > 0);
+    const word = softHyphenSegments.join("");
     const wordWidth = measureTextWidth(word, options, embeddedFonts);
 
     if (currentLine.length === 0) {
@@ -571,6 +573,18 @@ function wrapParagraph(
         currentLine = word;
         currentWidth = wordWidth;
         continue;
+      }
+
+      if (softHyphenSegments.length > 1) {
+        const softBreak = breakWordAtSoftHyphens(softHyphenSegments, options, embeddedFonts);
+        if (softBreak) {
+          if (softBreak.prefix.length > 0) {
+            lines.push(softBreak.prefix);
+          }
+          currentLine = softBreak.suffix;
+          currentWidth = currentLine.length === 0 ? 0 : measureTextWidth(currentLine, options, embeddedFonts);
+          continue;
+        }
       }
 
       const brokenWord = breakWord(word, options, embeddedFonts);
@@ -594,6 +608,18 @@ function wrapParagraph(
       continue;
     }
 
+    if (softHyphenSegments.length > 1) {
+      const softBreak = breakWordAtSoftHyphens(softHyphenSegments, options, embeddedFonts);
+      if (softBreak) {
+        if (softBreak.prefix.length > 0) {
+          lines.push(softBreak.prefix);
+        }
+        currentLine = softBreak.suffix;
+        currentWidth = currentLine.length === 0 ? 0 : measureTextWidth(currentLine, options, embeddedFonts);
+        continue;
+      }
+    }
+
     const brokenWord = breakWord(word, options, embeddedFonts);
     lines.push(...brokenWord.slice(0, -1));
     currentLine = brokenWord[brokenWord.length - 1] ?? "";
@@ -605,6 +631,26 @@ function wrapParagraph(
   }
 
   return lines;
+}
+
+function breakWordAtSoftHyphens(
+  segments: string[],
+  options: NormalizedTextBlockOptions,
+  embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>
+): { prefix: string; suffix: string } | undefined {
+  for (let breakAt = segments.length - 1; breakAt >= 1; breakAt -= 1) {
+    const prefixParts = segments.slice(0, breakAt);
+    const suffixParts = segments.slice(breakAt);
+    const prefix = prefixParts.join("") + "-";
+    const suffix = suffixParts.join("");
+    const prefixWidth = measureTextWidth(prefix, options, embeddedFonts);
+
+    if (prefixWidth <= options.width) {
+      return { prefix, suffix };
+    }
+  }
+
+  return undefined;
 }
 
 function wrapParagraphVertical(
@@ -620,7 +666,7 @@ function wrapParagraphVertical(
   const maxHeight = options.width;
   const charHeight = options.fontSize;
   const maxChars = Math.max(1, Math.floor(maxHeight / charHeight));
-  const characters = [...normalizedParagraph];
+  const characters = codePoints(normalizedParagraph);
   const lines: string[] = [];
   let current = "";
 
@@ -647,7 +693,7 @@ function breakWord(
   const segments: string[] = [];
   let current = "";
 
-  for (const character of word) {
+  for (const character of codePoints(word)) {
     const candidate = `${current}${character}`;
     const candidateWidth = measureTextWidth(candidate, options, embeddedFonts);
     if (current.length > 0 && candidateWidth > options.width) {
@@ -722,34 +768,89 @@ function buildLineOptions(
 }
 
 function reorderTextForDirection(text: string, direction: ResolvedTextDirection): string {
-  if (direction === "ltr") {
-    return text;
-  }
+  const annotated = splitByBidiEmbedding(text, direction);
+  const reordered = annotated.map((segment) =>
+    segment.direction === "rtl" ? segmentRtlText(segment.text) : segment.text
+  );
+  return direction === "rtl" ? reordered.reverse().join("") : reordered.join("");
+}
 
-  const segments = segmentTextForRtl(text);
+function segmentRtlText(text: string): string {
+  const segments = splitByCharacterDirection(text);
   return segments
     .reverse()
-    .map((segment) => (segment.direction === "rtl" ? [...segment.text].reverse().join("") : segment.text))
+    .map((segment) => (segment.direction === "rtl" ? codePoints(segment.text).reverse().join("") : segment.text))
     .join("");
 }
 
-function segmentTextForRtl(text: string): Array<{ text: string; direction: ResolvedTextDirection }> {
+function splitByBidiEmbedding(
+  text: string,
+  baseDirection: ResolvedTextDirection
+): Array<{ text: string; direction: ResolvedTextDirection }> {
+  const annotated: Array<{ text: string; direction: ResolvedTextDirection }> = [];
+  let current = "";
+  let currentDirection = baseDirection;
+  const stack: ResolvedTextDirection[] = [];
+
+  for (const character of codePoints(text)) {
+    const cp = character.codePointAt(0)!;
+
+    if (cp === 0x202a) {
+      if (current.length > 0) {
+        annotated.push({ text: current, direction: currentDirection });
+        current = "";
+      }
+      stack.push(currentDirection);
+      currentDirection = "ltr";
+      continue;
+    }
+    if (cp === 0x202b) {
+      if (current.length > 0) {
+        annotated.push({ text: current, direction: currentDirection });
+        current = "";
+      }
+      stack.push(currentDirection);
+      currentDirection = "rtl";
+      continue;
+    }
+    if (cp === 0x202c) {
+      if (current.length > 0) {
+        annotated.push({ text: current, direction: currentDirection });
+        current = "";
+      }
+      if (stack.length > 0) {
+        currentDirection = stack.pop()!;
+      }
+      continue;
+    }
+
+    current += character;
+  }
+
+  if (current.length > 0) {
+    annotated.push({ text: current, direction: currentDirection });
+  }
+
+  return annotated;
+}
+
+function splitByCharacterDirection(text: string): Array<{ text: string; direction: ResolvedTextDirection }> {
   const segments: Array<{ text: string; direction: ResolvedTextDirection }> = [];
 
-  for (const character of text) {
-    const direction = classifyCharacterDirection(character);
+  for (const character of codePoints(text)) {
+    const charDirection = classifyCharacterDirection(character);
     const lastSegment = segments.at(-1);
-    if (lastSegment && (direction === "neutral" || lastSegment.direction === direction)) {
+    if (lastSegment && (charDirection === "neutral" || lastSegment.direction === charDirection)) {
       lastSegment.text += character;
       continue;
     }
 
-    if (direction === "neutral" && !lastSegment) {
+    if (charDirection === "neutral" && !lastSegment) {
       segments.push({ text: character, direction: "rtl" });
       continue;
     }
 
-    segments.push({ text: character, direction: direction === "neutral" ? "rtl" : direction });
+    segments.push({ text: character, direction: charDirection === "neutral" ? "rtl" : charDirection });
   }
 
   return segments;
@@ -792,7 +893,7 @@ function isNeutralCharacter(character: string, codePoint: number): boolean {
 
 function countWordGaps(text: string): number {
   let spaces = 0;
-  for (const character of text) {
+  for (const character of codePoints(text)) {
     if (character === " ") {
       spaces += 1;
     }
@@ -851,4 +952,19 @@ function isSameFont(left: PdfFont, right: PdfFont): boolean {
   }
 
   return left.id === right.id;
+}
+
+function codePoints(text: string): string[] {
+  const result: string[] = [];
+  for (let index = 0; index < text.length; index += 1) {
+    const cp = text.codePointAt(index);
+    if (cp === undefined) {
+      break;
+    }
+    result.push(String.fromCodePoint(cp));
+    if (cp > 0xFFFF) {
+      index += 1;
+    }
+  }
+  return result;
 }

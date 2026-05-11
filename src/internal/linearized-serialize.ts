@@ -34,6 +34,7 @@ interface WritePdfOptions {
   readonly fileId?: Uint8Array | undefined;
   readonly encryption?: PdfEncryptionContext | undefined;
   readonly encryptionObjectId?: number | undefined;
+  readonly metadataObjectId?: number | undefined;
 }
 
 const encoder = new TextEncoder();
@@ -449,6 +450,7 @@ function writeIndirectObject(
       options.encryption,
       options.encryptionObjectId,
       object.id,
+      options.metadataObjectId,
     ),
   );
   writer.writeLine();
