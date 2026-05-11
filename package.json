@@ -1,6 +1,6 @@
 {
   "name": "pdf-editing-lib",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Zero-dependency PDF generation engine built in TypeScript.",
   "type": "module",
   "author": {
@@ -29,6 +29,9 @@
     "test": "npm run build && node --test dist/test/**/*.test.js",
     "test:performance": "npm run build && node --test dist/test/performance.test.js",
     "test:stress": "npm run build && node --test dist/test/stress.test.js",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build && npm run test",
+    "typecheck": "tsc --noEmit",
     "validate:pdf": "node scripts/validate-verapdf.mjs",
     "example:hello": "npm run build && node dist/examples/hello-world.js",
     "example:image": "npm run build && node dist/examples/jpeg-image.js",

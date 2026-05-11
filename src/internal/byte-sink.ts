@@ -1,3 +1,5 @@
+import { PdfEngineError, PdfErrorCode } from "../errors.js";
+
 /**
  * Streaming output contract implemented by sinks that receive generated PDF byte chunks.
  */
@@ -45,7 +47,7 @@ export class BufferSink implements ByteSink {
    */
   async write(chunk: Uint8Array): Promise<void> {
     if (this.closed) {
-      throw new Error("Cannot write to a closed BufferSink.");
+      throw new PdfEngineError(PdfErrorCode.SINK_CLOSED, "Cannot write to a closed BufferSink.");
     }
 
     this.chunks.push(chunk);

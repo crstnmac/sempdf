@@ -176,5 +176,5 @@ function escapeString(value: string): string {
 }
 
 function assertNever(value: never): never {
-  throw new Error(`Unhandled PDF value: ${JSON.stringify(value)}`);
+  throw new PdfEngineError(PdfErrorCode.INTERNAL_ERROR, `Unhandled PDF value: ${JSON.stringify(value)}`);
 }
