@@ -60,6 +60,8 @@ export enum PdfErrorCode {
   UNSUPPORTED_IMAGE_FORMAT = "UNSUPPORTED_IMAGE_FORMAT",
   /** Source or output encryption mode is not supported. */
   UNSUPPORTED_ENCRYPTION = "UNSUPPORTED_ENCRYPTION",
+  /** Page tree nesting exceeds maximum supported depth. */
+  UNSUPPORTED_PAGE_TREE = "UNSUPPORTED_PAGE_TREE",
   /** Cross-reference format is not supported. */
   UNSUPPORTED_XREF_FORMAT = "UNSUPPORTED_XREF_FORMAT",
   /** An internal serialization invariant was violated. */
