@@ -66,6 +66,8 @@ export enum PdfErrorCode {
   UNSUPPORTED_PAGE_TREE = "UNSUPPORTED_PAGE_TREE",
   /** Cross-reference format is not supported. */
   UNSUPPORTED_XREF_FORMAT = "UNSUPPORTED_XREF_FORMAT",
+  /** A number tree is corrupt or has invalid keys. */
+  INVALID_NUMBER_TREE = "INVALID_NUMBER_TREE",
   /** An internal serialization invariant was violated. */
   INTERNAL_ERROR = "INTERNAL_ERROR",
   /** A document-level operation was attempted in an unsupported state or combination. */
@@ -74,6 +76,8 @@ export enum PdfErrorCode {
   SINK_CLOSED = "SINK_CLOSED",
   /** A TypeScript type guard failure indicates an unreachable code path. */
   UNREACHABLE = "UNREACHABLE",
+  /** A script (e.g. Devanagari, Thai) cannot be shaped by the current shaper. */
+  UNSUPPORTED_SCRIPT = "UNSUPPORTED_SCRIPT",
 }
 
 /**

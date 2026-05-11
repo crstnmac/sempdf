@@ -1,5 +1,6 @@
 import { PdfEngineError, PdfErrorCode } from "../errors.js";
 import type { BinaryData, PdfEmbeddedFont } from "../types.js";
+import { parseCffTable, type ParsedCffFont } from "./cff.js";
 
 export interface ParsedTrueTypeFont extends PdfEmbeddedFont {
   readonly bytes: Uint8Array;
@@ -18,6 +19,8 @@ export interface ParsedTrueTypeFont extends PdfEmbeddedFont {
   readonly kerningPairs: ReadonlyMap<number, number>;
   readonly ligatures: ReadonlyMap<number, readonly TrueTypeLigatureSubstitution[]>;
   readonly joiningForms: TrueTypeJoiningForms;
+  readonly isCff: boolean;
+  readonly cffData?: ParsedCffFont | undefined;
 }
 
 export interface TrueTypeCmap {
@@ -39,8 +42,9 @@ export interface TrueTypeJoiningForms {
 export function parseTrueTypeFont(data: BinaryData, family?: string): ParsedTrueTypeFont {
   const bytes = toBytes(data);
   const versionTag = readTag(bytes, 0);
-  if (versionTag !== "\u0000\u0001\u0000\u0000" && versionTag !== "true") {
-    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Only TrueType font files are supported for embedding.", {
+  const isOpenType = versionTag === "OTTO";
+  if (versionTag !== "\u0000\u0001\u0000\u0000" && versionTag !== "true" && !isOpenType) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Only TrueType/OpenType font files are supported for embedding.", {
       versionTag
     });
   }
@@ -55,6 +59,11 @@ export function parseTrueTypeFont(data: BinaryData, family?: string): ParsedTrue
     tables.set(tag, { offset, length });
   }
 
+  // Detect CFF or CFF2 table presence
+  const cffTable = tables.get("CFF");
+  const cff2Table = tables.get("CFF2");
+  const isCff = cffTable !== undefined || cff2Table !== undefined;
+
   const head = requireTable(tables, "head");
   const hhea = requireTable(tables, "hhea");
   const maxp = requireTable(tables, "maxp");
@@ -65,6 +74,11 @@ export function parseTrueTypeFont(data: BinaryData, family?: string): ParsedTrue
   const os2Table = tables.get("OS/2");
   const kernTable = tables.get("kern");
   const gsubTable = tables.get("GSUB");
+
+  let cffData: ParsedCffFont | undefined;
+  if (cffTable) {
+    cffData = parseCffTable(bytes, cffTable.offset, cffTable.length);
+  }
 
   const unitsPerEm = readUint16(bytes, head.offset + 18);
   const xMin = readInt16(bytes, head.offset + 36);
@@ -106,7 +120,9 @@ export function parseTrueTypeFont(data: BinaryData, family?: string): ParsedTrue
     cmap,
     kerningPairs,
     ligatures,
-    joiningForms
+    joiningForms,
+    isCff,
+    ...(cffData !== undefined ? { cffData } : {})
   };
 }
 

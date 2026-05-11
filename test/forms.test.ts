@@ -519,3 +519,115 @@ test("tabOrder defaults are per spec", () => {
   assert.ok(!text.includes("/Tabs"));
 });
 
+test("emits /CO calculation order in AcroForm dictionary", () => {
+  const doc = createDocument();
+  const page = doc.addPage({ size: "Letter" });
+  page.textField("calcA", { x: 36, y: 640, width: 180, height: 24 });
+  page.textField("calcB", { x: 36, y: 600, width: 180, height: 24 });
+  doc.setCalculationOrder(["calcB", "calcA"]);
+
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+  assert.ok(text.includes("/CO"));
+  assert.ok(text.includes("(calcB)"));
+  assert.ok(text.includes("(calcA)"));
+});
+
+test("rejects calculation order with non-existent field names", () => {
+  const doc = createDocument();
+  const page = doc.addPage({ size: "Letter" });
+  page.textField("onlyField", { x: 36, y: 640, width: 180, height: 24 });
+  doc.setCalculationOrder(["onlyField", "ghostField"]);
+
+  assert.throws(
+    () => doc.toUint8Array(),
+    (error: unknown) =>
+      error instanceof PdfEngineError &&
+      error.code === PdfErrorCode.INVALID_FORM_FIELD,
+  );
+});
+
+test("clears calculation order when empty array is passed", () => {
+  const doc = createDocument();
+  const page = doc.addPage({ size: "Letter" });
+  page.textField("f1", { x: 36, y: 640, width: 180, height: 24 });
+  doc.setCalculationOrder(["f1"]);
+  doc.setCalculationOrder([]);
+
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+  assert.ok(!text.includes("/CO"));
+});
+
+test("custom appearance stream overrides auto-generated check box appearance", () => {
+  const doc = createDocument();
+  const page = doc.addPage({ size: "Letter" });
+  page.checkBox("subscribe", {
+    x: 36,
+    y: 600,
+    width: 16,
+    height: 16,
+    appearance: "1 0 0 rg 0 0 16 16 re f",
+  });
+
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+  assert.match(text, /\/AP/);
+  assert.ok(text.includes("1 0 0 rg"));
+  assert.ok(text.includes("16 16 re"));
+});
+
+test("custom appearance stream for text field replaces auto-generated DA", () => {
+  const doc = createDocument();
+  const page = doc.addPage({ size: "Letter" });
+  page.textField("customLook", {
+    x: 36,
+    y: 640,
+    width: 180,
+    height: 24,
+    font: "Courier",
+    fontSize: 10,
+    appearance: "1 0 0 rg 0 0 180 24 re f",
+  });
+
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+  assert.ok(text.includes("1 0 0 rg"));
+  assert.ok(!text.includes("/Courier 10 Tf"));
+});
+
+test("radio group supports custom appearance", () => {
+  const doc = createDocument();
+  const page = doc.addPage({ size: "Letter" });
+  page.radioGroup("choice", {
+    items: [
+      { value: "a", x: 36, y: 640, width: 16, height: 16 },
+      { value: "b", x: 36, y: 616, width: 16, height: 16 },
+    ],
+    appearance: "0 0 0 rg 1 1 14 14 re f",
+  });
+
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+  assert.ok(text.includes("0 0 0 rg"));
+});
+
+test("custom appearance supports normal/down/rollover structure", () => {
+  const doc = createDocument();
+  const page = doc.addPage({ size: "Letter" });
+  page.checkBox("advanced", {
+    x: 36,
+    y: 600,
+    width: 16,
+    height: 16,
+    appearance: {
+      normal: "0 0 1 rg 0 0 16 16 re f",
+      down: "1 0 0 rg 0 0 16 16 re f",
+    },
+  });
+
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+  assert.ok(text.includes("0 0 1 rg"));
+});
+

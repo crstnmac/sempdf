@@ -347,7 +347,16 @@ function allocateStructElementTree(
   annotationParentTreeKeys: Map<number, number>,
   allocateParentTreeKey: () => number,
   nextObjectId: number,
+  visitedNodeIds: Set<number> = new Set(),
 ): { objectId: number; nextObjectId: number } {
+  if (visitedNodeIds.has(node.id)) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_PDF,
+      'Circular reference detected in structure tree.',
+    );
+  }
+  visitedNodeIds.add(node.id);
+
   const objectId = nextObjectId;
   nextObjectId += 1;
   allocatedNodeIds.add(node.id);
@@ -366,6 +375,7 @@ function allocateStructElementTree(
       annotationParentTreeKeys,
       allocateParentTreeKey,
       nextObjectId,
+      visitedNodeIds,
     );
     childObjectIds.push(allocation.objectId);
     nextObjectId = allocation.nextObjectId;

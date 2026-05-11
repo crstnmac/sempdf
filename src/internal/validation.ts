@@ -79,9 +79,21 @@ export interface NormalizedPageLabelOptions {
 
 export interface ResolvedPageSize extends CustomPageSize {}
 export type ResolvedTextDirection = Exclude<TextDirection, "auto">;
+
+/**
+ * Normalized custom field appearance, representing either a simple
+ * normal-appearance string or an appearance dictionary with per-state content.
+ */
+export interface NormalizedFieldAppearance {
+  normal?: string | undefined;
+  down?: string | undefined;
+  rollover?: string | undefined;
+}
+
 export interface NormalizedTextBaseOptions extends NormalizedTextOptions {
   fallbackFonts: PdfFont[];
   direction: TextDirection;
+  writingMode?: "horizontal" | "vertical" | undefined;
 }
 
 export interface NormalizedUriLinkOptions {
@@ -152,6 +164,7 @@ export interface NormalizedTextFieldOptions {
   readOnly: boolean;
   required: boolean;
   multiline: boolean;
+  appearance?: NormalizedFieldAppearance | undefined;
   tag?: "Annot" | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;
 }
@@ -161,6 +174,7 @@ export interface NormalizedTextBlockOptions extends NormalizedTextBaseOptions {
   lineHeight: number;
   align: TextAlign;
   maxLines?: number | undefined;
+  writingMode?: "horizontal" | "vertical" | undefined;
 }
 
 export interface NormalizedListItem {
@@ -213,6 +227,7 @@ export interface NormalizedCheckBoxOptions {
   checked: boolean;
   readOnly: boolean;
   required: boolean;
+  appearance?: NormalizedFieldAppearance | undefined;
   tag?: "Annot" | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;
 }
@@ -231,6 +246,7 @@ export interface NormalizedChoiceFieldOptions {
   readOnly: boolean;
   required: boolean;
   mode: ChoiceFieldMode;
+  appearance?: NormalizedFieldAppearance | undefined;
   tag?: "Annot" | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;
 }
@@ -249,6 +265,7 @@ export interface NormalizedRadioGroupOptions {
   borderWidth: number;
   readOnly: boolean;
   required: boolean;
+  appearance?: NormalizedFieldAppearance | undefined;
   tag?: "Annot" | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;
 }
@@ -264,6 +281,7 @@ export interface NormalizedPushButtonOptions {
   color: PdfColor;
   borderWidth: number;
   readOnly: boolean;
+  appearance?: NormalizedFieldAppearance | undefined;
   tag?: "Annot" | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;
 }
@@ -276,12 +294,42 @@ export interface NormalizedSignatureFieldOptions {
   borderWidth: number;
   readOnly: boolean;
   required: boolean;
+  appearance?: NormalizedFieldAppearance | undefined;
   tag?: "Annot" | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;
 }
 
 export interface NormalizedOutlineOptions {
   expanded: boolean;
+}
+
+function normalizeFieldAppearance(
+  appearance: string | { normal?: string; down?: string; rollover?: string } | undefined,
+): NormalizedFieldAppearance | undefined {
+  if (appearance === undefined) {
+    return undefined;
+  }
+  if (typeof appearance === "string") {
+    if (appearance.trim().length === 0) {
+      return undefined;
+    }
+    return { normal: appearance };
+  }
+  const result: NormalizedFieldAppearance = {};
+  let hasAny = false;
+  if (appearance.normal !== undefined && appearance.normal.trim().length > 0) {
+    result.normal = appearance.normal;
+    hasAny = true;
+  }
+  if (appearance.down !== undefined && appearance.down.trim().length > 0) {
+    result.down = appearance.down;
+    hasAny = true;
+  }
+  if (appearance.rollover !== undefined && appearance.rollover.trim().length > 0) {
+    result.rollover = appearance.rollover;
+    hasAny = true;
+  }
+  return hasAny ? result : undefined;
 }
 
 export function resolvePageSize(size: PageSize | undefined): ResolvedPageSize {
@@ -786,6 +834,7 @@ export function normalizeTextBaseOptions(options: TextOptions | TextBlockOptions
     fontSize,
     color: normalizeColor(options.color ?? DEFAULT_COLOR),
     kerning: options.kerning ?? true,
+    ...(options.writingMode !== undefined ? { writingMode: options.writingMode } : {}),
     ...(options.tag !== undefined ? { tag: normalizeTextStructureTag(options.tag) } : {}),
     ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
   };
@@ -1147,6 +1196,7 @@ export function normalizeTextFieldOptions(fieldName: string, options: TextFieldO
     readOnly: options.readOnly ?? false,
     required: options.required ?? false,
     multiline: options.multiline ?? false,
+    ...(options.appearance !== undefined ? { appearance: normalizeFieldAppearance(options.appearance) } : {}),
     ...(options.tag !== undefined ? { tag: normalizeAnnotationStructureTag(options.tag) } : {}),
     ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
   };
@@ -1187,6 +1237,7 @@ export function normalizeCheckBoxOptions(fieldName: string, options: CheckBoxOpt
     checked: options.checked ?? false,
     readOnly: options.readOnly ?? false,
     required: options.required ?? false,
+    ...(options.appearance !== undefined ? { appearance: normalizeFieldAppearance(options.appearance) } : {}),
     ...(options.tag !== undefined ? { tag: normalizeAnnotationStructureTag(options.tag) } : {}),
     ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
   };
@@ -1255,6 +1306,7 @@ export function normalizeChoiceFieldOptions(fieldName: string, options: ChoiceFi
     readOnly: options.readOnly ?? false,
     required: options.required ?? false,
     mode: options.mode ?? "combo",
+    ...(options.appearance !== undefined ? { appearance: normalizeFieldAppearance(options.appearance) } : {}),
     ...(options.tag !== undefined ? { tag: normalizeAnnotationStructureTag(options.tag) } : {}),
     ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
   };
@@ -1324,6 +1376,7 @@ export function normalizeRadioGroupOptions(fieldName: string, options: RadioGrou
     borderWidth,
     readOnly: options.readOnly ?? false,
     required: options.required ?? false,
+    ...(options.appearance !== undefined ? { appearance: normalizeFieldAppearance(options.appearance) } : {}),
     ...(options.tag !== undefined ? { tag: normalizeAnnotationStructureTag(options.tag) } : {}),
     ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
   };
@@ -1363,6 +1416,7 @@ export function normalizePushButtonOptions(fieldName: string, options: PushButto
     color: normalizeColor(options.color ?? DEFAULT_COLOR),
     borderWidth,
     readOnly: options.readOnly ?? false,
+    ...(options.appearance !== undefined ? { appearance: normalizeFieldAppearance(options.appearance) } : {}),
     ...(options.tag !== undefined ? { tag: normalizeAnnotationStructureTag(options.tag) } : {}),
     ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
   };
@@ -1388,6 +1442,7 @@ export function normalizeSignatureFieldOptions(fieldName: string, options: Signa
     borderWidth,
     readOnly: options.readOnly ?? false,
     required: options.required ?? false,
+    ...(options.appearance !== undefined ? { appearance: normalizeFieldAppearance(options.appearance) } : {}),
     ...(options.tag !== undefined ? { tag: normalizeAnnotationStructureTag(options.tag) } : {}),
     ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
   };

@@ -9,40 +9,72 @@ import { parsePng } from "./png.js";
 
 export type EmbeddedImageAsset = EmbeddedJpegAsset | EmbeddedPngAsset | EmbeddedBmpAsset;
 
+function toUint8Array(data: BinaryData): Uint8Array {
+  if (data instanceof Uint8Array) return data;
+  return new Uint8Array(data);
+}
+
+function hashBytes(data: Uint8Array): string {
+  const sample = data.slice(0, 64);
+  let hash = data.length.toString(36);
+  for (let i = 0; i < sample.length; i++) {
+    hash += sample[i]!.toString(36);
+  }
+  return hash;
+}
+
+const imageCache = new Map<string, EmbeddedImageAsset>();
+
 export function parseImage(format: "jpeg" | "png" | "bmp", data: BinaryData, iccProfile?: BinaryData): EmbeddedImageAsset {
   try {
+    const dataBytes = toUint8Array(data);
+    const profileBytes = iccProfile ? toUint8Array(iccProfile) : null;
+    const cacheKey = `${format}:${hashBytes(dataBytes)}:${profileBytes ? hashBytes(profileBytes) : ""}`;
+    const cached = imageCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     if (format === "jpeg") {
       const asset = parseJpeg(data);
-      if (iccProfile === undefined) return asset;
-      const profileBytes = iccProfile instanceof Uint8Array
-        ? new Uint8Array(iccProfile)
-        : new Uint8Array(iccProfile);
-      const channels = asset.colorSpace === "DeviceGray" ? 1 : asset.colorSpace === "DeviceRGB" ? 3 : 4;
-      const iccDigest = simpleDigest(profileBytes);
-      return {
-        ...asset,
-        key: `${asset.key}#icc:${iccDigest}`,
-        iccProfile: { bytes: profileBytes, channels }
-      } as EmbeddedImageAsset;
+      let result: EmbeddedImageAsset;
+      if (iccProfile === undefined) {
+        result = asset;
+      } else {
+        const channels = asset.colorSpace === "DeviceGray" ? 1 : asset.colorSpace === "DeviceRGB" ? 3 : 4;
+        const iccDigest = simpleDigest(profileBytes!);
+        result = {
+          ...asset,
+          key: `${asset.key}#icc:${iccDigest}`,
+          iccProfile: { bytes: profileBytes!, channels }
+        } as EmbeddedImageAsset;
+      }
+      imageCache.set(cacheKey, result);
+      return result;
     }
 
     if (format === "bmp") {
       const result = parseBmp(data);
-      return buildEmbeddedBmpAsset(result, iccProfile);
+      const asset = buildEmbeddedBmpAsset(result, iccProfile);
+      imageCache.set(cacheKey, asset);
+      return asset;
     }
 
     const asset = parsePng(data);
-    if (iccProfile === undefined) return asset;
-    const profileBytes = iccProfile instanceof Uint8Array
-      ? new Uint8Array(iccProfile)
-      : new Uint8Array(iccProfile);
-    const channels = asset.colorSpace === "DeviceGray" ? 1 : asset.colorSpace === "DeviceRGB" ? 3 : 4;
-    const iccDigest = simpleDigest(profileBytes);
-    return {
-      ...asset,
-      key: `${asset.key}#icc:${iccDigest}`,
-      iccProfile: { bytes: profileBytes, channels }
-    } as EmbeddedImageAsset;
+    let result: EmbeddedImageAsset;
+    if (iccProfile === undefined) {
+      result = asset;
+    } else {
+      const channels = asset.colorSpace === "DeviceGray" ? 1 : asset.colorSpace === "DeviceRGB" ? 3 : 4;
+      const iccDigest = simpleDigest(profileBytes!);
+      result = {
+        ...asset,
+        key: `${asset.key}#icc:${iccDigest}`,
+        iccProfile: { bytes: profileBytes!, channels }
+      } as EmbeddedImageAsset;
+    }
+    imageCache.set(cacheKey, result);
+    return result;
   } catch (error) {
     if (error instanceof PdfEngineError) {
       throw error;

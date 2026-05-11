@@ -22,8 +22,10 @@ const COMPOSITE_FLAGS = {
  * (sparse glyf approach), so PDF content references do not need remapping.
  */
 export function subsetTrueTypeFont(bytes: Uint8Array, usedGlyphIds: Iterable<number>): Uint8Array {
-  if (readUint32(bytes, 0) !== 0x00010000 && readTag(bytes, 0) !== "true") {
-    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Subsetting requires a TrueType font.");
+  const sfVersion = readUint32(bytes, 0);
+  const tag = readTag(bytes, 0);
+  if (sfVersion !== 0x00010000 && tag !== "true" && tag !== "OTTO") {
+    throw new PdfEngineError(PdfErrorCode.INVALID_PDF, "Subsetting requires a TrueType or OpenType font.");
   }
 
   const numTables = readUint16(bytes, 4);
