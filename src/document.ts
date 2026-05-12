@@ -38,6 +38,7 @@ import {
   addTextBlockToPage,
   addTextToPage,
   createStructureNode,
+  emitParagraphTextAnnotations,
   ensureBlockLevelParent,
   layoutList,
   layoutTable,
@@ -60,6 +61,9 @@ import {
   normalizeListItems,
   normalizeListOptions,
   normalizeNoteAnnotationOptions,
+  normalizeSquigglyAnnotationOptions,
+  normalizeStrikeOutAnnotationOptions,
+  normalizeUnderlineAnnotationOptions,
   normalizeOutlineOptions,
   normalizeOutlineTitle,
   normalizePageLabelOptions,
@@ -115,6 +119,7 @@ import type {
   DocumentInfo,
   DocumentOptions,
   EmbedTrueTypeFontOptions,
+  FlowBlockSpacingOptions,
   FlowCheckBoxOptions,
   FlowChoiceFieldOptions,
   FlowFreeTextOptions,
@@ -157,6 +162,8 @@ import type {
   PushButtonOptions,
   RadioGroupOptions,
   SignatureFieldOptions,
+  SquigglyAnnotationOptions,
+  StrikeOutAnnotationOptions,
   TableRow,
   TableOptions,
   TemplateBlock,
@@ -165,6 +172,7 @@ import type {
   TextFieldOptions,
   TextOptions,
   Transform,
+  UnderlineAnnotationOptions,
   UriLinkOptions,
   XmpMetadataInput,
 } from "./types.js";
@@ -833,27 +841,6 @@ function resolveMarginShorthand(margin: FlowMarginShorthand | undefined): {
   return { top, right, bottom, left };
 }
 
-function resolveAnnotationPadding(
-  padding:
-    | number
-    | { readonly top?: number; readonly bottom?: number; readonly left?: number; readonly right?: number }
-    | undefined,
-  defaults: { top: number; bottom: number; left: number; right: number },
-): { top: number; bottom: number; left: number; right: number } {
-  if (padding === undefined) {
-    return defaults;
-  }
-  if (typeof padding === "number") {
-    return { top: padding, bottom: padding, left: padding, right: padding };
-  }
-  return {
-    top: padding.top ?? defaults.top,
-    bottom: padding.bottom ?? defaults.bottom,
-    left: padding.left ?? defaults.left,
-    right: padding.right ?? defaults.right,
-  };
-}
-
 const STANDARD_FLOW_SPACING: RequiredFlowSpacingScale = {
   paragraphBefore: 0,
   paragraphAfter: 8,
@@ -927,13 +914,17 @@ export class PdfFlow {
    *
    * @returns This flow helper for chaining.
    */
-  heading(text: string, options: FlowHeadingOptions = {}): this {
+  heading(
+    text: string,
+    options: FlowHeadingOptions = {},
+    annotations?: readonly import("./types.js").ParagraphTextAnnotation[],
+  ): this {
     const level = options.level ?? 1;
     const tag = options.tag ?? (`H${level}` as FlowTextOptions["tag"]);
     const fontSize = options.fontSize ?? headingFontSize(level);
     const spacing = this.resolveSpacing("heading", options, level);
     this.applyMarginTop(spacing.before);
-    const { height: consumedHeight } = this.writeTextBlock(
+    const { height: consumedHeight, runs } = this.writeTextBlock(
       text,
       {
         ...options,
@@ -944,6 +935,9 @@ export class PdfFlow {
       spacing.left,
       spacing.right,
     );
+    if (annotations && annotations.length > 0) {
+      this.applyParagraphAnnotations(runs, annotations);
+    }
     this.state.y -= consumedHeight + spacing.after;
     return this;
   }
@@ -1288,6 +1282,33 @@ export class PdfFlow {
   }
 
   /**
+   * Reserves a rectangular region at the current flow cursor and returns its
+   * coordinates without emitting any content. Spacing is applied with the
+   * `link` defaults so this mirrors {@link link}/{@link pageLink} layout. The
+   * cursor advances by the rect height plus trailing spacing.
+   *
+   * Used by the template engine to defer page-to-page link emission until
+   * after every page exists.
+   *
+   * @param options Options that control the operation.
+   *
+   * @returns The reserved rect in PDF coordinates.
+   */
+  reservePageLinkRect(
+    options: Omit<PageLinkOptions, "x" | "y"> & FlowBlockSpacingOptions,
+  ): { x: number; y: number; width: number; height: number } {
+    const spacing = this.resolveSpacing("link", options);
+    this.applyMarginTop(spacing.before);
+    const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
+    const width = Math.min(options.width, innerWidth);
+    const height = options.height;
+    const x = this.state.x + spacing.left;
+    const y = this.state.y - height;
+    this.state.y -= height + spacing.after;
+    return { x, y, width, height };
+  }
+
+  /**
    * Adds a table at the current flow cursor.
    *
    * @param rows The table rows to add.
@@ -1466,6 +1487,32 @@ export class PdfFlow {
     options: FlowTableOptions = {},
   ): number {
     const spacing = this.resolveSpacing("table", options);
+    const perRow = this.computeTableRowHeights(rows, options);
+    return spacing.before + perRow.reduce((sum, h) => sum + h, 0) + spacing.after;
+  }
+
+  /**
+   * Returns the rendered height of each row in a table at the current flow position.
+   * Heights include cell padding and the trailing `rowGap`. Use this to pre-plan
+   * row-by-row page splits when rendering large tables.
+   *
+   * @param rows The table rows to measure.
+   * @param options Options that control the operation.
+   *
+   * @returns Per-row heights including padding and trailing rowGap.
+   */
+  estimateTableRowHeights(
+    rows: readonly TableRow[],
+    options: FlowTableOptions = {},
+  ): readonly number[] {
+    return this.computeTableRowHeights(rows, options);
+  }
+
+  private computeTableRowHeights(
+    rows: readonly TableRow[],
+    options: FlowTableOptions = {},
+  ): number[] {
+    const spacing = this.resolveSpacing("table", options);
     const normalizedRows = normalizeTableRows(rows);
     const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
     const width = options.width ?? innerWidth;
@@ -1477,7 +1524,7 @@ export class PdfFlow {
       width,
     });
     const rowSpanOccupancy = new Map<number, number>();
-    let height = 0;
+    const heights: number[] = [];
 
     for (const row of normalizedRows) {
       const cellHeights: number[] = [];
@@ -1534,15 +1581,16 @@ export class PdfFlow {
         columnIndex = endColumn;
       }
 
-      height +=
+      heights.push(
         Math.max(
           normalizedOptions.lineHeight + normalizedOptions.cellPadding * 2,
           ...cellHeights,
-        ) + normalizedOptions.rowGap;
+        ) + normalizedOptions.rowGap,
+      );
       decrementRowSpanOccupancy(rowSpanOccupancy);
     }
 
-    return spacing.before + height + spacing.after;
+    return heights;
   }
 
   /**
@@ -1678,99 +1726,7 @@ export class PdfFlow {
     runs: readonly import("./internal/text-layout.js").PositionedTextRun[],
     annotations: readonly import("./types.js").ParagraphTextAnnotation[],
   ): void {
-    for (const annotation of annotations) {
-      const rects = findSubstringRects(
-        runs,
-        annotation.match,
-        annotation.occurrence,
-        this.embeddedFonts,
-      );
-      if (rects.length === 0) continue;
-      for (const rect of rects) {
-        this.emitParagraphAnnotation(annotation, rect);
-      }
-    }
-  }
-
-  private emitParagraphAnnotation(
-    annotation: import("./types.js").ParagraphTextAnnotation,
-    rect: import("./internal/text-layout.js").SubstringRect,
-  ): void {
-    if (annotation.type === "highlight") {
-      const padding = resolveAnnotationPadding(annotation.padding, { top: 2, bottom: 2, left: 0, right: 0 });
-      const annotationIndex = this.page.annotations.length;
-      const placed = normalizeHighlightAnnotationOptions({
-        x: rect.x - padding.left,
-        y: rect.y - padding.bottom,
-        width: rect.width + padding.left + padding.right,
-        height: rect.fontSize + padding.top + padding.bottom,
-        ...(annotation.color !== undefined ? { color: annotation.color } : {}),
-        ...(annotation.tag !== undefined ? { tag: annotation.tag } : {}),
-      });
-      const structureGroupId = addAnnotationStructureNode(
-        this.page,
-        "Annot",
-        annotationIndex,
-        placed.tag,
-        placed.structure,
-        placementBoundingBox(placed),
-        this.parent,
-      );
-      this.page.annotations.push({
-        type: "highlight",
-        options: placed,
-        ...(structureGroupId === undefined ? {} : { structureGroupId }),
-      });
-      return;
-    }
-
-    if (annotation.type === "note") {
-      const size = annotation.size ?? rect.fontSize + 4;
-      const anchor = annotation.anchor ?? "before";
-      const x = anchor === "after" ? rect.x + rect.width + 2 : rect.x - size - 2;
-      const y = rect.y;
-      const annotationIndex = this.page.annotations.length;
-      const placed = normalizeNoteAnnotationOptions({
-        x,
-        y,
-        width: size,
-        height: size,
-        contents: annotation.contents,
-        ...(annotation.open !== undefined ? { open: annotation.open } : {}),
-        ...(annotation.tag !== undefined ? { tag: annotation.tag } : {}),
-      });
-      const structureGroupId = addAnnotationStructureNode(
-        this.page,
-        "Annot",
-        annotationIndex,
-        placed.tag,
-        placed.structure,
-        placementBoundingBox(placed),
-        this.parent,
-      );
-      this.page.annotations.push({
-        type: "note",
-        options: placed,
-        ...(structureGroupId === undefined ? {} : { structureGroupId }),
-      });
-      return;
-    }
-
-    if (annotation.type === "link") {
-      addLinkToPage(
-        this.page,
-        annotation.url,
-        {
-          x: rect.x,
-          y: rect.y - 2,
-          width: rect.width,
-          height: rect.fontSize + 2,
-          ...(annotation.borderWidth !== undefined ? { borderWidth: annotation.borderWidth } : {}),
-          ...(annotation.tag !== undefined ? { tag: annotation.tag } : {}),
-        },
-        this.parent,
-      );
-    }
+    emitParagraphTextAnnotations(this.page, runs, annotations, this.embeddedFonts, this.parent);
   }
 
   /**
@@ -2155,6 +2111,46 @@ export class PdfFlow {
    * @returns This flow helper for chaining.
    */
   highlight(options: FlowHighlightOptions): this {
+    return this.flowTextMarkup("highlight", options);
+  }
+
+  /**
+   * Adds an underline text-markup annotation at the current flow cursor.
+   *
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
+  underline(options: FlowHighlightOptions): this {
+    return this.flowTextMarkup("underline", options);
+  }
+
+  /**
+   * Adds a strike-out text-markup annotation at the current flow cursor.
+   *
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
+  strikeOut(options: FlowHighlightOptions): this {
+    return this.flowTextMarkup("strikeOut", options);
+  }
+
+  /**
+   * Adds a squiggly text-markup annotation at the current flow cursor.
+   *
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
+  squiggly(options: FlowHighlightOptions): this {
+    return this.flowTextMarkup("squiggly", options);
+  }
+
+  private flowTextMarkup(
+    subtype: "highlight" | "underline" | "strikeOut" | "squiggly",
+    options: FlowHighlightOptions,
+  ): this {
     const spacing = this.resolveSpacing("image", options);
     this.applyMarginTop(spacing.before);
     const x = options.x ?? this.state.x;
@@ -2162,12 +2158,15 @@ export class PdfFlow {
     const height = options.height;
     const y = options.y ?? this.state.y - height;
 
-    const normalizedOptions = normalizeHighlightAnnotationOptions({
-      ...options,
-      x,
-      y,
-      width,
-    });
+    const rawOptions = { ...options, x, y, width };
+    const normalizedOptions =
+      subtype === "highlight"
+        ? normalizeHighlightAnnotationOptions(rawOptions)
+        : subtype === "underline"
+          ? normalizeUnderlineAnnotationOptions(rawOptions)
+          : subtype === "strikeOut"
+            ? normalizeStrikeOutAnnotationOptions(rawOptions)
+            : normalizeSquigglyAnnotationOptions(rawOptions);
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
       this.page,
@@ -2179,10 +2178,10 @@ export class PdfFlow {
       this.parent,
     );
     this.page.annotations.push({
-      type: "highlight",
+      type: subtype,
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
-    });
+    } as Parameters<typeof this.page.annotations.push>[0]);
     this.state.y -= height + spacing.after;
     return this;
   }
@@ -2834,6 +2833,75 @@ export class PdfPage {
     );
     this.page.annotations.push({
       type: "highlight",
+      options: normalizedOptions,
+      ...(structureGroupId === undefined ? {} : { structureGroupId }),
+    });
+  }
+
+  /**
+   * Adds an underline text-markup annotation to the page.
+   *
+   * @param options Options that control the operation.
+   */
+  underline(options: UnderlineAnnotationOptions): void {
+    const normalizedOptions = normalizeUnderlineAnnotationOptions(options);
+    const annotationIndex = this.page.annotations.length;
+    const structureGroupId = addAnnotationStructureNode(
+      this.page,
+      "Annot",
+      annotationIndex,
+      normalizedOptions.tag,
+      normalizedOptions.structure,
+      placementBoundingBox(normalizedOptions),
+    );
+    this.page.annotations.push({
+      type: "underline",
+      options: normalizedOptions,
+      ...(structureGroupId === undefined ? {} : { structureGroupId }),
+    });
+  }
+
+  /**
+   * Adds a strike-out text-markup annotation to the page.
+   *
+   * @param options Options that control the operation.
+   */
+  strikeOut(options: StrikeOutAnnotationOptions): void {
+    const normalizedOptions = normalizeStrikeOutAnnotationOptions(options);
+    const annotationIndex = this.page.annotations.length;
+    const structureGroupId = addAnnotationStructureNode(
+      this.page,
+      "Annot",
+      annotationIndex,
+      normalizedOptions.tag,
+      normalizedOptions.structure,
+      placementBoundingBox(normalizedOptions),
+    );
+    this.page.annotations.push({
+      type: "strikeOut",
+      options: normalizedOptions,
+      ...(structureGroupId === undefined ? {} : { structureGroupId }),
+    });
+  }
+
+  /**
+   * Adds a squiggly text-markup annotation to the page.
+   *
+   * @param options Options that control the operation.
+   */
+  squiggly(options: SquigglyAnnotationOptions): void {
+    const normalizedOptions = normalizeSquigglyAnnotationOptions(options);
+    const annotationIndex = this.page.annotations.length;
+    const structureGroupId = addAnnotationStructureNode(
+      this.page,
+      "Annot",
+      annotationIndex,
+      normalizedOptions.tag,
+      normalizedOptions.structure,
+      placementBoundingBox(normalizedOptions),
+    );
+    this.page.annotations.push({
+      type: "squiggly",
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
     });

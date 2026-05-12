@@ -3198,6 +3198,36 @@ function buildAnnotationDictionary(
         ['StructParent', structParentKey],
         ['C', buildAnnotationColorArray(annotation.options.color)],
       ]);
+    case 'underline':
+      return dict([
+        ['Type', name('Annot')],
+        ['Subtype', name('Underline')],
+        ['F', 4],
+        ['Rect', rect],
+        ['QuadPoints', buildHighlightQuadPoints(annotation.options)],
+        ['StructParent', structParentKey],
+        ['C', buildAnnotationColorArray(annotation.options.color)],
+      ]);
+    case 'strikeOut':
+      return dict([
+        ['Type', name('Annot')],
+        ['Subtype', name('StrikeOut')],
+        ['F', 4],
+        ['Rect', rect],
+        ['QuadPoints', buildHighlightQuadPoints(annotation.options)],
+        ['StructParent', structParentKey],
+        ['C', buildAnnotationColorArray(annotation.options.color)],
+      ]);
+    case 'squiggly':
+      return dict([
+        ['Type', name('Annot')],
+        ['Subtype', name('Squiggly')],
+        ['F', 4],
+        ['Rect', rect],
+        ['QuadPoints', buildHighlightQuadPoints(annotation.options)],
+        ['StructParent', structParentKey],
+        ['C', buildAnnotationColorArray(annotation.options.color)],
+      ]);
     case 'note':
       return dict([
         ['Type', name('Annot')],

@@ -1,4 +1,5 @@
 import type { PdfDocument, PdfFlow, PdfPage } from '../document.js';
+import { PdfEngineError, PdfErrorCode } from '../errors.js';
 import type {
   FlowCheckBoxOptions,
   FlowChoiceFieldOptions,
@@ -8,12 +9,16 @@ import type {
   FlowPushButtonOptions,
   FlowRadioGroupOptions,
   FlowSignatureFieldOptions,
+  FlowTableOptions,
   FlowTextFieldOptions,
   FlowTextOptions,
+  PageLinkOptions,
+  TableRow,
   TemplateBlock,
   TemplateDocumentOptions,
   TemplatePageOptions,
   TemplateRenderContext,
+  TemplateTableBlock,
 } from '../types.js';
 import type { ResolvedPageSize } from './validation.js';
 
@@ -87,6 +92,12 @@ interface CollectedHeading {
   page: PdfPage;
 }
 
+interface DeferredPageLink {
+  readonly hostPage: PdfPage;
+  readonly targetIndex: number;
+  readonly options: PageLinkOptions;
+}
+
 export function renderTemplateDocument(
   doc: PdfDocument,
   options: TemplateDocumentOptions,
@@ -96,14 +107,29 @@ export function renderTemplateDocument(
   let current = createTemplatePage(doc, options, 1);
   pages.push({ pageNumber: current.pageNumber, page: current.page });
   const headings: CollectedHeading[] = [];
+  const deferredPageLinks: DeferredPageLink[] = [];
+
+  const advanceToNewPage = (): void => {
+    current = createTemplatePage(doc, options, current.pageNumber + 1);
+    pages.push({ pageNumber: current.pageNumber, page: current.page });
+  };
 
   for (let index = 0; index < options.blocks.length; index += 1) {
     const block = options.blocks[index]!;
     if (block.type === 'pageBreak') {
       if (current.flow.cursorY < current.startY) {
-        current = createTemplatePage(doc, options, current.pageNumber + 1);
-        pages.push({ pageNumber: current.pageNumber, page: current.page });
+        advanceToNewPage();
       }
+      continue;
+    }
+
+    if (block.type === 'pageLink') {
+      renderPageLinkBlock(current.flow, current.page, block.target, block.options, deferredPageLinks);
+      continue;
+    }
+
+    if (block.type === 'table') {
+      renderTableWithSplits(block, () => current, advanceToNewPage);
       continue;
     }
 
@@ -118,8 +144,7 @@ export function renderTemplateDocument(
       current.flow.remainingHeight < estimatedHeight + nextEstimatedHeight &&
       current.flow.cursorY < current.startY
     ) {
-      current = createTemplatePage(doc, options, current.pageNumber + 1);
-      pages.push({ pageNumber: current.pageNumber, page: current.page });
+      advanceToNewPage();
     }
 
     if (block.type === 'heading' && options.autoOutline) {
@@ -130,10 +155,114 @@ export function renderTemplateDocument(
     renderTemplateBlockToFlow(current.flow, block);
   }
 
+  resolveDeferredPageLinks(deferredPageLinks, pages);
   renderTemplateRunningRegions(pages, options, metadata);
 
   if (options.autoOutline && headings.length > 0) {
     buildOutlineFromHeadings(doc, headings, options.autoOutline);
+  }
+}
+
+function renderPageLinkBlock(
+  flow: PdfFlow,
+  hostPage: PdfPage,
+  target: number,
+  options: Omit<PageLinkOptions, 'x' | 'y'>,
+  deferred: DeferredPageLink[],
+): void {
+  if (!Number.isInteger(target) || target < 1) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_TEXT,
+      'pageLink target must be a positive 1-based page number.',
+      { target },
+    );
+  }
+  const rect = flow.reservePageLinkRect(options);
+  deferred.push({
+    hostPage,
+    targetIndex: target - 1,
+    options: { ...options, x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+  });
+}
+
+function resolveDeferredPageLinks(
+  deferred: readonly DeferredPageLink[],
+  pages: ReadonlyArray<{ pageNumber: number; page: PdfPage }>,
+): void {
+  for (const entry of deferred) {
+    const targetPage = pages[entry.targetIndex];
+    if (!targetPage) {
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_TEXT,
+        'pageLink target page does not exist in the rendered document.',
+        { targetIndex: entry.targetIndex + 1, totalPages: pages.length },
+      );
+    }
+    entry.hostPage.linkToPage(targetPage.page, entry.options);
+  }
+}
+
+interface CurrentPageRef {
+  readonly flow: PdfFlow;
+  readonly page: PdfPage;
+  readonly startY: number;
+  readonly pageNumber: number;
+}
+
+function renderTableWithSplits(
+  block: TemplateTableBlock,
+  getCurrent: () => CurrentPageRef,
+  advancePage: () => void,
+): void {
+  const allRows = block.rows;
+  if (allRows.length === 0) return;
+
+  const opts: FlowTableOptions = block.options ?? {};
+  const headerRowCount = Math.max(0, Math.min(opts.headerRows ?? 0, allRows.length));
+  const headers = allRows.slice(0, headerRowCount);
+
+  let rowHeights = getCurrent().flow.estimateTableRowHeights(allRows, opts);
+  let headerHeight = rowHeights.slice(0, headerRowCount).reduce((s, h) => s + h, 0);
+
+  let cursor = 0;
+  let isFirstSlice = true;
+
+  while (cursor < allRows.length) {
+    const isContinuation = !isFirstSlice;
+    const flow = getCurrent().flow;
+    let available = flow.remainingHeight;
+    if (isContinuation) available -= headerHeight;
+
+    let endCursor = cursor;
+    while (endCursor < allRows.length && rowHeights[endCursor]! <= available) {
+      available -= rowHeights[endCursor]!;
+      endCursor += 1;
+    }
+
+    if (endCursor === cursor) {
+      if (flow.cursorY < getCurrent().startY) {
+        advancePage();
+        rowHeights = getCurrent().flow.estimateTableRowHeights(allRows, opts);
+        headerHeight = rowHeights.slice(0, headerRowCount).reduce((s, h) => s + h, 0);
+        isFirstSlice = false;
+        continue;
+      }
+      // At start of a fresh page and even one row exceeds height: force-place that row.
+      endCursor = cursor + 1;
+    }
+
+    const sliceRows: readonly TableRow[] = isContinuation
+      ? [...headers, ...allRows.slice(cursor, endCursor)]
+      : allRows.slice(0, endCursor);
+    getCurrent().flow.table(sliceRows, opts);
+    cursor = endCursor;
+
+    if (cursor < allRows.length) {
+      advancePage();
+      rowHeights = getCurrent().flow.estimateTableRowHeights(allRows, opts);
+      headerHeight = rowHeights.slice(0, headerRowCount).reduce((s, h) => s + h, 0);
+      isFirstSlice = false;
+    }
   }
 }
 
@@ -301,7 +430,7 @@ export function renderTemplateBlocksToFlow(
 function renderTemplateBlockToFlow(flow: PdfFlow, block: TemplateBlock): void {
   switch (block.type) {
     case 'heading':
-      flow.heading(block.text, block.options);
+      flow.heading(block.text, block.options, block.annotations);
       return;
     case 'paragraph':
       flow.paragraph(block.text, block.options, block.annotations);
