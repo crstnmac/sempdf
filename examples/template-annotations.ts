@@ -4,100 +4,131 @@ import { createDocument, hex } from "../src/index.js";
 const doc = createDocument({
   language: "en-US",
   info: {
-    title: "Document Review - Template Annotations",
+    title: "Document Review - Annotations Demo",
     author: "pdf-editing-lib",
-    creationDate: "D:20260512000000Z",
-    modificationDate: "D:20260512000000Z"
-  }
+  },
 });
 
 doc.setXmpMetadata({
-  title: "Document Review - Template Annotations",
+  title: "Document Review - Annotations Demo",
   creator: "pdf-editing-lib",
-  creatorTool: "pdf-editing-lib",
   createDate: "2026-05-12T00:00:00Z",
   modifyDate: "2026-05-12T00:00:00Z",
-  metadataDate: "2026-05-12T00:00:00Z"
+  metadataDate: "2026-05-12T00:00:00Z",
 });
 
+// ── Page 1: Template structure + inline link annotations ──────────────
+
 doc.renderTemplate({
-  info: { title: "Document Review", author: "pdf-editing-lib" },
   page: { size: "A4" },
   blocks: [
     {
       type: "heading",
       text: "Document Review",
-      options: { level: 1, color: hex("#1c2f6b"), marginBottom: 10 }
+      options: { level: 1, color: hex("#1c2f6b"), marginBottom: 8 },
     },
     {
       type: "paragraph",
-      text: "This document demonstrates how annotations integrate with the renderTemplate block system. Annotations are placed inline within the flow layout, following the surrounding text.",
-      options: { fontSize: 11, marginBottom: 12 }
-    },
-    {
-      type: "highlight",
-      options: { width: 200, height: 16, color: hex("#ffeb3b") }
-    },
-    {
-      type: "paragraph",
-      text: "The sentence above has a highlight annotation rendered as a template block, making it easy to mark important passages inline.",
-      options: { fontSize: 11, marginBottom: 12 }
-    },
-    {
-      type: "note",
-      options: { width: 24, height: 24, contents: "Reviewer note: Please verify the accuracy of the data in this section before publication.", open: false }
-    },
-    {
-      type: "paragraph",
-      text: "A sticky note annotation is placed to the left. Click the note icon in any PDF viewer to read the reviewer's comment.",
-      options: { fontSize: 11, marginBottom: 12 }
-    },
-    {
-      type: "freeText",
-      options: { width: 220, height: 50, text: "Approved by Reviewer\nMay 12, 2026", fontSize: 10, color: hex("#2e7d32"), borderWidth: 1 }
-    },
-    {
-      type: "paragraph",
-      text: "The free-text annotation above displays approval status directly on the page without requiring user interaction.",
-      options: { fontSize: 11, marginBottom: 20 }
-    },
-    {
-      type: "heading",
-      text: "References",
-      options: { level: 2, color: hex("#1565c0"), marginBottom: 8 }
-    },
-    {
-      type: "pageLink",
-      target: 2,
-      options: { width: 200, height: 18 }
-    },
-    {
-      type: "paragraph",
-      text: "Click the page link above to jump to the appendix on page 2.",
-      options: { fontSize: 11, marginBottom: 12 }
+      text: "Page 1 demonstrates inline annotations via template blocks. Links are placed automatically at their text position because the flow engine measures the text width.",
+      options: { fontSize: 11, marginBottom: 16 },
     },
     {
       type: "link",
       text: "View documentation online",
       url: "https://example.com/docs",
-      options: { fontSize: 11, color: hex("#1565c0"), marginBottom: 4 }
+      options: { fontSize: 11, color: hex("#1565c0"), marginBottom: 4 },
     },
     {
       type: "paragraph",
-      text: "The link block above creates a clickable URI annotation rendered inline within the paragraph flow.",
-      options: { fontSize: 11 }
-    }
-  ]
+      text: "The link above is rendered inline. Its clickable area exactly covers the link text because the flow engine measures the text width and places the annotation at the correct coordinates.",
+      options: { fontSize: 11, marginBottom: 20 },
+    },
+    {
+      type: "heading",
+      text: "Precision Matters",
+      options: { level: 2, color: hex("#1565c0"), marginBottom: 8 },
+    },
+    {
+      type: "paragraph",
+      text: "For precise annotations that target specific words or phrases within a body of text, the low-level page API provides exact coordinate control. Page 2 demonstrates this approach.",
+      options: { fontSize: 11 },
+    },
+  ],
 });
+
+// ── Page 2: Low-level API for precise text annotations ─────────────────
+// Use the page API when you need pixel-perfect highlight, note, or
+// free-text annotations at specific positions within rendered text.
+
+const page = doc.addPage({ size: "A4" });
+
+page.text("Precise Text Annotations", {
+  x: 72, y: 780, fontSize: 18, color: hex("#1c2f6b"),
+});
+
+// Paragraph 1: highlight a specific word ("lazy")
+const p1y = 740;
+page.text(
+  "The quick brown fox jumps over the lazy dog. This demonstrates how " +
+    "to annotate specific text ranges using exact coordinate positioning.",
+  { x: 72, y: p1y, fontSize: 12 },
+);
+
+// Highlight "lazy" (~chars 34-38, ~325px from left at 12pt)
+page.highlight({
+  x: 390, y: p1y + 2, width: 42, height: 14,
+  color: hex("#ffeb3b"),
+});
+
+// Paragraph 2: sticky note on a specific word ("Accessibility")
+const p2y = p1y - 36 - 14;
+page.text(
+  "Accessibility compliance requires all non-text content to have " +
+    "text alternatives. Verify during the audit phase.",
+  { x: 72, y: p2y, fontSize: 12 },
+);
+
+page.note({
+  x: 70, y: p2y - 4, width: 24, height: 24,
+  contents: "WCAG 1.1.1: Ensure all images have alt attributes.",
+  open: false,
+});
+
+// Paragraph 3: free-text annotation stamp
+const p3y = p2y - 36 - 14;
+page.text(
+  "All findings must be documented with clear reproduction steps " +
+    "and environment details for the development team.",
+  { x: 72, y: p3y, fontSize: 12 },
+);
+
+page.freeText({
+  x: 440, y: p3y - 30,
+  width: 130, height: 42,
+  text: "Priority: High\nDue: May 15",
+  fontSize: 9,
+  color: hex("#c62828"),
+  borderWidth: 1,
+});
+
+// Footer tip
+page.text(
+  "Tip: Use the low-level API when you need pixel-perfect annotation " +
+    "placement. The template system is ideal for document structure; " +
+    "precise highlights, notes, and free-text annotations work best " +
+    "with explicit coordinates.",
+  { x: 72, y: 80, fontSize: 8, color: hex("#666666") },
+);
+
+// ── Output ────────────────────────────────────────────────────────────
 
 const issues = doc.validateCompliance();
 if (issues.length > 0) {
   console.log("Compliance issues:");
-  for (const issue of issues) {
-    console.log(`  [${issue.severity}] ${issue.message}`);
-  }
+  for (const issue of issues) console.log(`  [${issue.severity}] ${issue.message}`);
 }
 
 await writeFile(new URL("./template-annotations.pdf", import.meta.url), doc.toUint8Array());
 console.log("Wrote examples/template-annotations.pdf");
-console.log("  Blocks: heading, paragraph, highlight, note, freeText, pageLink, link");
+console.log("  Page 1: renderTemplate with inline link annotations");
+console.log("  Page 2: low-level API with highlight, note, freeText on specific text");
