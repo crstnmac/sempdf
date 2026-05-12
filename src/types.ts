@@ -950,6 +950,130 @@ export interface FlowTableOptions
 }
 
 /**
+ * Options for placing a text form field through the flow layout API.
+ */
+export interface FlowTextFieldOptions
+  extends Omit<TextFieldOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+  /** Horizontal position override in PDF points. */
+  x?: number | undefined;
+  /** Vertical position override in PDF points. */
+  y?: number | undefined;
+  /** Width override in PDF points. */
+  width?: number | undefined;
+}
+
+/**
+ * Options for placing a checkbox form field through the flow layout API.
+ */
+export interface FlowCheckBoxOptions
+  extends Omit<CheckBoxOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+  /** Horizontal position override in PDF points. */
+  x?: number | undefined;
+  /** Vertical position override in PDF points. */
+  y?: number | undefined;
+  /** Width override in PDF points. */
+  width?: number | undefined;
+}
+
+/**
+ * Options for placing a choice form field through the flow layout API.
+ */
+export interface FlowChoiceFieldOptions
+  extends Omit<ChoiceFieldOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+  /** Horizontal position override in PDF points. */
+  x?: number | undefined;
+  /** Vertical position override in PDF points. */
+  y?: number | undefined;
+  /** Width override in PDF points. */
+  width?: number | undefined;
+}
+
+/**
+ * Options for placing a radio-button group through the flow layout API.
+ */
+export interface FlowRadioGroupOptions extends Omit<RadioGroupOptions, "items">, FlowBlockSpacingOptions {
+  /** Radio-button items in the group with their own positions. */
+  items: RadioGroupItemOptions[];
+}
+
+/**
+ * Options for placing a push-button form field through the flow layout API.
+ */
+export interface FlowPushButtonOptions
+  extends Omit<PushButtonOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+  /** Horizontal position override in PDF points. */
+  x?: number | undefined;
+  /** Vertical position override in PDF points. */
+  y?: number | undefined;
+  /** Width override in PDF points. */
+  width?: number | undefined;
+}
+
+/**
+ * Options for placing a signature form field through the flow layout API.
+ */
+export interface FlowSignatureFieldOptions
+  extends Omit<SignatureFieldOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+  /** Horizontal position override in PDF points. */
+  x?: number | undefined;
+  /** Vertical position override in PDF points. */
+  y?: number | undefined;
+  /** Width override in PDF points. */
+  width?: number | undefined;
+}
+
+/**
+ * Options for placing a highlight annotation through the flow layout API.
+ */
+export interface FlowHighlightOptions
+  extends Omit<HighlightAnnotationOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+  /** Horizontal position override in PDF points. */
+  x?: number | undefined;
+  /** Vertical position override in PDF points. */
+  y?: number | undefined;
+  /** Width override in PDF points. */
+  width?: number | undefined;
+}
+
+/**
+ * Options for placing a text note annotation through the flow layout API.
+ */
+export interface FlowNoteOptions
+  extends Omit<NoteAnnotationOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+  /** Horizontal position override in PDF points. */
+  x?: number | undefined;
+  /** Vertical position override in PDF points. */
+  y?: number | undefined;
+  /** Width override in PDF points. */
+  width?: number | undefined;
+}
+
+/**
+ * Options for placing a free-text annotation through the flow layout API.
+ */
+export interface FlowFreeTextOptions
+  extends Omit<FreeTextAnnotationOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+  /** Horizontal position override in PDF points. */
+  x?: number | undefined;
+  /** Vertical position override in PDF points. */
+  y?: number | undefined;
+  /** Width override in PDF points. */
+  width?: number | undefined;
+}
+
+/**
+ * Options for placing a tagged list through the flow layout API.
+ */
+export interface FlowListOptions extends Omit<ListOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+  /** Horizontal position override in PDF points. */
+  x?: number | undefined;
+  /** Vertical position override in PDF points. */
+  y?: number | undefined;
+  /** Width override in PDF points. */
+  width?: number | undefined;
+}
+
+/**
  * Page layout options used by template rendering.
  */
 export interface TemplatePageOptions extends FlowOptions {
@@ -999,17 +1123,29 @@ export interface TemplatePageNumberOptions {
 }
 
 /**
- * Template block for rendering a heading or paragraph.
+ * Template block for rendering a heading.
  */
-export interface TemplateTextBlock {
-  /** Discriminator identifying this option or command shape. */
-  type: "heading" | "paragraph";
+export interface TemplateHeadingBlock {
+  readonly type: "heading";
   /** Text content to render or inspect. */
-  text: string;
+  readonly text: string;
   /** Options that control this item. */
-  options?: FlowHeadingOptions | FlowTextOptions | undefined;
+  readonly options?: FlowHeadingOptions | undefined;
   /** Whether this block should stay on the same page as the following block when possible. */
-  keepWithNext?: boolean | undefined;
+  readonly keepWithNext?: boolean | undefined;
+}
+
+/**
+ * Template block for rendering a paragraph.
+ */
+export interface TemplateParagraphBlock {
+  readonly type: "paragraph";
+  /** Text content to render or inspect. */
+  readonly text: string;
+  /** Options that control this item. */
+  readonly options?: FlowTextOptions | undefined;
+  /** Whether this block should stay on the same page as the following block when possible. */
+  readonly keepWithNext?: boolean | undefined;
 }
 
 /**
@@ -1081,15 +1217,172 @@ export interface TemplatePageBreakBlock {
 }
 
 /**
+ * Template block for rendering a text form field.
+ */
+export interface TemplateTextFieldBlock {
+  readonly type: "textField";
+  readonly name: string;
+  readonly options?: Omit<TextFieldOptions, "x" | "y"> | undefined;
+  readonly keepWithNext?: boolean | undefined;
+}
+
+/**
+ * Template block for rendering a checkbox form field.
+ */
+export interface TemplateCheckBoxBlock {
+  readonly type: "checkBox";
+  readonly name: string;
+  readonly options?: Omit<CheckBoxOptions, "x" | "y"> | undefined;
+  readonly keepWithNext?: boolean | undefined;
+}
+
+/**
+ * Template block for rendering a choice form field.
+ */
+export interface TemplateChoiceFieldBlock {
+  readonly type: "choiceField";
+  readonly name: string;
+  readonly options?: Omit<ChoiceFieldOptions, "x" | "y"> | undefined;
+  readonly keepWithNext?: boolean | undefined;
+}
+
+/**
+ * Template block for rendering a radio-button group form field.
+ */
+export interface TemplateRadioGroupBlock {
+  readonly type: "radioGroup";
+  readonly name: string;
+  readonly options?: Omit<RadioGroupOptions, "x" | "y"> | undefined;
+  readonly keepWithNext?: boolean | undefined;
+}
+
+/**
+ * Template block for rendering a push-button form field.
+ */
+export interface TemplatePushButtonBlock {
+  readonly type: "pushButton";
+  readonly name: string;
+  readonly options?: Omit<PushButtonOptions, "x" | "y"> | undefined;
+  readonly keepWithNext?: boolean | undefined;
+}
+
+/**
+ * Template block for rendering a signature form field.
+ */
+export interface TemplateSignatureFieldBlock {
+  readonly type: "signatureField";
+  readonly name: string;
+  readonly options?: Omit<SignatureFieldOptions, "x" | "y"> | undefined;
+  readonly keepWithNext?: boolean | undefined;
+}
+
+/**
+ * Template block for rendering a highlight annotation.
+ */
+export interface TemplateHighlightBlock {
+  readonly type: "highlight";
+  readonly options: Omit<HighlightAnnotationOptions, "x" | "y">;
+  readonly keepWithNext?: undefined;
+}
+
+/**
+ * Template block for rendering a text note annotation.
+ */
+export interface TemplateNoteBlock {
+  readonly type: "note";
+  readonly options: Omit<NoteAnnotationOptions, "x" | "y">;
+  readonly keepWithNext?: undefined;
+}
+
+/**
+ * Template block for rendering a free-text annotation.
+ */
+export interface TemplateFreeTextBlock {
+  readonly type: "freeText";
+  readonly options: Omit<FreeTextAnnotationOptions, "x" | "y">;
+  readonly keepWithNext?: undefined;
+}
+
+/**
+ * Template block for rendering a page-to-page link annotation.
+ */
+export interface TemplatePageLinkBlock {
+  readonly type: "pageLink";
+  /** One-based page number to link to. */
+  readonly target: number;
+  readonly options: Omit<PageLinkOptions, "x" | "y">;
+  readonly keepWithNext?: undefined;
+}
+
+/**
+ * Template block for rendering vector path commands.
+ */
+export interface TemplatePathBlock {
+  readonly type: "path";
+  readonly commands: PathCommand[];
+  readonly style: PathStyle;
+  readonly height: number;
+  readonly keepWithNext?: boolean | undefined;
+}
+
+/**
+ * Template block for rendering a rectangle.
+ */
+export interface TemplateRectBlock {
+  readonly type: "rect";
+  readonly width: number;
+  readonly height: number;
+  readonly style: PathStyle;
+  readonly keepWithNext?: boolean | undefined;
+}
+
+/**
+ * Template block for rendering a tagged list.
+ */
+export interface TemplateListBlock {
+  readonly type: "list";
+  readonly items: ListItem[];
+  readonly options?: Omit<ListOptions, "x" | "y"> | undefined;
+  readonly keepWithNext?: boolean | undefined;
+}
+
+/**
+ * Template block for user-defined rendering and estimation logic.
+ */
+export interface TemplateCustomBlock {
+  readonly type: "custom";
+  /** Renders the block and returns the vertical height consumed. */
+  readonly render: (flow: import("./document.js").PdfFlow) => number;
+  /** Estimates the vertical height this block will consume. */
+  readonly estimate: (flow: import("./document.js").PdfFlow) => number;
+  readonly keepWithNext?: boolean | undefined;
+}
+
+/**
  * Union of block types accepted by template rendering.
  */
 export type TemplateBlock =
-  | TemplateTextBlock
+  | TemplateHeadingBlock
+  | TemplateParagraphBlock
   | TemplateTableBlock
   | TemplateImageBlock
   | TemplateLinkBlock
   | TemplateSectionBlock
-  | TemplatePageBreakBlock;
+  | TemplatePageBreakBlock
+  | TemplateTextFieldBlock
+  | TemplateCheckBoxBlock
+  | TemplateChoiceFieldBlock
+  | TemplateRadioGroupBlock
+  | TemplatePushButtonBlock
+  | TemplateSignatureFieldBlock
+  | TemplateHighlightBlock
+  | TemplateNoteBlock
+  | TemplateFreeTextBlock
+  | TemplatePageLinkBlock
+  | TemplatePathBlock
+  | TemplateRectBlock
+  | TemplateListBlock
+  | TemplateCustomBlock;
 
 /**
  * Top-level options for rendering a reusable document template.
