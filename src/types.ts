@@ -772,6 +772,16 @@ export interface TextBlockOptions {
 }
 
 /**
+ * Newspaper-style column layout options for flow and template pages.
+ */
+export interface FlowColumnsOptions {
+  /** Number of columns in the flow frame. Defaults to 1 when omitted. */
+  count: number;
+  /** Gap between columns in PDF points. Defaults to 18 when omitted. */
+  gap?: number | undefined;
+}
+
+/**
  * Initial layout, typography, and spacing options for a PdfFlow cursor.
  */
 export interface FlowOptions {
@@ -781,6 +791,8 @@ export interface FlowOptions {
   y?: number | undefined;
   /** Width in PDF points. */
   width?: number | undefined;
+  /** Newspaper-style flow columns. */
+  columns?: FlowColumnsOptions | undefined;
   /** CSS-like margin shorthand in PDF points. */
   margin?: FlowMarginShorthand | undefined;
   /** Top margin in PDF points. */

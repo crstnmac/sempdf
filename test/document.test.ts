@@ -1068,6 +1068,95 @@ test("template pageBreak starts following content on a new page", () => {
   );
 });
 
+test("flow columns continue paragraph text in the next column", () => {
+  const doc = createDocument();
+  const page = doc.addPage({ size: { width: 200, height: 180 } });
+  const flow = page.flow({
+    margin: 20,
+    columns: { count: 2, gap: 20 },
+    fontSize: 10,
+    lineHeight: 12,
+    spacing: { paragraphAfter: 0 }
+  });
+
+  flow.paragraph(
+    Array.from({ length: 52 }, (_, index) => `word${index + 1}`).join(" ")
+  );
+
+  assert.equal(flow.columnIndex, 1);
+
+  const [{ runs = [] } = {}] = parseDocument(doc.toUint8Array()).extractText();
+  const firstColumnRuns = runs.filter((run) => run.x < 80);
+  const secondColumnRuns = runs.filter((run) => run.x >= 110);
+
+  assert.ok(firstColumnRuns.length > 0);
+  assert.ok(secondColumnRuns.length > 0);
+  assert.ok(
+    Math.max(...secondColumnRuns.map((run) => run.y)) >
+      Math.min(...firstColumnRuns.map((run) => run.y)),
+    "expected wrapped text to restart near the top of the second column"
+  );
+});
+
+test("renderTemplate balances short multi-column pages automatically", () => {
+  const doc = createDocument();
+
+  doc.renderTemplate({
+    page: {
+      size: { width: 260, height: 360 },
+      margin: 30,
+      columns: { count: 2, gap: 24 },
+      fontSize: 10,
+      lineHeight: 12,
+      spacing: { paragraphAfter: 8 }
+    },
+    blocks: [
+      { type: "paragraph", text: "Column item one." },
+      { type: "paragraph", text: "Column item two." },
+      { type: "paragraph", text: "Column item three." },
+      { type: "paragraph", text: "Column item four." }
+    ]
+  });
+
+  const [{ runs = [] } = {}] = parseDocument(doc.toUint8Array()).extractText();
+  const firstColumn = runs.filter((run) => run.x < 120).map((run) => run.text).join("");
+  const secondColumn = runs.filter((run) => run.x >= 140).map((run) => run.text).join("");
+
+  assert.match(firstColumn, /Column item one/);
+  assert.match(firstColumn, /Column item two/);
+  assert.match(secondColumn, /Column item three/);
+  assert.match(secondColumn, /Column item four/);
+});
+
+test("renderTemplate advances through columns before creating a new page", () => {
+  const doc = createDocument();
+
+  doc.renderTemplate({
+    page: {
+      size: { width: 220, height: 170 },
+      margin: 20,
+      columns: { count: 2, gap: 20 },
+      fontSize: 10,
+      lineHeight: 12,
+      spacing: { paragraphAfter: 0 }
+    },
+    blocks: [
+      {
+        type: "paragraph",
+        text: Array.from({ length: 70 }, (_, index) => `word${index + 1}`).join(" ")
+      }
+    ]
+  });
+
+  const parsed = parseDocument(doc.toUint8Array());
+  assert.equal(parsed.getPageCount(), 2);
+
+  const pages = parsed.extractText();
+  assert.ok(pages[0]!.runs.some((run) => run.x < 80));
+  assert.ok(pages[0]!.runs.some((run) => run.x >= 110));
+  assert.ok(pages[1]!.runs.some((run) => run.x < 80));
+});
+
 test("template headers, footers, and page numbers receive total page count", () => {
   const doc = createDocument({
     tagged: true,

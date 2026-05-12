@@ -45,6 +45,8 @@ doc.renderTemplate({
   page: {
     size: "A4",
     font,
+    margin: 48,
+    columns: { count: 2, gap: 24 },
     spacing: {
       paragraphAfter: 8,
       headingBefore: { 2: 16, 3: 12 },
@@ -148,7 +150,6 @@ doc.renderTemplate({
     },
 
     // ── Risk assessment ────────────────────────────
-    { type: "pageBreak" },
     {
       type: "heading",
       text: "Risk Assessment",
@@ -204,6 +205,6 @@ doc.renderTemplate({
 
 await writeFile("examples/cookbook-multi-column-report.pdf", doc.toUint8Array());
 console.log("Wrote examples/cookbook-multi-column-report.pdf");
-console.log("  Uses renderTemplate() with blocks for all content");
+console.log("  Uses renderTemplate() with two-column flowing body content");
 console.log("  Metrics: Revenue ($2.67M), Customers (1,842), NPS (72)");
-console.log("  Revenue table: 3 categories, 4 sections, 2 pages");
+console.log("  Revenue table: 3 categories, 4 sections, balanced columns");
