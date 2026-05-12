@@ -236,7 +236,7 @@ page.flow().table(rows, {
 
 ## New Conformance Profiles
 
-Additional profiles beyond `pdfua-1` are available. See the [Conformance API reference](../api/conformance) for full details:
+Additional profiles beyond `pdfua-1` are available. See [PDF Versions and Conformance](/guide/pdf-versions-and-conformance) for full details:
 
 - `pdfa-2b` and `pdfa-3b` — PDF/A archival standards (levels 2 and 3, basic conformance)
 - `pdfa-4` — PDF/A-4 (ISO 19005-4), the latest archival standard
