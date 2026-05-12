@@ -1,5 +1,5 @@
 import { PdfEngineError, PdfErrorCode } from "../errors.js";
-import type { AttachmentOptions, BmpImageOptions, BuiltInPageSize, CheckBoxOptions, ChoiceFieldMode, ChoiceFieldOptions, CustomPageSize, DocumentConformanceProfile, DocumentEncryptionAlgorithm, DocumentEncryptionOptions, DocumentInfo, DocumentPermissions, ExtGStateOptions, FieldActions, FillStyle, FontName, FreeTextAnnotationOptions, HighlightAnnotationOptions, JpegImageOptions, LineCap, LineJoin, ListItem, ListOptions, NoteAnnotationOptions, OutlineOptions, PageLabelOptions, PageLabelStyle, PageLinkOptions, PageSize, PathCommand, PathStyle, PdfColor, PdfComplianceIssue, PdfContainerTag, PdfFigureStructureTag, PdfFont, PdfRoleMap, PdfStandardStructureTag, PdfStructureAttributeValue, PdfStructureOptions, PdfStructureTag, PdfTextStructureTag, PngImageOptions, PushButtonOptions, RadioGroupOptions, SignatureFieldOptions, StrokeStyle, TableCell, TableHeaderScope, TableOptions, TextAlign, TextBlockOptions, TextDirection, TextFieldOptions, TextOptions, Transform, UriLinkOptions, XmpMetadataInput } from "../types.js";
+import type { AttachmentOptions, BmpImageOptions, BuiltInPageSize, CheckBoxOptions, ChoiceFieldMode, ChoiceFieldOptions, CustomPageSize, DocumentConformanceProfile, DocumentEncryptionAlgorithm, DocumentEncryptionOptions, DocumentInfo, DocumentPermissions, ExtGStateOptions, FieldActions, FillStyle, FontName, FreeTextAnnotationOptions, HighlightAnnotationOptions, JpegImageOptions, LineCap, LineJoin, ListItem, ListOptions, NoteAnnotationOptions, OutlineOptions, PageLabelOptions, PageLabelStyle, PageLinkOptions, PageSize, ParagraphTextAnnotation, PathCommand, PathStyle, PdfColor, PdfComplianceIssue, PdfContainerTag, PdfFigureStructureTag, PdfFont, PdfRoleMap, PdfStandardStructureTag, PdfStructureAttributeValue, PdfStructureOptions, PdfStructureTag, PdfTextStructureTag, PngImageOptions, PushButtonOptions, RadioGroupOptions, SignatureFieldOptions, SquigglyAnnotationOptions, StrikeOutAnnotationOptions, StrokeStyle, TableCell, TableHeaderScope, TableOptions, TextAlign, TextBlockOptions, TextDirection, TextFieldOptions, TextOptions, Transform, UnderlineAnnotationOptions, UriLinkOptions, XmpMetadataInput } from "../types.js";
 import { PAGE_SIZES, gray } from "../types.js";
 import type { NormalizedImageOptions, NormalizedPathStyle, NormalizedTextOptions } from "./ops.js";
 import { buildXmpMetadataPacket } from "./xmp.js";
@@ -133,6 +133,10 @@ export interface NormalizedHighlightAnnotationOptions {
   structure?: PdfStructureOptions | undefined;
 }
 
+export type NormalizedUnderlineAnnotationOptions = NormalizedHighlightAnnotationOptions;
+export type NormalizedStrikeOutAnnotationOptions = NormalizedHighlightAnnotationOptions;
+export type NormalizedSquigglyAnnotationOptions = NormalizedHighlightAnnotationOptions;
+
 export interface NormalizedNoteAnnotationOptions {
   x: number;
   y: number;
@@ -192,6 +196,7 @@ export interface NormalizedListItem {
   body: string;
   label?: string | undefined;
   children: NormalizedListItem[];
+  annotations?: readonly ParagraphTextAnnotation[] | undefined;
 }
 
 export interface NormalizedListOptions extends NormalizedTextBaseOptions {
@@ -213,6 +218,7 @@ export interface NormalizedTableCell {
   rowSpan: number;
   colSpan: number;
   structure?: PdfStructureOptions | undefined;
+  annotations?: readonly ParagraphTextAnnotation[] | undefined;
 }
 
 export type NormalizedTableRow = NormalizedTableCell[];
@@ -1123,7 +1129,8 @@ function normalizeTableCell(cell: TableCell, rowIndex: number, cellIndex: number
     ...(definition.scope !== undefined ? { scope: definition.scope } : {}),
     rowSpan,
     colSpan,
-    ...(definition.structure !== undefined ? { structure: normalizeStructureOptions(definition.structure) } : {})
+    ...(definition.structure !== undefined ? { structure: normalizeStructureOptions(definition.structure) } : {}),
+    ...(definition.annotations !== undefined ? { annotations: definition.annotations } : {})
   };
 }
 
@@ -1202,7 +1209,8 @@ function normalizeListItem(item: ListItem, index: number): NormalizedListItem {
   return {
     body,
     ...(normalizedLabel !== undefined ? { label: normalizedLabel } : {}),
-    children
+    children,
+    ...(item.annotations !== undefined ? { annotations: item.annotations } : {})
   };
 }
 
@@ -1688,6 +1696,33 @@ export function normalizeHighlightAnnotationOptions(options: HighlightAnnotation
   return {
     ...normalizeAnnotationRect(options, "Highlight"),
     color: normalizeColor(options.color ?? { kind: "rgb", r: 1, g: 1, b: 0 }),
+    ...(options.tag !== undefined ? { tag: normalizeAnnotationStructureTag(options.tag) } : {}),
+    ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
+  };
+}
+
+export function normalizeUnderlineAnnotationOptions(options: UnderlineAnnotationOptions): NormalizedUnderlineAnnotationOptions {
+  return {
+    ...normalizeAnnotationRect(options, "Underline"),
+    color: normalizeColor(options.color ?? { kind: "rgb", r: 0, g: 0, b: 0 }),
+    ...(options.tag !== undefined ? { tag: normalizeAnnotationStructureTag(options.tag) } : {}),
+    ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
+  };
+}
+
+export function normalizeStrikeOutAnnotationOptions(options: StrikeOutAnnotationOptions): NormalizedStrikeOutAnnotationOptions {
+  return {
+    ...normalizeAnnotationRect(options, "StrikeOut"),
+    color: normalizeColor(options.color ?? { kind: "rgb", r: 0.85, g: 0.15, b: 0.15 }),
+    ...(options.tag !== undefined ? { tag: normalizeAnnotationStructureTag(options.tag) } : {}),
+    ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
+  };
+}
+
+export function normalizeSquigglyAnnotationOptions(options: SquigglyAnnotationOptions): NormalizedSquigglyAnnotationOptions {
+  return {
+    ...normalizeAnnotationRect(options, "Squiggly"),
+    color: normalizeColor(options.color ?? { kind: "rgb", r: 0.85, g: 0.15, b: 0.15 }),
     ...(options.tag !== undefined ? { tag: normalizeAnnotationStructureTag(options.tag) } : {}),
     ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
   };

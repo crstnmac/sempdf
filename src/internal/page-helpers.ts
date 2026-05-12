@@ -23,16 +23,24 @@ import {
   type InternalStructureNode
 } from "./page-types.js";
 import {
+  findSubstringRects,
   layoutTextBlock,
   measureTextWidth,
   positionTextRuns,
-  type PositionedTextRun
+  type PositionedTextRun,
+  type SubstringRect
 } from "./text-layout.js";
 import type { ParsedTrueTypeFont } from "./truetype.js";
+import type { ParagraphTextAnnotation } from "../types.js";
 import {
+  normalizeHighlightAnnotationOptions,
   normalizeImageOptions,
+  normalizeNoteAnnotationOptions,
+  normalizeSquigglyAnnotationOptions,
+  normalizeStrikeOutAnnotationOptions,
   normalizeTextBaseOptions,
   normalizeTextBlockOptions,
+  normalizeUnderlineAnnotationOptions,
   normalizeUriLinkOptions,
   validateText,
   type NormalizedListItem,
@@ -279,6 +287,178 @@ export function addImageToPage(
   });
 }
 
+interface ResolvedAnnotationPadding {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
+
+function resolveAnnotationPadding(
+  padding:
+    | number
+    | { readonly top?: number; readonly bottom?: number; readonly left?: number; readonly right?: number }
+    | undefined,
+  defaults: ResolvedAnnotationPadding
+): ResolvedAnnotationPadding {
+  if (padding === undefined) return defaults;
+  if (typeof padding === "number") {
+    return { top: padding, bottom: padding, left: padding, right: padding };
+  }
+  return {
+    top: padding.top ?? defaults.top,
+    bottom: padding.bottom ?? defaults.bottom,
+    left: padding.left ?? defaults.left,
+    right: padding.right ?? defaults.right
+  };
+}
+
+/**
+ * Emits inline highlight/note/link annotations at every rect where each
+ * annotation's `match` substring appears in the given positioned runs.
+ * Used by paragraph, heading, list-item body, and table-cell rendering so all
+ * text blocks share the same inline-annotation behavior.
+ */
+export function emitParagraphTextAnnotations(
+  page: InternalPageModel,
+  runs: readonly PositionedTextRun[],
+  annotations: readonly ParagraphTextAnnotation[],
+  embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>,
+  parent?: InternalStructureNode
+): void {
+  if (annotations.length === 0 || runs.length === 0) return;
+  for (const annotation of annotations) {
+    const rects = findSubstringRects(runs, annotation.match, annotation.occurrence, embeddedFonts);
+    for (const rect of rects) {
+      emitParagraphTextAnnotation(page, annotation, rect, parent);
+    }
+  }
+}
+
+function emitParagraphTextAnnotation(
+  page: InternalPageModel,
+  annotation: ParagraphTextAnnotation,
+  rect: SubstringRect,
+  parent?: InternalStructureNode
+): void {
+  if (annotation.type === "highlight") {
+    const padding = resolveAnnotationPadding(annotation.padding, { top: 2, bottom: 2, left: 0, right: 0 });
+    const annotationIndex = page.annotations.length;
+    const placed = normalizeHighlightAnnotationOptions({
+      x: rect.x - padding.left,
+      y: rect.y - padding.bottom,
+      width: rect.width + padding.left + padding.right,
+      height: rect.fontSize + padding.top + padding.bottom,
+      ...(annotation.color !== undefined ? { color: annotation.color } : {}),
+      ...(annotation.tag !== undefined ? { tag: annotation.tag } : {})
+    });
+    const structureGroupId = addAnnotationStructureNode(
+      page,
+      "Annot",
+      annotationIndex,
+      placed.tag,
+      placed.structure,
+      placementBoundingBox(placed),
+      parent
+    );
+    page.annotations.push({
+      type: "highlight",
+      options: placed,
+      ...(structureGroupId === undefined ? {} : { structureGroupId })
+    });
+    return;
+  }
+
+  if (annotation.type === "underline" || annotation.type === "strikeOut" || annotation.type === "squiggly") {
+    emitTextMarkupSubtype(page, annotation, rect, parent);
+    return;
+  }
+
+  if (annotation.type === "note") {
+    const size = annotation.size ?? rect.fontSize + 4;
+    const anchor = annotation.anchor ?? "before";
+    const x = anchor === "after" ? rect.x + rect.width + 2 : rect.x - size - 2;
+    const annotationIndex = page.annotations.length;
+    const placed = normalizeNoteAnnotationOptions({
+      x,
+      y: rect.y,
+      width: size,
+      height: size,
+      contents: annotation.contents,
+      ...(annotation.open !== undefined ? { open: annotation.open } : {}),
+      ...(annotation.tag !== undefined ? { tag: annotation.tag } : {})
+    });
+    const structureGroupId = addAnnotationStructureNode(
+      page,
+      "Annot",
+      annotationIndex,
+      placed.tag,
+      placed.structure,
+      placementBoundingBox(placed),
+      parent
+    );
+    page.annotations.push({
+      type: "note",
+      options: placed,
+      ...(structureGroupId === undefined ? {} : { structureGroupId })
+    });
+    return;
+  }
+
+  if (annotation.type === "link") {
+    addLinkToPage(
+      page,
+      annotation.url,
+      {
+        x: rect.x,
+        y: rect.y - 2,
+        width: rect.width,
+        height: rect.fontSize + 2,
+        ...(annotation.borderWidth !== undefined ? { borderWidth: annotation.borderWidth } : {}),
+        ...(annotation.tag !== undefined ? { tag: annotation.tag } : {})
+      },
+      parent
+    );
+  }
+}
+
+function emitTextMarkupSubtype(
+  page: InternalPageModel,
+  annotation: { type: "underline" | "strikeOut" | "squiggly"; color?: import("../types.js").PdfColor | undefined; tag?: "Annot" | "Artifact" | undefined },
+  rect: SubstringRect,
+  parent?: InternalStructureNode
+): void {
+  const rawOptions = {
+    x: rect.x,
+    y: rect.y - 2,
+    width: rect.width,
+    height: rect.fontSize + 2,
+    ...(annotation.color !== undefined ? { color: annotation.color } : {}),
+    ...(annotation.tag !== undefined ? { tag: annotation.tag } : {})
+  };
+  const placed =
+    annotation.type === "underline"
+      ? normalizeUnderlineAnnotationOptions(rawOptions)
+      : annotation.type === "strikeOut"
+        ? normalizeStrikeOutAnnotationOptions(rawOptions)
+        : normalizeSquigglyAnnotationOptions(rawOptions);
+  const annotationIndex = page.annotations.length;
+  const structureGroupId = addAnnotationStructureNode(
+    page,
+    "Annot",
+    annotationIndex,
+    placed.tag,
+    placed.structure,
+    placementBoundingBox(placed),
+    parent
+  );
+  page.annotations.push({
+    type: annotation.type,
+    options: placed,
+    ...(structureGroupId === undefined ? {} : { structureGroupId })
+  } as Parameters<typeof page.annotations.push>[0]);
+}
+
 export function addLinkToPage(
   page: InternalPageModel,
   url: string,
@@ -445,6 +625,9 @@ export function layoutList(
         embeddedFonts
       );
       pushPositionedTextRuns(page, bodyRuns, bodyNode.id);
+      if (item.annotations && item.annotations.length > 0) {
+        emitParagraphTextAnnotations(page, bodyRuns, item.annotations, embeddedFonts, bodyNode);
+      }
       bodyHeight = measurePositionedRunHeight(bodyRuns, options.lineHeight);
     }
 
@@ -557,6 +740,9 @@ export function layoutTable(
 
     for (const placed of placedCells) {
       pushPositionedTextRuns(page, placed.runs, placed.node.id);
+      if (placed.cell.annotations && placed.cell.annotations.length > 0) {
+        emitParagraphTextAnnotations(page, placed.runs, placed.cell.annotations, embeddedFonts, placed.node);
+      }
     }
 
     decrementRowSpanOccupancy(rowSpanOccupancy);

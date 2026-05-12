@@ -1131,6 +1131,8 @@ export interface TemplateHeadingBlock {
   readonly text: string;
   /** Options that control this item. */
   readonly options?: FlowHeadingOptions | undefined;
+  /** Inline annotations anchored to substrings of the rendered heading text. */
+  readonly annotations?: readonly ParagraphTextAnnotation[] | undefined;
   /** Whether this block should stay on the same page as the following block when possible. */
   readonly keepWithNext?: boolean | undefined;
 }
@@ -1147,6 +1149,9 @@ export interface TemplateHeadingBlock {
  */
 export type ParagraphTextAnnotation =
   | ParagraphHighlightAnnotation
+  | ParagraphUnderlineAnnotation
+  | ParagraphStrikeOutAnnotation
+  | ParagraphSquigglyAnnotation
   | ParagraphNoteAnnotation
   | ParagraphLinkAnnotation;
 
@@ -1165,6 +1170,45 @@ export interface ParagraphHighlightAnnotation {
     | { readonly top?: number; readonly bottom?: number; readonly left?: number; readonly right?: number }
     | undefined;
   /** Structure tag override for the highlight annotation. */
+  readonly tag?: "Annot" | "Artifact" | undefined;
+}
+
+/** Underline a substring of a paragraph (text-markup `/Underline`). */
+export interface ParagraphUnderlineAnnotation {
+  readonly type: "underline";
+  /** Substring to locate in the rendered paragraph text. */
+  readonly match: string;
+  /** Zero-based occurrence index; defaults to every occurrence. */
+  readonly occurrence?: number | undefined;
+  /** Stroke color. Defaults to black. */
+  readonly color?: PdfColor | undefined;
+  /** Structure tag override. */
+  readonly tag?: "Annot" | "Artifact" | undefined;
+}
+
+/** Strike out a substring of a paragraph (text-markup `/StrikeOut`). */
+export interface ParagraphStrikeOutAnnotation {
+  readonly type: "strikeOut";
+  /** Substring to locate in the rendered paragraph text. */
+  readonly match: string;
+  /** Zero-based occurrence index; defaults to every occurrence. */
+  readonly occurrence?: number | undefined;
+  /** Stroke color. Defaults to red. */
+  readonly color?: PdfColor | undefined;
+  /** Structure tag override. */
+  readonly tag?: "Annot" | "Artifact" | undefined;
+}
+
+/** Draw a squiggly underline beneath a substring (text-markup `/Squiggly`). */
+export interface ParagraphSquigglyAnnotation {
+  readonly type: "squiggly";
+  /** Substring to locate in the rendered paragraph text. */
+  readonly match: string;
+  /** Zero-based occurrence index; defaults to every occurrence. */
+  readonly occurrence?: number | undefined;
+  /** Stroke color. Defaults to red. */
+  readonly color?: PdfColor | undefined;
+  /** Structure tag override. */
   readonly tag?: "Annot" | "Artifact" | undefined;
 }
 
@@ -1502,6 +1546,8 @@ export interface ListItemDefinition {
   label?: string | undefined;
   /** Nested child list items or structure elements. */
   children?: readonly ListItem[] | undefined;
+  /** Inline annotations anchored to substrings of the rendered body text. */
+  annotations?: readonly ParagraphTextAnnotation[] | undefined;
 }
 
 /**
@@ -1574,6 +1620,8 @@ export interface TableCellDefinition {
   colSpan?: number | undefined;
   /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
+  /** Inline annotations anchored to substrings of the rendered cell text. */
+  annotations?: readonly ParagraphTextAnnotation[] | undefined;
 }
 
 /**
@@ -1898,6 +1946,71 @@ export interface HighlightAnnotationOptions {
   /** Height in PDF points. */
   height: number;
   /** Color used for drawing, text, or highlighting. */
+  color?: PdfColor | undefined;
+  /** Structure tag used for tagged PDF output. */
+  tag?: "Annot" | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
+  structure?: PdfStructureOptions | undefined;
+}
+
+/**
+ * Options for creating an underline text-markup annotation. The annotation
+ * draws a solid underline beneath the rectangle defined by x/y/width/height
+ * (the quad runs along the bottom edge of the rect).
+ */
+export interface UnderlineAnnotationOptions {
+  /** Horizontal position in PDF points. */
+  x: number;
+  /** Vertical position in PDF points. */
+  y: number;
+  /** Width in PDF points. */
+  width: number;
+  /** Height in PDF points. */
+  height: number;
+  /** Color used for the underline stroke. Defaults to black. */
+  color?: PdfColor | undefined;
+  /** Structure tag used for tagged PDF output. */
+  tag?: "Annot" | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
+  structure?: PdfStructureOptions | undefined;
+}
+
+/**
+ * Options for creating a strike-out text-markup annotation. Draws a
+ * horizontal line through the vertical middle of the rectangle.
+ */
+export interface StrikeOutAnnotationOptions {
+  /** Horizontal position in PDF points. */
+  x: number;
+  /** Vertical position in PDF points. */
+  y: number;
+  /** Width in PDF points. */
+  width: number;
+  /** Height in PDF points. */
+  height: number;
+  /** Color used for the strike-out stroke. Defaults to red. */
+  color?: PdfColor | undefined;
+  /** Structure tag used for tagged PDF output. */
+  tag?: "Annot" | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
+  structure?: PdfStructureOptions | undefined;
+}
+
+/**
+ * Options for creating a squiggly text-markup annotation. Draws a wavy
+ * underline beneath the rectangle (commonly used to flag spelling or
+ * grammar concerns).
+ */
+export interface SquigglyAnnotationOptions {
+  /** Horizontal position in PDF points. */
+  x: number;
+  /** Vertical position in PDF points. */
+  y: number;
+  /** Width in PDF points. */
+  width: number;
+  /** Height in PDF points. */
+  height: number;
+  /** Color used for the squiggly stroke. Defaults to red. */
   color?: PdfColor | undefined;
   /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;

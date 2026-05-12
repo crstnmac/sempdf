@@ -14,7 +14,10 @@ import {
   type NormalizedPushButtonOptions,
   type NormalizedRadioGroupOptions,
   type NormalizedSignatureFieldOptions,
+  type NormalizedSquigglyAnnotationOptions,
+  type NormalizedStrikeOutAnnotationOptions,
   type NormalizedTextFieldOptions,
+  type NormalizedUnderlineAnnotationOptions,
   type NormalizedUriLinkOptions,
   type ResolvedPageSize
 } from "./validation.js";
@@ -36,6 +39,24 @@ export interface PageLinkAnnotation {
 export interface HighlightAnnotation {
   readonly type: "highlight";
   readonly options: NormalizedHighlightAnnotationOptions;
+  readonly structureGroupId?: number | undefined;
+}
+
+export interface UnderlineAnnotation {
+  readonly type: "underline";
+  readonly options: NormalizedUnderlineAnnotationOptions;
+  readonly structureGroupId?: number | undefined;
+}
+
+export interface StrikeOutAnnotation {
+  readonly type: "strikeOut";
+  readonly options: NormalizedStrikeOutAnnotationOptions;
+  readonly structureGroupId?: number | undefined;
+}
+
+export interface SquigglyAnnotation {
+  readonly type: "squiggly";
+  readonly options: NormalizedSquigglyAnnotationOptions;
   readonly structureGroupId?: number | undefined;
 }
 
@@ -97,6 +118,9 @@ export type PageAnnotation =
   | UriLinkAnnotation
   | PageLinkAnnotation
   | HighlightAnnotation
+  | UnderlineAnnotation
+  | StrikeOutAnnotation
+  | SquigglyAnnotation
   | NoteAnnotation
   | FreeTextAnnotation
   | TextFieldAnnotation
