@@ -60,3 +60,44 @@ const protectedDoc = createDocument({
 const bytes = protectedDoc.toUint8Array();
 const parsed = parseDocument(bytes, { password: "reader" });
 ```
+
+## Content Stream Overlay
+
+`writePageContent()` lets you inject raw content stream operators onto an existing page without altering the original objects. The mode controls placement:
+
+```ts
+const editable = editDocument(sourceBytes);
+
+editable.writePageContent(0, "1 0 0 rg 72 72 100 100 re f", "append");
+editable.writePageContent(0, "q BT /F1 12 Tf 72 700 Td (Overlay) Tj ET Q", "prepend");
+```
+
+| Mode | Behavior |
+|------|----------|
+| `"append"` | Add operators after the existing page content (default) |
+| `"prepend"` | Insert operators before the existing page content |
+| `"replace"` | Replace the entire content stream with the provided content |
+
+## Xref Recovery
+
+When `parseDocument` encounters a damaged or missing cross-reference table, it automatically attempts reconstruction by scanning the file for object markers. This handles cases where the `startxref` pointer is invalid or xref entries point to wrong offsets.
+
+No additional API call is needed — the recovery runs transparently during `parseDocument()`.
+
+## Repair Warnings
+
+Call `getRepairWarnings()` after parsing to inspect what the xref recovery fixed:
+
+```ts
+const parsed = parseDocument(bytes);
+const warnings = parsed.getRepairWarnings();
+for (const w of warnings) {
+  console.log(`[${w.objectNumber}] ${w.message}`);
+}
+```
+
+Each warning includes the affected object number and a description of the repair.
+
+## Encrypted PDF without Permissions
+
+If an encrypted PDF omits the permissions (`/P`) entry, the parser defaults to granting all permissions (print, modify, copy, annotate, etc.). This ensures the document is editable without needing an owner password.

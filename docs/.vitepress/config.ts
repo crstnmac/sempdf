@@ -100,6 +100,7 @@ export default defineConfig({
           items: [
             { text: "Text and Fonts", link: "/guide/text-and-fonts" },
             { text: "Images", link: "/guide/images" },
+            { text: "Vector Graphics", link: "/guide/vector-graphics" },
             { text: "Forms and Annotations", link: "/guide/forms-and-annotations" },
             { text: "Metadata and Navigation", link: "/guide/metadata-and-navigation" },
             { text: "Report Templates", link: "/guide/report-templates" }
@@ -118,6 +119,7 @@ export default defineConfig({
           text: "Editing and Assembly",
           items: [
             { text: "Edit Existing PDFs", link: "/guide/edit-existing-pdfs" },
+            { text: "Text Extraction", link: "/guide/text-extraction" },
             { text: "Page Assembly", link: "/guide/page-assembly" }
           ]
         },

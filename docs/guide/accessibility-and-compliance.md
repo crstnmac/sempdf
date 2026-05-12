@@ -180,3 +180,65 @@ You can pass veraPDF flags after `--`:
 ```sh
 npm run validate:pdf -- output.pdf -- --flavour 1b
 ```
+
+## Artifact Types
+
+When marking content as decorative (non-semantic), use the `artifactType` option to classify it for assistive technology:
+
+- `"Pagination"` — running headers, footers, page numbers
+- `"Layout"` — ornamental borders, rules, background decorations
+- `"Page"` — watermarks or page background images
+
+```ts
+page.flow().paragraph("Page 1 of 10", {
+  tag: "Artifact",
+  artifactType: "Pagination"
+});
+```
+
+## Associated Files
+
+Structure elements can carry an `/AF` (Associated Files) array linking to embedded files:
+
+```ts
+const fileRef = doc.embedFile(dataBytes, {
+  filename: "source-data.csv",
+  mimeType: "text/csv"
+});
+
+page.setAssociatedFile(fileRef, "DataSources");
+```
+
+This annotates the structure tree so processors can locate supporting files by relationship.
+
+## Phonetic Attributes
+
+For pronunciation guidance and abbreviation expansion, attach `/Phoneme` or `/E` dictionaries to structure elements:
+
+- `/Phoneme` — phonetic transcription (e.g. IPA) for screen reader pronunciation
+- `/E` — the expanded form of an acronym or abbreviation
+
+```ts
+doc.setPhoneticExpansion(tag, "National Aeronautics and Space Administration");
+doc.setPhoneme(tag, "næʃənəl eɪrənɔtɪks");
+```
+
+## Table Summary
+
+Tables accept a `summary` option that provides a screen-reader–friendly description of the table's purpose:
+
+```ts
+page.flow().table(rows, {
+  headerRows: 1,
+  summary: "Quarterly revenue by product line and region"
+});
+```
+
+## New Conformance Profiles
+
+Additional profiles beyond `pdfua-1` are available. See the [Conformance API reference](../api/conformance) for full details:
+
+- `pdfa-2b` and `pdfa-3b` — PDF/A archival standards (levels 2 and 3, basic conformance)
+- `pdfa-4` — PDF/A-4 (ISO 19005-4), the latest archival standard
+- `pdfua-2` — PDF/UA-2, the next-generation universal accessibility standard
+- `wtpdf` — Well-Tagged PDF (WTPDF) readability profile
