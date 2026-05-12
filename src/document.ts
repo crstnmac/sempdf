@@ -8,7 +8,7 @@ import {
   type ParsedPdfMetadata,
 } from "./parser.js";
 import { parseImage } from "./internal/image.js";
-import { findSubstringRects, layoutTextBlock, measureTextWidth } from "./internal/text-layout.js";
+import { layoutTextBlock, measureTextWidth } from "./internal/text-layout.js";
 import type { TextShaper } from "./internal/text-shaper.js";
 import {
   parseTrueTypeFont,
@@ -89,6 +89,7 @@ import {
   type NormalizedDocumentAccessibility,
   type NormalizedDocumentEncryption,
   type NormalizedDocumentInfo,
+  type NormalizedHighlightAnnotationOptions,
   type NormalizedPageLabelOptions,
   type ResolvedPageSize,
 } from "./internal/validation.js";
@@ -195,8 +196,8 @@ import { createPageModel } from "./internal/page-types.js";
 function hashBytes(data: Uint8Array): string {
   const sample = data.slice(0, 64);
   let hash = data.length.toString(36);
-  for (let i = 0; i < sample.length; i++) {
-    hash += sample[i]!.toString(36);
+  for (const byte of sample) {
+    hash += byte.toString(36);
   }
   return hash;
 }
@@ -749,15 +750,122 @@ interface FlowState {
   writingMode?: "horizontal" | "vertical" | undefined;
 }
 
+type HeadingLevelKey = 1 | 2 | 3 | 4 | 5 | 6;
+type FlowBlockKind = "paragraph" | "heading" | "table" | "image" | "link";
+
+function computeBlockX(
+  baseX: number,
+  marginLeft: number,
+  innerWidth: number,
+  blockWidth: number,
+  align: "left" | "center" | "right",
+): number {
+  const startX = baseX + marginLeft;
+  if (align === "center") return startX + (innerWidth - blockWidth) / 2;
+  if (align === "right") return startX + (innerWidth - blockWidth);
+  return startX;
+}
+
+function resolveConformancePart(
+  conformance: DocumentConformanceProfile,
+): string | undefined {
+  switch (conformance) {
+    case "pdfa-1b":
+    case "pdfua-1":
+      return "1";
+    case "pdfa-2b":
+    case "pdfua-2":
+      return "2";
+    case "pdfa-3b":
+      return "3";
+    case "pdfa-4":
+      return "4";
+    default:
+      return undefined;
+  }
+}
+
+function computeAlignedX(
+  baseX: number,
+  innerWidth: number,
+  contentWidth: number,
+  align: "left" | "center" | "right" | "justify",
+): number {
+  if (align === "center") return baseX + Math.max((innerWidth - contentWidth) / 2, 0);
+  if (align === "right") return baseX + Math.max(innerWidth - contentWidth, 0);
+  return baseX;
+}
+
+function resolveDefaultSpacingBefore(
+  kind: FlowBlockKind,
+  level: HeadingLevelKey,
+  defaults: RequiredFlowSpacingScale,
+): number {
+  switch (kind) {
+    case "heading":
+      return defaults.headingBefore[level];
+    case "table":
+      return defaults.tableBefore;
+    case "image":
+      return defaults.imageBefore;
+    case "link":
+      return defaults.linkBefore;
+    case "paragraph":
+      return defaults.paragraphBefore;
+  }
+}
+
+function resolveDefaultSpacingAfter(
+  kind: FlowBlockKind,
+  level: HeadingLevelKey,
+  defaults: RequiredFlowSpacingScale,
+): number {
+  switch (kind) {
+    case "heading":
+      return defaults.headingAfter[level];
+    case "table":
+      return defaults.tableAfter;
+    case "image":
+      return defaults.imageAfter;
+    case "link":
+      return defaults.linkAfter;
+    case "paragraph":
+      return defaults.paragraphAfter;
+  }
+}
+
+function assertNeverBlock(block: never): never {
+  throw new PdfEngineError(
+    PdfErrorCode.INTERNAL_ERROR,
+    `Unhandled template block: ${JSON.stringify(block)}`,
+  );
+}
+
+function normalizeTextMarkupOptions(
+  subtype: "highlight" | "underline" | "strikeOut" | "squiggly",
+  options: HighlightAnnotationOptions,
+): NormalizedHighlightAnnotationOptions {
+  switch (subtype) {
+    case "highlight":
+      return normalizeHighlightAnnotationOptions(options);
+    case "underline":
+      return normalizeUnderlineAnnotationOptions(options);
+    case "strikeOut":
+      return normalizeStrikeOutAnnotationOptions(options);
+    case "squiggly":
+      return normalizeSquigglyAnnotationOptions(options);
+  }
+}
+
 interface RequiredFlowSpacingScale {
   /** Default spacing before paragraph blocks. */
   paragraphBefore: number;
   /** Default spacing after paragraph blocks. */
   paragraphAfter: number;
   /** Default spacing before heading blocks. */
-  headingBefore: Record<1 | 2 | 3 | 4 | 5 | 6, number>;
+  headingBefore: Record<HeadingLevelKey, number>;
   /** Default spacing after heading blocks. */
-  headingAfter: Record<1 | 2 | 3 | 4 | 5 | 6, number>;
+  headingAfter: Record<HeadingLevelKey, number>;
   /** Default spacing before table blocks. */
   tableBefore: number;
   /** Default spacing after table blocks. */
@@ -920,7 +1028,7 @@ export class PdfFlow {
     annotations?: readonly import("./types.js").ParagraphTextAnnotation[],
   ): this {
     const level = options.level ?? 1;
-    const tag = options.tag ?? (`H${level}` as FlowTextOptions["tag"]);
+    const tag = options.tag ?? `H${level}` as const;
     const fontSize = options.fontSize ?? headingFontSize(level);
     const spacing = this.resolveSpacing("heading", options, level);
     this.applyMarginTop(spacing.before);
@@ -972,7 +1080,7 @@ export class PdfFlow {
           ...options,
           fontSize,
           lineHeight: options?.lineHeight ?? Math.round(fontSize * 1.25),
-          tag: options?.tag ?? (`H${level}` as FlowTextOptions["tag"]),
+          tag: options?.tag ?? (`H${level}` as const),
           marginTop: spacing.before,
           marginBottom: spacing.after,
         });
@@ -1034,10 +1142,8 @@ export class PdfFlow {
         return this.estimateListHeight(block.items, block.options ?? { width: this.state.width });
       case "custom":
         return block.estimate(this);
-      default: {
-        const _exhaustive: never = block;
-        return 0;
-      }
+      default:
+        assertNeverBlock(block);
     }
   }
 
@@ -1234,12 +1340,7 @@ export class PdfFlow {
       1,
     );
     const baseX = this.state.x + spacing.left;
-    const linkX =
-      align === "center"
-        ? baseX + Math.max((innerWidth - textWidth) / 2, 0)
-        : align === "right"
-          ? baseX + Math.max(innerWidth - textWidth, 0)
-          : baseX;
+    const linkX = computeAlignedX(baseX, innerWidth, textWidth, align);
     const linkNode = createStructureNode(
       this.page,
       "Link",
@@ -1394,12 +1495,7 @@ export class PdfFlow {
       const height = options.height ?? width;
       const align = options.align ?? "left";
       const baseX = this.state.x + spacing.left;
-      const x =
-        align === "center"
-          ? baseX + Math.max((innerWidth - width) / 2, 0)
-          : align === "right"
-            ? baseX + Math.max(innerWidth - width, 0)
-            : baseX;
+      const x = computeAlignedX(baseX, innerWidth, width, align);
       addImageToPage(
         this.page,
         format,
@@ -1423,12 +1519,7 @@ export class PdfFlow {
       options.height ?? width * (image.pixelHeight / image.pixelWidth);
     const align = options.align ?? "left";
     const baseX = this.state.x + spacing.left;
-    const x =
-      align === "center"
-        ? baseX + Math.max((innerWidth - width) / 2, 0)
-        : align === "right"
-          ? baseX + Math.max(innerWidth - width, 0)
-          : baseX;
+    const x = computeAlignedX(baseX, innerWidth, width, align);
     addImageToPage(
       this.page,
       format,
@@ -1701,12 +1792,7 @@ export class PdfFlow {
     const innerWidth = Math.max(this.state.width - marginLeft - marginRight, 1);
     const blockWidth = Math.min(options.blockWidth ?? innerWidth, innerWidth);
     const blockAlign = options.blockAlign ?? "left";
-    const blockX =
-      blockAlign === "center"
-        ? this.state.x + marginLeft + (innerWidth - blockWidth) / 2
-        : blockAlign === "right"
-          ? this.state.x + marginLeft + (innerWidth - blockWidth)
-          : this.state.x + marginLeft;
+    const blockX = computeBlockX(this.state.x, marginLeft, innerWidth, blockWidth, blockAlign);
     return addFlowTextBlockToPage(
       this.page,
       this.embeddedFonts,
@@ -1764,7 +1850,7 @@ export class PdfFlow {
   private resolveSpacing(
     kind: "heading",
     options: FlowMarginOptions,
-    level: 1 | 2 | 3 | 4 | 5 | 6,
+    level: HeadingLevelKey,
   ): ResolvedBlockSpacing;
   /**
    * Resolves effective flow spacing and horizontal margins for a block.
@@ -1776,41 +1862,21 @@ export class PdfFlow {
    * @returns The result of the operation.
    */
   private resolveSpacing(
-    kind: "paragraph" | "heading" | "table" | "image" | "link",
+    kind: FlowBlockKind,
     options: FlowMarginOptions,
-    level: 1 | 2 | 3 | 4 | 5 | 6 = 1,
+    level: HeadingLevelKey = 1,
   ): ResolvedBlockSpacing {
     const defaults = this.state.spacing;
     const shorthand = resolveMarginShorthand(options.margin);
     const hasShorthand = options.margin !== undefined;
     const left = options.marginLeft ?? (hasShorthand ? shorthand.left : 0);
     const right = options.marginRight ?? (hasShorthand ? shorthand.right : 0);
-    const defaultBefore =
-      kind === "heading"
-        ? defaults.headingBefore[level]
-        : kind === "table"
-          ? defaults.tableBefore
-          : kind === "image"
-            ? defaults.imageBefore
-            : kind === "link"
-              ? defaults.linkBefore
-              : defaults.paragraphBefore;
-    const defaultAfter =
-      kind === "heading"
-        ? defaults.headingAfter[level]
-        : kind === "table"
-          ? defaults.tableAfter
-          : kind === "image"
-            ? defaults.imageAfter
-            : kind === "link"
-              ? defaults.linkAfter
-              : defaults.paragraphAfter;
-    const explicitTop = options.marginTop;
-    const explicitBottom = options.marginBottom;
+    const defaultBefore = resolveDefaultSpacingBefore(kind, level, defaults);
+    const defaultAfter = resolveDefaultSpacingAfter(kind, level, defaults);
     const before =
-      explicitTop ?? (hasShorthand ? shorthand.top : defaultBefore);
+      options.marginTop ?? (hasShorthand ? shorthand.top : defaultBefore);
     const after =
-      explicitBottom ?? (hasShorthand ? shorthand.bottom : defaultAfter);
+      options.marginBottom ?? (hasShorthand ? shorthand.bottom : defaultAfter);
     validateSpacingValue(kind, "before", before);
     validateSpacingValue(kind, "after", after);
     validateSpacingValue(kind, "left", left);
@@ -2159,14 +2225,7 @@ export class PdfFlow {
     const y = options.y ?? this.state.y - height;
 
     const rawOptions = { ...options, x, y, width };
-    const normalizedOptions =
-      subtype === "highlight"
-        ? normalizeHighlightAnnotationOptions(rawOptions)
-        : subtype === "underline"
-          ? normalizeUnderlineAnnotationOptions(rawOptions)
-          : subtype === "strikeOut"
-            ? normalizeStrikeOutAnnotationOptions(rawOptions)
-            : normalizeSquigglyAnnotationOptions(rawOptions);
+    const normalizedOptions = normalizeTextMarkupOptions(subtype, rawOptions);
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
       this.page,
@@ -2181,7 +2240,7 @@ export class PdfFlow {
       type: subtype,
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
-    } as Parameters<typeof this.page.annotations.push>[0]);
+    });
     this.state.y -= height + spacing.after;
     return this;
   }
@@ -2424,9 +2483,7 @@ export class PdfFlow {
       this.registerFieldName(parentName);
     }
 
-    if (!this.page.parentFieldKids) {
-      this.page.parentFieldKids = new Map();
-    }
+    this.page.parentFieldKids ??= new Map();
 
     const kids = this.page.parentFieldKids.get(parentName);
     if (kids) {
@@ -2979,9 +3036,7 @@ export class PdfPage {
       this.registerFieldName(parentName);
     }
 
-    if (!this.page.parentFieldKids) {
-      this.page.parentFieldKids = new Map();
-    }
+    this.page.parentFieldKids ??= new Map();
 
     const kids = this.page.parentFieldKids.get(parentName);
     if (kids) {
@@ -3732,7 +3787,8 @@ export class PdfDocument {
     }
     this._finalized = true;
     this._finalizedPageCount = this.pages.length;
-    return this._finalizedBytes = this._serializeToBytes();
+    this._finalizedBytes = this._serializeToBytes();
+    return this._finalizedBytes;
   }
 
   /**
@@ -5030,7 +5086,8 @@ export class PdfEditableDocument {
     }
     this._finalized = true;
     this._finalizedPageCount = this.pageOrder.length;
-    return this._finalizedBytes = this._serializeToBytes();
+    this._finalizedBytes = this._serializeToBytes();
+    return this._finalizedBytes;
   }
 
   /**
@@ -5194,7 +5251,7 @@ export class PdfEditableDocument {
 
       const page =
         this.editedPages.get(entry.objectId) ??
-        createPageModel(resolveEditablePageSize(this.base, entry.objectId), undefined);
+        createPageModel(resolveEditablePageSize(this.base, entry.objectId));
       this.editedPages.set(entry.objectId, page);
       for (const field of retainedFields) {
         appendFlattenedParsedFieldOps(this.base, page, field);
@@ -5212,7 +5269,7 @@ export class PdfEditableDocument {
         .map((entry) => entry.objectId),
     );
 
-    for (const objectId of [...this.editedPages.keys()]) {
+    for (const objectId of this.editedPages.keys()) {
       if (!retainedEditedPageIds.has(objectId)) {
         this.editedPages.delete(objectId);
       }
@@ -5481,7 +5538,7 @@ function validateEditableStructureRole(
   role: string,
 ): asserts role is Exclude<PdfStructureTag, "Artifact"> {
   if (
-    !EDITABLE_STRUCTURE_ROLES.has(role as Exclude<PdfStructureTag, "Artifact">)
+    !EDITABLE_STRUCTURE_ROLES.has(role)
   ) {
     throw new PdfEngineError(
       PdfErrorCode.INVALID_COMPLIANCE,
@@ -5619,9 +5676,9 @@ function resolveFlowSpacing(options: FlowOptions): RequiredFlowSpacingScale {
 
 function resolveHeadingSpacing(
   value: FlowSpacingScale["headingBefore"],
-  defaults: Record<1 | 2 | 3 | 4 | 5 | 6, number>,
+  defaults: Record<HeadingLevelKey, number>,
   legacyGap: number | undefined,
-): Record<1 | 2 | 3 | 4 | 5 | 6, number> {
+): Record<HeadingLevelKey, number> {
   if (typeof value === "number") {
     return {
       1: value,
@@ -5797,24 +5854,17 @@ function validateEditableCompliance(
       conformance === "pdfa-3b" ||
       conformance === "pdfa-4";
     const requirePdfua = conformance === "pdfua-1" || conformance === "pdfua-2";
-    const expectedPart =
-      conformance === "pdfa-1b" ? "1"
-      : conformance === "pdfa-2b" ? "2"
-      : conformance === "pdfa-3b" ? "3"
-      : conformance === "pdfa-4" ? "4"
-      : conformance === "pdfua-1" ? "1"
-      : conformance === "pdfua-2" ? "2"
-      : undefined;
+    const expectedPart = resolveConformancePart(conformance);
     const xmp = updatedXmpMetadata ?? "";
     let ok = true;
     if (requirePdfa) {
-      const partRe = new RegExp(`pdfaid:part>\\s*${expectedPart}\\s*<`);
+      const partRe = new RegExp(String.raw`pdfaid:part>\s*${expectedPart}\s*<`);
       ok = partRe.test(xmp);
       if (ok && conformance !== "pdfa-4") {
         ok = /pdfaid:conformance>\s*B\s*</.test(xmp);
       }
     } else if (requirePdfua) {
-      const partRe = new RegExp(`pdfuaid:part>\\s*${expectedPart}\\s*<`);
+      const partRe = new RegExp(String.raw`pdfuaid:part>\s*${expectedPart}\s*<`);
       ok = partRe.test(xmp);
     }
     if (!ok) {
@@ -6194,7 +6244,7 @@ function remapOutlineTargets(
 
 function clonePageModel(
   page: InternalPageModel,
-  embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>,
+  _embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>,
 ): InternalPageModel {
   const nodeMap = new Map<number, InternalStructureNode>();
   const clonedRoots = page.structureRoots.map((root) =>
@@ -6248,11 +6298,11 @@ function cloneStructureNode(
 function cloneAnnotation(
   ann: InternalPageModel["annotations"][number],
 ): InternalPageModel["annotations"][number] {
-  return JSON.parse(JSON.stringify(ann)) as InternalPageModel["annotations"][number];
+  return structuredClone(ann);
 }
 
 function cloneOp(op: PdfOp): PdfOp {
-  return JSON.parse(JSON.stringify(op)) as PdfOp;
+  return structuredClone(op);
 }
 
 // --- Public-Key Encryption Helpers ---
@@ -6379,7 +6429,7 @@ function parseSimpleSpki(der: Uint8Array): RsaPublicKey | undefined {
   }
   
   // Skip unused bits byte (should be 0)
-  const unusedBits = der[pos++]!;
+  pos++;
   bitStringLen--;
   
   // Now we're at the RSAPublicKey SEQUENCE
@@ -6435,8 +6485,8 @@ function parseSimpleSpki(der: Uint8Array): RsaPublicKey | undefined {
 
 function bytesToBigInt(bytes: Uint8Array): bigint {
   let result = 0n;
-  for (let i = 0; i < bytes.length; i++) {
-    result = (result << 8n) | BigInt(bytes[i]!);
+  for (const byte of bytes) {
+    result = (result << 8n) | BigInt(byte);
   }
   return result;
 }

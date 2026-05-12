@@ -3,7 +3,6 @@ import { PdfEngineError, PdfErrorCode } from '../errors.js';
 import type {
   FlowCheckBoxOptions,
   FlowChoiceFieldOptions,
-  FlowHeadingOptions,
   FlowMarginShorthand,
   FlowOptions,
   FlowPushButtonOptions,
@@ -11,7 +10,6 @@ import type {
   FlowSignatureFieldOptions,
   FlowTableOptions,
   FlowTextFieldOptions,
-  FlowTextOptions,
   PageLinkOptions,
   TableRow,
   TemplateBlock,
