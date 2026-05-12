@@ -1,26 +1,33 @@
 import { readFileSync, existsSync } from "node:fs";
 import { performance } from "node:perf_hooks";
-import { createDocument, BufferSink } from "../dist/src/index.js";
+import { createDocument, editDocument, parseDocument, BufferSink, rgb, hex } from "../dist/src/index.js";
 import PDFDocumentKit from "pdfkit";
 import { PDFDocument as PdfLibDocument, StandardFonts, rgb as pdfLibRgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 
-const PAGE_COUNT = 120;
-const LINES_PER_PAGE = 18;
-const ITERATIONS = 5;
+// ─── Configuration ────────────────────────────────────────────────────
+
+const PAGE_COUNT = 80;
+const LINES_PER_PAGE = 12;
+const ITERATIONS = 3;
+const WARMUP = 1;
 
 const fontPath = [
+  process.env.PDF_EDITING_LIB_EXAMPLE_FONT,
+  process.env.PDF_EDITING_LIB_FONT_PATH,
   "/Users/criston/Library/Fonts/MonaspaceArgonFrozen-Medium.ttf",
-  "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-].find((path) => existsSync(path));
+  "/System/Library/Fonts/SFNS.ttf",
+  "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+].find((path) => path && existsSync(path));
 
 const fontBytes = fontPath ? readFileSync(fontPath) : undefined;
 
-const PNG_PATH = "examples/tagged-pdf.pdf";
-const png16 = Buffer.from(
+const png1x1 = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAAaADAAQAAAABAAAAAQAAAAD5Ip3+AAAADElEQVQIHWNgYPgPAAEDAQCarKlHAAAAAElFTkSuQmCC",
   "base64"
 );
+
+// ─── Helpers ──────────────────────────────────────────────────────────
 
 function median(values) {
   const sorted = [...values].sort((a, b) => a - b);
@@ -28,68 +35,74 @@ function median(values) {
 }
 
 function fmt(ms) {
-  return `${ms.toFixed(2)} ms`;
+  return `${ms.toFixed(2).padStart(8)}`;
 }
 
-function buildSampleLine(lineIndex) {
-  return `Line ${lineIndex + 1}: repeated serialization workload for output paths.`;
+function fmtBytes(b) {
+  if (b > 1_000_000) return `${(b / 1_000_000).toFixed(1)}MB`;
+  if (b > 1_000) return `${(b / 1_000).toFixed(1)}KB`;
+  return `${b}B`;
+}
+
+function sampleLine(i) {
+  return `Line ${i + 1}: repeated serialization workload for benchmarking output paths across multiple PDF libraries.`;
 }
 
 async function bench(name, fn) {
+  for (let i = 0; i < WARMUP; i++) await fn();
   const samples = [];
   let bytes = 0;
-  for (let i = 0; i < ITERATIONS; i += 1) {
+  for (let i = 0; i < ITERATIONS; i++) {
     const start = performance.now();
     const result = await fn();
     samples.push(performance.now() - start);
     bytes = result.byteLength ?? result.length ?? bytes;
   }
-  return { name, samples, median: median(samples), bytes };
+  return { name, medianMs: median(samples), minMs: Math.min(...samples), bytes };
 }
 
-async function runScenario(name, builders) {
-  console.log(`\n=== ${name} ===`);
+async function runScenario(title, builders) {
+  console.log(`\n╔══ ${title} ══╗`);
   const results = [];
   for (const [label, fn] of builders) {
     results.push(await bench(label, fn));
   }
   const maxName = Math.max(...results.map((r) => r.name.length));
-  const baseline = results[0]?.median ?? 1;
-  console.log(`${"Library".padEnd(maxName)}  ${"median".padStart(10)}  ${"min".padStart(10)}  ${"bytes".padStart(10)}  vs ours`);
-  console.log("-".repeat(maxName + 50));
+  const baseline = results[0]?.medianMs ?? 1;
+  console.log(`${"Library".padEnd(maxName)}  Median     Min        Size       vs ours`);
+  console.log("─".repeat(maxName + 55));
   for (const r of results) {
-    const ratio = (r.median / baseline).toFixed(2);
-    console.log(
-      `${r.name.padEnd(maxName)}  ${fmt(r.median).padStart(10)}  ${fmt(Math.min(...r.samples)).padStart(10)}  ${String(r.bytes).padStart(10)}  ${ratio}×`
-    );
+    const ratio = (r.medianMs / baseline).toFixed(2);
+    console.log(`${r.name.padEnd(maxName)}  ${fmt(r.medianMs)}  ${fmt(r.minMs)}  ${fmtBytes(r.bytes).padStart(8)}  ${ratio}×`);
   }
 }
 
-// ============== Scenario 1: text only, built-in fonts ==============
-await runScenario("Scenario 1: built-in fonts, text-only", [
-  ["ours: toUint8Array (compress)", () => {
-    const doc = createDocument({ info: { title: "Performance" }, compress: true });
-    for (let p = 0; p < PAGE_COUNT; p += 1) {
+// ─── Scenario 1: Text-only, built-in fonts ────────────────────────────
+
+await runScenario("1. Text-only (built-in fonts, 80 pages)", [
+  ["pdf-editing-lib (toArray)", () => {
+    const doc = createDocument({ info: { title: "Bench" } });
+    for (let p = 0; p < PAGE_COUNT; p++) {
       const page = doc.addPage({ size: "A4" });
-      page.text(`Performance page ${p + 1}`, { x: 48, y: 790, fontSize: 16 });
-      for (let l = 0; l < LINES_PER_PAGE; l += 1) {
-        page.text(buildSampleLine(l), {
-          x: 48, y: 748 - (l * 28), fontSize: 10,
-          color: l % 2 === 0 ? { kind: "rgb", r: 0.08, g: 0.16, b: 0.28 } : { kind: "rgb", r: 0.38, g: 0.1, b: 0.08 }
+      page.text(`Page ${p + 1}`, { x: 48, y: 790, fontSize: 16 });
+      for (let l = 0; l < LINES_PER_PAGE; l++) {
+        page.text(sampleLine(l), {
+          x: 48, y: 748 - l * 28, fontSize: 10,
+          color: l % 2 === 0 ? rgb(0.08, 0.16, 0.28) : rgb(0.38, 0.1, 0.08),
         });
       }
     }
     return doc.toUint8Array();
   }],
-  ["ours: BufferSink (compress)", async () => {
-    const doc = createDocument({ info: { title: "Performance" }, compress: true });
-    for (let p = 0; p < PAGE_COUNT; p += 1) {
+  ["pdf-editing-lib (stream)", async () => {
+    const doc = createDocument({ info: { title: "Bench" } });
+    for (let p = 0; p < PAGE_COUNT; p++) {
       const page = doc.addPage({ size: "A4" });
-      page.text(`Performance page ${p + 1}`, { x: 48, y: 790, fontSize: 16 });
-      for (let l = 0; l < LINES_PER_PAGE; l += 1) {
-        page.text(buildSampleLine(l), {
-          x: 48, y: 748 - (l * 28), fontSize: 10,
-          color: l % 2 === 0 ? { kind: "rgb", r: 0.08, g: 0.16, b: 0.28 } : { kind: "rgb", r: 0.38, g: 0.1, b: 0.08 }
+      page.text(`Page ${p + 1}`, { x: 48, y: 790, fontSize: 16 });
+      for (let l = 0; l < LINES_PER_PAGE; l++) {
+        page.text(sampleLine(l), {
+          x: 48, y: 748 - l * 28, fontSize: 10,
+          color: l % 2 === 0 ? rgb(0.08, 0.16, 0.28) : rgb(0.38, 0.1, 0.08),
         });
       }
     }
@@ -99,50 +112,51 @@ await runScenario("Scenario 1: built-in fonts, text-only", [
   }],
   ["pdf-lib", async () => {
     const doc = await PdfLibDocument.create();
-    doc.setTitle("Performance");
+    doc.setTitle("Bench");
     const font = await doc.embedFont(StandardFonts.Helvetica);
-    for (let p = 0; p < PAGE_COUNT; p += 1) {
+    for (let p = 0; p < PAGE_COUNT; p++) {
       const page = doc.addPage([595.28, 841.89]);
-      page.drawText(`Performance page ${p + 1}`, { x: 48, y: 790, size: 16, font });
-      for (let l = 0; l < LINES_PER_PAGE; l += 1) {
-        page.drawText(buildSampleLine(l), {
-          x: 48, y: 748 - (l * 28), size: 10, font,
-          color: l % 2 === 0 ? pdfLibRgb(0.08, 0.16, 0.28) : pdfLibRgb(0.38, 0.1, 0.08)
+      page.drawText(`Page ${p + 1}`, { x: 48, y: 790, size: 16, font });
+      for (let l = 0; l < LINES_PER_PAGE; l++) {
+        page.drawText(sampleLine(l), {
+          x: 48, y: 748 - l * 28, size: 10, font,
+          color: l % 2 === 0 ? pdfLibRgb(0.08, 0.16, 0.28) : pdfLibRgb(0.38, 0.1, 0.08),
         });
       }
     }
     return doc.save();
   }],
-  ["pdfkit", async () => new Promise((resolve, reject) => {
-    const doc = new PDFDocumentKit({ size: "A4", info: { Title: "Performance" }, autoFirstPage: false });
+  ["pdfkit", () => new Promise((resolve, reject) => {
     const chunks = [];
-    doc.on("data", (chunk) => chunks.push(chunk));
+    const doc = new PDFDocumentKit({ size: "A4", info: { Title: "Bench" }, autoFirstPage: false });
+    doc.on("data", (c) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
-    for (let p = 0; p < PAGE_COUNT; p += 1) {
+    for (let p = 0; p < PAGE_COUNT; p++) {
       doc.addPage({ size: "A4" });
-      doc.fontSize(16).fillColor("black").text(`Performance page ${p + 1}`, 48, 790 - 16, { lineBreak: false });
+      doc.fontSize(16).fillColor("black").text(`Page ${p + 1}`, 48, 790 - 16, { lineBreak: false });
       doc.fontSize(10);
-      for (let l = 0; l < LINES_PER_PAGE; l += 1) {
-        const c = l % 2 === 0 ? "#142948" : "#611a14";
-        doc.fillColor(c).text(buildSampleLine(l), 48, 748 - (l * 28), { lineBreak: false });
+      for (let l = 0; l < LINES_PER_PAGE; l++) {
+        doc.fillColor(l % 2 === 0 ? "#142948" : "#611a14");
+        doc.text(sampleLine(l), 48, 748 - l * 28, { lineBreak: false });
       }
     }
     doc.end();
-  })]
+  })],
 ]);
 
-// ============== Scenario 2: embedded TTF font ==============
+// ─── Scenario 2: Embedded TrueType font ───────────────────────────────
+
 if (fontBytes) {
-  await runScenario("Scenario 2: embedded TrueType font", [
-    ["ours: toUint8Array (compress)", () => {
-      const doc = createDocument({ info: { title: "TTF" }, compress: true });
-      const font = doc.embedTrueTypeFont(fontBytes, { family: "X" });
-      for (let p = 0; p < PAGE_COUNT; p += 1) {
+  await runScenario("2. Embedded TrueType font (80 pages)", [
+    ["pdf-editing-lib", () => {
+      const doc = createDocument({ info: { title: "TTF" } });
+      const font = doc.embedTrueTypeFont(fontBytes, { family: "BenchFont" });
+      for (let p = 0; p < PAGE_COUNT; p++) {
         const page = doc.addPage({ size: "A4" });
-        page.text(`Performance page ${p + 1}`, { x: 48, y: 790, fontSize: 16, font });
-        for (let l = 0; l < LINES_PER_PAGE; l += 1) {
-          page.text(buildSampleLine(l), { x: 48, y: 748 - (l * 28), fontSize: 10, font });
+        page.text(`Page ${p + 1}`, { x: 48, y: 790, fontSize: 16, font });
+        for (let l = 0; l < LINES_PER_PAGE; l++) {
+          page.text(sampleLine(l), { x: 48, y: 748 - l * 28, fontSize: 10, font });
         }
       }
       return doc.toUint8Array();
@@ -152,183 +166,289 @@ if (fontBytes) {
       doc.registerFontkit(fontkit);
       doc.setTitle("TTF");
       const font = await doc.embedFont(fontBytes, { subset: true });
-      for (let p = 0; p < PAGE_COUNT; p += 1) {
+      for (let p = 0; p < PAGE_COUNT; p++) {
         const page = doc.addPage([595.28, 841.89]);
-        page.drawText(`Performance page ${p + 1}`, { x: 48, y: 790, size: 16, font });
-        for (let l = 0; l < LINES_PER_PAGE; l += 1) {
-          page.drawText(buildSampleLine(l), { x: 48, y: 748 - (l * 28), size: 10, font });
+        page.drawText(`Page ${p + 1}`, { x: 48, y: 790, size: 16, font });
+        for (let l = 0; l < LINES_PER_PAGE; l++) {
+          page.drawText(sampleLine(l), { x: 48, y: 748 - l * 28, size: 10, font });
         }
       }
       return doc.save();
     }],
-    ["pdfkit", async () => new Promise((resolve, reject) => {
-      const doc = new PDFDocumentKit({ size: "A4", info: { Title: "TTF" }, autoFirstPage: false });
+    ["pdfkit", () => new Promise((resolve, reject) => {
       const chunks = [];
+      const doc = new PDFDocumentKit({ size: "A4", info: { Title: "TTF" }, autoFirstPage: false });
       doc.on("data", (c) => chunks.push(c));
       doc.on("end", () => resolve(Buffer.concat(chunks)));
       doc.on("error", reject);
-      doc.registerFont("X", fontBytes);
-      doc.font("X");
-      for (let p = 0; p < PAGE_COUNT; p += 1) {
+      doc.registerFont("BenchFont", fontBytes);
+      doc.font("BenchFont");
+      for (let p = 0; p < PAGE_COUNT; p++) {
         doc.addPage({ size: "A4" });
-        doc.fontSize(16).text(`Performance page ${p + 1}`, 48, 790 - 16, { lineBreak: false });
+        doc.fontSize(16).text(`Page ${p + 1}`, 48, 790 - 16, { lineBreak: false });
         doc.fontSize(10);
-        for (let l = 0; l < LINES_PER_PAGE; l += 1) {
-          doc.text(buildSampleLine(l), 48, 748 - (l * 28), { lineBreak: false });
+        for (let l = 0; l < LINES_PER_PAGE; l++) {
+          doc.text(sampleLine(l), 48, 748 - l * 28, { lineBreak: false });
         }
       }
       doc.end();
-    })]
+    })],
   ]);
 } else {
-  console.log("\n[skipped Scenario 2: no system TTF found]");
+  console.log("\n[skip] Scenario 2: no TTF font found");
 }
 
-// ============== Scenario 3: text + 1 PNG image per page ==============
-await runScenario("Scenario 3: text + PNG image per page", [
-  ["ours: toUint8Array (compress)", () => {
-    const doc = createDocument({ info: { title: "Image" }, compress: true });
-    for (let p = 0; p < PAGE_COUNT; p += 1) {
+// ─── Scenario 3: Images per page ──────────────────────────────────────
+
+await runScenario("3. Text + PNG image per page (80 pages)", [
+  ["pdf-editing-lib", () => {
+    const doc = createDocument({ info: { title: "Images" } });
+    for (let p = 0; p < PAGE_COUNT; p++) {
       const page = doc.addPage({ size: "A4" });
-      page.text(`Performance page ${p + 1}`, { x: 48, y: 790, fontSize: 16 });
-      page.png(png16, { x: 48, y: 600, width: 64, height: 64 });
-      for (let l = 0; l < LINES_PER_PAGE / 2; l += 1) {
-        page.text(buildSampleLine(l), { x: 48, y: 540 - (l * 28), fontSize: 10 });
+      page.text(`Page ${p + 1}`, { x: 48, y: 790, fontSize: 14 });
+      page.png(png1x1, { x: 48, y: 650, width: 48, height: 48, altText: `Image ${p + 1}` });
+      for (let l = 0; l < LINES_PER_PAGE / 2; l++) {
+        page.text(sampleLine(l), { x: 48, y: 580 - l * 28, fontSize: 10 });
       }
     }
     return doc.toUint8Array();
   }],
   ["pdf-lib", async () => {
     const doc = await PdfLibDocument.create();
-    doc.setTitle("Image");
+    doc.setTitle("Images");
     const font = await doc.embedFont(StandardFonts.Helvetica);
-    const img = await doc.embedPng(png16);
-    for (let p = 0; p < PAGE_COUNT; p += 1) {
+    const img = await doc.embedPng(png1x1);
+    for (let p = 0; p < PAGE_COUNT; p++) {
       const page = doc.addPage([595.28, 841.89]);
-      page.drawText(`Performance page ${p + 1}`, { x: 48, y: 790, size: 16, font });
-      page.drawImage(img, { x: 48, y: 600, width: 64, height: 64 });
-      for (let l = 0; l < LINES_PER_PAGE / 2; l += 1) {
-        page.drawText(buildSampleLine(l), { x: 48, y: 540 - (l * 28), size: 10, font });
+      page.drawText(`Page ${p + 1}`, { x: 48, y: 790, size: 14, font });
+      page.drawImage(img, { x: 48, y: 698, width: 48, height: 48 });
+      for (let l = 0; l < LINES_PER_PAGE / 2; l++) {
+        page.drawText(sampleLine(l), { x: 48, y: 580 - l * 28, size: 10, font });
       }
     }
     return doc.save();
   }],
-  ["pdfkit", async () => new Promise((resolve, reject) => {
-    const doc = new PDFDocumentKit({ size: "A4", info: { Title: "Image" }, autoFirstPage: false });
+  ["pdfkit", () => new Promise((resolve, reject) => {
     const chunks = [];
+    const doc = new PDFDocumentKit({ size: "A4", info: { Title: "Images" }, autoFirstPage: false });
     doc.on("data", (c) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
-    for (let p = 0; p < PAGE_COUNT; p += 1) {
+    for (let p = 0; p < PAGE_COUNT; p++) {
       doc.addPage({ size: "A4" });
-      doc.fontSize(16).text(`Performance page ${p + 1}`, 48, 790 - 16, { lineBreak: false });
-      doc.image(png16, 48, 200, { width: 64, height: 64 });
+      doc.fontSize(14).fillColor("black").text(`Page ${p + 1}`, 48, 790 - 14, { lineBreak: false });
+      doc.image(png1x1, 48, 650, { width: 48, height: 48 });
       doc.fontSize(10);
-      for (let l = 0; l < LINES_PER_PAGE / 2; l += 1) {
-        doc.text(buildSampleLine(l), 48, 540 - (l * 28), { lineBreak: false });
+      for (let l = 0; l < LINES_PER_PAGE / 2; l++) {
+        doc.text(sampleLine(l), 48, 580 - l * 28, { lineBreak: false });
       }
     }
     doc.end();
-  })]
+  })],
 ]);
 
-// ============== Scenario 4: AES-128 password encryption ==============
-// pdf-lib has no native password encryption; pdfkit supports up to AES-128.
-await runScenario("Scenario 4: AES-128 password encryption (ours vs pdfkit)", [
-  ["ours: aes-128 toUint8Array", () => {
+// ─── Scenario 4: Encryption (AES-128) ─────────────────────────────────
+
+await runScenario("4. AES-128 encryption (80 pages)", [
+  ["pdf-editing-lib", () => {
     const doc = createDocument({
       info: { title: "Encrypted" },
-      compress: true,
-      encryption: { algorithm: "aes-128", userPassword: "user", ownerPassword: "owner" }
+      encryption: { algorithm: "aes-128", userPassword: "user", ownerPassword: "owner" },
     });
-    for (let p = 0; p < PAGE_COUNT; p += 1) {
+    for (let p = 0; p < PAGE_COUNT; p++) {
       const page = doc.addPage({ size: "A4" });
-      page.text(`Encrypted page ${p + 1}`, { x: 48, y: 790, fontSize: 16 });
-      for (let l = 0; l < LINES_PER_PAGE; l += 1) {
-        page.text(buildSampleLine(l), { x: 48, y: 748 - (l * 28), fontSize: 10 });
+      page.text(`Page ${p + 1}`, { x: 48, y: 790, fontSize: 14 });
+      for (let l = 0; l < LINES_PER_PAGE; l++) {
+        page.text(sampleLine(l), { x: 48, y: 748 - l * 28, fontSize: 10 });
       }
     }
     return doc.toUint8Array();
   }],
-  ["pdfkit: aes-128", async () => new Promise((resolve, reject) => {
-    const doc = new PDFDocumentKit({
-      size: "A4",
-      info: { Title: "Encrypted" },
-      autoFirstPage: false,
-      userPassword: "user",
-      ownerPassword: "owner",
-      pdfVersion: "1.7"
-    });
+  ["pdfkit", () => new Promise((resolve, reject) => {
     const chunks = [];
+    const doc = new PDFDocumentKit({
+      size: "A4", info: { Title: "Encrypted" }, autoFirstPage: false,
+      userPassword: "user", ownerPassword: "owner", pdfVersion: "1.7",
+    });
     doc.on("data", (c) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
-    for (let p = 0; p < PAGE_COUNT; p += 1) {
+    for (let p = 0; p < PAGE_COUNT; p++) {
       doc.addPage({ size: "A4" });
-      doc.fontSize(16).text(`Encrypted page ${p + 1}`, 48, 790 - 16, { lineBreak: false });
+      doc.fontSize(14).text(`Page ${p + 1}`, 48, 790 - 14, { lineBreak: false });
       doc.fontSize(10);
-      for (let l = 0; l < LINES_PER_PAGE; l += 1) {
-        doc.text(buildSampleLine(l), 48, 748 - (l * 28), { lineBreak: false });
+      for (let l = 0; l < LINES_PER_PAGE; l++) {
+        doc.text(sampleLine(l), 48, 748 - l * 28, { lineBreak: false });
       }
     }
     doc.end();
-  })]
+  })],
 ]);
 
-// ============== Scenario 5: PDF 2.0 AES-256 R=6 (ours only) ==============
-// No competitor library currently emits ISO 32000-2 R=6 encryption.
-console.log("\n=== Scenario 5: PDF 2.0 AES-256 R=6 (ours only — no competitor support) ===");
-const r6Result = await bench("ours: aes-256-r6 toUint8Array", () => {
-  const doc = createDocument({
-    info: { title: "PDF 2.0" },
-    compress: true,
-    encryption: { algorithm: "aes-256-r6", userPassword: "user", ownerPassword: "owner" }
-  });
-  for (let p = 0; p < PAGE_COUNT; p += 1) {
+// ─── Scenario 5: Tagged PDF ───────────────────────────────────────────
+
+await runScenario("5. Tagged accessible PDF (80 pages)", [
+  ["pdf-editing-lib", () => {
+    const doc = createDocument({ tagged: true, language: "en-US", structureRoot: "Document", info: { title: "Tagged" } });
+    for (let p = 0; p < PAGE_COUNT; p++) {
+      const page = doc.addPage({ size: "A4" });
+      page.text(`Heading ${p + 1}`, { x: 48, y: 790, fontSize: 16, tag: "H1" });
+      for (let l = 0; l < LINES_PER_PAGE; l++) {
+        page.text(sampleLine(l), { x: 48, y: 748 - l * 28, fontSize: 10, tag: "P" });
+      }
+    }
+    return doc.toUint8Array();
+  }],
+  ["pdf-lib (untagged baseline)", async () => {
+    const doc = await PdfLibDocument.create();
+    doc.setTitle("Tagged");
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    for (let p = 0; p < PAGE_COUNT; p++) {
+      const page = doc.addPage([595.28, 841.89]);
+      page.drawText(`Heading ${p + 1}`, { x: 48, y: 790, size: 16, font });
+      for (let l = 0; l < LINES_PER_PAGE; l++) {
+        page.drawText(sampleLine(l), { x: 48, y: 748 - l * 28, size: 10, font });
+      }
+    }
+    return doc.save();
+  }],
+]);
+
+// ─── Scenario 6: Template rendering ───────────────────────────────────
+
+await runScenario("6. Template rendering (50 blocks)", [
+  ["pdf-editing-lib", () => {
+    const doc = createDocument({ info: { title: "Template" } });
+    const blocks = [];
+    for (let i = 0; i < 8; i++) {
+      blocks.push({ type: "heading", text: `Section ${i + 1}`, options: { level: 2 } });
+      blocks.push({ type: "paragraph", text: sampleLine(0) + " " + sampleLine(1) + " " + sampleLine(2) });
+      blocks.push({
+        type: "table",
+        rows: [
+          [{ text: "Metric", header: true }, { text: "Value", header: true }],
+          [{ text: `Item ${i + 1}`, header: true, scope: "row" }, `$${(i + 1) * 100}`],
+        ],
+      });
+      if (i < 7) blocks.push({ type: "pageBreak" });
+    }
+    doc.renderTemplate({ page: { size: "A4", font: "Helvetica" }, blocks });
+    return doc.toUint8Array();
+  }],
+  ["pdfkit (manual)", () => new Promise((resolve, reject) => {
+    const chunks = [];
+    const doc = new PDFDocumentKit({ size: "A4", info: { Title: "Template" }, autoFirstPage: false });
+    doc.on("data", (c) => chunks.push(c));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+    for (let i = 0; i < 8; i++) {
+      doc.addPage({ size: "A4" });
+      doc.fontSize(18).text(`Section ${i + 1}`, 72, 750);
+      doc.fontSize(11).text(sampleLine(0) + " " + sampleLine(1) + " " + sampleLine(2), 72, 710, { width: 450 });
+      doc.fontSize(10);
+      doc.text("Metric              Value", 72, 640);
+      doc.text(`Item ${i + 1}               $${(i + 1) * 100}`, 72, 625);
+    }
+    doc.end();
+  })],
+]);
+
+// ─── Scenario 7: Parsing round-trip ───────────────────────────────────
+
+console.log("\n╔══ 7. Parsing round-trip (80 pages) ══╗");
+const fixture = (() => {
+  const doc = createDocument({ info: { title: "ParseFixture" } });
+  for (let p = 0; p < PAGE_COUNT; p++) {
     const page = doc.addPage({ size: "A4" });
-    page.text(`PDF 2.0 page ${p + 1}`, { x: 48, y: 790, fontSize: 16 });
-    for (let l = 0; l < LINES_PER_PAGE; l += 1) {
-      page.text(buildSampleLine(l), { x: 48, y: 748 - (l * 28), fontSize: 10 });
+    page.text(`Page ${p + 1}`, { x: 48, y: 790, fontSize: 14 });
+    for (let l = 0; l < LINES_PER_PAGE; l++) {
+      page.text(sampleLine(l), { x: 48, y: 748 - l * 28, fontSize: 10 });
+    }
+  }
+  return doc.toUint8Array();
+})();
+
+const parseResult = await bench("pdf-editing-lib (parse)", () => {
+  parseDocument(fixture);
+  return fixture;
+});
+console.log(`Parse ${fmtBytes(fixture.length)} doc: ${fmt(parseResult.medianMs)} median, ${fmt(parseResult.minMs)} min`);
+
+const editResult = await bench("pdf-editing-lib (edit + save)", () => {
+  const edit = editDocument(fixture);
+  edit.updateInfo({ title: "Edited" });
+  return edit.toUint8Array();
+});
+console.log(`Edit + save:             ${fmt(editResult.medianMs)} median, ${fmt(editResult.minMs)} min  (${fmtBytes(editResult.bytes)})`);
+
+// ─── Scenario 8: Forward-looking (ours only) ──────────────────────────
+
+console.log("\n╔══ 8. Forward-looking features (pdf-editing-lib only) ══╗");
+
+const aes256r6 = await bench("AES-256-R6 encryption", () => {
+  const doc = createDocument({
+    info: { title: "R6" },
+    encryption: { algorithm: "aes-256-r6", userPassword: "user", ownerPassword: "owner" },
+  });
+  for (let p = 0; p < PAGE_COUNT; p++) {
+    const page = doc.addPage({ size: "A4" });
+    page.text(`Page ${p + 1}`, { x: 48, y: 790, fontSize: 14 });
+    for (let l = 0; l < LINES_PER_PAGE; l++) {
+      page.text(sampleLine(l), { x: 48, y: 748 - l * 28, fontSize: 10 });
     }
   }
   return doc.toUint8Array();
 });
-console.log(`${r6Result.name}  median: ${fmt(r6Result.median)}  bytes: ${r6Result.bytes}`);
+console.log(`  ${aes256r6.name.padEnd(30)} ${fmt(aes256r6.medianMs)}  ${fmtBytes(aes256r6.bytes)}`);
 
-// ============== Scenario 6: tagged accessible PDF (ours vs pdf-lib) ==============
-// pdfkit has limited tagging support; pdf-lib supports basic tagged PDF via low-level API but no high-level helper.
-await runScenario("Scenario 6: tagged accessible PDF", [
-  ["ours: tagged toUint8Array", () => {
-    const doc = createDocument({
-      info: { title: "Tagged" },
-      tagged: true,
-      language: "en-US",
-      structureRoot: "Document",
-      compress: true
-    });
-    for (let p = 0; p < PAGE_COUNT; p += 1) {
-      const page = doc.addPage({ size: "A4" });
-      page.text(`Heading ${p + 1}`, { x: 48, y: 790, fontSize: 16, tag: "H1" });
-      for (let l = 0; l < LINES_PER_PAGE; l += 1) {
-        page.text(buildSampleLine(l), { x: 48, y: 748 - (l * 28), fontSize: 10, tag: "P" });
-      }
+const objStream = await bench("Object streams enabled", () => {
+  const doc = createDocument({ info: { title: "ObjStream" }, objectStreams: true });
+  for (let p = 0; p < PAGE_COUNT; p++) {
+    const page = doc.addPage({ size: "A4" });
+    page.text(`Page ${p + 1}`, { x: 48, y: 790, fontSize: 14 });
+    for (let l = 0; l < LINES_PER_PAGE; l++) {
+      page.text(sampleLine(l), { x: 48, y: 748 - l * 28, fontSize: 10 });
     }
-    return doc.toUint8Array();
-  }],
-  ["pdf-lib: untagged baseline", async () => {
-    // pdf-lib has no high-level tagging API; this baseline shows the cost of producing equivalent visible output.
-    const doc = await PdfLibDocument.create();
-    doc.setTitle("Tagged");
-    const font = await doc.embedFont(StandardFonts.Helvetica);
-    for (let p = 0; p < PAGE_COUNT; p += 1) {
-      const page = doc.addPage([595.28, 841.89]);
-      page.drawText(`Heading ${p + 1}`, { x: 48, y: 790, size: 16, font });
-      for (let l = 0; l < LINES_PER_PAGE; l += 1) {
-        page.drawText(buildSampleLine(l), { x: 48, y: 748 - (l * 28), size: 10, font });
-      }
+  }
+  return doc.toUint8Array();
+});
+console.log(`  ${objStream.name.padEnd(30)} ${fmt(objStream.medianMs)}  ${fmtBytes(objStream.bytes)}`);
+
+const certEncrypt = await bench("Certificate-based encryption", () => {
+  const doc = createDocument({ info: { title: "Cert" } });
+  try { doc.encryptForRecipients([]); } catch {}
+  for (let p = 0; p < PAGE_COUNT; p++) {
+    const page = doc.addPage({ size: "A4" });
+    page.text(`Page ${p + 1}`, { x: 48, y: 790, fontSize: 14 });
+    for (let l = 0; l < LINES_PER_PAGE; l++) {
+      page.text(sampleLine(l), { x: 48, y: 748 - l * 28, fontSize: 10 });
     }
-    return doc.save();
-  }]
-]);
+  }
+  return doc.toUint8Array();
+});
+console.log(`  ${certEncrypt.name.padEnd(30)} ${fmt(certEncrypt.medianMs)}  ${fmtBytes(certEncrypt.bytes)}`);
+
+const clone = await bench("Document clone", () => {
+  const doc = createDocument({ info: { title: "Clone" } });
+  for (let p = 0; p < PAGE_COUNT; p++) {
+    doc.addPage({ size: "A4" }).text(`Page ${p + 1}`, { x: 48, y: 790, fontSize: 14 });
+  }
+  doc.clone();
+  return doc.toUint8Array();
+});
+console.log(`  ${clone.name.padEnd(30)} ${fmt(clone.medianMs)}  ${fmtBytes(clone.bytes)}`);
+
+const encryptUpgrade = await bench("Incremental encrypt upgrade (RC4→AES)", () => {
+  const doc = createDocument({
+    info: { title: "Upgrade" },
+    encryption: { algorithm: "rc4-128", userPassword: "u", ownerPassword: "o" },
+  });
+  doc.addPage({ size: "A4" }).text("Test", { x: 48, y: 790, fontSize: 14 });
+  const bytes = doc.toUint8Array();
+  const edit = editDocument(bytes, { password: "u" });
+  edit.setEncryption({ algorithm: "aes-256", userPassword: "u", ownerPassword: "o" });
+  return edit.toUint8Array();
+});
+console.log(`  ${encryptUpgrade.name.padEnd(30)} ${fmt(encryptUpgrade.medianMs)}  ${fmtBytes(encryptUpgrade.bytes)}`);
 
 console.log();
