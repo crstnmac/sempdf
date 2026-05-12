@@ -3,95 +3,117 @@ import { writeFile } from "node:fs/promises";
 import { createDocument, hex, rgb, gray, cmyk } from "../src/index.js";
 
 const doc = createDocument({
+  language: "en-US",
   info: {
     title: "Color Spaces Demo",
     author: "pdf-editing-lib"
   }
 });
 
-const page = doc.addPage({ size: "A4" });
+doc.setXmpMetadata({
+  title: "Color Spaces Demo",
+  creator: "pdf-editing-lib",
+  createDate: "2026-05-12T00:00:00Z",
+  modifyDate: "2026-05-12T00:00:00Z",
+  metadataDate: "2026-05-12T00:00:00Z"
+});
 
-const y = 780;
-
-page.text("PDF Color Spaces", { x: 72, y: 800, fontSize: 18 });
-
-// Hex colors
-page.text("hex('#1565c0') - DeviceRGB hex", { x: 72, y, fontSize: 12 });
-page.path(
-  [{ type: "rect", x: 72, y: y - 24, width: 60, height: 18 }],
-  { paint: "fill", fill: { color: hex("#1565c0") } }
-);
-
-// RGB colors
-page.text(`rgb(${0.08}, ${0.4}, ${0.75}) - DeviceRGB float`, { x: 72, y: y - 44, fontSize: 12 });
-page.path(
-  [{ type: "rect", x: 72, y: y - 68, width: 60, height: 18 }],
-  { paint: "fill", fill: { color: rgb(0.08, 0.4, 0.75) } }
-);
-
-// Grayscale
-page.text("gray(0.5) - DeviceGray", { x: 72, y: y - 88, fontSize: 12 });
-page.path(
-  [{ type: "rect", x: 72, y: y - 112, width: 60, height: 18 }],
-  { paint: "fill", fill: { color: gray(0.5) } }
-);
-page.path(
-  [{ type: "rect", x: 146, y: y - 112, width: 60, height: 18 }],
-  { paint: "fill", fill: { color: gray(0.2) } }
-);
-page.path(
-  [{ type: "rect", x: 220, y: y - 112, width: 60, height: 18 }],
-  { paint: "fill", fill: { color: gray(0.8) } }
-);
-
-// CMYK colors
-page.text(`cmyk(${0.8}, ${0.2}, ${0}, ${0.15}) - DeviceCMYK`, { x: 72, y: y - 132, fontSize: 12 });
-page.path(
-  [{ type: "rect", x: 72, y: y - 156, width: 60, height: 18 }],
-  { paint: "fill", fill: { color: cmyk(0.8, 0.2, 0, 0.15) } }
-);
-page.path(
-  [{ type: "rect", x: 146, y: y - 156, width: 60, height: 18 }],
-  { paint: "fill", fill: { color: cmyk(0, 1, 1, 0) } }
-);
-page.path(
-  [{ type: "rect", x: 220, y: y - 156, width: 60, height: 18 }],
-  { paint: "fill", fill: { color: cmyk(0, 0, 1, 0) } }
-);
-
-// Separation spot color (Pantone-like)
-page.text("Separation spot color (Pantone 286 C)", { x: 72, y: y - 176, fontSize: 12 });
-page.path(
-  [{ type: "rect", x: 72, y: y - 200, width: 60, height: 18 }],
-  {
-    paint: "fill",
-    fill: {
-      color: {
-        kind: "separation",
-        name: "Pantone 286 C",
-        tint: 1,
-        alternate: cmyk(1, 0.66, 0, 0.04)
+doc.renderTemplate({
+  info: { title: "Color Spaces Demo", author: "pdf-editing-lib" },
+  page: { size: "A4" },
+  blocks: [
+    {
+      type: "heading",
+      text: "PDF Color Spaces",
+      options: { level: 1, color: hex("#1c2f6b") }
+    },
+    {
+      type: "paragraph",
+      text: "hex('#1565c0') \u2014 DeviceRGB hex color. Useful for web-originated palettes and design tokens.",
+      options: { color: hex("#1565c0"), fontSize: 12, marginTop: 8 }
+    },
+    {
+      type: "paragraph",
+      text: "rgb(0.08, 0.40, 0.75) \u2014 DeviceRGB float. Programmatic color mixing with 0-1 range per channel.",
+      options: { color: rgb(0.08, 0.4, 0.75), fontSize: 12, marginTop: 4 }
+    },
+    {
+      type: "paragraph",
+      text: "rgb(0.09, 0.67, 0.36) \u2014 Another RGB example, demonstrating a green tone.",
+      options: { color: rgb(0.09, 0.67, 0.36), fontSize: 12, marginTop: 4 }
+    },
+    {
+      type: "paragraph",
+      text: "gray(0.5) \u2014 DeviceGray mid-tone. Single-channel lightness, ideal for monochrome content.",
+      options: { color: gray(0.5), fontSize: 12, marginTop: 8 }
+    },
+    {
+      type: "paragraph",
+      text: "gray(0.2) \u2014 DeviceGray dark. Lower values produce deeper shades.",
+      options: { color: gray(0.2), fontSize: 12, marginTop: 4 }
+    },
+    {
+      type: "paragraph",
+      text: "gray(0.8) \u2014 DeviceGray light. Higher values produce lighter shades.",
+      options: { color: gray(0.8), fontSize: 12, marginTop: 4 }
+    },
+    {
+      type: "paragraph",
+      text: "cmyk(0.80, 0.20, 0.00, 0.15) \u2014 DeviceCMYK. Process color for professional print workflows.",
+      options: { color: cmyk(0.8, 0.2, 0, 0.15), fontSize: 12, marginTop: 8 }
+    },
+    {
+      type: "paragraph",
+      text: "cmyk(0.00, 1.00, 1.00, 0.00) \u2014 Bright red in CMYK process.",
+      options: { color: cmyk(0, 1, 1, 0), fontSize: 12, marginTop: 4 }
+    },
+    {
+      type: "paragraph",
+      text: "cmyk(0.00, 0.00, 1.00, 0.00) \u2014 Bright yellow in CMYK process.",
+      options: { color: cmyk(0, 0, 1, 0), fontSize: 12, marginTop: 4 }
+    },
+    {
+      type: "heading",
+      text: "Advanced Color Spaces",
+      options: { level: 2, color: hex("#1565c0"), marginTop: 16 }
+    },
+    {
+      type: "paragraph",
+      text: "Separation spot color \u2014 Pantone 286 C. Named ink with a tint value (0-1) and CMYK fallback for on-screen previews and composite printing.",
+      options: {
+        fontSize: 12,
+        color: {
+          kind: "separation",
+          name: "Pantone 286 C",
+          tint: 1,
+          alternate: cmyk(1, 0.66, 0, 0.04)
+        }
+      }
+    },
+    {
+      type: "paragraph",
+      text: "DeviceN multi-ink \u2014 Pantone 286 C + Black. Combines multiple named colorants into a single color specification. Each ink has its own tint, with a CMYK alternate for fallback.",
+      options: {
+        fontSize: 12,
+        marginTop: 4,
+        color: {
+          kind: "deviceN",
+          names: ["Pantone 286 C", "Black"],
+          tints: [1, 0.8],
+          alternate: cmyk(1, 0.66, 0, 0.04)
+        }
       }
     }
-  }
-);
+  ]
+});
 
-// DeviceN (multi-ink)
-page.text("DeviceN - Multi-ink spot color", { x: 72, y: y - 220, fontSize: 12 });
-page.path(
-  [{ type: "rect", x: 72, y: y - 244, width: 60, height: 18 }],
-  {
-    paint: "fill",
-    fill: {
-      color: {
-        kind: "deviceN",
-        names: ["Pantone 286 C", "Black"],
-        tints: [1, 0.8],
-        alternate: cmyk(1, 0.66, 0, 0.04)
-      }
-    }
+const issues = doc.validateCompliance();
+if (issues.length > 0) {
+  console.log("Compliance issues:");
+  for (const issue of issues) {
+    console.log(`  [${issue.severity}] ${issue.message}`);
   }
-);
+}
 
 await writeFile("examples/colors.pdf", doc.toUint8Array());
 console.log("Wrote examples/colors.pdf");

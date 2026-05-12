@@ -1,12 +1,43 @@
 import { writeFile } from "node:fs/promises";
-
 import { createDocument } from "../src/index.js";
 
 const doc = createDocument({
+  language: "en-US",
   info: {
     title: "PDF Form Fields Demo",
     author: "pdf-editing-lib"
   }
+});
+
+doc.setXmpMetadata({
+  title: "PDF Form Fields Demo",
+  creator: "pdf-editing-lib",
+  creatorTool: "pdf-editing-lib",
+  createDate: "2026-05-12T00:00:00Z",
+  modifyDate: "2026-05-12T00:00:00Z",
+  metadataDate: "2026-05-12T00:00:00Z"
+});
+
+doc.renderTemplate({
+  info: { title: "PDF Form Fields Demo", author: "pdf-editing-lib" },
+  page: { size: "A4" },
+  blocks: [
+    {
+      type: "heading",
+      text: "PDF Form Fields",
+      options: { level: 1, marginBottom: 6 }
+    },
+    {
+      type: "paragraph",
+      text: "This document demonstrates interactive form fields built with the low-level PDF form API. The surrounding document layout is handled by renderTemplate, while form fields use the specialized page methods.",
+      options: { fontSize: 11, marginBottom: 4 }
+    },
+    {
+      type: "paragraph",
+      text: "The fields below are positioned with absolute coordinates on a dedicated form page.",
+      options: { fontSize: 11 }
+    }
+  ]
 });
 
 const page = doc.addPage({ size: "A4" });
@@ -85,6 +116,14 @@ page.signatureField("sig", {
   width: 400,
   height: 80
 });
+
+const issues = doc.validateCompliance();
+if (issues.length > 0) {
+  console.log("Compliance issues:");
+  for (const issue of issues) {
+    console.log(`  [${issue.severity}] ${issue.message}`);
+  }
+}
 
 await writeFile("examples/form-fields.pdf", doc.toUint8Array());
 console.log("Wrote examples/form-fields.pdf");

@@ -1,5 +1,4 @@
 import { writeFile } from "node:fs/promises";
-
 import { createDocument } from "../src/index.js";
 
 const TINY_PNG_BASE64 =
@@ -8,6 +7,7 @@ const TINY_PNG_BASE64 =
 const png = Uint8Array.from(Buffer.from(TINY_PNG_BASE64, "base64"));
 
 const doc = createDocument({
+  language: "en-US",
   info: {
     title: "PNG Example",
     author: "Codex",
@@ -16,17 +16,43 @@ const doc = createDocument({
   }
 });
 
-const page = doc.addPage({ size: "Letter" });
-page.text("Embedded PNG image", {
-  x: 72,
-  y: 720,
-  fontSize: 18
+doc.setXmpMetadata({
+  title: "PNG Example",
+  creator: "Codex",
+  creatorTool: "pdf-editing-lib",
+  createDate: "2026-04-13T21:30:00Z",
+  modifyDate: "2026-04-13T21:30:00Z",
+  metadataDate: "2026-04-13T21:30:00Z"
 });
-page.png(png, {
-  x: 72,
-  y: 560,
-  width: 120,
-  height: 120
+
+doc.renderTemplate({
+  info: { title: "PNG Example", author: "Codex" },
+  page: { size: "Letter" },
+  blocks: [
+    {
+      type: "heading",
+      text: "Embedded PNG Image",
+      options: { level: 1 }
+    },
+    {
+      type: "paragraph",
+      text: "A PNG image embedded via the renderTemplate block system. The image flows naturally within the page content.",
+      options: { fontSize: 11, marginBottom: 14 }
+    },
+    {
+      type: "png",
+      data: png,
+      options: { maxWidth: 120, align: "left" }
+    }
+  ]
 });
+
+const issues = doc.validateCompliance();
+if (issues.length > 0) {
+  console.log("Compliance issues:");
+  for (const issue of issues) {
+    console.log(`  [${issue.severity}] ${issue.message}`);
+  }
+}
 
 await writeFile(new URL("./png-image.pdf", import.meta.url), doc.toUint8Array());

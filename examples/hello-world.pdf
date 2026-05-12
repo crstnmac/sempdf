@@ -1,49 +1,110 @@
 %PDF-1.4
-%ÿÿÿ
+%ÿÿÿÿ
 1 0 obj
-<< /Type /Catalog /Pages 2 0 R >>
+<< /Type /Catalog /Pages 2 0 R /Metadata 4 0 R /Lang (en-US) /MarkInfo << /Marked true /Suspects false >> /StructTreeRoot 9 0 R >>
 endobj
 2 0 obj
-<< /Type /Pages /Count 1 /Kids [6 0 R] >>
+<< /Type /Pages /Count 1 /Kids [8 0 R] >>
 endobj
 3 0 obj
 << /Producer (pdf-editing-lib) /Title (Hello World) /Author (Codex) /CreationDate (D:20260413213000Z) /ModDate (D:20260413213000Z) >>
 endobj
 4 0 obj
-<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+<< /Type /Metadata /Subtype /XML /Length 819 >>
+stream
+<?xpacket begin="ï»¿" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:pdf="http://ns.adobe.com/pdf/1.3/" xmlns:xmp="http://ns.adobe.com/xap/1.0/"><dc:format>application/pdf</dc:format><dc:title><rdf:Alt><rdf:li xml:lang="x-default">Hello World</rdf:li></rdf:Alt></dc:title><dc:creator><rdf:Seq><rdf:li>Codex</rdf:li></rdf:Seq></dc:creator><pdf:Producer>pdf-editing-lib</pdf:Producer><xmp:CreatorTool>pdf-editing-lib</xmp:CreatorTool><xmp:CreateDate>2026-04-13T21:30:00Z</xmp:CreateDate><xmp:ModifyDate>2026-04-13T21:30:00Z</xmp:ModifyDate><xmp:MetadataDate>2026-04-13T21:30:00Z</xmp:MetadataDate></rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end="w"?>
+endstream
+endobj
+10 0 obj
+<< /Nums [0 [11 0 R 12 0 R]] >>
+endobj
+9 0 obj
+<< /Type /StructTreeRoot /K [11 0 R 12 0 R] /ParentTree 10 0 R /ParentTreeNextKey 1 >>
+endobj
+11 0 obj
+<< /Type /StructElem /S /H1 /P 9 0 R /Pg 8 0 R /K 0 >>
+endobj
+12 0 obj
+<< /Type /StructElem /S /P /P 9 0 R /Pg 8 0 R /K 1 >>
 endobj
 5 0 obj
-<< /Length 159 >>
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /ToUnicode 6 0 R >>
+endobj
+6 0 obj
+<< /Length 338 >>
 stream
+/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def
+/CMapName /Adobe-Identity-UCS def
+/CMapType 2 def
+1 begincodespacerange
+<00> <FF>
+endcodespacerange
+1 beginbfrange
+<20> <7E> <0020>
+endbfrange
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end
+endstream
+endobj
+7 0 obj
+<< /Length 447 >>
+stream
+/H1 <</MCID 0>> BDC
 BT
-/F1 20 Tf
+/F1 24 Tf
 0.109804 0.184314 0.419608 rg
-1 0 0 1 72 780 Tm
+1 0 0 1 72 769.89 Tm
 (Hello from pdf-editing-lib) Tj
 ET
-1.5 w
-0 J
-0 j
-0.109804 0.184314 0.419608 RG
-72 740 220 36 re
-S
+EMC
+/P <</MCID 1>> BDC
+BT
+/F1 12 Tf
+0 g
+1 0 0 1 72 725.89 Tm
+(This PDF was generated using the renderTemplate API, which provides a ) Tj
+ET
+BT
+/F1 12 Tf
+0 g
+1 0 0 1 72 711.49 Tm
+(production-grade template system with automatic page breaks, headings, ) Tj
+ET
+BT
+/F1 12 Tf
+0 g
+1 0 0 1 72 697.09 Tm
+(tables, and images.) Tj
+ET
+EMC
 
 endstream
 endobj
-6 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 5 0 R >> >> /Tabs /S /StructParents 0 /Contents 7 0 R >>
 endobj
 xref
-0 7
+0 13
 0000000000 65535 f 
-0000000014 00000 n 
-0000000063 00000 n 
-0000000120 00000 n 
-0000000269 00000 n 
-0000000339 00000 n 
-0000000549 00000 n 
+0000000015 00000 n 
+0000000161 00000 n 
+0000000218 00000 n 
+0000000367 00000 n 
+0000001558 00000 n 
+0000001645 00000 n 
+0000002034 00000 n 
+0000002532 00000 n 
+0000001315 00000 n 
+0000001267 00000 n 
+0000001417 00000 n 
+0000001488 00000 n 
 trailer
-<< /Size 7 /Root 1 0 R /Info 3 0 R >>
+<< /Size 13 /Root 1 0 R /Info 3 0 R >>
 startxref
-681
+2690
 %%EOF
