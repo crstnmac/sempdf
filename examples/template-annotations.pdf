@@ -1,10 +1,10 @@
 %PDF-1.4
 %ÿÿÿÿ
 1 0 obj
-<< /Type /Catalog /Pages 2 0 R /Metadata 4 0 R /Lang (en-US) /MarkInfo << /Marked true /Suspects false >> /StructTreeRoot 15 0 R >>
+<< /Type /Catalog /Pages 2 0 R /Metadata 4 0 R /Lang (en-US) /MarkInfo << /Marked true /Suspects false >> /StructTreeRoot 19 0 R >>
 endobj
 2 0 obj
-<< /Type /Pages /Count 2 /Kids [8 0 R 11 0 R] >>
+<< /Type /Pages /Count 2 /Kids [8 0 R 15 0 R] >>
 endobj
 3 0 obj
 << /Producer (pdf-editing-lib) /Title (Document Review - Annotations Demo) /Author (pdf-editing-lib) >>
@@ -15,35 +15,29 @@ stream
 <?xpacket begin="ï»¿" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:pdf="http://ns.adobe.com/pdf/1.3/" xmlns:xmp="http://ns.adobe.com/xap/1.0/"><dc:format>application/pdf</dc:format><dc:title><rdf:Alt><rdf:li xml:lang="x-default">Document Review - Annotations Demo</rdf:li></rdf:Alt></dc:title><dc:creator><rdf:Seq><rdf:li>pdf-editing-lib</rdf:li></rdf:Seq></dc:creator><pdf:Producer>pdf-editing-lib</pdf:Producer><xmp:CreateDate>2026-05-12T00:00:00Z</xmp:CreateDate><xmp:ModifyDate>2026-05-12T00:00:00Z</xmp:ModifyDate><xmp:MetadataDate>2026-05-12T00:00:00Z</xmp:MetadataDate></rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end="w"?>
 endstream
 endobj
-16 0 obj
-<< /Nums [0 [17 0 R 18 0 R 21 0 R 22 0 R 23 0 R 24 0 R] 1 20 0 R] >>
-endobj
-15 0 obj
-<< /Type /StructTreeRoot /K [17 0 R 18 0 R 19 0 R 22 0 R 23 0 R 24 0 R] /ParentTree 16 0 R /ParentTreeNextKey 2 >>
-endobj
-17 0 obj
-<< /Type /StructElem /S /H1 /P 15 0 R /Pg 8 0 R /K 0 >>
-endobj
-18 0 obj
-<< /Type /StructElem /S /P /P 15 0 R /Pg 8 0 R /K 1 >>
-endobj
-21 0 obj
-<< /Type /StructElem /S /Span /P 20 0 R /Pg 8 0 R /K 2 >>
-endobj
 20 0 obj
-<< /Type /StructElem /S /Link /P 19 0 R /Pg 8 0 R /K [21 0 R << /Type /OBJR /Obj 9 0 R /Pg 8 0 R >>] /A << /O /Layout /BBox [72 663.29 208.378 678.29] >> >>
+<< /Nums [0 [21 0 R 22 0 R 23 0 R 24 0 R 25 0 R 26 0 R]] >>
 endobj
 19 0 obj
-<< /Type /StructElem /S /P /P 15 0 R /Pg 8 0 R /K 20 0 R >>
+<< /Type /StructTreeRoot /K [21 0 R 22 0 R 23 0 R 24 0 R 25 0 R 26 0 R] /ParentTree 20 0 R /ParentTreeNextKey 1 >>
+endobj
+21 0 obj
+<< /Type /StructElem /S /H1 /P 19 0 R /Pg 8 0 R /K 0 >>
 endobj
 22 0 obj
-<< /Type /StructElem /S /P /P 15 0 R /Pg 8 0 R /K 3 >>
+<< /Type /StructElem /S /P /P 19 0 R /Pg 8 0 R /K 1 >>
 endobj
 23 0 obj
-<< /Type /StructElem /S /H2 /P 15 0 R /Pg 8 0 R /K 4 >>
+<< /Type /StructElem /S /P /P 19 0 R /Pg 8 0 R /K 2 >>
 endobj
 24 0 obj
-<< /Type /StructElem /S /P /P 15 0 R /Pg 8 0 R /K 5 >>
+<< /Type /StructElem /S /P /P 19 0 R /Pg 8 0 R /K 3 >>
+endobj
+25 0 obj
+<< /Type /StructElem /S /H2 /P 19 0 R /Pg 8 0 R /K 4 >>
+endobj
+26 0 obj
+<< /Type /StructElem /S /P /P 19 0 R /Pg 8 0 R /K 5 >>
 endobj
 5 0 obj
 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica /ToUnicode 6 0 R >>
@@ -70,10 +64,22 @@ end
 endstream
 endobj
 9 0 obj
-<< /Type /Annot /Subtype /Link /F 4 /Rect [72 663.29 208.378 678.29] /Border [0 0 0] /Contents (https://example.com/docs) /StructParent 1 /A << /S /URI /URI (https://example.com/docs) >> >>
+<< /Type /Annot /Subtype /Highlight /F 4 /Rect [263.422 729.89 306.234 744.89] /QuadPoints [263.422 744.89 306.234 744.89 263.422 729.89 306.234 729.89] /C [1 0.921569 0.231373] >>
+endobj
+10 0 obj
+<< /Type /Annot /Subtype /Highlight /F 4 /Rect [95.232 729.89 177.798 744.89] /QuadPoints [95.232 744.89 177.798 744.89 95.232 729.89 177.798 729.89] /C [0.784314 0.901961 0.788235] >>
+endobj
+11 0 obj
+<< /Type /Annot /Subtype /Text /F 4 /Rect [55 691.49 70 706.49] /Contents (WCAG 1.1.1: Ensure all images have alt attributes.) /Open false >>
+endobj
+12 0 obj
+<< /Type /Annot /Subtype /Highlight /F 4 /Rect [214.494 676.29 275.654 691.29] /QuadPoints [214.494 691.29 275.654 691.29 214.494 676.29 275.654 676.29] /C [1 0.878431 0.698039] >>
+endobj
+13 0 obj
+<< /Type /Annot /Subtype /Link /F 4 /Rect [116.638 649.09 238.958 662.09] /Border [0 0 0] /Contents (https://example.com/docs) /A << /S /URI /URI (https://example.com/docs) >> >>
 endobj
 7 0 obj
-<< /Length 1365 >>
+<< /Length 1340 >>
 stream
 /H1 <</MCID 0>> BDC
 BT
@@ -88,93 +94,87 @@ BT
 /F1 11 Tf
 0 g
 1 0 0 1 72 731.89 Tm
-(Page 1 demonstrates inline annotations via template blocks. Links are placed ) Tj
+(The quick brown fox jumps over the lazy dog. Inline annotations target specific ) Tj
 ET
 BT
 /F1 11 Tf
 0 g
 1 0 0 1 72 718.69 Tm
-(automatically at their text position because the flow engine measures the text ) Tj
+(words in this paragraph by matching the rendered text directly.) Tj
+ET
+EMC
+/P <</MCID 2>> BDC
+BT
+/F1 11 Tf
+0 g
+1 0 0 1 72 691.49 Tm
+(Accessibility compliance requires all non-text content to have text alternatives. ) Tj
 ET
 BT
 /F1 11 Tf
 0 g
-1 0 0 1 72 705.49 Tm
-(width.) Tj
-ET
-EMC
-/Span <</MCID 2>> BDC
-BT
-/F1 11 Tf
-0.082353 0.396078 0.752941 rg
-1 0 0 1 72 676.29 Tm
-(View documentation online) Tj
+1 0 0 1 72 678.29 Tm
+(Verify alt text during the audit phase before sign-off.) Tj
 ET
 EMC
 /P <</MCID 3>> BDC
 BT
 /F1 11 Tf
 0 g
-1 0 0 1 72 657.29 Tm
-(The link above is rendered inline. Its clickable area exactly covers the link text ) Tj
+1 0 0 1 72 651.09 Tm
+(See the project documentation for the full conformance checklist and the latest ) Tj
 ET
 BT
 /F1 11 Tf
 0 g
-1 0 0 1 72 644.09 Tm
-(because the flow engine measures the text width and places the annotation at the ) Tj
-ET
-BT
-/F1 11 Tf
-0 g
-1 0 0 1 72 630.89 Tm
-(correct coordinates.) Tj
+1 0 0 1 72 637.89 Tm
+(review guidelines.) Tj
 ET
 EMC
 /H2 <</MCID 4>> BDC
 BT
 /F1 18 Tf
 0.082353 0.396078 0.752941 rg
-1 0 0 1 72 579.69 Tm
-(Precision Matters) Tj
+1 0 0 1 72 586.69 Tm
+(How It Works) Tj
 ET
 EMC
 /P <</MCID 5>> BDC
 BT
 /F1 11 Tf
 0 g
-1 0 0 1 72 548.69 Tm
-(For precise annotations that target specific words or phrases within a body of ) Tj
+1 0 0 1 72 555.69 Tm
+(Each annotation specifies a substring match. The flow engine locates that text ) Tj
 ET
 BT
 /F1 11 Tf
 0 g
-1 0 0 1 72 535.49 Tm
-(text, the low-level page API provides exact coordinate control. Page 2 ) Tj
+1 0 0 1 72 542.49 Tm
+(within the laid-out runs and emits the annotation at the exact rendered position. If ) Tj
 ET
 BT
 /F1 11 Tf
 0 g
-1 0 0 1 72 522.29 Tm
-(demonstrates this approach.) Tj
+1 0 0 1 72 529.29 Tm
+(a match wraps across lines, one rectangle is emitted per line.) Tj
 ET
 EMC
 
 endstream
 endobj
 8 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 5 0 R >> >> /Annots [9 0 R] /Tabs /S /StructParents 0 /Contents 7 0 R >>
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 5 0 R >> >> /Annots [9 0 R 10 0 R 11 0 R 12 0 R 13 0 R] /Tabs /S /StructParents 0 /Contents 7 0 R >>
 endobj
-12 0 obj
+16 0 obj
 << /Type /Annot /Subtype /Highlight /F 4 /Rect [390 742 432 756] /QuadPoints [390 756 432 756 390 742 432 742] /C [1 0.921569 0.231373] >>
 endobj
-13 0 obj
+17 0 obj
 << /Type /Annot /Subtype /Text /F 4 /Rect [70 686 94 710] /Contents (WCAG 1.1.1: Ensure all images have alt attributes.) /Open false >>
 endobj
-14 0 obj
+18 0 obj
 << /Type /Annot /Subtype /FreeText /F 4 /Rect [440 610 570 652] /Contents (Priority: High\nDue: May 15) /Border [0 0 1] /DA (/FormF1 9 Tf 0.776471 0.156863 0.156863 rg) >>
 endobj
-10 0 obj
+14 0 obj
 << /Length 856 >>
 stream
 BT
@@ -210,38 +210,40 @@ ET
 
 endstream
 endobj
-11 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 5 0 R >> >> /Annots [12 0 R 13 0 R 14 0 R] /Tabs /S /Contents 10 0 R >>
+15 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 5 0 R >> >> /Annots [16 0 R 17 0 R 18 0 R] /Tabs /S /Contents 14 0 R >>
 endobj
 xref
-0 25
+0 27
 0000000000 65535 f 
 0000000015 00000 n 
 0000000162 00000 n 
 0000000226 00000 n 
 0000000345 00000 n 
-0000002124 00000 n 
-0000002211 00000 n 
-0000002805 00000 n 
-0000004222 00000 n 
-0000002600 00000 n 
-0000004891 00000 n 
-0000005799 00000 n 
-0000004396 00000 n 
-0000004551 00000 n 
-0000004703 00000 n 
-0000001313 00000 n 
+0000001863 00000 n 
+0000001950 00000 n 
+0000003286 00000 n 
+0000004678 00000 n 
+0000002339 00000 n 
+0000002535 00000 n 
+0000002736 00000 n 
+0000002894 00000 n 
+0000003091 00000 n 
+0000005375 00000 n 
+0000006283 00000 n 
+0000004880 00000 n 
+0000005035 00000 n 
+0000005187 00000 n 
+0000001304 00000 n 
 0000001228 00000 n 
-0000001444 00000 n 
-0000001516 00000 n 
-0000001834 00000 n 
-0000001661 00000 n 
-0000001587 00000 n 
-0000001910 00000 n 
-0000001981 00000 n 
-0000002053 00000 n 
+0000001435 00000 n 
+0000001507 00000 n 
+0000001578 00000 n 
+0000001649 00000 n 
+0000001720 00000 n 
+0000001792 00000 n 
 trailer
-<< /Size 25 /Root 1 0 R /Info 3 0 R >>
+<< /Size 27 /Root 1 0 R /Info 3 0 R >>
 startxref
-5973
+6457
 %%EOF

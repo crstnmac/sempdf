@@ -304,7 +304,7 @@ function renderTemplateBlockToFlow(flow: PdfFlow, block: TemplateBlock): void {
       flow.heading(block.text, block.options);
       return;
     case 'paragraph':
-      flow.paragraph(block.text, block.options);
+      flow.paragraph(block.text, block.options, block.annotations);
       return;
     case 'table':
       flow.table(block.rows, block.options);
