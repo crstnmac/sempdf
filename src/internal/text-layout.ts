@@ -266,6 +266,248 @@ export function positionTextRuns(
   return positionedRuns;
 }
 
+export interface SubstringRect {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly fontSize: number;
+}
+
+interface LineInfo {
+  readonly y: number;
+  readonly runs: readonly PositionedTextRun[];
+  readonly text: string;
+  readonly direction: ResolvedTextDirection;
+  readonly startInFull: number;
+}
+
+/**
+ * Find rendered rectangles for a substring within positioned text runs.
+ *
+ * Searches the full paragraph text (lines joined in flow order). Each
+ * occurrence may span multiple wrapped lines; one rectangle is emitted per
+ * line covered. If `occurrence` is provided, only that zero-based occurrence
+ * is emitted; otherwise every occurrence is.
+ *
+ * Embedded-font runs are measured glyph-by-glyph using the actual shaped
+ * glyph widths (so ligatures and kerning produce exact x-offsets). Built-in
+ * fonts fall back to substring re-measurement.
+ *
+ * If every line in the paragraph resolves to RTL, the match is reversed so it
+ * locates correctly in the visual run text. Pure-LTR and pure-RTL paragraphs
+ * are supported; mixed-bidi paragraphs may miss matches that straddle a
+ * direction boundary.
+ */
+export function findSubstringRects(
+  runs: readonly PositionedTextRun[],
+  match: string,
+  occurrence: number | undefined,
+  embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>
+): SubstringRect[] {
+  if (match.length === 0) {
+    return [];
+  }
+
+  const linesByY = new Map<number, PositionedTextRun[]>();
+  const orderedYs: number[] = [];
+  for (const run of runs) {
+    const y = run.options.y;
+    const existing = linesByY.get(y);
+    if (existing) {
+      existing.push(run);
+    } else {
+      linesByY.set(y, [run]);
+      orderedYs.push(y);
+    }
+  }
+  orderedYs.sort((a, b) => b - a);
+
+  const lines: LineInfo[] = [];
+  let fullText = "";
+  for (const y of orderedYs) {
+    const sortedRuns = [...linesByY.get(y)!].sort((a, b) => a.options.x - b.options.x);
+    const text = sortedRuns.map((run) => run.text).join("");
+    const direction = resolveTextDirection(text, "auto");
+    lines.push({ y, runs: sortedRuns, text, direction, startInFull: fullText.length });
+    fullText += text;
+  }
+
+  const allRtl = lines.length > 0 && lines.every((line) => line.direction === "rtl");
+  const searchTerm = allRtl ? reverseStringCodePoints(match) : match;
+
+  const rects: SubstringRect[] = [];
+  let occurrenceCounter = 0;
+  let searchFrom = 0;
+
+  while (searchFrom <= fullText.length) {
+    const idx = fullText.indexOf(searchTerm, searchFrom);
+    if (idx === -1) {
+      break;
+    }
+
+    const shouldEmit = occurrence === undefined || occurrence === occurrenceCounter;
+    if (shouldEmit) {
+      const start = idx;
+      const end = idx + searchTerm.length;
+      for (const line of lines) {
+        const lineEnd = line.startInFull + line.text.length;
+        if (lineEnd <= start) continue;
+        if (line.startInFull >= end) break;
+        const segStart = Math.max(start, line.startInFull) - line.startInFull;
+        const segEnd = Math.min(end, lineEnd) - line.startInFull;
+        const rect = computeLineRect(line.runs, segStart, segEnd, line.y, embeddedFonts);
+        if (rect) {
+          rects.push(rect);
+        }
+      }
+    }
+
+    occurrenceCounter += 1;
+    searchFrom = idx + Math.max(searchTerm.length, 1);
+  }
+
+  return rects;
+}
+
+function reverseStringCodePoints(text: string): string {
+  return Array.from(text).reverse().join("");
+}
+
+function computeLineRect(
+  lineRuns: readonly PositionedTextRun[],
+  segStartInLine: number,
+  segEndInLine: number,
+  y: number,
+  embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>
+): SubstringRect | undefined {
+  let cursor = 0;
+  let rectLeft: number | undefined;
+  let rectRight = 0;
+  let rectFontSize = 0;
+
+  for (const run of lineRuns) {
+    const runStart = cursor;
+    const runEnd = cursor + run.text.length;
+    cursor = runEnd;
+    if (runEnd <= segStartInLine) continue;
+    if (runStart >= segEndInLine) break;
+
+    const localStart = Math.max(segStartInLine, runStart) - runStart;
+    const localEnd = Math.min(segEndInLine, runEnd) - runStart;
+    const { prefixWidth, segWidth } = measureRunSubstring(run, localStart, localEnd, embeddedFonts);
+    const segX = run.options.x + prefixWidth;
+
+    if (rectLeft === undefined || segX < rectLeft) {
+      rectLeft = segX;
+    }
+    const segRight = segX + segWidth;
+    if (segRight > rectRight) {
+      rectRight = segRight;
+    }
+    rectFontSize = Math.max(rectFontSize, run.options.fontSize);
+  }
+
+  if (rectLeft === undefined || rectFontSize === 0) {
+    return undefined;
+  }
+
+  return { x: rectLeft, y, width: Math.max(rectRight - rectLeft, 0), fontSize: rectFontSize };
+}
+
+function measureRunSubstring(
+  run: PositionedTextRun,
+  charStart: number,
+  charEnd: number,
+  embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>
+): { prefixWidth: number; segWidth: number } {
+  const runFont = run.options.font;
+  if (run.glyphs && typeof runFont !== "string") {
+    const embedded = embeddedFonts.get(runFont.id);
+    if (embedded) {
+      return measureRunSubstringWithGlyphs(run, embedded, charStart, charEnd);
+    }
+  }
+
+  const measureOpts: Pick<
+    NormalizedTextBaseOptions,
+    "font" | "fallbackFonts" | "direction" | "fontSize" | "characterSpacing" | "wordSpacing" | "kerning"
+  > = {
+    font: runFont,
+    fallbackFonts: [],
+    direction: "ltr",
+    fontSize: run.options.fontSize,
+    kerning: run.options.kerning,
+    ...(run.options.characterSpacing !== undefined ? { characterSpacing: run.options.characterSpacing } : {}),
+    ...(run.options.wordSpacing !== undefined ? { wordSpacing: run.options.wordSpacing } : {}),
+  };
+  const prefix = run.text.slice(0, charStart);
+  const seg = run.text.slice(charStart, charEnd);
+  return {
+    prefixWidth: prefix.length === 0 ? 0 : measureTextWidth(prefix, measureOpts, embeddedFonts),
+    segWidth: seg.length === 0 ? 0 : measureTextWidth(seg, measureOpts, embeddedFonts),
+  };
+}
+
+function measureRunSubstringWithGlyphs(
+  run: PositionedTextRun,
+  embedded: ParsedTrueTypeFont,
+  charStart: number,
+  charEnd: number
+): { prefixWidth: number; segWidth: number } {
+  const fontSize = run.options.fontSize;
+  const upe = embedded.unitsPerEm || 1;
+  const charSpacing = run.options.characterSpacing ?? 0;
+  const wordSpacing = run.options.wordSpacing ?? 0;
+  const kerning = run.options.kerning;
+
+  let advanceUnits = 0;
+  let additivePoints = 0;
+  let lastGlyphId: number | undefined;
+  let charCursor = 0;
+  let prefixWidth: number | undefined;
+  let segEndWidth: number | undefined;
+
+  const totalChars = run.glyphs!.reduce((sum, g) => sum + g.unicode.length, 0);
+  const safeStart = Math.max(0, Math.min(charStart, totalChars));
+  const safeEnd = Math.max(safeStart, Math.min(charEnd, totalChars));
+
+  for (let i = 0; i < run.glyphs!.length; i += 1) {
+    const glyph = run.glyphs![i]!;
+    const glyphStartChar = charCursor;
+    const glyphEndChar = charCursor + glyph.unicode.length;
+
+    if (prefixWidth === undefined && glyphStartChar >= safeStart) {
+      prefixWidth = (advanceUnits / upe) * fontSize + additivePoints;
+    }
+
+    if (kerning && lastGlyphId !== undefined) {
+      const pair = embedded.kerningPairs.get(makeKerningPairKey(lastGlyphId, glyph.glyphId));
+      if (pair !== undefined) {
+        advanceUnits += pair;
+      }
+    }
+    advanceUnits += embedded.widths[glyph.glyphId] ?? embedded.widths[0] ?? upe;
+    if (i > 0) {
+      additivePoints += charSpacing;
+    }
+    for (const ch of glyph.unicode) {
+      if (ch === " ") additivePoints += wordSpacing;
+    }
+
+    charCursor = glyphEndChar;
+    lastGlyphId = glyph.glyphId;
+
+    if (segEndWidth === undefined && charCursor >= safeEnd) {
+      segEndWidth = (advanceUnits / upe) * fontSize + additivePoints;
+    }
+  }
+
+  const fullWidth = (advanceUnits / upe) * fontSize + additivePoints;
+  const resolvedPrefix = prefixWidth ?? fullWidth;
+  const resolvedSegEnd = segEndWidth ?? fullWidth;
+  return { prefixWidth: resolvedPrefix, segWidth: Math.max(resolvedSegEnd - resolvedPrefix, 0) };
+}
+
 export function measureTextWidth(
   text: string,
   options: Pick<NormalizedTextBaseOptions, "font" | "fallbackFonts" | "direction" | "fontSize" | "characterSpacing" | "wordSpacing" | "kerning">,
