@@ -1,24 +1,111 @@
 %PDF-1.4
-%ÿÿÿ
+%ÿÿÿÿ
 1 0 obj
-<< /Type /Catalog /Pages 2 0 R /AcroForm 25 0 R >>
+<< /Type /Catalog /Pages 2 0 R /Metadata 4 0 R /Lang (en-US) /MarkInfo << /Marked true /Suspects false >> /StructTreeRoot 29 0 R /AcroForm 34 0 R >>
 endobj
 2 0 obj
-<< /Type /Pages /Count 1 /Kids [6 0 R] >>
+<< /Type /Pages /Count 2 /Kids [8 0 R 10 0 R] >>
 endobj
 3 0 obj
 << /Producer (pdf-editing-lib) /Title (PDF Form Fields Demo) /Author (pdf-editing-lib) >>
 endobj
-25 0 obj
-<< /Fields [7 0 R 8 0 R 11 0 R 12 0 R 13 0 R 23 0 R 24 0 R] /NeedAppearances true /DR << /Font << /FormF1 4 0 R >> >> /DA (/FormF1 12 Tf 0 g) >>
-endobj
 4 0 obj
-<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+<< /Type /Metadata /Subtype /XML /Length 838 >>
+stream
+<?xpacket begin="ï»¿" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:pdf="http://ns.adobe.com/pdf/1.3/" xmlns:xmp="http://ns.adobe.com/xap/1.0/"><dc:format>application/pdf</dc:format><dc:title><rdf:Alt><rdf:li xml:lang="x-default">PDF Form Fields Demo</rdf:li></rdf:Alt></dc:title><dc:creator><rdf:Seq><rdf:li>pdf-editing-lib</rdf:li></rdf:Seq></dc:creator><pdf:Producer>pdf-editing-lib</pdf:Producer><xmp:CreatorTool>pdf-editing-lib</xmp:CreatorTool><xmp:CreateDate>2026-05-12T00:00:00Z</xmp:CreateDate><xmp:ModifyDate>2026-05-12T00:00:00Z</xmp:ModifyDate><xmp:MetadataDate>2026-05-12T00:00:00Z</xmp:MetadataDate></rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end="w"?>
+endstream
+endobj
+34 0 obj
+<< /Fields [11 0 R 12 0 R 15 0 R 16 0 R 17 0 R 27 0 R 28 0 R] /NeedAppearances true /DR << /Font << /FormF1 5 0 R >> >> /DA (/FormF1 12 Tf 0 g) >>
+endobj
+30 0 obj
+<< /Nums [0 [31 0 R 32 0 R 33 0 R]] >>
+endobj
+29 0 obj
+<< /Type /StructTreeRoot /K [31 0 R 32 0 R 33 0 R] /ParentTree 30 0 R /ParentTreeNextKey 1 >>
+endobj
+31 0 obj
+<< /Type /StructElem /S /H1 /P 29 0 R /Pg 8 0 R /K 0 >>
+endobj
+32 0 obj
+<< /Type /StructElem /S /P /P 29 0 R /Pg 8 0 R /K 1 >>
+endobj
+33 0 obj
+<< /Type /StructElem /S /P /P 29 0 R /Pg 8 0 R /K 2 >>
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /ToUnicode 6 0 R >>
+endobj
+6 0 obj
+<< /Length 338 >>
+stream
+/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def
+/CMapName /Adobe-Identity-UCS def
+/CMapType 2 def
+1 begincodespacerange
+<00> <FF>
+endcodespacerange
+1 beginbfrange
+<20> <7E> <0020>
+endbfrange
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end
+endstream
 endobj
 7 0 obj
-<< /Type /Annot /Subtype /Widget /FT /Tx /T (name) /Rect [72 735 372 757] /Border [0 0 1] /DA (/FormF1 11 Tf 0 g) /V (John Doe) /P 6 0 R >>
+<< /Length 606 >>
+stream
+/H1 <</MCID 0>> BDC
+BT
+/F1 24 Tf
+0 g
+1 0 0 1 72 769.89 Tm
+(PDF Form Fields) Tj
+ET
+EMC
+/P <</MCID 1>> BDC
+BT
+/F1 11 Tf
+0 g
+1 0 0 1 72 733.89 Tm
+(This document demonstrates interactive form fields built with the low-level PDF ) Tj
+ET
+BT
+/F1 11 Tf
+0 g
+1 0 0 1 72 720.69 Tm
+(form API. The surrounding document layout is handled by renderTemplate, while form ) Tj
+ET
+BT
+/F1 11 Tf
+0 g
+1 0 0 1 72 707.49 Tm
+(fields use the specialized page methods.) Tj
+ET
+EMC
+/P <</MCID 2>> BDC
+BT
+/F1 11 Tf
+0 g
+1 0 0 1 72 690.29 Tm
+(The fields below are positioned with absolute coordinates on a dedicated form page.) Tj
+ET
+EMC
+
+endstream
 endobj
-9 0 obj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 5 0 R >> >> /Tabs /S /StructParents 0 /Contents 7 0 R >>
+endobj
+11 0 obj
+<< /Type /Annot /Subtype /Widget /F 4 /FT /Tx /T (name) /Rect [72 735 372 757] /Border [0 0 1] /DA (/FormF1 11 Tf 0 g) /V (John Doe) /P 10 0 R >>
+endobj
+13 0 obj
 << /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length 27 >>
 stream
 q
@@ -29,7 +116,7 @@ Q
 
 endstream
 endobj
-10 0 obj
+14 0 obj
 << /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length 81 >>
 stream
 q
@@ -45,97 +132,19 @@ Q
 
 endstream
 endobj
-8 0 obj
-<< /Type /Annot /Subtype /Widget /FT /Btn /T (subscribe) /Rect [72 670 88 686] /Border [0 0 1] /V /Yes /AS /Yes /AP << /N << /Off 9 0 R /Yes 10 0 R >> >> /P 6 0 R >>
-endobj
-11 0 obj
-<< /Type /Annot /Subtype /Widget /FT /Ch /T (country) /Rect [72 605 272 627] /Border [0 0 1] /DA (/FormF1 10 Tf 0 g) /Opt [(United States) (Canada) (United Kingdom) (Germany) (Japan)] /V (United States) /Ff 131072 /P 6 0 R >>
-endobj
 12 0 obj
-<< /Type /Annot /Subtype /Widget /FT /Ch /T (skills) /Rect [300 600 500 660] /Border [0 0 1] /DA (/FormF1 10 Tf 0 g) /Opt [(TypeScript) (JavaScript) (Python) (Rust) (Go)] /P 6 0 R >>
-endobj
-13 0 obj
-<< /FT /Btn /T (gender) /V /male /Ff 32768 /Kids [14 0 R 17 0 R 20 0 R] >>
+<< /Type /Annot /Subtype /Widget /F 4 /FT /Btn /T (subscribe) /Rect [72 670 88 686] /Border [0 0 1] /V /Yes /AS /Yes /AP << /N << /Off 13 0 R /Yes 14 0 R >> >> /P 10 0 R >>
 endobj
 15 0 obj
-<< /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length 164 >>
-stream
-q
-1 w
-0.5 8 m
-0.5 12.142136 3.857864 15.5 8 15.5 c
-12.142136 15.5 15.5 12.142136 15.5 8 c
-15.5 3.857864 12.142136 0.5 8 0.5 c
-3.857864 0.5 0.5 3.857864 0.5 8 c
-S
-Q
-
-endstream
+<< /Type /Annot /Subtype /Widget /F 4 /FT /Ch /T (country) /Rect [72 605 272 627] /Border [0 0 1] /DA (/FormF1 10 Tf 0 g) /Opt [(United States) (Canada) (United Kingdom) (Germany) (Japan)] /V (United States) /Ff 131072 /P 10 0 R >>
 endobj
 16 0 obj
-<< /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length 342 >>
-stream
-q
-1 w
-0.5 8 m
-0.5 12.142136 3.857864 15.5 8 15.5 c
-12.142136 15.5 15.5 12.142136 15.5 8 c
-15.5 3.857864 12.142136 0.5 8 0.5 c
-3.857864 0.5 0.5 3.857864 0.5 8 c
-S
-4.625 8 m
-4.625 9.863961 6.136039 11.375 8 11.375 c
-9.863961 11.375 11.375 9.863961 11.375 8 c
-11.375 6.136039 9.863961 4.625 8 4.625 c
-6.136039 4.625 4.625 6.136039 4.625 8 c
-f
-Q
-
-endstream
-endobj
-14 0 obj
-<< /Type /Annot /Subtype /Widget /Parent 13 0 R /Rect [72 545 88 561] /Border [0 0 1] /AP << /N << /Off 15 0 R /male 16 0 R >> >> /AS /male /P 6 0 R >>
-endobj
-18 0 obj
-<< /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length 164 >>
-stream
-q
-1 w
-0.5 8 m
-0.5 12.142136 3.857864 15.5 8 15.5 c
-12.142136 15.5 15.5 12.142136 15.5 8 c
-15.5 3.857864 12.142136 0.5 8 0.5 c
-3.857864 0.5 0.5 3.857864 0.5 8 c
-S
-Q
-
-endstream
-endobj
-19 0 obj
-<< /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length 342 >>
-stream
-q
-1 w
-0.5 8 m
-0.5 12.142136 3.857864 15.5 8 15.5 c
-12.142136 15.5 15.5 12.142136 15.5 8 c
-15.5 3.857864 12.142136 0.5 8 0.5 c
-3.857864 0.5 0.5 3.857864 0.5 8 c
-S
-4.625 8 m
-4.625 9.863961 6.136039 11.375 8 11.375 c
-9.863961 11.375 11.375 9.863961 11.375 8 c
-11.375 6.136039 9.863961 4.625 8 4.625 c
-6.136039 4.625 4.625 6.136039 4.625 8 c
-f
-Q
-
-endstream
+<< /Type /Annot /Subtype /Widget /F 4 /FT /Ch /T (skills) /Rect [300 600 500 660] /Border [0 0 1] /DA (/FormF1 10 Tf 0 g) /Opt [(TypeScript) (JavaScript) (Python) (Rust) (Go)] /P 10 0 R >>
 endobj
 17 0 obj
-<< /Type /Annot /Subtype /Widget /Parent 13 0 R /Rect [160 545 176 561] /Border [0 0 1] /AP << /N << /Off 18 0 R /female 19 0 R >> >> /AS /Off /P 6 0 R >>
+<< /FT /Btn /T (gender) /V /male /Ff 32768 /Kids [18 0 R 21 0 R 24 0 R] >>
 endobj
-21 0 obj
+19 0 obj
 << /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length 164 >>
 stream
 q
@@ -146,41 +155,119 @@ q
 15.5 3.857864 12.142136 0.5 8 0.5 c
 3.857864 0.5 0.5 3.857864 0.5 8 c
 S
-Q
-
-endstream
-endobj
-22 0 obj
-<< /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length 342 >>
-stream
-q
-1 w
-0.5 8 m
-0.5 12.142136 3.857864 15.5 8 15.5 c
-12.142136 15.5 15.5 12.142136 15.5 8 c
-15.5 3.857864 12.142136 0.5 8 0.5 c
-3.857864 0.5 0.5 3.857864 0.5 8 c
-S
-4.625 8 m
-4.625 9.863961 6.136039 11.375 8 11.375 c
-9.863961 11.375 11.375 9.863961 11.375 8 c
-11.375 6.136039 9.863961 4.625 8 4.625 c
-6.136039 4.625 4.625 6.136039 4.625 8 c
-f
 Q
 
 endstream
 endobj
 20 0 obj
-<< /Type /Annot /Subtype /Widget /Parent 13 0 R /Rect [280 545 296 561] /Border [0 0 1] /AP << /N << /Off 21 0 R /other 22 0 R >> >> /AS /Off /P 6 0 R >>
+<< /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length 342 >>
+stream
+q
+1 w
+0.5 8 m
+0.5 12.142136 3.857864 15.5 8 15.5 c
+12.142136 15.5 15.5 12.142136 15.5 8 c
+15.5 3.857864 12.142136 0.5 8 0.5 c
+3.857864 0.5 0.5 3.857864 0.5 8 c
+S
+4.625 8 m
+4.625 9.863961 6.136039 11.375 8 11.375 c
+9.863961 11.375 11.375 9.863961 11.375 8 c
+11.375 6.136039 9.863961 4.625 8 4.625 c
+6.136039 4.625 4.625 6.136039 4.625 8 c
+f
+Q
+
+endstream
+endobj
+18 0 obj
+<< /Type /Annot /Subtype /Widget /F 4 /Parent 17 0 R /Rect [72 545 88 561] /Border [0 0 1] /AP << /N << /Off 19 0 R /male 20 0 R >> >> /AS /male /P 10 0 R >>
+endobj
+22 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length 164 >>
+stream
+q
+1 w
+0.5 8 m
+0.5 12.142136 3.857864 15.5 8 15.5 c
+12.142136 15.5 15.5 12.142136 15.5 8 c
+15.5 3.857864 12.142136 0.5 8 0.5 c
+3.857864 0.5 0.5 3.857864 0.5 8 c
+S
+Q
+
+endstream
 endobj
 23 0 obj
-<< /Type /Annot /Subtype /Widget /FT /Btn /T (submit) /Rect [72 470 192 500] /Border [0 0 1] /DA (/FormF1 11 Tf 0 g) /MK << /CA (Submit Form) >> /Ff 65536 /P 6 0 R >>
+<< /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length 342 >>
+stream
+q
+1 w
+0.5 8 m
+0.5 12.142136 3.857864 15.5 8 15.5 c
+12.142136 15.5 15.5 12.142136 15.5 8 c
+15.5 3.857864 12.142136 0.5 8 0.5 c
+3.857864 0.5 0.5 3.857864 0.5 8 c
+S
+4.625 8 m
+4.625 9.863961 6.136039 11.375 8 11.375 c
+9.863961 11.375 11.375 9.863961 11.375 8 c
+11.375 6.136039 9.863961 4.625 8 4.625 c
+6.136039 4.625 4.625 6.136039 4.625 8 c
+f
+Q
+
+endstream
+endobj
+21 0 obj
+<< /Type /Annot /Subtype /Widget /F 4 /Parent 17 0 R /Rect [160 545 176 561] /Border [0 0 1] /AP << /N << /Off 22 0 R /female 23 0 R >> >> /AS /Off /P 10 0 R >>
+endobj
+25 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length 164 >>
+stream
+q
+1 w
+0.5 8 m
+0.5 12.142136 3.857864 15.5 8 15.5 c
+12.142136 15.5 15.5 12.142136 15.5 8 c
+15.5 3.857864 12.142136 0.5 8 0.5 c
+3.857864 0.5 0.5 3.857864 0.5 8 c
+S
+Q
+
+endstream
+endobj
+26 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length 342 >>
+stream
+q
+1 w
+0.5 8 m
+0.5 12.142136 3.857864 15.5 8 15.5 c
+12.142136 15.5 15.5 12.142136 15.5 8 c
+15.5 3.857864 12.142136 0.5 8 0.5 c
+3.857864 0.5 0.5 3.857864 0.5 8 c
+S
+4.625 8 m
+4.625 9.863961 6.136039 11.375 8 11.375 c
+9.863961 11.375 11.375 9.863961 11.375 8 c
+11.375 6.136039 9.863961 4.625 8 4.625 c
+6.136039 4.625 4.625 6.136039 4.625 8 c
+f
+Q
+
+endstream
 endobj
 24 0 obj
-<< /Type /Annot /Subtype /Widget /FT /Sig /T (sig) /Rect [72 340 472 420] /Border [0 0 1] /P 6 0 R >>
+<< /Type /Annot /Subtype /Widget /F 4 /Parent 17 0 R /Rect [280 545 296 561] /Border [0 0 1] /AP << /N << /Off 25 0 R /other 26 0 R >> >> /AS /Off /P 10 0 R >>
 endobj
-5 0 obj
+27 0 obj
+<< /Type /Annot /Subtype /Widget /F 4 /FT /Btn /T (submit) /Rect [72 470 192 500] /Border [0 0 1] /DA (/FormF1 11 Tf 0 g) /MK << /CA (Submit Form) >> /Ff 65536 /P 10 0 R >>
+endobj
+28 0 obj
+<< /Type /Annot /Subtype /Widget /F 4 /FT /Sig /T (sig) /Rect [72 340 472 420] /Border [0 0 1] /P 10 0 R >>
+endobj
+9 0 obj
 << /Length 690 >>
 stream
 BT
@@ -258,39 +345,48 @@ ET
 
 endstream
 endobj
-6 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 4 0 R >> >> /Annots [7 0 R 8 0 R 11 0 R 12 0 R 14 0 R 17 0 R 20 0 R 23 0 R 24 0 R] /Contents 5 0 R >>
+10 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 5 0 R >> >> /Annots [11 0 R 12 0 R 15 0 R 16 0 R 18 0 R 21 0 R 24 0 R 27 0 R 28 0 R] /Tabs /S /Contents 9 0 R >>
 endobj
 xref
-0 26
+0 35
 0000000000 65535 f 
-0000000014 00000 n 
-0000000080 00000 n 
-0000000137 00000 n 
-0000000403 00000 n 
-0000004574 00000 n 
-0000005315 00000 n 
-0000000473 00000 n 
-0000000933 00000 n 
-0000000628 00000 n 
-0000000753 00000 n 
-0000001114 00000 n 
-0000001356 00000 n 
-0000001555 00000 n 
-0000002352 00000 n 
-0000001646 00000 n 
-0000001910 00000 n 
-0000003226 00000 n 
-0000002520 00000 n 
-0000002784 00000 n 
-0000004103 00000 n 
-0000003397 00000 n 
-0000003661 00000 n 
-0000004273 00000 n 
-0000004456 00000 n 
-0000000242 00000 n 
+0000000015 00000 n 
+0000000179 00000 n 
+0000000243 00000 n 
+0000000348 00000 n 
+0000001809 00000 n 
+0000001896 00000 n 
+0000002285 00000 n 
+0000002942 00000 n 
+0000007259 00000 n 
+0000008000 00000 n 
+0000003100 00000 n 
+0000003568 00000 n 
+0000003262 00000 n 
+0000003388 00000 n 
+0000003757 00000 n 
+0000004005 00000 n 
+0000004210 00000 n 
+0000005007 00000 n 
+0000004301 00000 n 
+0000004565 00000 n 
+0000005887 00000 n 
+0000005181 00000 n 
+0000005445 00000 n 
+0000006770 00000 n 
+0000006064 00000 n 
+0000006328 00000 n 
+0000006946 00000 n 
+0000007135 00000 n 
+0000001485 00000 n 
+0000001430 00000 n 
+0000001595 00000 n 
+0000001667 00000 n 
+0000001738 00000 n 
+0000001267 00000 n 
 trailer
-<< /Size 26 /Root 1 0 R /Info 3 0 R >>
+<< /Size 35 /Root 1 0 R /Info 3 0 R >>
 startxref
-5518
+8215
 %%EOF

@@ -1,12 +1,43 @@
 import { writeFile } from "node:fs/promises";
-
 import { createDocument, hex } from "../src/index.js";
 
 const doc = createDocument({
+  language: "en-US",
   info: {
     title: "PDF Annotations Demo",
     author: "pdf-editing-lib"
   }
+});
+
+doc.setXmpMetadata({
+  title: "PDF Annotations Demo",
+  creator: "pdf-editing-lib",
+  creatorTool: "pdf-editing-lib",
+  createDate: "2026-05-12T00:00:00Z",
+  modifyDate: "2026-05-12T00:00:00Z",
+  metadataDate: "2026-05-12T00:00:00Z"
+});
+
+doc.renderTemplate({
+  info: { title: "PDF Annotations Demo", author: "pdf-editing-lib" },
+  page: { size: "A4" },
+  blocks: [
+    {
+      type: "heading",
+      text: "PDF Annotations",
+      options: { level: 1, marginBottom: 6 }
+    },
+    {
+      type: "paragraph",
+      text: "This document demonstrates PDF annotation types. The document layout uses renderTemplate, while annotations are placed with the low-level page API for precise positioning.",
+      options: { fontSize: 11, marginBottom: 14 }
+    },
+    {
+      type: "paragraph",
+      text: "Annotations below include highlight, sticky note, free text, URI link, and page-to-page link.",
+      options: { fontSize: 11 }
+    }
+  ]
 });
 
 const page = doc.addPage({ size: "A4" });
@@ -68,6 +99,14 @@ page.linkToPage(page2, {
   width: 80,
   height: 14
 });
+
+const issues = doc.validateCompliance();
+if (issues.length > 0) {
+  console.log("Compliance issues:");
+  for (const issue of issues) {
+    console.log(`  [${issue.severity}] ${issue.message}`);
+  }
+}
 
 await writeFile("examples/annotations.pdf", doc.toUint8Array());
 console.log("Wrote examples/annotations.pdf");

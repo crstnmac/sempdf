@@ -12,78 +12,173 @@ const doc = createDocument({
   }
 });
 
-const page = doc.addPage({ size: "A4" });
-
-// container() - create a tagged Sect container via builder callback
-page.text("Structure Containers & Tagged Content", {
-  x: 72, y: 800, fontSize: 16
+doc.setXmpMetadata({
+  title: "Structure Containers Demo",
+  creator: "pdf-editing-lib",
+  createDate: "2026-05-12T00:00:00Z",
+  modifyDate: "2026-05-12T00:00:00Z",
+  metadataDate: "2026-05-12T00:00:00Z"
 });
 
-page.container("Sect", undefined, (section) => {
-  section.text("Section Container", {
-    x: 72, y: 760, fontSize: 14, color: hex("#1565c0"), tag: "H2"
-  });
-  section.textBlock(
-    "Structure containers group content into tagged <Sect> elements. " +
-    "Screen readers use this structure for document navigation.",
-    { x: 72, y: 735, fontSize: 11, tag: "P", width: 450 }
-  );
-
-  // Nested container
-  section.container("Sect", undefined, (subsection) => {
-    subsection.text("Nested Subsection", {
-      x: 72, y: 695, fontSize: 12, color: hex("#2e7d32"), tag: "H3"
-    });
-    subsection.textBlock(
-      "Containers can be nested to build deep document hierarchies " +
-      "for complex, well-structured PDF content.",
-      { x: 72, y: 675, fontSize: 10, tag: "P", width: 450 }
-    );
-  });
-});
-
-// structure() - create a container by explicit role
-page.text("Custom Structure Roles", {
-  x: 72, y: 635, fontSize: 14, color: hex("#1565c0"), tag: "H2"
-});
-
-page.structure("Note", undefined, (note) => {
-  note.textBlock(
-    "Note: Structure containers enable full control over the PDF " +
-    "logical structure tree for maximum accessibility.",
-    { x: 72, y: 605, fontSize: 10, tag: "P", width: 450 }
-  );
-});
-
-page.structure("BlockQuote", undefined, (bq) => {
-  bq.text(
-    "\"Well-structured PDFs are accessible to all.\" -- PDF/UA",
-    { x: 72, y: 575, fontSize: 11, tag: "P", color: hex("#555566") }
-  );
-});
-
-// Container with table
-page.container("Sect", undefined, (dataSection) => {
-  dataSection.text("Container with Table", {
-    x: 72, y: 535, fontSize: 13, color: hex("#1565c0"), tag: "H3"
-  });
-  dataSection.table(
-    [
-      ["Item", "Status", "Notes"],
-      ["Design", "Complete", "Lead approved"],
-      ["Development", "In Progress", "Sprint 3"],
-      ["Testing", "Pending", "Starts Mon"]
-    ],
+doc.renderTemplate({
+  info: { title: "Structure Containers Demo", author: "pdf-editing-lib" },
+  page: { size: "A4" },
+  blocks: [
     {
-      headerRows: 1,
-      fontSize: 9.5,
-      x: 72,
-      y: 460,
-      width: 450
+      type: "heading",
+      text: "Structure Containers & Tagged Content",
+      options: { level: 1, color: hex("#1c2f6b") }
+    },
+    {
+      type: "paragraph",
+      text: "This document demonstrates how renderTemplate section blocks map to PDF structure containers. Each section wraps child blocks inside a tagged container element for accessible document navigation.",
+      options: { fontSize: 11, marginBottom: 10 }
+    },
+    {
+      type: "section",
+      role: "Sect",
+      blocks: [
+        {
+          type: "heading",
+          text: "Section Container",
+          options: { level: 2, color: hex("#1565c0") }
+        },
+        {
+          type: "paragraph",
+          text: "Structure containers group content into tagged <Sect> elements. Screen readers use this structure for document navigation and content hierarchy traversal.",
+          options: { fontSize: 11, tag: "P" }
+        },
+        {
+          type: "section",
+          role: "Sect",
+          structure: {
+            language: "en-US",
+            actualText: "Nested Subsection"
+          },
+          blocks: [
+            {
+              type: "heading",
+              text: "Nested Subsection",
+              options: { level: 3, color: hex("#2e7d32") }
+            },
+            {
+              type: "paragraph",
+              text: "Containers can be nested to build deep document hierarchies for complex, well-structured PDF content. Each nested section inherits and extends the logical structure tree.",
+              options: {
+                fontSize: 10,
+                tag: "P",
+                structure: {
+                  language: "en-US",
+                  actualText: "Nested subsection body text with accessibility metadata."
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      type: "heading",
+      text: "Custom Structure Roles",
+      options: { level: 2, color: hex("#1565c0"), marginTop: 12 }
+    },
+    {
+      type: "section",
+      role: "Div",
+      structure: {
+        language: "en-US",
+        actualText: "Note: Structure containers enable full control over the PDF logical structure tree for maximum accessibility."
+      },
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Note: Structure containers enable full control over the PDF logical structure tree for maximum accessibility. Use the structure option on individual blocks to attach metadata like alt text, language tags, or actual text replacement.",
+          options: { fontSize: 10, tag: "Note" }
+        }
+      ]
+    },
+    {
+      type: "section",
+      role: "BlockQuote",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "\u201CWell-structured PDFs are accessible to all.\u201D \u2014 PDF/UA",
+          options: {
+            fontSize: 11,
+            tag: "P",
+            color: hex("#555566"),
+            structure: {
+              language: "en-US",
+              actualText: "Well-structured PDFs are accessible to all. \u2014 PDF/UA"
+            }
+          }
+        }
+      ]
+    },
+    {
+      type: "heading",
+      text: "Container with Table",
+      options: { level: 2, color: hex("#1565c0"), marginTop: 12 }
+    },
+    {
+      type: "section",
+      role: "Sect",
+      structure: {
+        language: "en-US"
+      },
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Tables inside section blocks inherit the container's structure context. Table headers and cells are automatically tagged for screen-reader navigation.",
+          options: { fontSize: 10, tag: "P", marginBottom: 6 }
+        },
+        {
+          type: "table",
+          rows: [
+            [
+              { text: "Item", header: true },
+              { text: "Status", header: true },
+              { text: "Notes", header: true }
+            ],
+            [
+              { text: "Design", header: true, scope: "row" },
+              "Complete",
+              "Lead approved"
+            ],
+            [
+              { text: "Development", header: true, scope: "row" },
+              "In Progress",
+              "Sprint 3"
+            ],
+            [
+              { text: "Testing", header: true, scope: "row" },
+              "Pending",
+              "Starts Mon"
+            ]
+          ],
+          options: {
+            headerRows: 1,
+            headerColumns: 1,
+            fontSize: 9.5,
+            width: 450
+          }
+        }
+      ]
     }
-  );
+  ]
 });
+
+const issues = doc.validateCompliance();
+if (issues.length > 0) {
+  console.log("Compliance issues:");
+  for (const issue of issues) {
+    console.log(`  [${issue.severity}] ${issue.message}`);
+  }
+} else {
+  console.log("No compliance issues detected.");
+}
 
 await writeFile("examples/containers.pdf", doc.toUint8Array());
 console.log("Wrote examples/containers.pdf");
-console.log("  Containers: page.container(), page.structure(), nested containers, tagged content");
+console.log("  Containers: section blocks, structure options, nested containers, tagged content");

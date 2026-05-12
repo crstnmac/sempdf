@@ -128,6 +128,19 @@ const doc = createDocument({
   tagged: true,
   language: 'en-US',
   structureRoot: 'Document',
+  info: {
+    title: `Accessibility Audit Report - ${projectName}`,
+    author: 'zeropdf',
+    creator: 'pdf-editing-lib',
+    subject: `${clientName} Accessibility Audit`,
+    keywords: ['accessibility', 'WCAG', 'Section 508', 'PDF/UA'],
+  },
+  encryption: {
+    algorithm: 'aes-256-r6',
+    userPassword: '',
+    ownerPassword: 'zeropdf2026',
+    permissions: { printing: true, copying: true, accessibility: true },
+  },
 });
 
 const font = doc.embedTrueTypeFont(readFileSync(fontPath), {
@@ -234,6 +247,17 @@ doc.renderTemplate({
   page: {
     size: 'A4',
     font,
+    tabOrder: 'S',
+    spacing: {
+      paragraphBefore: 0,
+      paragraphAfter: 8,
+      headingBefore: { 1: 24, 2: 18, 3: 14, 4: 10, 5: 8, 6: 6 },
+      headingAfter: { 1: 14, 2: 10, 3: 8, 4: 6, 5: 4, 6: 4 },
+      tableBefore: 8,
+      tableAfter: 14,
+      imageBefore: 10,
+      imageAfter: 10,
+    },
   },
   autoOutline: { maxLevel: 3, expanded: true },
   blocks: [
@@ -402,7 +426,7 @@ if (complianceIssues.length > 0) {
   console.log('No compliance issues detected.');
 }
 
-const parsed = parseDocument(pdfBytes);
+const parsed = parseDocument(pdfBytes, { password: '' });
 const elements = parsed.listStructureElements();
 console.log(`\nStructure tree has ${elements.length} top-level element(s):`);
 for (const el of elements) {
