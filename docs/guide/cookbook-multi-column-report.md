@@ -9,10 +9,10 @@ There are three strategies for multi-column layouts in `pdf-editing-lib`:
 | Strategy | Best for | API |
 |----------|----------|-----|
 | Coordinate-based | Exact placement, decorative layouts | `page.text()`, `page.textBlock()`, `page.path()` |
-| Flow-based | Single-column flowing content | `page.flow()` |
-| Template-based | Multi-page reports with repeating blocks, headers, and footers | `doc.renderTemplate()` |
+| Flow-based | Newspaper-style columns on one page | `page.flow({ columns: { count, gap } })` |
+| Template-based | Multi-page reports with repeating blocks, headers, footers, and balanced columns | `doc.renderTemplate()` |
 
-The example below uses `renderTemplate()` — the recommended path for structured, paginated reports.
+The example below uses `renderTemplate()` with `page.columns` — the recommended path for structured, paginated reports that should fill column 1, continue at the top of column 2, and only create a new page after the last column.
 
 ## Setup
 
@@ -45,6 +45,7 @@ doc.renderTemplate({
     size: "A4",
     font,
     margin: 48,
+    columns: { count: 2, gap: 24 },
     spacing: {
       paragraphAfter: 8,
       headingBefore: { 2: 16, 3: 12 },
@@ -149,8 +150,7 @@ doc.renderTemplate({
       ].join("")
     },
 
-    // ── Remaining sections on a fresh page ─────────
-    { type: "pageBreak" },
+    // ── Remaining sections continue in the next column ─────────
     {
       type: "heading",
       text: "Risk Assessment",
@@ -226,6 +226,20 @@ The metric tiles at the top of the report are rendered as a `table` block. Each 
 
 Use `headerRows: 1` so the top row of values renders as bold column headers, creating a dashboard-like visual.
 
+## Newspaper-style body columns
+
+The `page.columns` option controls the body flow area, separate from table columns:
+
+```ts
+page: {
+  size: "A4",
+  margin: 48,
+  columns: { count: 2, gap: 24 }
+}
+```
+
+Template blocks fill the first column until they run out of vertical space, then continue at the top of the second column. If a final page has enough content to fit in one column set, `renderTemplate()` balances the columns automatically.
+
 ## Section navigation in headers
 
 The `header` callback renders on every page. Use it to display a section breadcrumb so readers can navigate:
@@ -255,9 +269,10 @@ Tag header blocks as `"Artifact"` so they are excluded from the document structu
 | Technique | Purpose |
 |-----------|---------|
 | `renderTemplate()` | Multi-page paginated reports with automatic headers/footers |
+| `page.columns` | Flow report body through balanced newspaper-style columns |
 | Table as dashboard | Render KPI tiles in a table block with `headerRows: 1` |
 | `header` callback | Section breadcrumb and page labels on every page |
-| `{ type: "pageBreak" }` | Force remaining sections onto a fresh page |
+| `{ type: "pageBreak" }` | Force a section onto a fresh page when columns are not desired |
 | Semantic spacing | `headingBefore`/`headingAfter` for report-appropriate heading rhythm |
 | `tag: "Artifact"` | Exclude header/footer text from tagged PDF structure tree |
 

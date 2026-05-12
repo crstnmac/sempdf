@@ -43,6 +43,25 @@ doc.renderTemplate({
 });
 ```
 
+## Multi-Column Flow
+
+Set `columns: { count, gap }` on `page` for newspaper-style body flow. Paragraphs fill the current column and continue at the top of the next column on the same page; tables and other blocks advance to the next column before a new page. Short multi-column pages are balanced automatically so the final column set does not leave all content in the first column.
+
+```ts
+doc.renderTemplate({
+  page: {
+    size: "A4",
+    margin: 56,
+    columns: { count: 2, gap: 24 }
+  },
+  blocks: [
+    { type: "heading", text: "Research Brief" },
+    { type: "paragraph", text: longBodyCopy },
+    { type: "paragraph", text: "Closing notes balance with the previous column." }
+  ]
+});
+```
+
 ## Block types
 
 | Type | Purpose |

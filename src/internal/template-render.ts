@@ -107,9 +107,25 @@ export function renderTemplateDocument(
   const headings: CollectedHeading[] = [];
   const deferredPageLinks: DeferredPageLink[] = [];
 
+  const attachOverflowHandler = (): void => {
+    current.flow.setOverflowHandler(() => {
+      advanceToNewPage();
+      return current.flow;
+    });
+  };
+
   const advanceToNewPage = (): void => {
     current = createTemplatePage(doc, options, current.pageNumber + 1);
     pages.push({ pageNumber: current.pageNumber, page: current.page });
+    attachOverflowHandler();
+  };
+
+  attachOverflowHandler();
+
+  const advanceToNextFlowRegion = (): void => {
+    if (!current.flow.advanceColumn()) {
+      advanceToNewPage();
+    }
   };
 
   for (let index = 0; index < options.blocks.length; index += 1) {
@@ -127,7 +143,7 @@ export function renderTemplateDocument(
     }
 
     if (block.type === 'table') {
-      renderTableWithSplits(block, () => current, advanceToNewPage);
+      renderTableWithSplits(block, () => current, advanceToNextFlowRegion);
       continue;
     }
 
@@ -137,12 +153,25 @@ export function renderTemplateDocument(
       keepWithNext && options.blocks[index + 1] !== undefined
         ? estimateTemplateBlockHeight(options.blocks[index + 1]!, current.flow)
         : 0;
+    const balanceTarget = resolveColumnBalanceTarget(options.blocks, index, current);
+    const canSplitTextAcrossColumn =
+      block.type === 'paragraph' &&
+      current.flow.columnIndex + 1 < current.flow.columnCount;
+
+    if (
+      balanceTarget !== undefined &&
+      current.flow.cursorY < current.startY &&
+      current.startY - current.flow.cursorY + estimatedHeight + nextEstimatedHeight > balanceTarget
+    ) {
+      advanceToNextFlowRegion();
+    }
 
     if (
       current.flow.remainingHeight < estimatedHeight + nextEstimatedHeight &&
-      current.flow.cursorY < current.startY
+      current.flow.cursorY < current.startY &&
+      !canSplitTextAcrossColumn
     ) {
-      advanceToNewPage();
+      advanceToNextFlowRegion();
     }
 
     if (block.type === 'heading' && options.autoOutline) {
@@ -205,6 +234,36 @@ interface CurrentPageRef {
   readonly page: PdfPage;
   readonly startY: number;
   readonly pageNumber: number;
+}
+
+function resolveColumnBalanceTarget(
+  blocks: readonly TemplateBlock[],
+  startIndex: number,
+  current: CurrentPageRef,
+): number | undefined {
+  if (current.flow.columnCount <= 1 || current.flow.columnIndex + 1 >= current.flow.columnCount) {
+    return undefined;
+  }
+
+  let totalHeight = 0;
+  for (let index = startIndex; index < blocks.length; index += 1) {
+    const block = blocks[index]!;
+    if (block.type === 'pageBreak') break;
+    totalHeight += estimateTemplateBlockHeight(block, current.flow);
+  }
+
+  const marginBottom = current.flow.cursorY - current.flow.remainingHeight;
+  const columnCapacity = Math.max(current.startY - marginBottom, 0);
+  const remainingColumns = current.flow.columnCount - current.flow.columnIndex;
+  const remainingCapacity =
+    current.flow.remainingHeight + (remainingColumns - 1) * columnCapacity;
+
+  if (totalHeight > remainingCapacity) {
+    return undefined;
+  }
+
+  const alreadyConsumed = current.startY - current.flow.cursorY;
+  return (alreadyConsumed + totalHeight) / remainingColumns;
 }
 
 function renderTableWithSplits(
