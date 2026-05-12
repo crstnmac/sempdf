@@ -29,28 +29,51 @@ doc.renderTemplate({
     },
     {
       type: "paragraph",
-      text: "Page 1 demonstrates inline annotations via template blocks. Links are placed automatically at their text position because the flow engine measures the text width.",
-      options: { fontSize: 11, marginBottom: 16 },
-    },
-    {
-      type: "link",
-      text: "View documentation online",
-      url: "https://example.com/docs",
-      options: { fontSize: 11, color: hex("#1565c0"), marginBottom: 4 },
+      text: "The quick brown fox jumps over the lazy dog. Inline annotations target specific words in this paragraph by matching the rendered text directly.",
+      options: { fontSize: 11, marginBottom: 14 },
+      annotations: [
+        { type: "highlight", match: "lazy dog", color: hex("#ffeb3b") },
+        { type: "highlight", match: "quick brown fox", color: hex("#c8e6c9") },
+      ],
     },
     {
       type: "paragraph",
-      text: "The link above is rendered inline. Its clickable area exactly covers the link text because the flow engine measures the text width and places the annotation at the correct coordinates.",
+      text: "Accessibility compliance requires all non-text content to have text alternatives. Verify alt text during the audit phase before sign-off.",
+      options: { fontSize: 11, marginBottom: 14 },
+      annotations: [
+        {
+          type: "note",
+          match: "Accessibility",
+          contents: "WCAG 1.1.1: Ensure all images have alt attributes.",
+          open: false,
+        },
+        {
+          type: "highlight",
+          match: "audit phase",
+          color: hex("#ffe0b2"),
+        },
+      ],
+    },
+    {
+      type: "paragraph",
+      text: "See the project documentation for the full conformance checklist and the latest review guidelines.",
       options: { fontSize: 11, marginBottom: 20 },
+      annotations: [
+        {
+          type: "link",
+          match: "project documentation",
+          url: "https://example.com/docs",
+        },
+      ],
     },
     {
       type: "heading",
-      text: "Precision Matters",
+      text: "How It Works",
       options: { level: 2, color: hex("#1565c0"), marginBottom: 8 },
     },
     {
       type: "paragraph",
-      text: "For precise annotations that target specific words or phrases within a body of text, the low-level page API provides exact coordinate control. Page 2 demonstrates this approach.",
+      text: "Each annotation specifies a substring match. The flow engine locates that text within the laid-out runs and emits the annotation at the exact rendered position. If a match wraps across lines, one rectangle is emitted per line.",
       options: { fontSize: 11 },
     },
   ],

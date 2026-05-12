@@ -1136,6 +1136,73 @@ export interface TemplateHeadingBlock {
 }
 
 /**
+ * Inline annotation anchored to a substring of a paragraph's rendered text.
+ *
+ * The flow engine searches the laid-out text for `match`. The matching
+ * substring's exact rendered position becomes the annotation rectangle, so
+ * the annotation covers the precise word(s) regardless of wrapping or font.
+ *
+ * If `match` spans multiple wrapped lines, one rectangle is emitted per line.
+ * If `occurrence` is omitted, every occurrence in the paragraph is annotated.
+ */
+export type ParagraphTextAnnotation =
+  | ParagraphHighlightAnnotation
+  | ParagraphNoteAnnotation
+  | ParagraphLinkAnnotation;
+
+/** Highlight a substring of a paragraph. */
+export interface ParagraphHighlightAnnotation {
+  readonly type: "highlight";
+  /** Substring to locate in the rendered paragraph text. */
+  readonly match: string;
+  /** Zero-based occurrence index to annotate; defaults to every occurrence. */
+  readonly occurrence?: number | undefined;
+  /** Fill color of the highlight rectangle. */
+  readonly color?: PdfColor | undefined;
+  /** Extra padding in points added around the rect on each side. Defaults to 2 above/below, 0 left/right. */
+  readonly padding?:
+    | number
+    | { readonly top?: number; readonly bottom?: number; readonly left?: number; readonly right?: number }
+    | undefined;
+  /** Structure tag override for the highlight annotation. */
+  readonly tag?: "Annot" | "Artifact" | undefined;
+}
+
+/** Attach a sticky-note annotation anchored to a substring. */
+export interface ParagraphNoteAnnotation {
+  readonly type: "note";
+  /** Substring to locate in the rendered paragraph text. */
+  readonly match: string;
+  /** Zero-based occurrence index to annotate; defaults to every occurrence. */
+  readonly occurrence?: number | undefined;
+  /** Contents of the note. */
+  readonly contents: string;
+  /** Whether the note pops open by default. */
+  readonly open?: boolean | undefined;
+  /** Icon anchor relative to the matched text. Defaults to "before". */
+  readonly anchor?: "before" | "after" | undefined;
+  /** Note icon size in points. Defaults to fontSize + 4. */
+  readonly size?: number | undefined;
+  /** Structure tag override. */
+  readonly tag?: "Annot" | "Artifact" | undefined;
+}
+
+/** Wrap a substring in a clickable URI link. */
+export interface ParagraphLinkAnnotation {
+  readonly type: "link";
+  /** Substring to locate in the rendered paragraph text. */
+  readonly match: string;
+  /** Zero-based occurrence index to annotate; defaults to every occurrence. */
+  readonly occurrence?: number | undefined;
+  /** Target URI. */
+  readonly url: string;
+  /** Border width in points. */
+  readonly borderWidth?: number | undefined;
+  /** Structure tag override. */
+  readonly tag?: "Link" | "Artifact" | undefined;
+}
+
+/**
  * Template block for rendering a paragraph.
  */
 export interface TemplateParagraphBlock {
@@ -1144,6 +1211,8 @@ export interface TemplateParagraphBlock {
   readonly text: string;
   /** Options that control this item. */
   readonly options?: FlowTextOptions | undefined;
+  /** Inline annotations anchored to specific substrings of the rendered text. */
+  readonly annotations?: readonly ParagraphTextAnnotation[] | undefined;
   /** Whether this block should stay on the same page as the following block when possible. */
   readonly keepWithNext?: boolean | undefined;
 }

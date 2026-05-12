@@ -8,7 +8,7 @@ import {
   type ParsedPdfMetadata,
 } from "./parser.js";
 import { parseImage } from "./internal/image.js";
-import { layoutTextBlock, measureTextWidth } from "./internal/text-layout.js";
+import { findSubstringRects, layoutTextBlock, measureTextWidth } from "./internal/text-layout.js";
 import type { TextShaper } from "./internal/text-shaper.js";
 import {
   parseTrueTypeFont,
@@ -833,6 +833,27 @@ function resolveMarginShorthand(margin: FlowMarginShorthand | undefined): {
   return { top, right, bottom, left };
 }
 
+function resolveAnnotationPadding(
+  padding:
+    | number
+    | { readonly top?: number; readonly bottom?: number; readonly left?: number; readonly right?: number }
+    | undefined,
+  defaults: { top: number; bottom: number; left: number; right: number },
+): { top: number; bottom: number; left: number; right: number } {
+  if (padding === undefined) {
+    return defaults;
+  }
+  if (typeof padding === "number") {
+    return { top: padding, bottom: padding, left: padding, right: padding };
+  }
+  return {
+    top: padding.top ?? defaults.top,
+    bottom: padding.bottom ?? defaults.bottom,
+    left: padding.left ?? defaults.left,
+    right: padding.right ?? defaults.right,
+  };
+}
+
 const STANDARD_FLOW_SPACING: RequiredFlowSpacingScale = {
   paragraphBefore: 0,
   paragraphAfter: 8,
@@ -912,7 +933,7 @@ export class PdfFlow {
     const fontSize = options.fontSize ?? headingFontSize(level);
     const spacing = this.resolveSpacing("heading", options, level);
     this.applyMarginTop(spacing.before);
-    const consumedHeight = this.writeTextBlock(
+    const { height: consumedHeight } = this.writeTextBlock(
       text,
       {
         ...options,
@@ -1034,8 +1055,12 @@ export class PdfFlow {
    *
    * @returns This flow helper for chaining.
    */
-  paragraph(text: string, options: FlowTextOptions = {}): this {
-    this.textBlock(text, { ...options, tag: options.tag ?? "P" });
+  paragraph(
+    text: string,
+    options: FlowTextOptions = {},
+    annotations?: readonly import("./types.js").ParagraphTextAnnotation[],
+  ): this {
+    this.textBlock(text, { ...options, tag: options.tag ?? "P" }, annotations);
     return this;
   }
 
@@ -1044,18 +1069,26 @@ export class PdfFlow {
    *
    * @param text The text to add.
    * @param options Options that control the operation.
+   * @param annotations Optional inline annotations anchored to substrings of the rendered text.
    *
    * @returns This flow helper for chaining.
    */
-  textBlock(text: string, options: FlowTextOptions = {}): this {
+  textBlock(
+    text: string,
+    options: FlowTextOptions = {},
+    annotations?: readonly import("./types.js").ParagraphTextAnnotation[],
+  ): this {
     const spacing = this.resolveSpacing("paragraph", options);
     this.applyMarginTop(spacing.before);
-    const consumedHeight = this.writeTextBlock(
+    const { height: consumedHeight, runs } = this.writeTextBlock(
       text,
       options,
       spacing.left,
       spacing.right,
     );
+    if (annotations && annotations.length > 0) {
+      this.applyParagraphAnnotations(runs, annotations);
+    }
     this.state.y -= consumedHeight + spacing.after;
     return this;
   }
@@ -1616,7 +1649,7 @@ export class PdfFlow {
     options: FlowTextOptions = {},
     marginLeft = 0,
     marginRight = 0,
-  ): number {
+  ): { height: number; runs: readonly import("./internal/text-layout.js").PositionedTextRun[] } {
     const innerWidth = Math.max(this.state.width - marginLeft - marginRight, 1);
     const blockWidth = Math.min(options.blockWidth ?? innerWidth, innerWidth);
     const blockAlign = options.blockAlign ?? "left";
@@ -1639,6 +1672,105 @@ export class PdfFlow {
       },
       this.parent,
     );
+  }
+
+  private applyParagraphAnnotations(
+    runs: readonly import("./internal/text-layout.js").PositionedTextRun[],
+    annotations: readonly import("./types.js").ParagraphTextAnnotation[],
+  ): void {
+    for (const annotation of annotations) {
+      const rects = findSubstringRects(
+        runs,
+        annotation.match,
+        annotation.occurrence,
+        this.embeddedFonts,
+      );
+      if (rects.length === 0) continue;
+      for (const rect of rects) {
+        this.emitParagraphAnnotation(annotation, rect);
+      }
+    }
+  }
+
+  private emitParagraphAnnotation(
+    annotation: import("./types.js").ParagraphTextAnnotation,
+    rect: import("./internal/text-layout.js").SubstringRect,
+  ): void {
+    if (annotation.type === "highlight") {
+      const padding = resolveAnnotationPadding(annotation.padding, { top: 2, bottom: 2, left: 0, right: 0 });
+      const annotationIndex = this.page.annotations.length;
+      const placed = normalizeHighlightAnnotationOptions({
+        x: rect.x - padding.left,
+        y: rect.y - padding.bottom,
+        width: rect.width + padding.left + padding.right,
+        height: rect.fontSize + padding.top + padding.bottom,
+        ...(annotation.color !== undefined ? { color: annotation.color } : {}),
+        ...(annotation.tag !== undefined ? { tag: annotation.tag } : {}),
+      });
+      const structureGroupId = addAnnotationStructureNode(
+        this.page,
+        "Annot",
+        annotationIndex,
+        placed.tag,
+        placed.structure,
+        placementBoundingBox(placed),
+        this.parent,
+      );
+      this.page.annotations.push({
+        type: "highlight",
+        options: placed,
+        ...(structureGroupId === undefined ? {} : { structureGroupId }),
+      });
+      return;
+    }
+
+    if (annotation.type === "note") {
+      const size = annotation.size ?? rect.fontSize + 4;
+      const anchor = annotation.anchor ?? "before";
+      const x = anchor === "after" ? rect.x + rect.width + 2 : rect.x - size - 2;
+      const y = rect.y;
+      const annotationIndex = this.page.annotations.length;
+      const placed = normalizeNoteAnnotationOptions({
+        x,
+        y,
+        width: size,
+        height: size,
+        contents: annotation.contents,
+        ...(annotation.open !== undefined ? { open: annotation.open } : {}),
+        ...(annotation.tag !== undefined ? { tag: annotation.tag } : {}),
+      });
+      const structureGroupId = addAnnotationStructureNode(
+        this.page,
+        "Annot",
+        annotationIndex,
+        placed.tag,
+        placed.structure,
+        placementBoundingBox(placed),
+        this.parent,
+      );
+      this.page.annotations.push({
+        type: "note",
+        options: placed,
+        ...(structureGroupId === undefined ? {} : { structureGroupId }),
+      });
+      return;
+    }
+
+    if (annotation.type === "link") {
+      addLinkToPage(
+        this.page,
+        annotation.url,
+        {
+          x: rect.x,
+          y: rect.y - 2,
+          width: rect.width,
+          height: rect.fontSize + 2,
+          ...(annotation.borderWidth !== undefined ? { borderWidth: annotation.borderWidth } : {}),
+          ...(annotation.tag !== undefined ? { tag: annotation.tag } : {}),
+        },
+        this.parent,
+      );
+    }
   }
 
   /**

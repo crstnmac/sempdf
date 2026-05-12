@@ -111,7 +111,7 @@ export function addFlowTextBlockToPage(
   text: string,
   options: TextBlockOptions,
   parent?: InternalStructureNode
-): number {
+): { height: number; runs: readonly PositionedTextRun[] } {
   validateText(text);
   const normalized = normalizeTextBlockOptions(text, options);
   const structureNode =
@@ -121,7 +121,7 @@ export function addFlowTextBlockToPage(
   const runs = layoutTextBlock(text, normalized, embeddedFonts);
   pushPositionedTextRuns(page, runs, structureNode?.id);
   const lineCount = new Set(runs.map((run) => run.options.y)).size || 1;
-  return lineCount * normalized.lineHeight;
+  return { height: lineCount * normalized.lineHeight, runs };
 }
 
 export function placementBoundingBox(options: {
