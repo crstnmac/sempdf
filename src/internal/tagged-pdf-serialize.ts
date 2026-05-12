@@ -20,6 +20,11 @@ import {
 } from './pdf-primitives.js';
 import { isPdfDictValue, getPdfDictValue, getNumericPdfDictValue, asPdfDict, asPdfRef, mergePdfDict, patchPdfDict } from './pdf-utils.js';
 
+const DEBUG_PDF = typeof process !== "undefined" && process.env.PDF_DEBUG === "1";
+function debugLog(...args: unknown[]): void {
+  if (DEBUG_PDF) console.warn(...args);
+}
+
 export interface TaggedPageContentItem {
   readonly opIndex: number;
   readonly kind: 'struct' | 'artifact';
@@ -341,7 +346,7 @@ export function allocateTaggedPdf(
       const uniqueMcids = [...new Set(pageMcids)];
       for (let i = 0; i < uniqueMcids.length; i++) {
         if (uniqueMcids[i] !== i) {
-          console.debug(
+          debugLog(
             `MCID sequence gap on page ${page.pageObjectId}: expected MCID ${i}, found ${uniqueMcids[i]}. ` +
               `Sequence should be contiguous (0,1,2,...N).`,
           );
@@ -597,7 +602,7 @@ function buildParentTreeNums(
         ) {
           const refId = (value as { objectId: number }).objectId;
           if (!elementObjectIds.has(refId)) {
-            console.debug(
+            debugLog(
               `Orphan MCID ${mcid}: parent tree references element object ${refId} which does not exist in the allocation elements array.`,
             );
           }
