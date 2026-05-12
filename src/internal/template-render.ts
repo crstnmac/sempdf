@@ -1,8 +1,14 @@
 import type { PdfDocument, PdfFlow, PdfPage } from '../document.js';
 import type {
+  FlowCheckBoxOptions,
+  FlowChoiceFieldOptions,
   FlowHeadingOptions,
   FlowMarginShorthand,
   FlowOptions,
+  FlowPushButtonOptions,
+  FlowRadioGroupOptions,
+  FlowSignatureFieldOptions,
+  FlowTextFieldOptions,
   FlowTextOptions,
   TemplateBlock,
   TemplateDocumentOptions,
@@ -340,21 +346,44 @@ function renderTemplateBlockToFlow(flow: PdfFlow, block: TemplateBlock): void {
       flow.moveDown(flow.remainingHeight);
       return;
     case 'textField':
+      flow.textField(block.name, { height: 20, ...block.options } as FlowTextFieldOptions);
+      return;
     case 'checkBox':
+      flow.checkBox(block.name, { height: 20, ...block.options } as FlowCheckBoxOptions);
+      return;
     case 'choiceField':
+      flow.choiceField(block.name, { height: 20, options: [], ...block.options } as FlowChoiceFieldOptions);
+      return;
     case 'radioGroup':
+      flow.radioGroup(block.name, { items: [], ...block.options } as FlowRadioGroupOptions);
+      return;
     case 'pushButton':
+      flow.pushButton(block.name, { height: 20, label: block.name, ...block.options } as FlowPushButtonOptions);
+      return;
     case 'signatureField':
+      flow.signatureField(block.name, { height: 40, ...block.options } as FlowSignatureFieldOptions);
+      return;
     case 'highlight':
+      flow.highlight(block.options);
+      return;
     case 'note':
+      flow.note(block.options);
+      return;
     case 'freeText':
+      flow.freeText(block.options);
+      return;
     case 'pageLink':
+      flow.moveDown(0);
+      return;
     case 'path':
+      flow.path(block.commands, block.style, block.height);
+      return;
     case 'rect':
+      flow.rect(undefined, undefined, block.width, block.height, block.style);
+      return;
     case 'list':
-      throw new Error(
-        `Template block type "${block.type}" not yet implemented in PdfFlow.`,
-      );
+      flow.list(block.items, block.options ?? {});
+      return;
     case 'custom':
       block.render(flow);
       return;

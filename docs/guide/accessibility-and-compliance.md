@@ -145,6 +145,15 @@ await doc.writeTo(new NodeStreamSink(createWriteStream("quarterly-report.pdf")))
 
 Use containers when content has semantic relationships that should be preserved in the structure tree.
 
+`section` blocks in `renderTemplate` also create proper tagged structure boundaries when `role` or `structure` is specified:
+
+```ts
+{ type: "section", role: "Sect", blocks: [
+  { type: "heading", text: "Audit details", options: { level: 2 } },
+  { type: "paragraph", text: "Grouped content stays nested under the section." }
+] }
+```
+
 ```ts
 const page = doc.addPage();
 

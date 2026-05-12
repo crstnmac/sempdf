@@ -145,6 +145,23 @@ page.signatureField("signHere", { x: 48, y: 560, width: 180, height: 36 });
 
 For detached digital signing, see [Encryption and Signatures](./encryption-and-signatures).
 
+## Forms in Templates
+
+Form blocks can be placed directly in `renderTemplate` block trees. They auto-position within the flow:
+
+```ts
+doc.renderTemplate({
+  page: { size: "A4", font, margin: 56 },
+  blocks: [
+    { type: "heading", text: "Contact Form" },
+    { type: "textField", name: "email", value: "", width: 220, height: 24 },
+    { type: "choiceField", name: "dept", options: ["Eng", "Design", "Sales"], mode: "combo", width: 180, height: 24 },
+    { type: "checkBox", name: "subscribe", checked: false, width: 16, height: 16 },
+    { type: "pushButton", name: "submit", label: "Submit", width: 96, height: 24 }
+  ]
+});
+```
+
 ## Annotations
 
 ```ts

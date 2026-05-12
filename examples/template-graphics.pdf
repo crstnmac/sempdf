@@ -1,0 +1,246 @@
+%PDF-1.4
+%ÿÿÿÿ
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /Metadata 4 0 R /Lang (en-US) /MarkInfo << /Marked true /Suspects false >> /StructTreeRoot 9 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 1 /Kids [8 0 R] >>
+endobj
+3 0 obj
+<< /Producer (pdf-editing-lib) /Title (Graphics Demo) /Author (pdf-editing-lib) /CreationDate (D:20260512000000Z) /ModDate (D:20260512000000Z) >>
+endobj
+4 0 obj
+<< /Type /Metadata /Subtype /XML /Length 852 >>
+stream
+<?xpacket begin="ï»¿" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:pdf="http://ns.adobe.com/pdf/1.3/" xmlns:xmp="http://ns.adobe.com/xap/1.0/"><dc:format>application/pdf</dc:format><dc:title><rdf:Alt><rdf:li xml:lang="x-default">Graphics Demo - Template Path/Rect</rdf:li></rdf:Alt></dc:title><dc:creator><rdf:Seq><rdf:li>pdf-editing-lib</rdf:li></rdf:Seq></dc:creator><pdf:Producer>pdf-editing-lib</pdf:Producer><xmp:CreatorTool>pdf-editing-lib</xmp:CreatorTool><xmp:CreateDate>2026-05-12T00:00:00Z</xmp:CreateDate><xmp:ModifyDate>2026-05-12T00:00:00Z</xmp:ModifyDate><xmp:MetadataDate>2026-05-12T00:00:00Z</xmp:MetadataDate></rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end="w"?>
+endstream
+endobj
+10 0 obj
+<< /Nums [0 [11 0 R 12 0 R 13 0 R 14 0 R 15 0 R 16 0 R 17 0 R 18 0 R 19 0 R 20 0 R]] >>
+endobj
+9 0 obj
+<< /Type /StructTreeRoot /K [11 0 R 12 0 R 13 0 R 14 0 R 15 0 R 16 0 R 17 0 R 18 0 R 19 0 R 20 0 R] /ParentTree 10 0 R /ParentTreeNextKey 1 >>
+endobj
+11 0 obj
+<< /Type /StructElem /S /H1 /P 9 0 R /Pg 8 0 R /K 0 >>
+endobj
+12 0 obj
+<< /Type /StructElem /S /P /P 9 0 R /Pg 8 0 R /K 1 >>
+endobj
+13 0 obj
+<< /Type /StructElem /S /P /P 9 0 R /Pg 8 0 R /K 2 >>
+endobj
+14 0 obj
+<< /Type /StructElem /S /H2 /P 9 0 R /Pg 8 0 R /K 3 >>
+endobj
+15 0 obj
+<< /Type /StructElem /S /P /P 9 0 R /Pg 8 0 R /K 4 >>
+endobj
+16 0 obj
+<< /Type /StructElem /S /H2 /P 9 0 R /Pg 8 0 R /K 5 >>
+endobj
+17 0 obj
+<< /Type /StructElem /S /P /P 9 0 R /Pg 8 0 R /K 6 >>
+endobj
+18 0 obj
+<< /Type /StructElem /S /P /P 9 0 R /Pg 8 0 R /K 7 >>
+endobj
+19 0 obj
+<< /Type /StructElem /S /P /P 9 0 R /Pg 8 0 R /K 8 >>
+endobj
+20 0 obj
+<< /Type /StructElem /S /P /P 9 0 R /Pg 8 0 R /K 9 >>
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /ToUnicode 6 0 R >>
+endobj
+6 0 obj
+<< /Length 338 >>
+stream
+/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def
+/CMapName /Adobe-Identity-UCS def
+/CMapType 2 def
+1 begincodespacerange
+<00> <FF>
+endcodespacerange
+1 beginbfrange
+<20> <7E> <0020>
+endbfrange
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end
+endstream
+endobj
+7 0 obj
+<< /Length 2170 >>
+stream
+/H1 <</MCID 0>> BDC
+BT
+/F1 24 Tf
+0.109804 0.184314 0.419608 rg
+1 0 0 1 72 769.89 Tm
+(Graphics Demo) Tj
+ET
+EMC
+/P <</MCID 1>> BDC
+BT
+/F1 11 Tf
+0 g
+1 0 0 1 72 731.89 Tm
+(This document demonstrates the rect and path template blocks for inline vector ) Tj
+ET
+BT
+/F1 11 Tf
+0 g
+1 0 0 1 72 718.69 Tm
+(graphics within the flow layout system. Both filled and stroked shapes are ) Tj
+ET
+BT
+/F1 11 Tf
+0 g
+1 0 0 1 72 705.49 Tm
+(supported.) Tj
+ET
+EMC
+0.890196 0.94902 0.992157 rg
+72 638.29 360 40 re
+f
+/P <</MCID 2>> BDC
+BT
+/F1 10 Tf
+0 g
+1 0 0 1 72 638.29 Tm
+(Rect Block: A colored rectangle rendered inline with the text flow. Use this for section ) Tj
+ET
+BT
+/F1 10 Tf
+0 g
+1 0 0 1 72 626.29 Tm
+(dividers, colored backgrounds, or callout regions.) Tj
+ET
+EMC
+/H2 <</MCID 3>> BDC
+BT
+/F1 18 Tf
+0.082353 0.396078 0.752941 rg
+1 0 0 1 72 582.29 Tm
+(Triangle via Path Block) Tj
+ET
+EMC
+1.5 w
+0 J
+0 j
+0.901961 0.317647 0 RG
+1 0.952941 0.878431 rg
+180 0 m
+260 60 l
+100 60 l
+h
+B
+/P <</MCID 4>> BDC
+BT
+/F1 10 Tf
+0 g
+1 0 0 1 72 486.29 Tm
+(Path Block: A custom triangle shape drawn using moveTo, lineTo, and closePath commands. ) Tj
+ET
+BT
+/F1 10 Tf
+0 g
+1 0 0 1 72 474.29 Tm
+(Path blocks support arbitrary vector geometry for diagrams and decorations.) Tj
+ET
+EMC
+/H2 <</MCID 5>> BDC
+BT
+/F1 18 Tf
+0.082353 0.396078 0.752941 rg
+1 0 0 1 72 430.29 Tm
+(Decorative Rectangles) Tj
+ET
+EMC
+/P <</MCID 6>> BDC
+BT
+/F1 11 Tf
+0 g
+1 0 0 1 72 399.29 Tm
+(Colored rect blocks can serve as visual accents. The example below shows three rect ) Tj
+ET
+BT
+/F1 11 Tf
+0 g
+1 0 0 1 72 386.09 Tm
+(blocks with different fills used as inline decorations.) Tj
+ET
+EMC
+0.784314 0.901961 0.788235 rg
+72 348.89 100 16 re
+f
+/P <</MCID 7>> BDC
+BT
+/F1 10 Tf
+0 g
+1 0 0 1 72 348.89 Tm
+(Green accent - suitable for success indicators or positive status tags.) Tj
+ET
+EMC
+1 0.803922 0.823529 rg
+72 314.89 100 16 re
+f
+/P <</MCID 8>> BDC
+BT
+/F1 10 Tf
+0 g
+1 0 0 1 72 314.89 Tm
+(Red accent - suitable for error indicators or negative status tags.) Tj
+ET
+EMC
+1 0.976471 0.768627 rg
+72 280.89 100 16 re
+f
+/P <</MCID 9>> BDC
+BT
+/F1 10 Tf
+0 g
+1 0 0 1 72 280.89 Tm
+(Yellow accent - suitable for warning indicators or pending status tags.) Tj
+ET
+EMC
+
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 5 0 R >> >> /Tabs /S /StructParents 0 /Contents 7 0 R >>
+endobj
+xref
+0 21
+0000000000 65535 f 
+0000000015 00000 n 
+0000000161 00000 n 
+0000000218 00000 n 
+0000000379 00000 n 
+0000002277 00000 n 
+0000002364 00000 n 
+0000002753 00000 n 
+0000004975 00000 n 
+0000001416 00000 n 
+0000001312 00000 n 
+0000001574 00000 n 
+0000001645 00000 n 
+0000001715 00000 n 
+0000001785 00000 n 
+0000001856 00000 n 
+0000001926 00000 n 
+0000001997 00000 n 
+0000002067 00000 n 
+0000002137 00000 n 
+0000002207 00000 n 
+trailer
+<< /Size 21 /Root 1 0 R /Info 3 0 R >>
+startxref
+5133
+%%EOF
