@@ -26,6 +26,11 @@ import {
   resolveBaseEncoding,
 } from "./internal/pdf-encodings.js";
 
+const DEBUG_PDF = typeof process !== "undefined" && process.env.PDF_DEBUG === "1";
+function debugLog(...args: unknown[]): void {
+  if (DEBUG_PDF) console.warn(...args);
+}
+
 /**
  * Low-level parsed indirect object record.
  */
@@ -887,7 +892,7 @@ export function parseDocument(
     trailer = result.trailer;
   } catch (error) {
     if (error instanceof PdfEngineError && error.code === PdfErrorCode.INVALID_PDF) {
-      console.debug(
+      debugLog(
         "Xref parsing failed, attempting recovery via object scanning...",
       );
       recoveryMode = true;
@@ -908,7 +913,7 @@ export function parseDocument(
   )) {
     const parsed = parseIndirectObject(bytes, offset, resolveStreamLength);
     if (parsed.id !== objectId) {
-      console.warn(
+      debugLog(
         `Object number mismatch at offset ${offset}: ` +
           `xref expects ${objectId}, object declares ${parsed.id}. ` +
           `Using xref value.`,
@@ -1789,7 +1794,7 @@ function parseIndirectObject(
     if (resolvedLength !== undefined) {
       const maxAvailable = bytes.length - parser.position;
       if (resolvedLength > maxAvailable) {
-        console.warn(
+        debugLog(
           `Stream length (${resolvedLength}) exceeds remaining bytes (${maxAvailable}) at offset ${parser.position}; clamping to available bytes.`,
         );
         streamBytes = bytes.slice(parser.position, parser.position + maxAvailable);
@@ -1807,13 +1812,13 @@ function parseIndirectObject(
         "endstream",
       );
       if (endstreamSearch === -1) {
-        console.debug(
+        debugLog(
           `Stream endstream marker not found after declared stream length at offset ${parser.position}.`,
         );
       } else if (endstreamSearch < parser.position + 100) {
         const extraBytes = endstreamSearch - parser.position;
         if (extraBytes > 0) {
-          console.debug(
+          debugLog(
             `Stream length mismatch: declared ${resolvedLength} bytes, but endstream found ${extraBytes} bytes later; using declared length.`,
           );
         }
@@ -3220,7 +3225,7 @@ function collectNumberTreeEntries(
     }
     if (!sorted) {
       if (corruptedNodes.size === 0) {
-        console.warn("Number tree contains unsorted keys; attempting recovery by scanning leaf nodes...");
+        debugLog("Number tree contains unsorted keys; attempting recovery by scanning leaf nodes...");
       }
       corruptedNodes.add(nodeNodeId(node, document));
       try {
@@ -3258,7 +3263,7 @@ function collectNumberTreeEntries(
       } catch (error) {
         if (error instanceof PdfEngineError && error.code === PdfErrorCode.INVALID_NUMBER_TREE) {
           if (corruptedNodes.size === 0) {
-            console.warn("Number tree node corruption detected; skipping corrupted intermediate node and continuing to children...");
+            debugLog("Number tree node corruption detected; skipping corrupted intermediate node and continuing to children...");
           }
           corruptedNodes.add(
             isPdfRef(kid) ? kid.objectId : (nodeNodeId(node, document))
