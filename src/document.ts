@@ -44,6 +44,7 @@ import {
   layoutTable,
   measurePositionedRunHeight,
   placementBoundingBox,
+  pushPositionedTextRuns,
   radioGroupBoundingBox,
 } from "./internal/page-helpers.js";
 import {
@@ -85,6 +86,7 @@ import {
   validateTextFieldValue,
   validateExtGStateOptions,
   validateTransform,
+  validateText,
   type ComplianceCheckInput,
   type NormalizedDocumentAccessibility,
   type NormalizedDocumentEncryption,
@@ -724,6 +726,14 @@ interface FlowState {
   startY: number;
   /** Width in PDF points. */
   width: number;
+  /** Horizontal position of the full flow frame. */
+  frameX: number;
+  /** Number of flow columns. */
+  columnCount: number;
+  /** Gap between flow columns. */
+  columnGap: number;
+  /** Zero-based active flow column. */
+  columnIndex: number;
   /** Default vertical gap between flow blocks in PDF points. */
   gap: number;
   /** Bottom margin in PDF points. */
@@ -764,6 +774,21 @@ function computeBlockX(
   if (align === "center") return startX + (innerWidth - blockWidth) / 2;
   if (align === "right") return startX + (innerWidth - blockWidth);
   return startX;
+}
+
+function groupPositionedRunsByLine(
+  runs: readonly import("./internal/text-layout.js").PositionedTextRun[],
+): import("./internal/text-layout.js").PositionedTextRun[][] {
+  const lines: import("./internal/text-layout.js").PositionedTextRun[][] = [];
+  for (const run of runs) {
+    const last = lines[lines.length - 1];
+    if (last && Math.abs(last[0]!.options.y - run.options.y) < 0.001) {
+      last.push(run);
+    } else {
+      lines.push([run]);
+    }
+  }
+  return lines;
 }
 
 function resolveConformancePart(
@@ -990,10 +1015,11 @@ export class PdfFlow {
    * @param parent The parent structure element whose child order should change.
    */
   constructor(
-    private readonly page: InternalPageModel,
+    private page: InternalPageModel,
     private readonly embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>,
-    private readonly state: FlowState,
+    private state: FlowState,
     private parent: InternalStructureNode | undefined = undefined,
+    private overflowHandler: (() => PdfFlow) | undefined = undefined,
   ) {}
 
   /**
@@ -1012,6 +1038,54 @@ export class PdfFlow {
    */
   get remainingHeight(): number {
     return Math.max(this.state.y - this.state.marginBottom, 0);
+  }
+
+  /**
+   * Gets the zero-based active column index.
+   *
+   * @returns The current flow column index.
+   */
+  get columnIndex(): number {
+    return this.state.columnIndex;
+  }
+
+  /**
+   * Gets the total number of flow columns.
+   *
+   * @returns The flow column count.
+   */
+  get columnCount(): number {
+    return this.state.columnCount;
+  }
+
+  /**
+   * Advances the flow cursor to the top of the next column on the same page.
+   *
+   * @returns Whether a next column was available.
+   */
+  advanceColumn(): boolean {
+    if (this.state.columnIndex + 1 >= this.state.columnCount) {
+      return false;
+    }
+    this.state.columnIndex += 1;
+    this.state.x =
+      this.state.frameX +
+      this.state.columnIndex * (this.state.width + this.state.columnGap);
+    this.state.y = this.state.startY;
+    return true;
+  }
+
+  /**
+   * Registers a callback used by template rendering when flow content
+   * exhausts the last column and needs a fresh page.
+   *
+   * @param handler Callback that returns the next flow region.
+   *
+   * @returns This flow helper for chaining.
+   */
+  setOverflowHandler(handler: (() => PdfFlow) | undefined): this {
+    this.overflowHandler = handler;
+    return this;
   }
 
   /**
@@ -1312,6 +1386,7 @@ export class PdfFlow {
    * @returns This flow helper for chaining.
    */
   link(text: string, url: string, options: FlowLinkOptions = {}): this {
+    this.advanceColumnIfNeeded(this.estimateLinkHeight(options));
     const spacing = this.resolveSpacing("link", options);
     this.applyMarginTop(spacing.before);
     const font = options.font ?? this.state.font ?? "Helvetica";
@@ -1399,6 +1474,7 @@ export class PdfFlow {
     options: Omit<PageLinkOptions, "x" | "y"> & FlowBlockSpacingOptions,
   ): { x: number; y: number; width: number; height: number } {
     const spacing = this.resolveSpacing("link", options);
+    this.advanceColumnIfNeeded(spacing.before + options.height + spacing.after);
     this.applyMarginTop(spacing.before);
     const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
     const width = Math.min(options.width, innerWidth);
@@ -1418,6 +1494,7 @@ export class PdfFlow {
    * @returns This flow helper for chaining.
    */
   table(rows: readonly TableRow[], options: FlowTableOptions = {}): this {
+    this.advanceColumnIfNeeded(this.estimateTableHeight(rows, options));
     const spacing = this.resolveSpacing("table", options);
     this.applyMarginTop(spacing.before);
     const normalizedRows = normalizeTableRows(rows);
@@ -1482,6 +1559,11 @@ export class PdfFlow {
     data: BinaryData,
     options: FlowImageOptions,
   ): this {
+    const estimatedHeight =
+      format === "svg"
+        ? this.estimateSvgHeight(options)
+        : this.estimateImageHeight(format, data, options);
+    this.advanceColumnIfNeeded(estimatedHeight);
     const spacing = this.resolveSpacing("image", options);
     this.applyMarginTop(spacing.before);
 
@@ -1793,6 +1875,60 @@ export class PdfFlow {
     const blockWidth = Math.min(options.blockWidth ?? innerWidth, innerWidth);
     const blockAlign = options.blockAlign ?? "left";
     const blockX = computeBlockX(this.state.x, marginLeft, innerWidth, blockWidth, blockAlign);
+    if (this.state.columnCount > 1 && options.writingMode !== "vertical") {
+      validateText(text);
+      const normalized = normalizeTextBlockOptions(text, {
+        ...flowTextDefaults(this.state),
+        ...options,
+        x: blockX,
+        y: this.state.y,
+        width: blockWidth,
+      });
+      const createTextStructureNode = (): InternalStructureNode | undefined =>
+        normalized.tag === undefined || normalized.tag === "Artifact"
+          ? undefined
+          : createStructureNode(this.page, normalized.tag, normalized.structure, this.parent);
+      let structureNode = createTextStructureNode();
+      const laidOutRuns = layoutTextBlock(text, normalized, this.embeddedFonts);
+      const lines = groupPositionedRunsByLine(laidOutRuns);
+      let placedRuns: import("./internal/text-layout.js").PositionedTextRun[] = [];
+
+      for (const line of lines) {
+        if (this.remainingHeight < normalized.lineHeight && this.state.y < this.state.startY) {
+          if (!this.advanceColumn()) {
+            pushPositionedTextRuns(this.page, placedRuns, structureNode?.id);
+            placedRuns = [];
+            if (this.advanceFlowRegion()) {
+              structureNode = createTextStructureNode();
+            }
+          }
+        }
+        const currentInnerWidth = Math.max(this.state.width - marginLeft - marginRight, 1);
+        const currentBlockX = computeBlockX(
+          this.state.x,
+          marginLeft,
+          currentInnerWidth,
+          blockWidth,
+          blockAlign,
+        );
+        const deltaX = currentBlockX - blockX;
+        for (const run of line) {
+          placedRuns.push({
+            text: run.text,
+            options: {
+              ...run.options,
+              x: run.options.x + deltaX,
+              y: this.state.y,
+            },
+            ...(run.glyphs ? { glyphs: run.glyphs } : {}),
+          });
+        }
+        this.state.y -= normalized.lineHeight;
+      }
+
+      pushPositionedTextRuns(this.page, placedRuns, structureNode?.id);
+      return { height: 0, runs: placedRuns };
+    }
     return addFlowTextBlockToPage(
       this.page,
       this.embeddedFonts,
@@ -1824,6 +1960,31 @@ export class PdfFlow {
     if (marginTop > 0 && this.state.y < this.state.startY) {
       this.state.y -= marginTop;
     }
+  }
+
+  private advanceColumnIfNeeded(height: number): void {
+    if (
+      this.state.columnCount > 1 &&
+      this.state.y < this.state.startY &&
+      this.remainingHeight < height
+    ) {
+      this.advanceFlowRegion();
+    }
+  }
+
+  private advanceFlowRegion(): boolean {
+    if (this.advanceColumn()) {
+      return true;
+    }
+    const next = this.overflowHandler?.();
+    if (!next) {
+      return false;
+    }
+    this.page = next.page;
+    this.state = next.state;
+    this.parent = next.parent;
+    this.overflowHandler = next.overflowHandler;
+    return true;
   }
 
   /**
@@ -1924,6 +2085,7 @@ export class PdfFlow {
    * @returns This flow helper for chaining.
    */
   textField(name: string, options: FlowTextFieldOptions): this {
+    this.advanceColumnIfNeeded((options.height ?? 20) + this.state.gap);
     const spacing = this.resolveSpacing("image", options);
     this.applyMarginTop(spacing.before);
     const x = options.x ?? this.state.x;
@@ -1967,6 +2129,7 @@ export class PdfFlow {
    * @returns This flow helper for chaining.
    */
   checkBox(name: string, options: FlowCheckBoxOptions): this {
+    this.advanceColumnIfNeeded((options.height ?? 20) + this.state.gap);
     const spacing = this.resolveSpacing("image", options);
     this.applyMarginTop(spacing.before);
     const x = options.x ?? this.state.x;
@@ -2010,6 +2173,7 @@ export class PdfFlow {
    * @returns This flow helper for chaining.
    */
   choiceField(name: string, options: FlowChoiceFieldOptions): this {
+    this.advanceColumnIfNeeded((options.height ?? 20) + this.state.gap);
     const spacing = this.resolveSpacing("image", options);
     this.applyMarginTop(spacing.before);
     const x = options.x ?? this.state.x;
@@ -2053,6 +2217,7 @@ export class PdfFlow {
    * @returns This flow helper for chaining.
    */
   radioGroup(name: string, options: FlowRadioGroupOptions): this {
+    this.advanceColumnIfNeeded(20 + this.state.gap);
     const spacing = this.resolveSpacing("image", options);
     this.applyMarginTop(spacing.before);
 
@@ -2092,6 +2257,7 @@ export class PdfFlow {
    * @returns This flow helper for chaining.
    */
   pushButton(name: string, options: FlowPushButtonOptions): this {
+    this.advanceColumnIfNeeded((options.height ?? 20) + this.state.gap);
     const spacing = this.resolveSpacing("image", options);
     this.applyMarginTop(spacing.before);
     const x = options.x ?? this.state.x;
@@ -2135,6 +2301,7 @@ export class PdfFlow {
    * @returns This flow helper for chaining.
    */
   signatureField(name: string, options: FlowSignatureFieldOptions): this {
+    this.advanceColumnIfNeeded((options.height ?? 40) + this.state.gap);
     const spacing = this.resolveSpacing("image", options);
     this.applyMarginTop(spacing.before);
     const x = options.x ?? this.state.x;
@@ -2217,6 +2384,7 @@ export class PdfFlow {
     subtype: "highlight" | "underline" | "strikeOut" | "squiggly",
     options: FlowHighlightOptions,
   ): this {
+    this.advanceColumnIfNeeded(options.height + this.state.gap);
     const spacing = this.resolveSpacing("image", options);
     this.applyMarginTop(spacing.before);
     const x = options.x ?? this.state.x;
@@ -2253,6 +2421,7 @@ export class PdfFlow {
    * @returns This flow helper for chaining.
    */
   note(options: FlowNoteOptions): this {
+    this.advanceColumnIfNeeded((options.height ?? 20) + this.state.gap);
     const spacing = this.resolveSpacing("image", options);
     this.applyMarginTop(spacing.before);
     const x = options.x ?? this.state.x;
@@ -2294,6 +2463,7 @@ export class PdfFlow {
    * @returns This flow helper for chaining.
    */
   freeText(options: FlowFreeTextOptions): this {
+    this.advanceColumnIfNeeded(options.height + this.state.gap);
     const spacing = this.resolveSpacing("image", options);
     this.applyMarginTop(spacing.before);
     const x = options.x ?? this.state.x;
@@ -2336,6 +2506,7 @@ export class PdfFlow {
    * @returns This flow helper for chaining.
    */
   path(commands: PathCommand[], style: PathStyle, height: number): this {
+    this.advanceColumnIfNeeded(height);
     validatePathCommands(commands);
     this.page.ops.push({
       type: "path",
@@ -2366,6 +2537,7 @@ export class PdfFlow {
   ): this {
     const w = width ?? this.state.width;
     const h = height ?? w;
+    this.advanceColumnIfNeeded(h);
     const rx = x ?? this.state.x;
     const ry = y ?? this.state.y - h;
     const commands: PathCommand[] = [
@@ -2398,6 +2570,7 @@ export class PdfFlow {
     style?: PathStyle,
   ): this {
     const r = radius ?? Math.min(this.state.width, this.state.y - this.state.marginBottom) / 4;
+    this.advanceColumnIfNeeded(r * 2);
     const centerX = cx ?? this.state.x + this.state.width / 2;
     const centerY = cy ?? this.state.y - r;
     const k = (4 * (Math.SQRT2 - 1)) / 3;
@@ -2429,6 +2602,12 @@ export class PdfFlow {
    * @returns This flow helper for chaining.
    */
   list(items: readonly ListItem[], options: FlowListOptions): this {
+    this.advanceColumnIfNeeded(
+      this.estimateListHeight(items, {
+        ...options,
+        width: options.width ?? this.state.width,
+      }),
+    );
     const spacing = this.resolveSpacing("image", options);
     this.applyMarginTop(spacing.before);
     const normalizedItems = normalizeListItems(items);
@@ -5583,13 +5762,42 @@ function createFlowState(
     options.marginLeft ?? (hasShorthand ? shorthand.left : fallback);
   const x = options.x ?? leftMargin;
   const y = options.y ?? page.size.height - top;
-  const width = options.width ?? page.size.width - x - right;
+  const frameWidth = options.width ?? page.size.width - x - right;
+  const columnCount = options.columns?.count ?? 1;
+  const columnGap = options.columns?.gap ?? (columnCount > 1 ? 18 : 0);
+  if (!Number.isInteger(columnCount) || columnCount < 1) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_NUMBER,
+      `Flow columns must be a positive integer, got ${columnCount}.`,
+      { columns: columnCount },
+    );
+  }
+  if (!Number.isFinite(columnGap) || columnGap < 0) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_NUMBER,
+      `Flow columns.gap must be a finite non-negative number, got ${columnGap}.`,
+      { columnGap },
+    );
+  }
+  const totalColumnGap = columnGap * (columnCount - 1);
+  if (!Number.isFinite(frameWidth) || frameWidth <= totalColumnGap) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_NUMBER,
+      "Flow width must leave positive space for every column.",
+      { width: frameWidth, columns: columnCount, columnGap },
+    );
+  }
+  const columnWidth = (frameWidth - totalColumnGap) / columnCount;
 
   return {
     x,
     y,
     startY: y,
-    width,
+    width: columnWidth,
+    frameX: x,
+    columnCount,
+    columnGap,
+    columnIndex: 0,
     gap: options.gap ?? STANDARD_FLOW_SPACING.paragraphAfter,
     marginBottom: bottomMargin,
     spacing: resolveFlowSpacing(options),
