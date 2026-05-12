@@ -52,6 +52,59 @@ await doc.writeTo(sink);
 const bytes = sink.collect();
 ```
 
+## BufferSink Size Limits
+
+Guard against memory blowout with `maxSize`:
+
+```ts
+const sink = new BufferSink({ maxSize: 50 * 1024 * 1024 }); // 50 MB
+await doc.writeTo(sink);
+const bytes = sink.collect();
+```
+
+Throws if the accumulated data exceeds the limit.
+
+## TempFileSink
+
+Spill large documents to disk automatically with a temporary file sink:
+
+```ts
+import { TempFileSink } from "pdf-editing-lib";
+
+const sink = new TempFileSink();
+await doc.writeTo(sink);
+const bytes = await sink.collect();
+// temp file is cleaned up on collect() or close()
+```
+
+Keeps memory bounded regardless of document size.
+
+## Progressive Page Streaming
+
+Build large documents page-by-page without holding everything in memory:
+
+```ts
+const doc = createDocument();
+
+for (const pageData of hugeDataset) {
+  const page = doc.addPage();
+  page.text(pageData.title);
+  // ... fill page ...
+  await doc.writeNextPage(sink);
+}
+await doc.finalize(sink);
+```
+
+Each page's objects are serialized and released before the next page begins.
+
+## Async Write Consistency
+
+All `writeTo()` and `writeNextPage()` calls are automatically serialized to prevent concurrent writes from corrupting the output stream.
+
+## Document Finalization
+
+A document becomes immutable after its first serialization. Calling `addPage()`, `textField()`, or other mutating methods after `toUint8Array()` or `writeTo()` will throw.
+
 ## Custom sinks
 
 Implement `ByteSink`:

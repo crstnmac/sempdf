@@ -27,6 +27,21 @@ const parsed = parseDocument(bytes, { password: "reader" });
 
 Algorithms: `"rc4-40"` (legacy compatibility), `"rc4-128"` (default), `"aes-128"`, `"aes-256"`.
 
+## Metadata-Only Encryption
+
+Encrypt document content but leave metadata (title, author, XMP) in plaintext so search engines and indexers can read it:
+
+```ts
+const doc = createDocument({
+  encryption: {
+    algorithm: "aes-256",
+    userPassword: "reader",
+    ownerPassword: "owner-secret",
+    encryptMetadata: false
+  }
+});
+```
+
 ## Permissions
 
 | Flag | Meaning |
@@ -41,6 +56,66 @@ Algorithms: `"rc4-40"` (legacy compatibility), `"rc4-128"` (default), `"aes-128"
 | `highQualityPrinting` | Allow full-resolution print |
 
 Omit `permissions` to grant all rights.
+
+### Complete Permission Bits
+
+All available permission flags used in full:
+
+```ts
+permissions: {
+  printing: true,
+  highQualityPrinting: false,
+  modifying: true,
+  copying: true,
+  annotating: true,
+  fillingForms: true,
+  accessibility: true,
+  assembling: false
+}
+```
+
+## Cross-Version Encryption Upgrade
+
+Call `setEncryption()` on an editable document to upgrade legacy RC4 encryption to AES:
+
+```ts
+const editable = editDocument(rc4Bytes, { password: "reader" });
+editable.setEncryption({ algorithm: "aes-256", userPassword: "reader" });
+const upgraded = editable.toUint8Array();
+```
+
+## Empty Password
+
+An empty string `""` is a valid user password—useful when you only want an owner password to restrict permissions:
+
+```ts
+encryption: {
+  algorithm: "aes-256",
+  userPassword: "",
+  ownerPassword: "admin-secret"
+}
+```
+
+Readers can open the PDF without entering a password, but permissions are enforced.
+
+## Certificate-Based Encryption
+
+Encrypt for specific recipients using X.509 certificates:
+
+```ts
+import { readFileSync } from "node:fs";
+
+const cert = readFileSync("recipient.pem");
+const doc = createDocument({
+  encryption: doc.encryptForRecipients([cert], {
+    permissions: { printing: true, modifying: false }
+  })
+});
+```
+
+## Default Permissions for Missing /P
+
+PDFs missing the `/P` permissions entry are handled gracefully—the library defaults to granting all rights when no permissions dictionary is present.
 
 ## Editing protected PDFs
 

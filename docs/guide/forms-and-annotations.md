@@ -16,6 +16,28 @@ page.textField("email", {
 });
 ```
 
+## Hierarchical Field Naming
+
+Dotted field names like `"address.street"` auto-create parent-child field groups in the PDF's hierarchical field tree:
+
+```ts
+page.textField("address.street", { x: 48, y: 620, width: 220, height: 24, value: "123 Main" });
+page.textField("address.city",  { x: 48, y: 590, width: 220, height: 24, value: "Springfield" });
+```
+
+The library creates a parent `address` group node automatically.
+
+## Rich Text Values
+
+Store formatted rich-text content alongside the plaintext `value`:
+
+```ts
+page.textField("notes", {
+  x: 48, y: 560, width: 220, height: 48,
+  richValue: '<p><b>Important:</b> <i>Review required</i></p>'
+});
+```
+
 ## Check boxes, radio groups, choices
 
 ```ts
@@ -41,6 +63,78 @@ page.choiceField("department", {
 ```
 
 `mode` accepts `"combo"` (dropdown) or `"list"` (visible list).
+
+## Combo Box Editable Mode
+
+Set `editable: true` on a combo box to let users type custom values:
+
+```ts
+page.choiceField("department", {
+  x: 48, y: 540, width: 180, height: 24,
+  options: ["Engineering", "Design", "Sales"],
+  mode: "combo",
+  editable: true
+});
+```
+
+## Custom Appearance Streams
+
+Supply raw PDF content operators for full control over field rendering:
+
+```ts
+page.textField("branded", {
+  x: 48, y: 500, width: 200, height: 24,
+  appearance: "/Tx BMC q 0 0 1 rg BT /F1 12 Tf (Blue Text) Tj ET Q EMC"
+});
+```
+
+The string is written directly into the field's `/AP` dictionary.
+
+## Calculation Order
+
+Declare the order in which calculated fields are evaluated:
+
+```ts
+doc.setCalculationOrder(["subtotal", "tax", "total"]);
+```
+
+Fields are recalculated in this sequence when an upstream value changes.
+
+## Field-Level Encryption
+
+Exclude sensitive fields from encryption so they remain readable without a password:
+
+```ts
+page.textField("ssn", {
+  x: 48, y: 440, width: 180, height: 24,
+  encrypt: false
+});
+```
+
+## JavaScript Actions
+
+Attach keystroke, format, validation, and calculation scripts to form fields:
+
+```ts
+page.textField("age", {
+  x: 48, y: 410, width: 80, height: 24,
+  actions: {
+    keystroke: 'AFNumber_Keystroke(0, 0, 0, 0, "", true);',
+    validate:  'event.rc = (event.value >= 0 && event.value <= 150);',
+    calculate: 'event.value = 42;',
+    format:    'AFNumber_Format(0, 0, 0, 0, "", true);'
+  }
+});
+```
+
+## Tab Order
+
+Set tab-navigation order on a page via `tabOrder`:
+
+```ts
+const page = doc.addPage({ size: "Letter", tabOrder: "R" });
+// R = row order, C = column order, S = structure order
+```
 
 ## Buttons and signatures
 

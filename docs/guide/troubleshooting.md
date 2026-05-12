@@ -51,6 +51,15 @@ try {
 | `INVALID_GRAPHICS_STATE` | Unbalanced `save()`/`restore()` calls | Ensure each `save()` has a matching `restore()` |
 | `INVALID_PAGE_LABEL` | Page label range or style is invalid | Verify `style` is one of `"decimal"`, `"upperRoman"`, `"lowerRoman"`, `"upperLetter"`, `"lowerLetter"` |
 | `INVALID_NUMBER` | A numeric API argument is out of range (e.g., negative page index) | Validate all numeric inputs against expected ranges |
+| `INTERNAL_ERROR` | Unexpected internal state or assertion failure | Check for conflicting options or malformed internal structures |
+| `INVALID_OPERATION` | API method called in an invalid state (e.g., writing to a closed document) | Verify the document or page object is still open/active |
+| `SINK_CLOSED` | Attempted to write to a stream sink that has already been closed | Write all data before the sink completes; use a fresh sink for each document |
+| `SINK_FULL` | Stream sink reached its capacity limit | Increase the sink's internal buffer size or switch to `NodeStreamSink` / `WebStreamSink` |
+| `UNREACHABLE` | Code path that should never execute was reached | Likely a library bug; report with a minimal reproduction |
+| `UNSUPPORTED_PAGE_TREE` | Page tree depth exceeds 50 levels or uses an unrecognized node type | Flatten deep page trees before parsing; avoid non-standard page tree layouts |
+| `INVALID_NUMBER_TREE` | Number tree structure is corrupt or contains duplicate keys | The PDF's internal name/number tree is malformed; re-export from the source application |
+| `INVALID_FORM_FIELD_NAME` | Form field name contains illegal characters or is empty | Use alphanumeric names; avoid `.` as prefix/suffix unless for hierarchy |
+| `UNSUPPORTED_SCRIPT` | Text uses a writing system not supported by any loaded font | Add a fallback font with coverage for the required script |
 
 ## Broken xref (cross-reference) table
 
@@ -266,3 +275,20 @@ createDocument({ objectStreams: true, encryption: { algorithm: "rc4-40", userPas
 - [Encryption and Signatures](./encryption-and-signatures) — password protection API
 - [Accessibility and Compliance](./accessibility-and-compliance) — PDF/UA-1 and tagged PDFs
 - [Text and Fonts](./text-and-fonts) — font embedding and fallback
+
+## Stream Length Mismatch Warnings
+
+When a stream's declared `/Length` does not match the actual byte count of its content, the parser emits a debug-level warning and proceeds using the actual stream boundaries. This is common with PDFs produced by non-standard generators. The warning is informational and does not block parsing; use `getRepairWarnings()` in edit mode to see which streams were affected.
+
+## Damaged Xref Auto-Recovery
+
+If the cross-reference table is missing or corrupt, `parseDocument()` scans the raw file for `obj` / `endobj` markers to rebuild object locations. The recovery heuristics handle:
+- Missing or zeroed `startxref` pointers
+- Xref entries pointing to wrong offsets
+- Truncated xref sections in incremental updates
+
+Recovered objects are available through the normal `parseDocument()` API. No special flags are needed.
+
+## Deep Page Tree Limits
+
+Page trees nested deeper than 50 levels are rejected with `UNSUPPORTED_PAGE_TREE`. Most validators also enforce this limit. If you encounter this, re-export the PDF from the source application with a flattened page tree structure.
