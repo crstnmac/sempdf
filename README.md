@@ -5,16 +5,21 @@ Zero-dependency PDF generation engine written in TypeScript.
 ## Features
 
 - Pure `Uint8Array` PDF writer
-- PDF 1.4 output (with optional PDF 1.5 object streams, PDF 2.0 encryption, and PDF/UA-1 tagged PDF) with classic xref tables and xref streams
+- PDF 1.4 through 2.0 output (with optional PDF 1.5 object streams, PDF 2.0 encryption, and PDF/UA-1 tagged PDF) with classic xref tables and xref streams
 - Text rendering with standard 14 fonts
 - Wrapped and aligned text blocks
 - Embedded TrueType fonts with Unicode text, common GSUB ligatures, and kerning-aware `TJ` serialization
+- Type1 / CFF / CFF2 font embedding
+- Complex script shaping (Devanagari, Khmer, Myanmar, Thai)
+- Vertical writing mode with tate-chu-yoko (CJK)
 - Font fallback across built-in and embedded fonts for mixed-script text
 - Basic LTR/RTL direction control with automatic right alignment for RTL text blocks, contextual Arabic joining forms, and ZWJ/ZWNJ shaping control support
 - Embedded JPEG and PNG image support, including PNG transparency masks and alpha-channel soft masks
+- BMP, GIF, JPEG2000, JBIG2, TIFF, WebP, and SVG image formats
 - PDF parsing and inspection helpers for classic xref tables plus xref/object streams, including Standard Security Handler revision 2 decryption
 - Incremental editing for classic and xref-stream PDFs, including encrypted PDFs, with metadata updates, page append/insert/reorder/remove, existing-page overlay content, form flattening, and field value updates
 - AcroForm text fields, choice fields, check boxes, radio groups, push buttons, and signature fields with parser inspection helpers
+- Hierarchical form field naming and calculation order
 - URI link annotations plus highlight, note, and free-text annotations
 - Internal page link annotations
 - Named destinations and outline bookmarks
@@ -25,8 +30,14 @@ Zero-dependency PDF generation engine written in TypeScript.
 - Optional veraPDF validation runner for standards-level PDF/A/PDF/UA checks
 - Password protection and permissions for generated PDFs, with legacy `rc4-40` compatibility, `rc4-128` defaults, and opt-in AES protection
 - Detached digital-signature byte range generation with caller-provided CMS/PKCS#7 signing
+- Certificate-based (public-key) encryption
 - Optional PDF 1.5 object-stream output for smaller generated files
 - Page transfer utilities for extract, split, merge, and append/import workflows
+- Content stream overlay on existing PDF pages
+- Spill-to-disk for large documents
+- Progressive page generation
+- Lazy object loading for parsed PDFs
+- Document clone API
 - Vector paths, colors, transforms, and graphics state control
 - Deterministic serialization for stable tests
 - Node and browser-friendly output helpers
@@ -35,6 +46,10 @@ Zero-dependency PDF generation engine written in TypeScript.
 - Performance guide covering streaming vs in-memory trade-offs, object stream savings, font subsetting costs, and encryption overhead
 - Security hardening guide with threat model, password and key management best practices, and parsing untrusted PDFs safely
 - Troubleshooting guide with error code reference table, CJK font debugging, broken xref fixups, and compliance validation checklists
+
+## Documentation
+
+Guides and API reference: [https://pdf-editing-lib.pages.dev](https://pdf-editing-lib.pages.dev)
 
 ## Quick Start
 

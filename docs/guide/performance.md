@@ -189,6 +189,107 @@ const documents = await Promise.all(
 
 Each document is independent and does not share mutable state.
 
+## Spill-to-Disk Strategy
+
+When a document exceeds available RAM, use `TempFileSink` to spill serialized data directly to a temporary file. This avoids holding the entire PDF in memory:
+
+```ts
+import { TempFileSink } from "pdf-editing-lib";
+import { mkdtemp } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+
+const dir = await mkdtemp(join(tmpdir(), "pdf-"));
+const sink = new TempFileSink(join(dir, "output.pdf"));
+await doc.writeTo(sink);
+// File written to disk; no large in-memory buffer
+```
+
+### writeToFile convenience
+
+For the common case, the `writeToFile` shorthand writes directly to a path:
+
+```ts
+await doc.writeToFile("/tmp/report.pdf");
+```
+
+Internally, this uses a `TempFileSink` under the hood for documents over a threshold size, and a `BufferSink` for small documents.
+
+## Progressive Page Generation
+
+For documents with thousands of pages, use `writeNextPage()` to generate and flush pages one at a time. This avoids holding all page objects in the serializer's working set simultaneously:
+
+```ts
+const doc = createDocument({ objectStreams: true });
+const sink = new NodeStreamSink(createWriteStream("report.pdf"));
+
+for (let i = 0; i < 5000; i++) {
+  const page = doc.addPage();
+  page.text(`Page ${i + 1}`, { x: 56, y: 760 });
+  await doc.writeNextPage(sink);
+}
+await doc.finish(sink);
+```
+
+- `writeNextPage()` serializes the most recently added page and releases its resources
+- After the loop, `finish()` writes the cross-reference table and trailer
+- Compatible with streaming sinks (`NodeStreamSink`, `WebStreamSink`, `TempFileSink`)
+
+## Lazy Object Loading
+
+When parsing an existing PDF, stream content (page descriptions, images, embedded fonts) is not decompressed until first access. This defers CPU and memory costs to the point of use:
+
+```ts
+const srcDoc = await parseDocument(inputBytes);
+const page = srcDoc.getPage(0);
+// Page stream decompressed lazily on first text/image extraction
+const text = await page.extractText();
+```
+
+Objects that are never accessed during the editing session are never decompressed, reducing parse-time overhead for large documents where only a subset of pages is modified.
+
+## Document Clone
+
+`clone()` creates a deep copy of a document without re-rendering, ideal for template-based generation where many variations share the same base content:
+
+```ts
+const template = createDocument({ objectStreams: true });
+template.addPage().text("Header", { x: 56, y: 760 });
+
+for (const record of records) {
+  const doc = template.clone();
+  doc.getPage(0).text(record.body, { x: 56, y: 720 });
+  await doc.writeToFile(`output/${record.id}.pdf`);
+}
+```
+
+- Clone copies all objects, fonts, and cross-reference tables
+- Font data is shared by reference where possible (no re-subsetting)
+- Cloned documents are independent—mutating one does not affect the original or other clones
+
+## Cross-Document Caching
+
+When generating multiple documents that share fonts or images, the library automatically caches and reuses resources across documents:
+
+```ts
+const fontBytes = await readFile("fonts/SourceSans3-Regular.ttf");
+const imageBytes = await readFile("logo.png");
+
+for (const record of records) {
+  const doc = createDocument();
+  // Font subsetted once, reused on subsequent embeds
+  const font = doc.embedTrueTypeFont(fontBytes, { family: "SS3" });
+  const page = doc.addPage();
+  page.png(imageBytes, { x: 56, y: 700, width: 64 }); // Image data reused
+  page.text(record.caption, { x: 56, y: 680, font });
+  await doc.writeToFile(`out/${record.id}.pdf`);
+}
+```
+
+- Font byte arrays with identical content share a single parsed font representation
+- Image byte arrays with identical content are encoded once and referenced by subsequent embeds
+- Cache keys are content-hash based, not reference based—two identical byte arrays from different sources benefit from caching
+
 ## See also
 
 - [Streaming and Output](./streaming-and-output) — sink API reference
