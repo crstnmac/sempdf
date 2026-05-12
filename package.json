@@ -45,6 +45,10 @@
     "example:cookbook-ticket": "npm run build && node dist/examples/cookbook-ticket.js",
     "example:cookbook-certificate": "npm run build && node dist/examples/cookbook-certificate.js",
     "example:cookbook-report": "npm run build && node dist/examples/cookbook-multi-column-report.js",
+    "example:template-forms": "npm run build && node dist/examples/template-forms.js",
+    "example:template-annotations": "npm run build && node dist/examples/template-annotations.js",
+    "example:template-graphics": "npm run build && node dist/examples/template-graphics.js",
+    "example:template-custom": "npm run build && node dist/examples/template-custom.js",
     "example:web": "npm run build && node examples/website/server.mjs"
   },
   "keywords": [

@@ -103,7 +103,8 @@ export default defineConfig({
             { text: "Vector Graphics", link: "/guide/vector-graphics" },
             { text: "Forms and Annotations", link: "/guide/forms-and-annotations" },
             { text: "Metadata and Navigation", link: "/guide/metadata-and-navigation" },
-            { text: "Report Templates", link: "/guide/report-templates" }
+            { text: "Report Templates", link: "/guide/report-templates" },
+            { text: "Custom Blocks", link: "/guide/custom-blocks" }
           ]
         },
         {

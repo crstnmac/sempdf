@@ -1,0 +1,266 @@
+%PDF-1.4
+%ÿÿÿÿ
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /Metadata 4 0 R /Lang (en-US) /MarkInfo << /Marked true /Suspects false >> /StructTreeRoot 9 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 1 /Kids [8 0 R] >>
+endobj
+3 0 obj
+<< /Producer (pdf-editing-lib) /Title (Custom Blocks) /Author (pdf-editing-lib) /CreationDate (D:20260512000000Z) /ModDate (D:20260512000000Z) >>
+endobj
+4 0 obj
+<< /Type /Metadata /Subtype /XML /Length 836 >>
+stream
+<?xpacket begin="ï»¿" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:pdf="http://ns.adobe.com/pdf/1.3/" xmlns:xmp="http://ns.adobe.com/xap/1.0/"><dc:format>application/pdf</dc:format><dc:title><rdf:Alt><rdf:li xml:lang="x-default">Custom Blocks Demo</rdf:li></rdf:Alt></dc:title><dc:creator><rdf:Seq><rdf:li>pdf-editing-lib</rdf:li></rdf:Seq></dc:creator><pdf:Producer>pdf-editing-lib</pdf:Producer><xmp:CreatorTool>pdf-editing-lib</xmp:CreatorTool><xmp:CreateDate>2026-05-12T00:00:00Z</xmp:CreateDate><xmp:ModifyDate>2026-05-12T00:00:00Z</xmp:ModifyDate><xmp:MetadataDate>2026-05-12T00:00:00Z</xmp:MetadataDate></rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end="w"?>
+endstream
+endobj
+10 0 obj
+<< /Nums [0 [11 0 R 12 0 R 13 0 R 14 0 R 15 0 R 16 0 R 17 0 R 18 0 R 19 0 R 20 0 R 21 0 R]] >>
+endobj
+9 0 obj
+<< /Type /StructTreeRoot /K [11 0 R 12 0 R 13 0 R 14 0 R 15 0 R 16 0 R 17 0 R 18 0 R 19 0 R 20 0 R 21 0 R] /ParentTree 10 0 R /ParentTreeNextKey 1 >>
+endobj
+11 0 obj
+<< /Type /StructElem /S /H1 /P 9 0 R /Pg 8 0 R /K 0 >>
+endobj
+12 0 obj
+<< /Type /StructElem /S /P /P 9 0 R /Pg 8 0 R /K 1 >>
+endobj
+13 0 obj
+<< /Type /StructElem /S /H2 /P 9 0 R /Pg 8 0 R /K 2 >>
+endobj
+14 0 obj
+<< /Type /StructElem /S /P /P 9 0 R /Pg 8 0 R /K 3 >>
+endobj
+15 0 obj
+<< /Type /StructElem /S /P /P 9 0 R /Pg 8 0 R /K 4 >>
+endobj
+16 0 obj
+<< /Type /StructElem /S /H2 /P 9 0 R /Pg 8 0 R /K 5 >>
+endobj
+17 0 obj
+<< /Type /StructElem /S /P /P 9 0 R /Pg 8 0 R /K 6 >>
+endobj
+18 0 obj
+<< /Type /StructElem /S /P /P 9 0 R /Pg 8 0 R /K 7 >>
+endobj
+19 0 obj
+<< /Type /StructElem /S /H2 /P 9 0 R /Pg 8 0 R /K 8 >>
+endobj
+20 0 obj
+<< /Type /StructElem /S /P /P 9 0 R /Pg 8 0 R /K 9 >>
+endobj
+21 0 obj
+<< /Type /StructElem /S /P /P 9 0 R /Pg 8 0 R /K 10 >>
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /ToUnicode 6 0 R >>
+endobj
+6 0 obj
+<< /Length 338 >>
+stream
+/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def
+/CMapName /Adobe-Identity-UCS def
+/CMapType 2 def
+1 begincodespacerange
+<00> <FF>
+endcodespacerange
+1 beginbfrange
+<20> <7E> <0020>
+endbfrange
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end
+endstream
+endobj
+7 0 obj
+<< /Length 2495 >>
+stream
+/H1 <</MCID 0>> BDC
+BT
+/F1 24 Tf
+0.109804 0.184314 0.419608 rg
+1 0 0 1 72 769.89 Tm
+(Custom Blocks) Tj
+ET
+EMC
+/P <</MCID 1>> BDC
+BT
+/F1 11 Tf
+0 g
+1 0 0 1 72 731.89 Tm
+(This document demonstrates the custom template block type, which allows ) Tj
+ET
+BT
+/F1 11 Tf
+0 g
+1 0 0 1 72 718.69 Tm
+(user-defined rendering logic via a callback that receives the PdfFlow layout engine. ) Tj
+ET
+BT
+/F1 11 Tf
+0 g
+1 0 0 1 72 705.49 Tm
+(The render function must return the vertical height consumed.) Tj
+ET
+EMC
+/H2 <</MCID 2>> BDC
+BT
+/F1 18 Tf
+0.082353 0.396078 0.752941 rg
+1 0 0 1 72 660.29 Tm
+(Horizontal Rule Separator) Tj
+ET
+EMC
+/P <</MCID 3>> BDC
+BT
+/F1 10 Tf
+0 g
+1 0 0 1 72 631.29 Tm
+(The line below is drawn by a custom block using flow.rect\(\) to create a thin filled rectangle as ) Tj
+ET
+BT
+/F1 10 Tf
+0 g
+1 0 0 1 72 619.29 Tm
+(a visual separator:) Tj
+ET
+EMC
+0.741176 0.741176 0.741176 rg
+72 598.29 451.28 1 re
+f
+/P <</MCID 4>> BDC
+BT
+/F1 10 Tf
+0 g
+1 0 0 1 72 598.29 Tm
+(The horizontal rule above separates sections cleanly without requiring image assets or ) Tj
+ET
+BT
+/F1 10 Tf
+0 g
+1 0 0 1 72 586.29 Tm
+(external resources.) Tj
+ET
+EMC
+/H2 <</MCID 5>> BDC
+BT
+/F1 18 Tf
+0.082353 0.396078 0.752941 rg
+1 0 0 1 72 540.29 Tm
+(Watermark Text) Tj
+ET
+EMC
+/P <</MCID 6>> BDC
+BT
+/F1 10 Tf
+0 g
+1 0 0 1 72 511.29 Tm
+(Custom blocks can also render text. The watermark text below is rendered via a custom block ) Tj
+ET
+BT
+/F1 10 Tf
+0 g
+1 0 0 1 72 499.29 Tm
+(using the flow layout engine:) Tj
+ET
+EMC
+BT
+/F1 28 Tf
+0.878431 0.878431 0.878431 rg
+1 0 0 1 141.26 479.29 Tm
+(DRAFT -- Confidential) Tj
+ET
+/P <</MCID 7>> BDC
+BT
+/F1 10 Tf
+0 g
+1 0 0 1 72 435.29 Tm
+(The watermark text above is rendered as a custom block with centered alignment and light ) Tj
+ET
+BT
+/F1 10 Tf
+0 g
+1 0 0 1 72 423.29 Tm
+(gray color, suitable for draft document markings.) Tj
+ET
+EMC
+/H2 <</MCID 8>> BDC
+BT
+/F1 18 Tf
+0.082353 0.396078 0.752941 rg
+1 0 0 1 72 379.29 Tm
+(Colored Divider) Tj
+ET
+EMC
+/P <</MCID 9>> BDC
+BT
+/F1 10 Tf
+0 g
+1 0 0 1 72 350.29 Tm
+(A thicker colored divider using flow.rect\(\) with custom width and fill color:) Tj
+ET
+EMC
+0.082353 0.396078 0.752941 rg
+72 327.29 451.28 3 re
+f
+/P <</MCID 10>> BDC
+BT
+/F1 11 Tf
+0 g
+1 0 0 1 72 327.29 Tm
+(Custom blocks give you complete control over inline PDF content rendering within ) Tj
+ET
+BT
+/F1 11 Tf
+0 g
+1 0 0 1 72 314.09 Tm
+(the template flow system. Use flow.rect\(\), flow.path\(\), flow.textBlock\(\), and other ) Tj
+ET
+BT
+/F1 11 Tf
+0 g
+1 0 0 1 72 300.89 Tm
+(PdfFlow methods.) Tj
+ET
+EMC
+
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 5 0 R >> >> /Tabs /S /StructParents 0 /Contents 7 0 R >>
+endobj
+xref
+0 22
+0000000000 65535 f 
+0000000015 00000 n 
+0000000161 00000 n 
+0000000218 00000 n 
+0000000379 00000 n 
+0000002347 00000 n 
+0000002434 00000 n 
+0000002823 00000 n 
+0000005370 00000 n 
+0000001407 00000 n 
+0000001296 00000 n 
+0000001572 00000 n 
+0000001643 00000 n 
+0000001713 00000 n 
+0000001784 00000 n 
+0000001854 00000 n 
+0000001924 00000 n 
+0000001995 00000 n 
+0000002065 00000 n 
+0000002135 00000 n 
+0000002206 00000 n 
+0000002276 00000 n 
+trailer
+<< /Size 22 /Root 1 0 R /Info 3 0 R >>
+startxref
+5528
+%%EOF

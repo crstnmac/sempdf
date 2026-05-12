@@ -55,6 +55,88 @@ doc.renderTemplate({
 | `list` | Ordered/unordered/nested |
 | `pageBreak` | Force next block to a new page |
 | `section` | Logical grouping in structure tree |
+| `textField` | Single-line text input |
+| `checkBox` | Boolean checkbox |
+| `choiceField` | Dropdown or list selection |
+| `radioGroup` | Mutually exclusive radio buttons |
+| `pushButton` | Clickable push button |
+| `signatureField` | Digital signature placeholder |
+| `highlight` | Text highlight annotation |
+| `note` | Sticky note annotation |
+| `freeText` | Free-text annotation box |
+| `pageLink` | Internal page link |
+| `rect` | Rectangle vector shape |
+| `path` | Custom path vector shape |
+| `custom` | User-defined block with render/estimate |
+
+## Form Fields
+
+Form blocks auto-position within the flow---no manual x/y coordinates needed.
+
+```ts
+{ type: "textField", name: "email", value: "ada@example.com", width: 220, height: 24 },
+{ type: "checkBox", name: "subscribe", checked: true, width: 16, height: 16 },
+{ type: "choiceField", name: "dept", options: ["Eng", "Design", "Sales"], value: "Design", mode: "combo", width: 180, height: 24 },
+{ type: "radioGroup", name: "method", items: [{ value: "email" }, { value: "phone" }], value: "phone" },
+{ type: "pushButton", name: "submit", label: "Submit", width: 96, height: 24 },
+{ type: "signatureField", name: "signHere", width: 180, height: 36 }
+```
+
+## Annotations
+
+```ts
+{ type: "highlight", width: 120, height: 14, color: rgb(1, 1, 0) },
+{ type: "note", contents: "Review this paragraph", width: 24, height: 24 },
+{ type: "freeText", text: "Inline annotation", width: 180, height: 32 },
+{ type: "pageLink", destination: "intro", width: 96, height: 14 }
+```
+
+## Vector Graphics
+
+`rect` and `path` blocks require an explicit `height` so the paginator can allocate space.
+
+```ts
+{ type: "rect", width: 200, height: 4, options: { color: rgb(0.2, 0.2, 0.2), fill: rgb(0.9, 0.9, 0.9) } },
+{ type: "path", commands: "M0 0 L100 0 L50 50 Z", height: 50, options: { color: rgb(0, 0, 0), fill: rgb(0.8, 0.8, 0.8) } }
+```
+
+## Lists
+
+Each item follows the `ListItem` format: `{ text: string, children?: ListItem[] }`. Use `options.ordered` for numbered lists or `options.bullet` for custom markers.
+
+```ts
+{
+  type: "list",
+  items: [
+    { text: "First item" },
+    { text: "Second item", children: [{ text: "Nested" }] }
+  ],
+  options: { ordered: true, bullet: "disc" }
+}
+```
+
+## Custom Blocks
+
+When built-in block types don't cover your needs, use the `custom` type with `render` and `estimate` callbacks.
+
+```ts
+{
+  type: "custom",
+  height: 12,
+  render(ctx) {
+    ctx.graphics()
+      .moveTo(ctx.x, ctx.y + 1)
+      .lineTo(ctx.x + ctx.width, ctx.y + 1)
+      .stroke({ color: rgb(0.6, 0.6, 0.6) });
+  },
+  estimate() { return 12; }
+}
+```
+
+- `render(ctx)` --- draws the block. `ctx` provides `x`, `y`, `width`, and drawing helpers.
+- `estimate()` --- returns the vertical space (points) needed during pagination.
+
+Ideal for horizontal rules, separators, watermarks, or any drawing that doesn't fit existing block types. See [Custom Blocks](./custom-blocks) for a deeper guide.
 
 ## Spacing model
 
