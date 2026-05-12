@@ -115,13 +115,23 @@ import type {
   DocumentInfo,
   DocumentOptions,
   EmbedTrueTypeFontOptions,
+  FlowCheckBoxOptions,
+  FlowChoiceFieldOptions,
+  FlowFreeTextOptions,
   FlowHeadingOptions,
+  FlowHighlightOptions,
   FlowImageOptions,
   FlowLinkOptions,
+  FlowListOptions,
   FlowMarginShorthand,
+  FlowNoteOptions,
   FlowOptions,
+  FlowPushButtonOptions,
+  FlowRadioGroupOptions,
+  FlowSignatureFieldOptions,
   FlowSpacingScale,
   FlowTableOptions,
+  FlowTextFieldOptions,
   FlowTextOptions,
   FreeTextAnnotationOptions,
   HighlightAnnotationOptions,
@@ -867,7 +877,7 @@ export class PdfFlow {
     private readonly page: InternalPageModel,
     private readonly embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>,
     private readonly state: FlowState,
-    private readonly parent: InternalStructureNode | undefined = undefined,
+    private parent: InternalStructureNode | undefined = undefined,
   ) {}
 
   /**
@@ -939,7 +949,7 @@ export class PdfFlow {
   estimate(block: TemplateBlock): number {
     switch (block.type) {
       case "heading": {
-        const options = block.options as FlowHeadingOptions | undefined;
+        const options = block.options;
         const level = options?.level ?? 1;
         const fontSize = options?.fontSize ?? headingFontSize(level);
         const spacing = this.resolveSpacing("heading", options ?? {}, level);
@@ -955,7 +965,7 @@ export class PdfFlow {
       case "paragraph":
         return this.estimateTextBlockHeight(
           block.text,
-          block.options as FlowTextOptions | undefined,
+          block.options,
         );
       case "table":
         return this.estimateTableHeight(block.rows, block.options);
@@ -986,6 +996,29 @@ export class PdfFlow {
         );
       case "pageBreak":
         return 0;
+      case "textField":
+      case "checkBox":
+      case "choiceField":
+      case "pushButton":
+      case "signatureField":
+        return (block.options?.height ?? 20) + this.state.gap;
+      case "radioGroup":
+        return 20 + this.state.gap;
+      case "highlight":
+      case "freeText":
+        return block.options.height + this.state.gap;
+      case "note":
+        return (block.options.height ?? 20) + this.state.gap;
+      case "pageLink":
+        return block.options.height + this.state.gap;
+      case "path":
+        return block.height + this.state.gap;
+      case "rect":
+        return block.height + this.state.gap;
+      case "list":
+        return this.estimateListHeight(block.items, block.options ?? { width: this.state.width });
+      case "custom":
+        return block.estimate(this);
       default: {
         const _exhaustive: never = block;
         return 0;
@@ -1531,6 +1564,44 @@ export class PdfFlow {
   }
 
   /**
+   * Estimates the height of a flow list.
+   *
+   * @param items The list items to add.
+   * @param options Options that control the operation.
+   *
+   * @returns The estimated list height.
+   */
+  private estimateListHeight(
+    items: readonly ListItem[],
+    options: Omit<ListOptions, "x" | "y">,
+  ): number {
+    const normalizedItems = normalizeListItems(items);
+    const normalizedOptions = normalizeListOptions(normalizedItems, {
+      ...flowTextDefaults(this.state),
+      x: this.state.x,
+      y: this.state.y,
+      ...options,
+    });
+    const itemSpacing = normalizedOptions.itemSpacing ?? 2;
+    let height = 0;
+    for (const item of normalizedItems) {
+      const text = typeof item === "string" ? item : (item.body ?? item.label ?? "");
+      const runs = layoutTextBlock(
+        text,
+        {
+          ...normalizedOptions,
+          x: this.state.x,
+          y: this.state.y,
+          tag: "LI",
+        },
+        this.embeddedFonts,
+      );
+      height += measurePositionedRunHeight(runs, normalizedOptions.lineHeight) + itemSpacing;
+    }
+    return height;
+  }
+
+  /**
    * Writes a flow text block with optional horizontal margins.
    *
    * @param text The text to add.
@@ -1657,6 +1728,585 @@ export class PdfFlow {
     validateSpacingValue(kind, "left", left);
     validateSpacingValue(kind, "right", right);
     return { before, after, left, right };
+  }
+
+  /**
+   * Renders a section of template blocks within an optional structure container.
+   *
+   * @param blocks Child blocks to render.
+   * @param role Optional structure role (e.g. "Sect", "Div").
+   * @param structure Optional structure options.
+   *
+   * @returns This flow helper for chaining.
+   */
+  section(
+    blocks: readonly TemplateBlock[],
+    role?: PdfContainerTag,
+    structure?: PdfStructureOptions,
+  ): this {
+    if (role) {
+      const node = createStructureNode(
+        this.page,
+        normalizeContainerStructureTag(role),
+        normalizeStructureOptions(structure),
+        this.parent,
+      );
+      const savedParent = this.parent;
+      this.parent = node;
+      renderTemplateBlocksToFlow(this, blocks);
+      this.parent = savedParent;
+    } else {
+      renderTemplateBlocksToFlow(this, blocks);
+    }
+    return this;
+  }
+
+  /**
+   * Adds a text form field at the current flow cursor.
+   *
+   * @param name The fully-qualified field name.
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
+  textField(name: string, options: FlowTextFieldOptions): this {
+    const spacing = this.resolveSpacing("image", options);
+    this.applyMarginTop(spacing.before);
+    const x = options.x ?? this.state.x;
+    const width = options.width ?? Math.max(this.state.width - spacing.left - spacing.right, 1);
+    const height = options.height;
+    const y = options.y ?? this.state.y - height;
+
+    this.registerFieldName(name);
+    const normalizedOptions = normalizeTextFieldOptions(name, {
+      ...options,
+      x,
+      y,
+      width,
+    });
+    const annotationIndex = this.page.annotations.length;
+    const structureGroupId = addAnnotationStructureNode(
+      this.page,
+      "Annot",
+      annotationIndex,
+      normalizedOptions.tag,
+      normalizedOptions.structure,
+      placementBoundingBox(normalizedOptions),
+      this.parent,
+    );
+    this.page.annotations.push({
+      type: "textField",
+      name,
+      options: normalizedOptions,
+      ...(structureGroupId === undefined ? {} : { structureGroupId }),
+    });
+    this.state.y -= height + spacing.after;
+    return this;
+  }
+
+  /**
+   * Adds a checkbox form field at the current flow cursor.
+   *
+   * @param name The fully-qualified field name.
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
+  checkBox(name: string, options: FlowCheckBoxOptions): this {
+    const spacing = this.resolveSpacing("image", options);
+    this.applyMarginTop(spacing.before);
+    const x = options.x ?? this.state.x;
+    const width = options.width ?? Math.max(this.state.width - spacing.left - spacing.right, 1);
+    const height = options.height;
+    const y = options.y ?? this.state.y - height;
+
+    this.registerFieldName(name);
+    const normalizedOptions = normalizeCheckBoxOptions(name, {
+      ...options,
+      x,
+      y,
+      width,
+    });
+    const annotationIndex = this.page.annotations.length;
+    const structureGroupId = addAnnotationStructureNode(
+      this.page,
+      "Annot",
+      annotationIndex,
+      normalizedOptions.tag,
+      normalizedOptions.structure,
+      placementBoundingBox(normalizedOptions),
+      this.parent,
+    );
+    this.page.annotations.push({
+      type: "checkBox",
+      name,
+      options: normalizedOptions,
+      ...(structureGroupId === undefined ? {} : { structureGroupId }),
+    });
+    this.state.y -= height + spacing.after;
+    return this;
+  }
+
+  /**
+   * Adds a choice form field at the current flow cursor.
+   *
+   * @param name The fully-qualified field name.
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
+  choiceField(name: string, options: FlowChoiceFieldOptions): this {
+    const spacing = this.resolveSpacing("image", options);
+    this.applyMarginTop(spacing.before);
+    const x = options.x ?? this.state.x;
+    const width = options.width ?? Math.max(this.state.width - spacing.left - spacing.right, 1);
+    const height = options.height;
+    const y = options.y ?? this.state.y - height;
+
+    this.registerFieldName(name);
+    const normalizedOptions = normalizeChoiceFieldOptions(name, {
+      ...options,
+      x,
+      y,
+      width,
+    });
+    const annotationIndex = this.page.annotations.length;
+    const structureGroupId = addAnnotationStructureNode(
+      this.page,
+      "Annot",
+      annotationIndex,
+      normalizedOptions.tag,
+      normalizedOptions.structure,
+      placementBoundingBox(normalizedOptions),
+      this.parent,
+    );
+    this.page.annotations.push({
+      type: "choiceField",
+      name,
+      options: normalizedOptions,
+      ...(structureGroupId === undefined ? {} : { structureGroupId }),
+    });
+    this.state.y -= height + spacing.after;
+    return this;
+  }
+
+  /**
+   * Adds a radio-button group at the current flow cursor.
+   *
+   * @param name The fully-qualified field name.
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
+  radioGroup(name: string, options: FlowRadioGroupOptions): this {
+    const spacing = this.resolveSpacing("image", options);
+    this.applyMarginTop(spacing.before);
+
+    this.registerFieldName(name);
+    const normalizedOptions = normalizeRadioGroupOptions(name, options);
+    const annotationIndex = this.page.annotations.length;
+    const structureGroupId = addAnnotationStructureNode(
+      this.page,
+      "Annot",
+      annotationIndex,
+      normalizedOptions.tag,
+      normalizedOptions.structure,
+      radioGroupBoundingBox(normalizedOptions),
+      this.parent,
+    );
+    this.page.annotations.push({
+      type: "radioGroup",
+      name,
+      options: normalizedOptions,
+      ...(structureGroupId === undefined ? {} : { structureGroupId }),
+    });
+
+    const groupHeight =
+      Math.max(...normalizedOptions.items.map((item) => item.y + item.height)) -
+      Math.min(...normalizedOptions.items.map((item) => item.y)) +
+      spacing.after;
+    this.state.y -= groupHeight;
+    return this;
+  }
+
+  /**
+   * Adds a push-button form field at the current flow cursor.
+   *
+   * @param name The fully-qualified field name.
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
+  pushButton(name: string, options: FlowPushButtonOptions): this {
+    const spacing = this.resolveSpacing("image", options);
+    this.applyMarginTop(spacing.before);
+    const x = options.x ?? this.state.x;
+    const width = options.width ?? Math.max(this.state.width - spacing.left - spacing.right, 1);
+    const height = options.height;
+    const y = options.y ?? this.state.y - height;
+
+    this.registerFieldName(name);
+    const normalizedOptions = normalizePushButtonOptions(name, {
+      ...options,
+      x,
+      y,
+      width,
+    });
+    const annotationIndex = this.page.annotations.length;
+    const structureGroupId = addAnnotationStructureNode(
+      this.page,
+      "Annot",
+      annotationIndex,
+      normalizedOptions.tag,
+      normalizedOptions.structure,
+      placementBoundingBox(normalizedOptions),
+      this.parent,
+    );
+    this.page.annotations.push({
+      type: "pushButton",
+      name,
+      options: normalizedOptions,
+      ...(structureGroupId === undefined ? {} : { structureGroupId }),
+    });
+    this.state.y -= height + spacing.after;
+    return this;
+  }
+
+  /**
+   * Adds a signature form field placeholder at the current flow cursor.
+   *
+   * @param name The fully-qualified field name.
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
+  signatureField(name: string, options: FlowSignatureFieldOptions): this {
+    const spacing = this.resolveSpacing("image", options);
+    this.applyMarginTop(spacing.before);
+    const x = options.x ?? this.state.x;
+    const width = options.width ?? Math.max(this.state.width - spacing.left - spacing.right, 1);
+    const height = options.height;
+    const y = options.y ?? this.state.y - height;
+
+    this.registerFieldName(name);
+    const normalizedOptions = normalizeSignatureFieldOptions(name, {
+      ...options,
+      x,
+      y,
+      width,
+    });
+    const annotationIndex = this.page.annotations.length;
+    const structureGroupId = addAnnotationStructureNode(
+      this.page,
+      "Annot",
+      annotationIndex,
+      normalizedOptions.tag,
+      normalizedOptions.structure,
+      placementBoundingBox(normalizedOptions),
+      this.parent,
+    );
+    this.page.annotations.push({
+      type: "signatureField",
+      name,
+      options: normalizedOptions,
+      ...(structureGroupId === undefined ? {} : { structureGroupId }),
+    });
+    this.state.y -= height + spacing.after;
+    return this;
+  }
+
+  /**
+   * Adds a highlight annotation at the current flow cursor.
+   *
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
+  highlight(options: FlowHighlightOptions): this {
+    const spacing = this.resolveSpacing("image", options);
+    this.applyMarginTop(spacing.before);
+    const x = options.x ?? this.state.x;
+    const width = options.width ?? Math.max(this.state.width - spacing.left - spacing.right, 1);
+    const height = options.height;
+    const y = options.y ?? this.state.y - height;
+
+    const normalizedOptions = normalizeHighlightAnnotationOptions({
+      ...options,
+      x,
+      y,
+      width,
+    });
+    const annotationIndex = this.page.annotations.length;
+    const structureGroupId = addAnnotationStructureNode(
+      this.page,
+      "Annot",
+      annotationIndex,
+      normalizedOptions.tag,
+      normalizedOptions.structure,
+      placementBoundingBox(normalizedOptions),
+      this.parent,
+    );
+    this.page.annotations.push({
+      type: "highlight",
+      options: normalizedOptions,
+      ...(structureGroupId === undefined ? {} : { structureGroupId }),
+    });
+    this.state.y -= height + spacing.after;
+    return this;
+  }
+
+  /**
+   * Adds a text note annotation at the current flow cursor.
+   *
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
+  note(options: FlowNoteOptions): this {
+    const spacing = this.resolveSpacing("image", options);
+    this.applyMarginTop(spacing.before);
+    const x = options.x ?? this.state.x;
+    const width = options.width ?? Math.max(this.state.width - spacing.left - spacing.right, 1);
+    const height = options.height ?? 0;
+    const y = options.y ?? this.state.y - height;
+
+    const normalizedOptions = normalizeNoteAnnotationOptions({
+      ...options,
+      x,
+      y,
+      width: width > 0 ? width : undefined,
+      height: height > 0 ? height : undefined,
+    });
+    const annotationIndex = this.page.annotations.length;
+    const structureGroupId = addAnnotationStructureNode(
+      this.page,
+      "Annot",
+      annotationIndex,
+      normalizedOptions.tag,
+      normalizedOptions.structure,
+      placementBoundingBox(normalizedOptions),
+      this.parent,
+    );
+    this.page.annotations.push({
+      type: "note",
+      options: normalizedOptions,
+      ...(structureGroupId === undefined ? {} : { structureGroupId }),
+    });
+    this.state.y -= height + spacing.after;
+    return this;
+  }
+
+  /**
+   * Adds a free-text annotation at the current flow cursor.
+   *
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
+  freeText(options: FlowFreeTextOptions): this {
+    const spacing = this.resolveSpacing("image", options);
+    this.applyMarginTop(spacing.before);
+    const x = options.x ?? this.state.x;
+    const width = options.width ?? Math.max(this.state.width - spacing.left - spacing.right, 1);
+    const height = options.height;
+    const y = options.y ?? this.state.y - height;
+
+    const normalizedOptions = normalizeFreeTextAnnotationOptions({
+      ...options,
+      x,
+      y,
+      width,
+    });
+    const annotationIndex = this.page.annotations.length;
+    const structureGroupId = addAnnotationStructureNode(
+      this.page,
+      "Annot",
+      annotationIndex,
+      normalizedOptions.tag,
+      normalizedOptions.structure,
+      placementBoundingBox(normalizedOptions),
+      this.parent,
+    );
+    this.page.annotations.push({
+      type: "freeText",
+      options: normalizedOptions,
+      ...(structureGroupId === undefined ? {} : { structureGroupId }),
+    });
+    this.state.y -= height + spacing.after;
+    return this;
+  }
+
+  /**
+   * Adds vector path commands at the current flow cursor.
+   *
+   * @param commands The vector path commands to add.
+   * @param style The drawing style for the path.
+   * @param height The vertical extent consumed by the path.
+   *
+   * @returns This flow helper for chaining.
+   */
+  path(commands: PathCommand[], style: PathStyle, height: number): this {
+    validatePathCommands(commands);
+    this.page.ops.push({
+      type: "path",
+      commands,
+      style: normalizePathStyle(style),
+    });
+    this.state.y -= height;
+    return this;
+  }
+
+  /**
+   * Adds a rectangle path at the current flow cursor.
+   *
+   * @param x Horizontal position override.
+   * @param y Vertical position override (bottom edge).
+   * @param width Width override.
+   * @param height Height override.
+   * @param style The drawing style for the rectangle.
+   *
+   * @returns This flow helper for chaining.
+   */
+  rect(
+    x?: number,
+    y?: number,
+    width?: number,
+    height?: number,
+    style?: PathStyle,
+  ): this {
+    const w = width ?? this.state.width;
+    const h = height ?? w;
+    const rx = x ?? this.state.x;
+    const ry = y ?? this.state.y - h;
+    const commands: PathCommand[] = [
+      { type: "rect", x: rx, y: ry, width: w, height: h },
+    ];
+    validatePathCommands(commands);
+    this.page.ops.push({
+      type: "path",
+      commands,
+      style: normalizePathStyle(style ?? { paint: "stroke" }),
+    });
+    this.state.y -= h;
+    return this;
+  }
+
+  /**
+   * Adds a circle path at the current flow cursor.
+   *
+   * @param cx Center x-coordinate override.
+   * @param cy Center y-coordinate override.
+   * @param radius Radius override.
+   * @param style The drawing style for the circle.
+   *
+   * @returns This flow helper for chaining.
+   */
+  circle(
+    cx?: number,
+    cy?: number,
+    radius?: number,
+    style?: PathStyle,
+  ): this {
+    const r = radius ?? Math.min(this.state.width, this.state.y - this.state.marginBottom) / 4;
+    const centerX = cx ?? this.state.x + this.state.width / 2;
+    const centerY = cy ?? this.state.y - r;
+    const k = (4 * (Math.SQRT2 - 1)) / 3;
+    const kr = k * r;
+    const commands: PathCommand[] = [
+      { type: "moveTo", x: centerX, y: centerY + r },
+      { type: "curveTo", x1: centerX + kr, y1: centerY + r, x2: centerX + r, y2: centerY + kr, x3: centerX + r, y3: centerY },
+      { type: "curveTo", x1: centerX + r, y1: centerY - kr, x2: centerX + kr, y2: centerY - r, x3: centerX, y3: centerY - r },
+      { type: "curveTo", x1: centerX - kr, y1: centerY - r, x2: centerX - r, y2: centerY - kr, x3: centerX - r, y3: centerY },
+      { type: "curveTo", x1: centerX - r, y1: centerY + kr, x2: centerX - kr, y2: centerY + r, x3: centerX, y3: centerY + r },
+      { type: "closePath" },
+    ];
+    validatePathCommands(commands);
+    this.page.ops.push({
+      type: "path",
+      commands,
+      style: normalizePathStyle(style ?? { paint: "stroke" }),
+    });
+    this.state.y -= r * 2;
+    return this;
+  }
+
+  /**
+   * Adds a tagged list at the current flow cursor.
+   *
+   * @param items The list items to add.
+   * @param options Options that control the operation.
+   *
+   * @returns This flow helper for chaining.
+   */
+  list(items: readonly ListItem[], options: FlowListOptions): this {
+    const spacing = this.resolveSpacing("image", options);
+    this.applyMarginTop(spacing.before);
+    const normalizedItems = normalizeListItems(items);
+    const x = options.x ?? this.state.x + spacing.left;
+    const width = options.width ?? Math.max(this.state.width - spacing.left - spacing.right, 1);
+    const normalizedOptions = normalizeListOptions(normalizedItems, {
+      ...flowTextDefaults(this.state),
+      ...options,
+      x,
+      y: this.state.y,
+      width,
+    });
+    const listNode = createStructureNode(
+      this.page,
+      "L",
+      undefined,
+      this.parent,
+    );
+    const nextY = layoutList(
+      this.page,
+      listNode,
+      normalizedItems,
+      normalizedOptions,
+      this.embeddedFonts,
+    );
+    this.state.y = nextY - spacing.after;
+    return this;
+  }
+
+  /**
+   * Registers a potentially dotted field name, tracking parent-child
+   * relationships for hierarchical form fields.
+   */
+  private registerFieldName(name: string): string {
+    const lastDot = name.lastIndexOf(".");
+    if (lastDot === -1) {
+      return name;
+    }
+
+    const childName = name.slice(lastDot + 1);
+    const parentName = name.slice(0, lastDot);
+
+    if (childName.length === 0 || parentName.length === 0) {
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_FORM_FIELD_NAME,
+        "Dotted form field names must have non-empty segments on both sides of the dot.",
+        { name },
+      );
+    }
+
+    if (name.slice(0, lastDot).includes(".")) {
+      this.registerFieldName(parentName);
+    }
+
+    if (!this.page.parentFieldKids) {
+      this.page.parentFieldKids = new Map();
+    }
+
+    const kids = this.page.parentFieldKids.get(parentName);
+    if (kids) {
+      if (!kids.includes(name)) {
+        kids.push(name);
+      }
+    } else {
+      this.page.parentFieldKids.set(parentName, [name]);
+    }
+
+    return name;
   }
 }
 

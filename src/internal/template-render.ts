@@ -117,7 +117,7 @@ export function renderTemplateDocument(
     }
 
     if (block.type === 'heading' && options.autoOutline) {
-      const level = (block.options as { level?: 1 | 2 | 3 | 4 | 5 | 6 } | undefined)?.level ?? 1;
+      const level = block.options?.level ?? 1;
       headings.push({ level, text: block.text, page: current.page });
     }
 
@@ -295,10 +295,10 @@ export function renderTemplateBlocksToFlow(
 function renderTemplateBlockToFlow(flow: PdfFlow, block: TemplateBlock): void {
   switch (block.type) {
     case 'heading':
-      flow.heading(block.text, block.options as FlowHeadingOptions | undefined);
+      flow.heading(block.text, block.options);
       return;
     case 'paragraph':
-      flow.paragraph(block.text, block.options as FlowTextOptions | undefined);
+      flow.paragraph(block.text, block.options);
       return;
     case 'table':
       flow.table(block.rows, block.options);
@@ -334,10 +334,29 @@ function renderTemplateBlockToFlow(flow: PdfFlow, block: TemplateBlock): void {
       flow.link(block.text, block.url, block.options);
       return;
     case 'section':
-      flow.render(block.blocks);
+      flow.section(block.blocks, block.role, block.structure);
       return;
     case 'pageBreak':
       flow.moveDown(flow.remainingHeight);
+      return;
+    case 'textField':
+    case 'checkBox':
+    case 'choiceField':
+    case 'radioGroup':
+    case 'pushButton':
+    case 'signatureField':
+    case 'highlight':
+    case 'note':
+    case 'freeText':
+    case 'pageLink':
+    case 'path':
+    case 'rect':
+    case 'list':
+      throw new Error(
+        `Template block type "${block.type}" not yet implemented in PdfFlow.`,
+      );
+    case 'custom':
+      block.render(flow);
       return;
     default: {
       const _exhaustive: never = block;
