@@ -247,7 +247,6 @@ doc.renderTemplate({
   page: {
     size: 'A4',
     font,
-    tabOrder: 'S',
     spacing: {
       paragraphBefore: 0,
       paragraphAfter: 8,
