@@ -967,6 +967,16 @@ export class PdfFlow {
         return this.estimateImageHeight("jpeg", block.data, block.options);
       case "jbig2":
         return this.estimateImageHeight("jbig2", block.data, block.options);
+      case "tiff":
+        return this.estimateImageHeight("tiff", block.data, block.options);
+      case "jp2":
+        return this.estimateImageHeight("jp2", block.data, block.options);
+      case "webp":
+        return this.estimateImageHeight("webp", block.data, block.options);
+      case "gif":
+        return this.estimateImageHeight("gif", block.data, block.options);
+      case "svg":
+        return this.estimateSvgHeight(block.options);
       case "link":
         return this.estimateLinkHeight(block.options);
       case "section":
@@ -975,9 +985,11 @@ export class PdfFlow {
           0,
         );
       case "pageBreak":
-        return this.remainingHeight;
-      default:
         return 0;
+      default: {
+        const _exhaustive: never = block;
+        return 0;
+      }
     }
   }
 
@@ -1257,6 +1269,13 @@ export class PdfFlow {
    * @returns This flow helper for chaining.
    */
   moveDown(distance: number = this.state.gap): this {
+    if (distance < 0) {
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_NUMBER,
+        "moveDown distance must be non-negative.",
+        { distance },
+      );
+    }
     this.state.y -= distance;
     return this;
   }
@@ -1354,12 +1373,14 @@ export class PdfFlow {
     options: FlowTextOptions = {},
   ): number {
     const spacing = this.resolveSpacing("paragraph", options);
+    const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
+    const blockWidth = Math.min(options.blockWidth ?? innerWidth, innerWidth);
     const normalized = normalizeTextBlockOptions(text, {
       ...flowTextDefaults(this.state),
       ...options,
       x: this.state.x,
       y: this.state.y,
-      width: this.state.width,
+      width: blockWidth,
     });
     const runs = layoutTextBlock(text, normalized, this.embeddedFonts);
     const lineCount = new Set(runs.map((run) => run.options.y)).size || 1;
@@ -1380,7 +1401,8 @@ export class PdfFlow {
   ): number {
     const spacing = this.resolveSpacing("table", options);
     const normalizedRows = normalizeTableRows(rows);
-    const width = options.width ?? this.state.width;
+    const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
+    const width = options.width ?? innerWidth;
     const normalizedOptions = normalizeTableOptions(normalizedRows, {
       ...flowTextDefaults(this.state),
       ...options,
@@ -1467,16 +1489,27 @@ export class PdfFlow {
    * @returns The estimated image height.
    */
   private estimateImageHeight(
-    format: "jpeg" | "png" | "bmp" | "jbig2",
+    format: "jpeg" | "png" | "bmp" | "jbig2" | "tiff" | "jp2" | "webp" | "gif",
     data: BinaryData,
     options: FlowImageOptions = {},
   ): number {
     const spacing = this.resolveSpacing("image", options);
     const image = parseImage(format, data);
-    const maxWidth = options.maxWidth ?? this.state.width;
+    const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
+    const maxWidth = options.maxWidth ?? innerWidth;
+    const safePixelWidth = image.pixelWidth > 0 ? image.pixelWidth : 1;
     const width = options.width ?? Math.min(image.pixelWidth, maxWidth);
     const height =
-      options.height ?? width * (image.pixelHeight / image.pixelWidth);
+      options.height ?? width * (image.pixelHeight / safePixelWidth);
+    return spacing.before + height + spacing.after;
+  }
+
+  private estimateSvgHeight(options: FlowImageOptions = {}): number {
+    const spacing = this.resolveSpacing("image", options);
+    const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
+    const maxWidth = options.maxWidth ?? innerWidth;
+    const width = options.width ?? maxWidth;
+    const height = options.height ?? width;
     return spacing.before + height + spacing.after;
   }
 
@@ -1619,7 +1652,25 @@ export class PdfFlow {
       explicitTop ?? (hasShorthand ? shorthand.top : defaultBefore);
     const after =
       explicitBottom ?? (hasShorthand ? shorthand.bottom : defaultAfter);
+    validateSpacingValue(kind, "before", before);
+    validateSpacingValue(kind, "after", after);
+    validateSpacingValue(kind, "left", left);
+    validateSpacingValue(kind, "right", right);
     return { before, after, left, right };
+  }
+}
+
+function validateSpacingValue(
+  kind: string,
+  property: string,
+  value: number,
+): void {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_NUMBER,
+      `${kind} spacing "${property}" must be a finite non-negative number, got ${value}.`,
+      { kind, property, value },
+    );
   }
 }
 
@@ -4686,32 +4737,33 @@ function resolveFlowSpacing(options: FlowOptions): RequiredFlowSpacingScale {
   }
 
   const spacing = options.spacing;
+  const gapFallback = spacing === undefined ? options.gap : undefined;
   return {
     paragraphBefore:
       spacing?.paragraphBefore ?? STANDARD_FLOW_SPACING.paragraphBefore,
     paragraphAfter:
       spacing?.paragraphAfter ??
-      options.gap ??
+      gapFallback ??
       STANDARD_FLOW_SPACING.paragraphAfter,
     headingBefore: resolveHeadingSpacing(
       spacing?.headingBefore,
       STANDARD_FLOW_SPACING.headingBefore,
-      options.gap,
+      gapFallback,
     ),
     headingAfter: resolveHeadingSpacing(
       spacing?.headingAfter,
       STANDARD_FLOW_SPACING.headingAfter,
-      options.gap,
+      gapFallback,
     ),
     tableBefore: spacing?.tableBefore ?? STANDARD_FLOW_SPACING.tableBefore,
     tableAfter:
-      spacing?.tableAfter ?? options.gap ?? STANDARD_FLOW_SPACING.tableAfter,
+      spacing?.tableAfter ?? gapFallback ?? STANDARD_FLOW_SPACING.tableAfter,
     imageBefore: spacing?.imageBefore ?? STANDARD_FLOW_SPACING.imageBefore,
     imageAfter:
-      spacing?.imageAfter ?? options.gap ?? STANDARD_FLOW_SPACING.imageAfter,
+      spacing?.imageAfter ?? gapFallback ?? STANDARD_FLOW_SPACING.imageAfter,
     linkBefore: spacing?.linkBefore ?? STANDARD_FLOW_SPACING.linkBefore,
     linkAfter:
-      spacing?.linkAfter ?? options.gap ?? STANDARD_FLOW_SPACING.linkAfter,
+      spacing?.linkAfter ?? gapFallback ?? STANDARD_FLOW_SPACING.linkAfter,
   };
 }
 

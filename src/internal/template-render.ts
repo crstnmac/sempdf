@@ -138,8 +138,7 @@ function buildOutlineFromHeadings(
 ): void {
   const maxLevel = typeof config === 'object' && config?.maxLevel ? config.maxLevel : 3;
   const expanded = typeof config === 'object' && config?.expanded === true;
-  // Stack of [level, item] where item is a PdfOutlineItem; index 0 = doc root.
-  const stack: Array<{ level: number; item: { addChild: (title: string, target: PdfPage, options?: { expanded?: boolean }) => unknown } }> = [];
+  const stack: Array<{ level: number; item: ReturnType<PdfDocument['addOutline']> }> = [];
   for (const heading of headings) {
     if (heading.level > maxLevel) continue;
     while (stack.length > 0 && stack[stack.length - 1]!.level >= heading.level) {
@@ -149,7 +148,7 @@ function buildOutlineFromHeadings(
     const item = parent
       ? parent.addChild(heading.text, heading.page, { expanded })
       : doc.addOutline(heading.text, heading.page, { expanded });
-    stack.push({ level: heading.level, item: item as never });
+    stack.push({ level: heading.level, item });
   }
 }
 
@@ -340,6 +339,10 @@ function renderTemplateBlockToFlow(flow: PdfFlow, block: TemplateBlock): void {
     case 'pageBreak':
       flow.moveDown(flow.remainingHeight);
       return;
+    default: {
+      const _exhaustive: never = block;
+      throw new Error(`Unhandled template block type: ${(_exhaustive as TemplateBlock).type}`);
+    }
   }
 }
 
