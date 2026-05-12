@@ -1,6 +1,5 @@
 import { writeFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
-
 import { createDocument, parseDocument } from "../src/index.js";
 
 const exampleFontPath = process.env.PDF_EDITING_LIB_EXAMPLE_FONT ?? process.env.PDF_EDITING_LIB_FONT_PATH;
@@ -38,103 +37,149 @@ doc.setXmpMetadata({
 
 const font = doc.embedTrueTypeFont(readFileSync(fontPath), { family: "TaggedPdfExample" });
 
-const cover = doc.addPage({ size: "A4" });
-cover.flow({ font })
-  .heading("Quarterly Business Review")
-  .paragraph("Q1 2026 - Executive Summary", { fontSize: 14 })
-  .paragraph(
-    "This report covers key financial metrics, product milestones, and compliance status for the first quarter of 2026. All figures have been audited and are presented in accordance with our standard reporting framework."
-  )
-  .paragraph("Prepared by: Internal Audit Team", { fontSize: 10 });
-
-const metrics = doc.addPage({ size: "A4" });
-metrics.flow({ font })
-  .heading("Financial Metrics", { level: 2 })
-  .table(
-    [
-      [
-        { text: "Metric", header: true },
-        { text: "Target", header: true },
-        { text: "Actual", header: true },
-        { text: "Variance", header: true }
-      ],
-      [
-        { text: "Revenue", header: true, scope: "row" },
-        "$2.4M",
-        "$2.6M",
-        "+8.3%"
-      ],
-      [
-        { text: "Gross Margin", header: true, scope: "row" },
-        "62%",
-        "64%",
-        "+2pp"
-      ],
-      [
-        { text: "Operating Costs", header: true, scope: "row" },
-        "$1.1M",
-        "$1.0M",
-        "-9.1%"
-      ]
-    ],
+doc.renderTemplate({
+  page: { size: "A4", font },
+  autoOutline: { maxLevel: 2, expanded: false },
+  blocks: [
     {
-      headerRows: 1,
-      headerColumns: 1,
-      fontSize: 11
-    }
-  )
-  .heading("Product Milestones", { level: 2 });
-
-metrics.list(
-  [
-    "Launch v2.4 with tagged PDF export.",
-    "Accessibility improvements: screen-reader navigation support and WCAG 2.1 Level AA compliance.",
-    "Migrate analytics pipeline to streaming."
-  ],
-  { x: 72, y: 360, width: 480, font, fontSize: 11 }
-);
-
-const compliance = doc.addPage({ size: "A4" });
-compliance.flow({ font })
-  .heading("Compliance Status", { level: 2 })
-  .table(
-    [
-      [
-        { text: "Standard", header: true },
-        { text: "Status", header: true },
-        { text: "Audit Date", header: true }
-      ],
-      [
-        { text: "SOC 2 Type II", header: true, scope: "row" },
-        "Passed",
-        "2026-02-15"
-      ],
-      [
-        { text: "ISO 27001", header: true, scope: "row" },
-        "In Progress",
-        "2026-04-30"
-      ],
-      [
-        { text: "GDPR", header: true, scope: "row" },
-        "Compliant",
-        "2026-03-01"
-      ]
-    ],
+      type: "heading",
+      text: "Quarterly Business Review",
+      options: { level: 1 }
+    },
     {
-      headerRows: 1,
-      headerColumns: 1,
-      fontSize: 11
+      type: "paragraph",
+      text: "Q1 2026 \u2014 Executive Summary",
+      options: { fontSize: 14, marginBottom: 8 }
+    },
+    {
+      type: "paragraph",
+      text: "This report covers key financial metrics, product milestones, and compliance status for the first quarter of 2026. All figures have been audited and are presented in accordance with our standard reporting framework.",
+      options: { fontSize: 11, marginBottom: 8 }
+    },
+    {
+      type: "paragraph",
+      text: "Prepared by: Internal Audit Team",
+      options: { fontSize: 10 }
+    },
+    {
+      type: "pageBreak"
+    },
+    {
+      type: "heading",
+      text: "Financial Metrics",
+      options: { level: 2 }
+    },
+    {
+      type: "table",
+      rows: [
+        [
+          { text: "Metric", header: true },
+          { text: "Target", header: true },
+          { text: "Actual", header: true },
+          { text: "Variance", header: true }
+        ],
+        [
+          { text: "Revenue", header: true, scope: "row" },
+          "$2.4M",
+          "$2.6M",
+          "+8.3%"
+        ],
+        [
+          { text: "Gross Margin", header: true, scope: "row" },
+          "62%",
+          "64%",
+          "+2pp"
+        ],
+        [
+          { text: "Operating Costs", header: true, scope: "row" },
+          "$1.1M",
+          "$1.0M",
+          "-9.1%"
+        ]
+      ],
+      options: {
+        headerRows: 1,
+        headerColumns: 1,
+        fontSize: 11,
+        marginBottom: 14
+      }
+    },
+    {
+      type: "heading",
+      text: "Product Milestones",
+      options: { level: 2 }
+    },
+    {
+      type: "paragraph",
+      text: "Launch v2.4 with tagged PDF export.",
+      options: { fontSize: 11 }
+    },
+    {
+      type: "paragraph",
+      text: "Accessibility improvements: screen-reader navigation support and WCAG 2.1 Level AA compliance.",
+      options: { fontSize: 11 }
+    },
+    {
+      type: "paragraph",
+      text: "Migrate analytics pipeline to streaming.",
+      options: { fontSize: 11 }
+    },
+    {
+      type: "pageBreak"
+    },
+    {
+      type: "heading",
+      text: "Compliance Status",
+      options: { level: 2 }
+    },
+    {
+      type: "table",
+      rows: [
+        [
+          { text: "Standard", header: true },
+          { text: "Status", header: true },
+          { text: "Audit Date", header: true }
+        ],
+        [
+          { text: "SOC 2 Type II", header: true, scope: "row" },
+          "Passed",
+          "2026-02-15"
+        ],
+        [
+          { text: "ISO 27001", header: true, scope: "row" },
+          "In Progress",
+          "2026-04-30"
+        ],
+        [
+          { text: "GDPR", header: true, scope: "row" },
+          "Compliant",
+          "2026-03-01"
+        ]
+      ],
+      options: {
+        headerRows: 1,
+        headerColumns: 1,
+        fontSize: 11,
+        marginBottom: 14
+      }
+    },
+    {
+      type: "heading",
+      text: "Resources",
+      options: { level: 2 }
+    },
+    {
+      type: "link",
+      text: "View full audit reports",
+      url: "https://example.com/audit-reports",
+      options: {
+        structure: {
+          altText: "View full audit reports"
+        }
+      }
     }
-  )
-  .heading("Resources", { level: 2 })
-  .link("View full audit reports", "https://example.com/audit-reports", {
-    structure: {
-      // Match the link text so screen readers and the link description agree.
-      altText: "View full audit reports"
-    }
-  });
-
-const pdfBytes = doc.toUint8Array();
+  ]
+});
 
 const issues = doc.validateCompliance();
 if (issues.length > 0) {
@@ -146,6 +191,7 @@ if (issues.length > 0) {
   console.log("No compliance issues detected.");
 }
 
+const pdfBytes = doc.toUint8Array();
 const parsed = parseDocument(pdfBytes);
 const elements = parsed.listStructureElements();
 console.log(`\nStructure tree has ${elements.length} top-level element(s).`);
