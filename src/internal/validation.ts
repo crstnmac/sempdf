@@ -380,7 +380,7 @@ export function resolvePageSize(size: PageSize | undefined): ResolvedPageSize {
 export function normalizeDocumentInfo(info: DocumentInfo | undefined): NormalizedDocumentInfo {
   const keywords = Array.isArray(info?.keywords) ? info.keywords.join(", ") : info?.keywords;
   const normalized: NormalizedDocumentInfo = {
-    producer: info?.producer ?? "pdf-editing-lib"
+    producer: info?.producer ?? "zeropdf"
   };
 
   if (info?.title !== undefined) normalized.title = info.title;

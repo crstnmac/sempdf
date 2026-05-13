@@ -4,11 +4,11 @@ import {
   editDocument,
   parseDocument,
   rgb
-} from "pdf-editing-lib";
+} from "zeropdf";
 
 export function createBrowserPdf(input) {
   const title = input.title?.trim() || "Field Guide / Project Atlas";
-  const subtitle = input.subtitle?.trim() || "A browser-built example powered by pdf-editing-lib";
+  const subtitle = input.subtitle?.trim() || "A browser-built example powered by zeropdf";
   const body = input.body?.trim() || "";
   const pageSize = input.pageSize in PAGE_SIZES ? input.pageSize : "Letter";
   const accent = colorFromHex(input.accentColor || "#dd5f45");
@@ -20,11 +20,11 @@ export function createBrowserPdf(input) {
   const doc = createDocument({
     info: {
       title,
-      author: "pdf-editing-lib example site",
+      author: "zeropdf example site",
       subject: "Browser creation demo",
       keywords: ["pdf", "browser", "incremental editing"],
       creator: "examples/website/pdf-studio.js",
-      producer: "pdf-editing-lib",
+      producer: "zeropdf",
       creationDate: new Date().toISOString(),
       modificationDate: new Date().toISOString()
     }

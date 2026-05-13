@@ -519,7 +519,7 @@ function getIncrementalEncryption(
   | { context: PdfEncryptionContext; encryptObjectId?: number | undefined }
   | undefined {
   if (model.encryption !== undefined) {
-    const fileId = model.base.getEncryptionContext()?.fileId ?? createDocumentFileId(latin1Bytes('pdf-editing-lib-upgrade'));
+    const fileId = model.base.getEncryptionContext()?.fileId ?? createDocumentFileId(latin1Bytes('zeropdf-upgrade'));
     const context = createPdfEncryptionContext(model.encryption, fileId);
     return { context };
   }

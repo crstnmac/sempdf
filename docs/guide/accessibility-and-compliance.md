@@ -1,10 +1,10 @@
 # Accessibility and Compliance
 
-`pdf-editing-lib` can create tagged PDFs with document language, semantic structure, role maps, alt text, and validation warnings. For output that is intended to validate as PDF/UA-1, enable the PDF/UA profile, embed fonts for all visible text, use semantic flow helpers for meaningful content, mark decorative drawing as artifacts when you use low-level drawing, and write the serialized bytes to your target.
+`zeropdf` can create tagged PDFs with document language, semantic structure, role maps, alt text, and validation warnings. For output that is intended to validate as PDF/UA-1, enable the PDF/UA profile, embed fonts for all visible text, use semantic flow helpers for meaningful content, mark decorative drawing as artifacts when you use low-level drawing, and write the serialized bytes to your target.
 
 ```ts
 import { readFile, writeFile } from "node:fs/promises";
-import { createDocument } from "pdf-editing-lib";
+import { createDocument } from "zeropdf";
 
 const fontBytes = await readFile("fonts/SourceSans3-Regular.ttf");
 
@@ -15,11 +15,11 @@ const doc = createDocument({
   structureRoot: "Document",
   info: {
     title: "Quarterly Report",
-    author: "pdf-editing-lib"
+    author: "zeropdf"
   },
   xmpMetadata: {
     title: "Quarterly Report",
-    creator: "pdf-editing-lib",
+    creator: "zeropdf",
     createDate: "2026-05-05T00:00:00Z",
     modifyDate: "2026-05-05T00:00:00Z",
     metadataDate: "2026-05-05T00:00:00Z"
@@ -135,7 +135,7 @@ Headers and footers are rendered after the body pages are known, so callbacks re
 You can also stream the same tagged document to a sink:
 
 ```ts
-import { NodeStreamSink } from "pdf-editing-lib";
+import { NodeStreamSink } from "zeropdf";
 import { createWriteStream } from "node:fs";
 
 await doc.writeTo(new NodeStreamSink(createWriteStream("quarterly-report.pdf")));

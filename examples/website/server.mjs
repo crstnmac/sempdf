@@ -49,5 +49,5 @@ const server = http.createServer(async (request, response) => {
 });
 
 server.listen(port, () => {
-  console.log(`pdf-editing-lib website example running at http://localhost:${port}/`);
+  console.log(`zeropdf website example running at http://localhost:${port}/`);
 });

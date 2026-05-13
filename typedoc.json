@@ -4,7 +4,7 @@
   "entryPoints": ["src/index.ts"],
   "out": "docs/api",
   "readme": "none",
-  "name": "pdf-editing-lib",
+  "name": "zeropdf",
   "includeVersion": true,
   "entryPointStrategy": "resolve",
   "excludeInternal": true,

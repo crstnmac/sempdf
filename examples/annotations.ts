@@ -5,21 +5,21 @@ const doc = createDocument({
   language: "en-US",
   info: {
     title: "PDF Annotations Demo",
-    author: "pdf-editing-lib"
+    author: "zeropdf"
   }
 });
 
 doc.setXmpMetadata({
   title: "PDF Annotations Demo",
-  creator: "pdf-editing-lib",
-  creatorTool: "pdf-editing-lib",
+  creator: "zeropdf",
+  creatorTool: "zeropdf",
   createDate: "2026-05-12T00:00:00Z",
   modifyDate: "2026-05-12T00:00:00Z",
   metadataDate: "2026-05-12T00:00:00Z"
 });
 
 doc.renderTemplate({
-  info: { title: "PDF Annotations Demo", author: "pdf-editing-lib" },
+  info: { title: "PDF Annotations Demo", author: "zeropdf" },
   page: { size: "A4" },
   blocks: [
     {

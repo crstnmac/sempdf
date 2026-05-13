@@ -4,7 +4,7 @@ Build a multi-page report with metric dashboards, revenue tables, and per-sectio
 
 ## Choosing an approach
 
-There are three strategies for multi-column layouts in `pdf-editing-lib`:
+There are three strategies for multi-column layouts in `zeropdf`:
 
 | Strategy | Best for | API |
 |----------|----------|-----|
@@ -17,7 +17,7 @@ The example below uses `renderTemplate()` with `page.columns` — the recommende
 ## Setup
 
 ```ts
-import { createDocument, hex } from "pdf-editing-lib";
+import { createDocument, hex } from "zeropdf";
 import { readFileSync } from "node:fs";
 
 const fontData = readFileSync("fonts/SourceSans3-Regular.ttf");

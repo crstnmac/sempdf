@@ -5,7 +5,7 @@ import { createDocument, BufferSink, parseDocument } from "../src/index.js";
 const doc = createDocument({
   info: {
     title: "Attachments & Page Labels Demo",
-    author: "pdf-editing-lib"
+    author: "zeropdf"
   }
 });
 
