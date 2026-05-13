@@ -1,4 +1,4 @@
-import { parseDocument } from "pdf-editing-lib";
+import { parseDocument } from "sempdf";
 import { createBrowserPdf, editBrowserPdf } from "./pdf-studio.js";
 
 const createForm = document.querySelector("#create-form");
@@ -105,7 +105,7 @@ function boot() {
 function createPdfFromForm(formData) {
   return createBrowserPdf({
     title: valueOf(formData, "docTitle", "Field Guide / Project Atlas"),
-    subtitle: valueOf(formData, "docSubtitle", "A browser-built example powered by pdf-editing-lib"),
+    subtitle: valueOf(formData, "docSubtitle", "A browser-built example powered by sempdf"),
     body: valueOf(formData, "docBody", ""),
     pageSize: valueOf(formData, "pageSize", "Letter"),
     accentColor: valueOf(formData, "accentColor", "#dd5f45")

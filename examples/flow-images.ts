@@ -13,21 +13,21 @@ const doc = createDocument({
   language: "en-US",
   info: {
     title: "Flow Images Demo",
-    author: "pdf-editing-lib"
+    author: "sempdf"
   }
 });
 
 doc.setXmpMetadata({
   title: "Flow Images Demo",
-  creator: "pdf-editing-lib",
-  creatorTool: "pdf-editing-lib",
+  creator: "sempdf",
+  creatorTool: "sempdf",
   createDate: "2026-05-12T00:00:00Z",
   modifyDate: "2026-05-12T00:00:00Z",
   metadataDate: "2026-05-12T00:00:00Z"
 });
 
 doc.renderTemplate({
-  info: { title: "Flow Images Demo", author: "pdf-editing-lib" },
+  info: { title: "Flow Images Demo", author: "sempdf" },
   page: { size: "A4", fontSize: 12 },
   autoOutline: { maxLevel: 2 },
   blocks: [

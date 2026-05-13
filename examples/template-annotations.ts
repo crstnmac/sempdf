@@ -5,13 +5,13 @@ const doc = createDocument({
   language: "en-US",
   info: {
     title: "Document Review - Annotations Demo",
-    author: "pdf-editing-lib",
+    author: "sempdf",
   },
 });
 
 doc.setXmpMetadata({
   title: "Document Review - Annotations Demo",
-  creator: "pdf-editing-lib",
+  creator: "sempdf",
   createDate: "2026-05-12T00:00:00Z",
   modifyDate: "2026-05-12T00:00:00Z",
   metadataDate: "2026-05-12T00:00:00Z",

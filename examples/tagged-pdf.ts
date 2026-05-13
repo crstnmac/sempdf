@@ -23,13 +23,13 @@ const doc = createDocument({
   structureRoot: "Document",
   info: {
     title: "Quarterly Business Review",
-    author: "pdf-editing-lib"
+    author: "sempdf"
   }
 });
 
 doc.setXmpMetadata({
   title: "Quarterly Business Review",
-  creator: "pdf-editing-lib",
+  creator: "sempdf",
   createDate: "2026-05-05T00:00:00Z",
   modifyDate: "2026-05-05T00:00:00Z",
   metadataDate: "2026-05-05T00:00:00Z"

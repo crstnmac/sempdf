@@ -7,7 +7,7 @@ Diagnose and fix common issues when generating, parsing, or editing PDFs.
 Every `PdfEngineError` carries a `code` property from the `PdfErrorCode` enum. Catch and inspect it:
 
 ```ts
-import { PdfEngineError, PdfErrorCode } from "pdf-editing-lib";
+import { PdfEngineError, PdfErrorCode } from "sempdf";
 
 try {
   const doc = createDocument({ /* ... */ });
@@ -212,7 +212,7 @@ const doc = createDocument({
   info: { title: "Report" },
   xmpMetadata: {
     title: "Report",
-    creator: "pdf-editing-lib",
+    creator: "sempdf",
     createDate: "2026-05-08T00:00:00Z",
     modifyDate: "2026-05-08T00:00:00Z",
     metadataDate: "2026-05-08T00:00:00Z"

@@ -131,7 +131,7 @@ const doc = createDocument({
   info: {
     title: `Accessibility Audit Report - ${projectName}`,
     author: 'BarrierBreak',
-    creator: 'pdf-editing-lib',
+    creator: 'sempdf',
     subject: `${clientName} Accessibility Audit`,
     keywords: ['accessibility', 'WCAG', 'Section 508', 'PDF/UA'],
   },

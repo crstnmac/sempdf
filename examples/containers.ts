@@ -8,20 +8,20 @@ const doc = createDocument({
   structureRoot: "Document",
   info: {
     title: "Structure Containers Demo",
-    author: "pdf-editing-lib"
+    author: "sempdf"
   }
 });
 
 doc.setXmpMetadata({
   title: "Structure Containers Demo",
-  creator: "pdf-editing-lib",
+  creator: "sempdf",
   createDate: "2026-05-12T00:00:00Z",
   modifyDate: "2026-05-12T00:00:00Z",
   metadataDate: "2026-05-12T00:00:00Z"
 });
 
 doc.renderTemplate({
-  info: { title: "Structure Containers Demo", author: "pdf-editing-lib" },
+  info: { title: "Structure Containers Demo", author: "sempdf" },
   page: { size: "A4" },
   blocks: [
     {

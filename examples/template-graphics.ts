@@ -5,7 +5,7 @@ const doc = createDocument({
   language: "en-US",
   info: {
     title: "Graphics Demo - Template Path/Rect",
-    author: "pdf-editing-lib",
+    author: "sempdf",
     creationDate: "D:20260512000000Z",
     modificationDate: "D:20260512000000Z"
   }
@@ -13,15 +13,15 @@ const doc = createDocument({
 
 doc.setXmpMetadata({
   title: "Graphics Demo - Template Path/Rect",
-  creator: "pdf-editing-lib",
-  creatorTool: "pdf-editing-lib",
+  creator: "sempdf",
+  creatorTool: "sempdf",
   createDate: "2026-05-12T00:00:00Z",
   modifyDate: "2026-05-12T00:00:00Z",
   metadataDate: "2026-05-12T00:00:00Z"
 });
 
 doc.renderTemplate({
-  info: { title: "Graphics Demo", author: "pdf-editing-lib" },
+  info: { title: "Graphics Demo", author: "sempdf" },
   page: { size: "A4" },
   blocks: [
     {

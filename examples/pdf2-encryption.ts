@@ -18,8 +18,8 @@ const doc = createDocument({
 
 doc.setXmpMetadata({
   title: "PDF 2.0 Encrypted Sample",
-  creator: "pdf-editing-lib",
-  creatorTool: "pdf-editing-lib",
+  creator: "sempdf",
+  creatorTool: "sempdf",
   createDate: "2026-05-12T00:00:00Z",
   modifyDate: "2026-05-12T00:00:00Z",
   metadataDate: "2026-05-12T00:00:00Z"

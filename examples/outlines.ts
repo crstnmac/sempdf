@@ -5,7 +5,7 @@ import { createDocument, hex } from "../src/index.js";
 const doc = createDocument({
   info: {
     title: "PDF Outlines (Bookmarks) Demo",
-    author: "pdf-editing-lib"
+    author: "sempdf"
   }
 });
 

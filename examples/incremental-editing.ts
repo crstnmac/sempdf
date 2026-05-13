@@ -4,7 +4,7 @@ import { createDocument, editDocument } from "../src/index.js";
 
 // Step 1: Create a base document with form fields
 const baseDoc = createDocument({
-  info: { title: "Base Document", author: "pdf-editing-lib" }
+  info: { title: "Base Document", author: "sempdf" }
 });
 
 const page = baseDoc.addPage({ size: "A4" });

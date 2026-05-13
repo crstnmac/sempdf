@@ -5,7 +5,7 @@ const doc = createDocument({
   language: "en-US",
   info: {
     title: "Registration Form",
-    author: "pdf-editing-lib",
+    author: "sempdf",
     creationDate: "D:20260512000000Z",
     modificationDate: "D:20260512000000Z"
   }
@@ -13,15 +13,15 @@ const doc = createDocument({
 
 doc.setXmpMetadata({
   title: "Registration Form",
-  creator: "pdf-editing-lib",
-  creatorTool: "pdf-editing-lib",
+  creator: "sempdf",
+  creatorTool: "sempdf",
   createDate: "2026-05-12T00:00:00Z",
   modifyDate: "2026-05-12T00:00:00Z",
   metadataDate: "2026-05-12T00:00:00Z"
 });
 
 doc.renderTemplate({
-  info: { title: "Registration Form", author: "pdf-editing-lib" },
+  info: { title: "Registration Form", author: "sempdf" },
   page: { size: "A4" },
   pageNumber: { region: "footer", align: "center" },
   blocks: [
