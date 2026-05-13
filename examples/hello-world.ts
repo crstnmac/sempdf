@@ -14,7 +14,7 @@ const doc = createDocument({
 doc.setXmpMetadata({
   title: "Hello World",
   creator: "Codex",
-  creatorTool: "pdf-editing-lib",
+  creatorTool: "zeropdf",
   createDate: "2026-04-13T21:30:00Z",
   modifyDate: "2026-04-13T21:30:00Z",
   metadataDate: "2026-04-13T21:30:00Z"
@@ -26,7 +26,7 @@ doc.renderTemplate({
   blocks: [
     {
       type: "heading",
-      text: "Hello from pdf-editing-lib",
+      text: "Hello from zeropdf",
       options: { level: 1, color: hex("1c2f6b") }
     },
     {

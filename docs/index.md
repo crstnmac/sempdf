@@ -2,7 +2,7 @@
 layout: home
 
 hero:
-  name: pdf-editing-lib
+  name: zeropdf
   text: Zero-dependency PDF generation and editing in TypeScript.
   tagline: Build, inspect, tag, encrypt, merge, and incrementally edit PDFs with a small public API and browser-friendly Uint8Array output.
   actions:
@@ -24,10 +24,10 @@ features:
 
 ## Designed for library authors and product code
 
-`pdf-editing-lib` keeps PDF workflows close to regular TypeScript: you compose a document, add pages and annotations, then write bytes wherever your runtime needs them.
+`zeropdf` keeps PDF workflows close to regular TypeScript: you compose a document, add pages and annotations, then write bytes wherever your runtime needs them.
 
 ```ts
-import { createDocument, rgb } from "pdf-editing-lib";
+import { createDocument, rgb } from "zeropdf";
 
 const doc = createDocument({
   info: { title: "Invoice" }

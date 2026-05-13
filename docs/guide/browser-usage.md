@@ -3,7 +3,7 @@
 The package works with browser-friendly binary values. You can generate a PDF, wrap it in a `Blob`, and preview or download it.
 
 ```ts
-import { createDocument } from "pdf-editing-lib";
+import { createDocument } from "zeropdf";
 
 const doc = createDocument();
 const page = doc.addPage();

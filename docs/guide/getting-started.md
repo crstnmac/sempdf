@@ -3,18 +3,18 @@
 Install the package in a TypeScript project:
 
 ```sh
-npm install pdf-editing-lib
+npm install zeropdf
 ```
 
 Create a document, add a page, write content, and serialize the result:
 
 ```ts
-import { createDocument, rgb } from "pdf-editing-lib";
+import { createDocument, rgb } from "zeropdf";
 
 const doc = createDocument({
   info: {
     title: "Hello PDF",
-    author: "pdf-editing-lib"
+    author: "zeropdf"
   }
 });
 
@@ -53,7 +53,7 @@ import {
   parseDocument,
   rgb,
   splitDocument
-} from "pdf-editing-lib";
+} from "zeropdf";
 ```
 
 ## Local examples

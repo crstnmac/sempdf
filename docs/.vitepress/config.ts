@@ -72,13 +72,13 @@ function apiSidebar(): DefaultTheme.SidebarItem[] {
 }
 
 export default defineConfig({
-  title: "pdf-editing-lib",
+  title: "zeropdf",
   description: "Zero-dependency PDF generation and editing in TypeScript.",
   cleanUrls: true,
   lastUpdated: true,
   head: [["link", { rel: "icon", type: "image/svg+xml", href: "/logo.svg" }]],
   themeConfig: {
-    logo: { src: "/logo.svg", alt: "pdf-editing-lib" },
+    logo: { src: "/logo.svg", alt: "zeropdf" },
     nav: [
       { text: "Guide", link: "/guide/getting-started" },
       { text: "API", link: "/api/" },
