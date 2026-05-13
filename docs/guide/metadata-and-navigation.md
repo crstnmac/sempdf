@@ -10,14 +10,14 @@ Info dictionary entries map directly. XMP metadata is generated from a structure
 const doc = createDocument({
   info: {
     title: "Hello PDF",
-    author: "pdf-editing-lib",
+    author: "sempdf",
     subject: "Demonstration",
     keywords: "pdf,typescript",
     creationDate: "D:20260413210000Z"
   },
   xmpMetadata: {
     title: "Hello PDF",
-    creator: "pdf-editing-lib",
+    creator: "sempdf",
     createDate: "2026-04-13T21:00:00Z",
     modifyDate: "2026-04-13T21:00:00Z",
     metadataDate: "2026-04-13T21:00:00Z"
@@ -69,7 +69,7 @@ The attachment is exposed under the document's `/Names → /EmbeddedFiles` tree 
 ## Inspecting parsed metadata
 
 ```ts
-import { parseDocument } from "pdf-editing-lib";
+import { parseDocument } from "sempdf";
 
 const parsed = parseDocument(bytes);
 console.log(parsed.metadata.title);

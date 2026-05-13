@@ -6,20 +6,20 @@ const doc = createDocument({
   language: "en-US",
   info: {
     title: "Color Spaces Demo",
-    author: "pdf-editing-lib"
+    author: "sempdf"
   }
 });
 
 doc.setXmpMetadata({
   title: "Color Spaces Demo",
-  creator: "pdf-editing-lib",
+  creator: "sempdf",
   createDate: "2026-05-12T00:00:00Z",
   modifyDate: "2026-05-12T00:00:00Z",
   metadataDate: "2026-05-12T00:00:00Z"
 });
 
 doc.renderTemplate({
-  info: { title: "Color Spaces Demo", author: "pdf-editing-lib" },
+  info: { title: "Color Spaces Demo", author: "sempdf" },
   page: { size: "A4" },
   blocks: [
     {

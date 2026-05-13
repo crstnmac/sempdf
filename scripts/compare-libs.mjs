@@ -80,7 +80,7 @@ async function runScenario(title, builders) {
 // ─── Scenario 1: Text-only, built-in fonts ────────────────────────────
 
 await runScenario("1. Text-only (built-in fonts, 80 pages)", [
-  ["pdf-editing-lib (toArray)", () => {
+  ["sempdf (toArray)", () => {
     const doc = createDocument({ info: { title: "Bench" } });
     for (let p = 0; p < PAGE_COUNT; p++) {
       const page = doc.addPage({ size: "A4" });
@@ -94,7 +94,7 @@ await runScenario("1. Text-only (built-in fonts, 80 pages)", [
     }
     return doc.toUint8Array();
   }],
-  ["pdf-editing-lib (stream)", async () => {
+  ["sempdf (stream)", async () => {
     const doc = createDocument({ info: { title: "Bench" } });
     for (let p = 0; p < PAGE_COUNT; p++) {
       const page = doc.addPage({ size: "A4" });
@@ -149,7 +149,7 @@ await runScenario("1. Text-only (built-in fonts, 80 pages)", [
 
 if (fontBytes) {
   await runScenario("2. Embedded TrueType font (80 pages)", [
-    ["pdf-editing-lib", () => {
+    ["sempdf", () => {
       const doc = createDocument({ info: { title: "TTF" } });
       const font = doc.embedTrueTypeFont(fontBytes, { family: "BenchFont" });
       for (let p = 0; p < PAGE_COUNT; p++) {
@@ -201,7 +201,7 @@ if (fontBytes) {
 // ─── Scenario 3: Images per page ──────────────────────────────────────
 
 await runScenario("3. Text + PNG image per page (80 pages)", [
-  ["pdf-editing-lib", () => {
+  ["sempdf", () => {
     const doc = createDocument({ info: { title: "Images" } });
     for (let p = 0; p < PAGE_COUNT; p++) {
       const page = doc.addPage({ size: "A4" });
@@ -250,7 +250,7 @@ await runScenario("3. Text + PNG image per page (80 pages)", [
 // ─── Scenario 4: Encryption (AES-128) ─────────────────────────────────
 
 await runScenario("4. AES-128 encryption (80 pages)", [
-  ["pdf-editing-lib", () => {
+  ["sempdf", () => {
     const doc = createDocument({
       info: { title: "Encrypted" },
       encryption: { algorithm: "aes-128", userPassword: "user", ownerPassword: "owner" },
@@ -288,7 +288,7 @@ await runScenario("4. AES-128 encryption (80 pages)", [
 // ─── Scenario 5: Tagged PDF ───────────────────────────────────────────
 
 await runScenario("5. Tagged accessible PDF (80 pages)", [
-  ["pdf-editing-lib", () => {
+  ["sempdf", () => {
     const doc = createDocument({ tagged: true, language: "en-US", structureRoot: "Document", info: { title: "Tagged" } });
     for (let p = 0; p < PAGE_COUNT; p++) {
       const page = doc.addPage({ size: "A4" });
@@ -317,7 +317,7 @@ await runScenario("5. Tagged accessible PDF (80 pages)", [
 // ─── Scenario 6: Template rendering ───────────────────────────────────
 
 await runScenario("6. Template rendering (50 blocks)", [
-  ["pdf-editing-lib", () => {
+  ["sempdf", () => {
     const doc = createDocument({ info: { title: "Template" } });
     const blocks = [];
     for (let i = 0; i < 8; i++) {
@@ -368,13 +368,13 @@ const fixture = (() => {
   return doc.toUint8Array();
 })();
 
-const parseResult = await bench("pdf-editing-lib (parse)", () => {
+const parseResult = await bench("sempdf (parse)", () => {
   parseDocument(fixture);
   return fixture;
 });
 console.log(`Parse ${fmtBytes(fixture.length)} doc: ${fmt(parseResult.medianMs)} median, ${fmt(parseResult.minMs)} min`);
 
-const editResult = await bench("pdf-editing-lib (edit + save)", () => {
+const editResult = await bench("sempdf (edit + save)", () => {
   const edit = editDocument(fixture);
   edit.updateInfo({ title: "Edited" });
   return edit.toUint8Array();
@@ -383,7 +383,7 @@ console.log(`Edit + save:             ${fmt(editResult.medianMs)} median, ${fmt(
 
 // ─── Scenario 8: Forward-looking (ours only) ──────────────────────────
 
-console.log("\n╔══ 8. Forward-looking features (pdf-editing-lib only) ══╗");
+console.log("\n╔══ 8. Forward-looking features (sempdf only) ══╗");
 
 const aes256r6 = await bench("AES-256-R6 encryption", () => {
   const doc = createDocument({

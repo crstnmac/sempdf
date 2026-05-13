@@ -165,7 +165,7 @@ doc.renderTemplate({
 ## Annotations
 
 ```ts
-import { rgb } from "pdf-editing-lib";
+import { rgb } from "sempdf";
 
 page.highlight({ x: 48, y: 700, width: 120, height: 14, color: rgb(1, 1, 0) });
 page.note({ x: 180, y: 698, contents: "Review this paragraph" });
@@ -179,7 +179,7 @@ page.pageLink({ x: 48, y: 612, width: 96, height: 14, destination: "intro" });
 Use `editDocument` to update field values incrementally:
 
 ```ts
-import { editDocument } from "pdf-editing-lib";
+import { editDocument } from "sempdf";
 
 const editable = editDocument(existingBytes);
 editable.setFieldValue("customerName", "Grace Hopper");
@@ -203,7 +203,7 @@ const flat = editable.toUint8Array();
 ## Inspecting fields
 
 ```ts
-import { parseDocument } from "pdf-editing-lib";
+import { parseDocument } from "sempdf";
 
 const parsed = parseDocument(existingBytes);
 for (const field of parsed.formFields) {

@@ -1420,7 +1420,7 @@ function prepareIncrementalUpdateSerialization(
       (page): page is PdfDocumentModel['pages'][number] => page !== undefined,
     );
   const mutatedModel: PdfDocumentModel = {
-    info: model.info ?? { producer: 'pdf-editing-lib' },
+    info: model.info ?? { producer: 'sempdf' },
     tagged: false,
     embeddedFonts: model.embeddedFonts,
     namedDestinations: [],
@@ -2028,7 +2028,7 @@ function prepareIncrementalUpdateSerialization(
     nextObjectId += 1;
     const encryptFileId =
       model.base.getEncryptionContext()?.fileId ??
-      createDocumentFileId(latin1Bytes('pdf-editing-lib-upgrade'));
+      createDocumentFileId(latin1Bytes('sempdf-upgrade'));
     const newEncryptContext = createPdfEncryptionContext(
       model.encryption,
       encryptFileId,

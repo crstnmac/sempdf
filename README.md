@@ -1,4 +1,4 @@
-# pdf-editing-lib
+# sempdf
 
 Zero-dependency PDF generation engine written in TypeScript.
 
@@ -49,12 +49,12 @@ Zero-dependency PDF generation engine written in TypeScript.
 
 ## Documentation
 
-Guides and API reference: [https://pdf-editing-lib.pages.dev](https://pdf-editing-lib.pages.dev)
+Guides and API reference: [https://sempdf.pages.dev](https://sempdf.pages.dev)
 
 ## Quick Start
 
 ```ts
-import { cmyk, createDocument, rgb } from "pdf-editing-lib";
+import { cmyk, createDocument, rgb } from "sempdf";
 
 const doc = createDocument({
   info: {
@@ -101,7 +101,7 @@ const bytes = doc.toUint8Array();
 For streaming-style output targets, write to a byte sink:
 
 ```ts
-import { BufferSink, NodeStreamSink, createDocument } from "pdf-editing-lib";
+import { BufferSink, NodeStreamSink, createDocument } from "sempdf";
 import { createWriteStream } from "node:fs";
 
 const doc = createDocument();
@@ -122,7 +122,7 @@ const blob = doc.toBlob("application/pdf");
 ```
 
 ```ts
-import { parseDocument } from "pdf-editing-lib";
+import { parseDocument } from "sempdf";
 
 const protectedDoc = createDocument({
   encryption: {
@@ -447,7 +447,7 @@ page.text("س\u200Cلام", {
 ```
 
 ```ts
-import { editDocument } from "pdf-editing-lib";
+import { editDocument } from "sempdf";
 
 const editable = editDocument(existingPdfBytes, { password: "reader" });
 editable.updateInfo({
@@ -472,7 +472,7 @@ const updatedBytes = editable.toUint8Array();
 Tagged and PDF/A-conformance documents now support a safe incremental-edit subset: metadata/XMP updates, overlay edits on existing pages, and appending new compliant pages. Reordering pages, removing pages, mid-document inserts, and form flattening are still blocked until full structure-tree-safe editing lands.
 
 ```ts
-import { createDocument } from "pdf-editing-lib";
+import { createDocument } from "sempdf";
 
 const doc = createDocument();
 const page = doc.addPage({ size: "Letter" });
@@ -489,7 +489,7 @@ const bytes = doc.toUint8Array();
 ```
 
 ```ts
-import { createDocument } from "pdf-editing-lib";
+import { createDocument } from "sempdf";
 
 const doc = createDocument();
 const page = doc.addPage({ size: "Letter" });
@@ -501,7 +501,7 @@ page.signatureField("signHere", { x: 48, y: 560, width: 180, height: 36 });
 ```
 
 ```ts
-import { appendPages, extractPages, mergeDocuments, splitDocument } from "pdf-editing-lib";
+import { appendPages, extractPages, mergeDocuments, splitDocument } from "sempdf";
 
 const extracted = extractPages(existingPdfBytes, [1, 3]);
 const split = splitDocument(existingPdfBytes);
@@ -510,7 +510,7 @@ const appended = appendPages(firstPdfBytes, secondPdfBytes, [0]);
 ```
 
 ```ts
-import { editDocument } from "pdf-editing-lib";
+import { editDocument } from "sempdf";
 
 const editable = editDocument(existingPdfBytes);
 editable.editPage(0).text("Overlay layer", { x: 48, y: 740, font: "Courier" });
@@ -520,7 +520,7 @@ const updatedBytes = editable.toUint8Array();
 ```
 
 ```ts
-import { editDocument } from "pdf-editing-lib";
+import { editDocument } from "sempdf";
 
 const editable = editDocument(existingPdfBytes);
 editable.setFieldValue("customerName", "Grace Hopper");
@@ -532,7 +532,7 @@ const updatedBytes = editable.toUint8Array();
 ```
 
 ```ts
-import { createDocument } from "pdf-editing-lib";
+import { createDocument } from "sempdf";
 
 const doc = createDocument();
 const page = doc.addPage({ size: "Letter" });
@@ -548,7 +548,7 @@ const bytes = doc.toUint8Array();
 ```
 
 ```ts
-import { createDocument } from "pdf-editing-lib";
+import { createDocument } from "sempdf";
 
 const doc = createDocument();
 const page = doc.addPage({ size: "Letter" });
@@ -566,7 +566,7 @@ const bytes = doc.toUint8Array();
 ```
 
 ```ts
-import { createDocument } from "pdf-editing-lib";
+import { createDocument } from "sempdf";
 
 const doc = createDocument();
 const page = doc.addPage({ size: "Letter" });

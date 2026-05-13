@@ -3700,7 +3700,7 @@ export class PdfDocument {
    *
    * @example
    * ```ts
-   * import { createDocument } from "pdf-editing-lib";
+   * import { createDocument } from "sempdf";
    *
    * const doc = createDocument();
    *

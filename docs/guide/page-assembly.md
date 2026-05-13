@@ -8,7 +8,7 @@ import {
   extractPages,
   mergeDocuments,
   splitDocument
-} from "pdf-editing-lib";
+} from "sempdf";
 ```
 
 ## Extract
@@ -53,7 +53,7 @@ Omit the index list to append every page from the source.
 For metadata-preserving in-place reorder, use `editDocument`:
 
 ```ts
-import { editDocument } from "pdf-editing-lib";
+import { editDocument } from "sempdf";
 
 const editable = editDocument(bytes);
 editable.movePage(2, 0);

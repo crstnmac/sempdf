@@ -18,7 +18,7 @@ const url = URL.createObjectURL(blob);
 ## Node writable streams
 
 ```ts
-import { NodeStreamSink } from "pdf-editing-lib";
+import { NodeStreamSink } from "sempdf";
 import { createWriteStream } from "node:fs";
 
 await doc.writeTo(new NodeStreamSink(createWriteStream("out.pdf")));
@@ -27,7 +27,7 @@ await doc.writeTo(new NodeStreamSink(createWriteStream("out.pdf")));
 ## Web streams
 
 ```ts
-import { WebStreamSink } from "pdf-editing-lib";
+import { WebStreamSink } from "sempdf";
 
 const response = new Response(
   new ReadableStream({
@@ -45,7 +45,7 @@ const response = new Response(
 `BufferSink` collects chunks for later assembly when you need bytes but not a single large allocation up front:
 
 ```ts
-import { BufferSink } from "pdf-editing-lib";
+import { BufferSink } from "sempdf";
 
 const sink = new BufferSink();
 await doc.writeTo(sink);
@@ -69,7 +69,7 @@ Throws if the accumulated data exceeds the limit.
 Spill large documents to disk automatically with a temporary file sink:
 
 ```ts
-import { TempFileSink } from "pdf-editing-lib";
+import { TempFileSink } from "sempdf";
 
 const sink = new TempFileSink();
 await doc.writeTo(sink);
@@ -110,7 +110,7 @@ A document becomes immutable after its first serialization. Calling `addPage()`,
 Implement `ByteSink`:
 
 ```ts
-import type { ByteSink } from "pdf-editing-lib";
+import type { ByteSink } from "sempdf";
 
 class CountingSink implements ByteSink {
   bytesWritten = 0;
