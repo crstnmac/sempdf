@@ -382,6 +382,8 @@ export interface DocumentSignatureOptions {
  * Top-level options for creating a new PDF document.
  */
 export interface DocumentOptions {
+  /** Document title applied to the information dictionary, structured XMP metadata, and display-title viewer preference. */
+  title?: string | undefined;
   /** Page size used when a page does not specify its own size. */
   defaultPageSize?: PageSize;
   /** Document information dictionary values. */
@@ -1611,6 +1613,8 @@ export interface TemplateStylesheet {
  * Top-level options for rendering template blocks into a complete document.
  */
 export interface TemplateDocumentOptions {
+  /** Document title applied to the information dictionary, structured XMP metadata, and display-title viewer preference. */
+  title?: string | undefined;
   /** Document information dictionary values. */
   info?: DocumentInfo | undefined;
   /** XMP metadata packet or structured XMP metadata input. */

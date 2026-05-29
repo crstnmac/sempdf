@@ -1,0 +1,9 @@
+node_modules
+dist
+docs/api
+docs/.vitepress/dist
+.git
+.github
+.playwright-mcp
+.visual-output
+.DS_Store

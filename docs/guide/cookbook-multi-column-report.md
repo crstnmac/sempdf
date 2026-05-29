@@ -23,7 +23,8 @@ import { readFileSync } from "node:fs";
 const fontData = readFileSync("fonts/SourceSans3-Regular.ttf");
 
 const doc = createDocument({
-  info: { title: "Monthly Performance Report", author: "Analytics Team" }
+  title: "Monthly Performance Report",
+  info: { author: "Analytics Team" }
 });
 
 const font = doc.embedTrueTypeFont(fontData, { family: "SourceSans3" });
@@ -37,8 +38,8 @@ const LIGHT = hex("#9a9aae");
 
 ```ts
 doc.renderTemplate({
+  title: "Monthly Performance Report",
   info: {
-    title: "Monthly Performance Report",
     author: "Analytics Team"
   },
   page: {

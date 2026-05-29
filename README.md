@@ -57,13 +57,12 @@ Guides and API reference: [https://zeropdf.pages.dev](https://zeropdf.pages.dev)
 import { cmyk, createDocument, rgb } from "zeropdf";
 
 const doc = createDocument({
+  title: "Hello PDF",
   info: {
-    title: "Hello PDF",
     author: "Codex",
     creationDate: "D:20260413210000Z"
   },
   xmpMetadata: {
-    title: "Hello PDF",
     creator: "Codex",
     createDate: "2026-04-13T21:00:00Z",
     modifyDate: "2026-04-13T21:00:00Z",
@@ -185,15 +184,12 @@ npm run validate:pdf -- --format xml output.pdf
 
 ```ts
 const accessible = createDocument({
+  title: "Quarterly Report",
   conformance: "pdfua-1",
   tagged: true,
   language: "en-US",
   structureRoot: "Document",
-  info: {
-    title: "Quarterly Report"
-  },
   xmpMetadata: {
-    title: "Quarterly Report",
     creator: "Accessibility Team",
     createDate: "2026-05-05T00:00:00Z",
     modifyDate: "2026-05-05T00:00:00Z",
@@ -229,12 +225,11 @@ For production report templates, render a reusable block tree and let the docume
 
 ```ts
 doc.renderTemplate({
+  title: "Accessibility Audit Report",
   info: {
-    title: "Accessibility Audit Report",
     author: "zeropdf"
   },
   xmpMetadata: {
-    title: "Accessibility Audit Report",
     creator: "zeropdf",
     createDate: "2026-05-05T00:00:00Z",
     modifyDate: "2026-05-05T00:00:00Z",

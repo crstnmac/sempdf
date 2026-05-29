@@ -11,8 +11,8 @@ import { readFileSync } from "node:fs";
 const fontData = readFileSync("fonts/SourceSans3-Regular.ttf");
 
 const doc = createDocument({
+  title: "Certificate of Completion",
   info: {
-    title: "Certificate of Completion",
     author: "Training Academy"
   }
 });
@@ -27,9 +27,9 @@ const BODY = hex("#4a4a5e");
 
 ```ts
 doc.renderTemplate({
-  info: { title: "Certificate of Completion", author: "Training Academy" },
+  title: "Certificate of Completion",
+  info: { author: "Training Academy" },
   xmpMetadata: {
-    title: "Certificate of Completion",
     creator: "Training Academy",
     createDate: "2026-05-08T12:00:00Z",
     modifyDate: "2026-05-08T12:00:00Z",
@@ -215,12 +215,11 @@ interface CertificateData {
 
 function generateCertificate(data: CertificateData, doc: PdfDocument): void {
   doc.renderTemplate({
+    title: `Certificate — ${data.course}`,
     info: {
-      title: `Certificate — ${data.course}`,
       author: "Training Academy"
     },
     xmpMetadata: {
-      title: `Certificate — ${data.course}`,
       creator: "Training Academy",
       createDate: "2026-05-08T12:00:00Z",
       modifyDate: "2026-05-08T12:00:00Z",
