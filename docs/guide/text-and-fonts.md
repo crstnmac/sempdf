@@ -131,7 +131,7 @@ const font = doc.embedTrueTypeFont(fontBytes, {
 
 ## Vertical Writing Mode
 
-Set `writingMode: "vertical-rl"` for CJK vertical text. Glyphs are stacked top-to-bottom, columns progress right-to-left:
+Set `writingMode: "vertical"` for CJK vertical text. Glyphs are stacked top-to-bottom:
 
 ```ts
 page.text("縦書きのテキスト", {
@@ -139,7 +139,7 @@ page.text("縦書きのテキスト", {
   y: 600,
   font: cjkFont,
   fontSize: 14,
-  writingMode: "vertical-rl"
+  writingMode: "vertical"
 });
 ```
 
@@ -153,7 +153,7 @@ page.text("令和5年", {
   y: 600,
   font: cjkFont,
   fontSize: 14,
-  writingMode: "vertical-rl"
+  writingMode: "vertical"
 });
 // "5" rendered horizontally inline
 ```

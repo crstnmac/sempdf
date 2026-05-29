@@ -1242,6 +1242,160 @@ test("renderTemplate applies document info and structured XMP metadata", () => {
   assert.match(xmp, /<xmp:MetadataDate>2026-05-07T00:00:00Z<\/xmp:MetadataDate>/);
 });
 
+test("strict template layout rejects oversized non-table blocks", () => {
+  const doc = createDocument();
+
+  assert.throws(
+    () => doc.renderTemplate({
+      strictLayout: true,
+      page: { size: { width: 180, height: 140 }, margin: 20 },
+      blocks: [
+        {
+          type: "custom",
+          estimate: () => 200,
+          render: (flow) => {
+            flow.moveDown(200);
+            return 200;
+          }
+        }
+      ]
+    }),
+    (error: unknown) =>
+      error instanceof PdfEngineError &&
+      error.code === PdfErrorCode.LAYOUT_OVERFLOW &&
+      error.details?.blockType === "custom"
+  );
+});
+
+test("strict template layout rejects oversized table rows", () => {
+  const doc = createDocument();
+
+  assert.throws(
+    () => doc.renderTemplate({
+      strictLayout: true,
+      page: {
+        size: { width: 220, height: 130 },
+        margin: 20,
+        fontSize: 10,
+        lineHeight: 12
+      },
+      blocks: [
+        {
+          type: "table",
+          rows: [[Array.from({ length: 80 }, () => "wrapped").join(" ")]],
+          options: { width: 180, columnWidths: [180], cellPadding: 4 }
+        }
+      ]
+    }),
+    (error: unknown) =>
+      error instanceof PdfEngineError &&
+      error.code === PdfErrorCode.LAYOUT_OVERFLOW &&
+      error.details?.blockType === "table" &&
+      error.details?.rowIndex === 0
+  );
+});
+
+test("non-strict template layout preserves forced oversized table row behavior", () => {
+  const doc = createDocument();
+
+  doc.renderTemplate({
+    page: {
+      size: { width: 220, height: 130 },
+      margin: 20,
+      fontSize: 10,
+      lineHeight: 12
+    },
+    blocks: [
+      {
+        type: "table",
+        rows: [[Array.from({ length: 80 }, () => "wrapped").join(" ")]],
+        options: { width: 180, columnWidths: [180], cellPadding: 4 }
+      }
+    ]
+  });
+
+  assert.equal(parseDocument(doc.toUint8Array()).getPageCount(), 1);
+});
+
+test("strict template layout can allow oversized content while enforcing other limits", () => {
+  const doc = createDocument();
+
+  doc.renderTemplate({
+    strictLayout: { oversizedContent: "allow", maxPages: 1 },
+    page: { size: { width: 180, height: 140 }, margin: 20 },
+    blocks: [
+      {
+        type: "custom",
+        estimate: () => 200,
+        render: (flow) => {
+          flow.paragraph("Allowed overflow marker", { marginBottom: 0 });
+          flow.moveDown(180);
+          return 200;
+        }
+      }
+    ]
+  });
+
+  assert.equal(parseDocument(doc.toUint8Array()).getPageCount(), 1);
+});
+
+test("strict template layout enforces max page count", () => {
+  const doc = createDocument();
+
+  assert.throws(
+    () => doc.renderTemplate({
+      strictLayout: { maxPages: 1 },
+      page: { size: { width: 220, height: 180 }, margin: 20 },
+      blocks: [
+        { type: "paragraph", text: "First page" },
+        { type: "pageBreak" },
+        { type: "paragraph", text: "Second page" }
+      ]
+    }),
+    (error: unknown) =>
+      error instanceof PdfEngineError &&
+      error.code === PdfErrorCode.LAYOUT_OVERFLOW &&
+      error.details?.maxPages === 1
+  );
+});
+
+test("strict template layout succeeds for fixed invoice-style templates", () => {
+  const doc = createDocument({
+    info: {
+      title: "Strict Invoice",
+      creationDate: "D:20260508093000Z"
+    }
+  });
+
+  doc.renderTemplate({
+    strictLayout: { maxPages: 1 },
+    page: { size: "A4", margin: 48, font: "Helvetica", fontSize: 10, lineHeight: 13 },
+    blocks: [
+      { type: "heading", text: "INVOICE", options: { font: "Helvetica-Bold" } },
+      {
+        type: "table",
+        rows: [
+          ["Invoice #", "INV-001"],
+          ["Date", "May 8, 2026"]
+        ],
+        options: { width: 499.28, columnWidths: [120, 379.28], headerColumns: 1 }
+      },
+      {
+        type: "table",
+        rows: [
+          [{ text: "Description", header: true }, { text: "Amount", header: true }],
+          ["Template implementation", "$1,200.00"],
+          [{ text: "Total", header: true }, { text: "$1,200.00", header: true }]
+        ],
+        options: { width: 499.28, columnWidths: [349.28, 150], headerRows: 1 }
+      }
+    ]
+  });
+
+  const parsed = parseDocument(doc.toUint8Array());
+  assert.equal(parsed.getPageCount(), 1);
+});
+
 test("serializes CMYK colors and custom ICC output intents", () => {
   const icc = Uint8Array.from([0, 1, 2, 3, 4, 5, 6, 7]);
   const doc = createDocument({

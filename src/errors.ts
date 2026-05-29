@@ -72,6 +72,8 @@ export enum PdfErrorCode {
   INTERNAL_ERROR = "INTERNAL_ERROR",
   /** A document-level operation was attempted in an unsupported state or combination. */
   INVALID_OPERATION = "INVALID_OPERATION",
+  /** Strict layout rendering detected content that cannot fit in its allotted region. */
+  LAYOUT_OVERFLOW = "LAYOUT_OVERFLOW",
   /** A ByteSink or stream operation was attempted after the sink was closed. */
   SINK_CLOSED = "SINK_CLOSED",
   /** A ByteSink has reached its maximum configured capacity. */

@@ -21,17 +21,17 @@ try {
 
 | Code | Typical cause | Fix |
 |------|--------------|-----|
-| `INVALID_PDF` | Malformed or unsupported PDF input | Verify the source PDF is valid (not truncated, correct header); check for PDF 2.0 xref streams if using classic mode |
-| `UNSUPPORTED_XREF_FORMAT` | Cross-reference stream format is not recognized | The library supports classic xref tables and PDF 1.5+ xref streams. If you encounter this, the PDF may use a hybrid or compressed xref format |
+| `INVALID_PDF` | Malformed or unsupported PDF input | Verify the source PDF is valid (not truncated, correct header); if possible, re-export or repair the PDF with a standards-compliant writer |
+| `UNSUPPORTED_XREF_FORMAT` | Cross-reference stream format is not recognized | The library supports classic xref tables, xref streams, object streams, and incremental xref chains. If you encounter this, the PDF may use malformed or non-standard cross-reference data |
 | `INVALID_FONT` | Font name is not a standard 14 font, or embedded font data is corrupt | Use exact PostScript names (`"Helvetica"`, `"Times-Roman"`, etc.) or verify TTF data is valid |
 | `UNSUPPORTED_CHARACTER` | A character has no glyph in any available font | Add an embedded font that covers the character or provide a `fallbackFonts` array |
-| `INVALID_IMAGE` | Image is corrupt, unsupported format, or wrong color space | Verify image data; only JPEG and PNG are supported; avoid indexed PNGs >8 bpp; avoid CMYK JPEGs |
-| `UNSUPPORTED_IMAGE_FORMAT` | Image is not JPEG or PNG | Convert the image to JPEG or PNG before embedding |
+| `INVALID_IMAGE` | Image is corrupt, unsupported format, or wrong color space | Verify image data and use the matching image API: `jpeg`, `png`, `bmp`, `gif`, `jpeg2000`, `jbig2`, `tiff`, `webp`, or `svg` |
+| `UNSUPPORTED_IMAGE_FORMAT` | Image format variant is not supported | Convert to a supported variant, such as RGB/CMYK JPEG, non-interlaced PNG, lossless WebP, baseline LZW TIFF, or first-frame GIF |
 | `UNSUPPORTED_IMAGE_COLOR_SPACE` | PNG uses a color space other than RGB or Grayscale | Convert the image to RGB or grayscale |
 | `UNSUPPORTED_IMAGE_BIT_DEPTH` | PNG bit depth is not 1, 2, 4, 8, or 16 | Convert to 8-bit or 16-bit |
 | `UNSUPPORTED_IMAGE_INTERLACE` | PNG uses Adam7 interlacing | Re-encode the PNG without interlacing |
 | `INVALID_ENCRYPTION` | Encryption parameters are inconsistent (e.g., wrong password, unsupported algorithm for current PDF version) | Check algorithm/password/revision combination; avoid `rc4-40` with object streams |
-| `UNSUPPORTED_ENCRYPTION` | Encryption mode is not supported for parsing or editing | If parsing, the PDF may use public-key or custom security handlers (only Standard Security Handler revision 2+ is supported) |
+| `UNSUPPORTED_ENCRYPTION` | Encryption mode is not supported for parsing or editing | If parsing, the PDF may use public-key or custom security handlers. Password-protected PDFs using the Standard Security Handler with RC4 or AES are supported |
 | `INVALID_COMPLIANCE` | Document violates an enabled conformance profile (e.g., PDF/UA-1 missing language tag) | Run `doc.validateCompliance()` to see all issues; fix each before serialization |
 | `INVALID_PAGE` | Page index is out of bounds, or page reference is invalid | Check page count and indices; use `parsed.pages.length` to verify |
 | `INVALID_TEXT` | Text content or layout options are invalid (e.g., negative font size) | Verify `fontSize`, `lineHeight`, and `width` are positive |
@@ -72,7 +72,7 @@ try {
 ### Causes
 
 1. **Truncated file**: The file was cut short during download or copy
-2. **Non-classic xref format**: The PDF uses a compressed cross-reference format or hybrid xref that the library doesn't support
+2. **Malformed xref data**: The PDF uses broken, incomplete, or non-standard cross-reference data. Classic xref tables, xref streams, object streams, and incremental xref chains are supported when well-formed
 3. **Incremental updates not merged**: A PDF with multiple incremental updates (appended xref sections) may reference objects from earlier sections that have been superseded
 4. **Object stream xref**: PDF 1.5+ files store objects in compressed streams; the library supports these, but malformed streams cause parse failures
 
@@ -163,8 +163,8 @@ const isTrueType = (bytes: Uint8Array): boolean => {
 
 ### Common causes specific to CJK
 
-1. **Font format**: OpenType fonts with CFF outlines (`.otf` extension, but sometimes named `.ttf`) are NOT supported. Only TrueType outline fonts work
-2. **Vertical writing**: The library does not support vertical writing mode (tate-chu-yoko). CJK text is always horizontal
+1. **Font format**: OpenType fonts with CFF outlines (`.otf` extension, but sometimes named `.ttf`) are not supported by the TrueType embedder. Use a TrueType outline font for CJK text
+2. **Writing mode mismatch**: Horizontal text is the default. For CJK vertical layout, pass `writingMode: "vertical"` to text, text block, flow, or template options
 3. **Subset size**: If only a few CJK characters appear blank, verify they exist in the font at the expected glyph index. Use `python3 -c "from fontTools.ttLib import TTFont; f = TTFont('your-font.ttf'); print(f.getBestCmap())"` to check
 4. **Encoding mismatch**: The library uses glyph IDs directly; there is no CMap/encoding translation at the embedder level. Ensure your text characters map to valid glyph IDs in the font
 
