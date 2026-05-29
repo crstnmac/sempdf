@@ -970,6 +970,58 @@ test("parses metadata, page count, and page tree from generated PDFs", () => {
   assert.deepEqual(pages[1]?.mediaBox, [0, 0, 595.28, 841.89]);
 });
 
+test("top-level document title populates info and structured XMP metadata", () => {
+  const doc = createDocument({
+    title: "Unified Title",
+    xmpMetadata: {
+      creator: "Codex"
+    }
+  });
+
+  doc.addPage().text("Metadata page", { x: 24, y: 700 });
+
+  const parsed = parseDocument(doc.toUint8Array());
+  const xmp = parsed.getXmpMetadata() ?? "";
+
+  assert.equal(parsed.getMetadata().title, "Unified Title");
+  assert.match(xmp, /Unified Title/);
+  assert.match(xmp, /<rdf:li>Codex<\/rdf:li>/);
+});
+
+test("top-level document title creates XMP and display-title viewer preference", () => {
+  const doc = createDocument({
+    title: "Accessible Title"
+  });
+
+  doc.addPage().text("Metadata page", { x: 24, y: 700 });
+
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+  const parsed = parseDocument(bytes);
+  const xmp = parsed.getXmpMetadata() ?? "";
+
+  assert.equal(parsed.getMetadata().title, "Accessible Title");
+  assert.match(xmp, /Accessible Title/);
+  assert.match(text, /\/ViewerPreferences <<\s*\/DisplayDocTitle true\s*>>/);
+});
+
+test("explicit metadata titles override the top-level document title", () => {
+  const doc = createDocument({
+    title: "Fallback Title",
+    info: { title: "Info Title" },
+    xmpMetadata: { title: "XMP Title" }
+  });
+
+  doc.addPage().text("Metadata page", { x: 24, y: 700 });
+
+  const parsed = parseDocument(doc.toUint8Array());
+  const xmp = parsed.getXmpMetadata() ?? "";
+
+  assert.equal(parsed.getMetadata().title, "Info Title");
+  assert.match(xmp, /XMP Title/);
+  assert.doesNotMatch(xmp, /Fallback Title/);
+});
+
 test("serializes and parses XMP metadata streams", () => {
   const xmpMetadata =
     '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Hello Ω</dc:title></rdf:Description></rdf:RDF></x:xmpmeta>';
@@ -1240,6 +1292,46 @@ test("renderTemplate applies document info and structured XMP metadata", () => {
   assert.match(xmp, /Template &lt;Metadata&gt;/);
   assert.match(xmp, /<rdf:li>sempdf<\/rdf:li>/);
   assert.match(xmp, /<xmp:MetadataDate>2026-05-07T00:00:00Z<\/xmp:MetadataDate>/);
+});
+
+test("renderTemplate title populates info and structured XMP metadata", () => {
+  const doc = createDocument();
+
+  doc.renderTemplate({
+    title: "Template Unified Title",
+    xmpMetadata: {
+      creator: "sempdf"
+    },
+    blocks: [
+      { type: "heading", text: "Template Unified Title" }
+    ]
+  });
+
+  const parsed = parseDocument(doc.toUint8Array());
+  const xmp = parsed.getXmpMetadata() ?? "";
+
+  assert.equal(parsed.getMetadata().title, "Template Unified Title");
+  assert.match(xmp, /Template Unified Title/);
+  assert.match(xmp, /<rdf:li>sempdf<\/rdf:li>/);
+});
+
+test("renderTemplate title creates XMP without separate metadata options", () => {
+  const doc = createDocument();
+
+  doc.renderTemplate({
+    title: "Template Accessible Title",
+    blocks: [
+      { type: "heading", text: "Template Accessible Title" }
+    ]
+  });
+
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder().decode(bytes);
+  const parsed = parseDocument(bytes);
+
+  assert.equal(parsed.getMetadata().title, "Template Accessible Title");
+  assert.match(parsed.getXmpMetadata() ?? "", /Template Accessible Title/);
+  assert.match(text, /\/ViewerPreferences <<\s*\/DisplayDocTitle true\s*>>/);
 });
 
 test("strict template layout rejects oversized non-table blocks", () => {

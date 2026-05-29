@@ -4,19 +4,18 @@ Documents can carry Info/XMP metadata, named destinations, outlines, page labels
 
 ## Document Info and XMP
 
-Info dictionary entries map directly. XMP metadata is generated from a structured input.
+Use `title` when the Info dictionary title and XMP title should match. It writes the classic title, creates structured XMP title metadata, and sets the viewer preference that tells PDF readers to display the document title. Info dictionary entries map directly for the remaining classic metadata fields.
 
 ```ts
 const doc = createDocument({
+  title: "Hello PDF",
   info: {
-    title: "Hello PDF",
     author: "sempdf",
     subject: "Demonstration",
     keywords: "pdf,typescript",
     creationDate: "D:20260413210000Z"
   },
   xmpMetadata: {
-    title: "Hello PDF",
     creator: "sempdf",
     createDate: "2026-04-13T21:00:00Z",
     modifyDate: "2026-04-13T21:00:00Z",

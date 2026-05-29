@@ -11,8 +11,8 @@ import { readFileSync } from "node:fs";
 const fontData = readFileSync("fonts/SourceSans3-Regular.ttf");
 
 const doc = createDocument({
+  title: "Summer Jazz Night — Admission Ticket",
   info: {
-    title: "Summer Jazz Night — Admission Ticket",
     author: "City Arts Council"
   }
 });
@@ -27,12 +27,11 @@ const MUTED = hex("#6b6b80");
 
 ```ts
 doc.renderTemplate({
+  title: "Summer Jazz Night — Admission Ticket",
   info: {
-    title: "Summer Jazz Night — Admission Ticket",
     author: "City Arts Council"
   },
   xmpMetadata: {
-    title: "Summer Jazz Night — Admission Ticket",
     creator: "City Arts Council",
     createDate: "2026-05-08T10:00:00Z",
     modifyDate: "2026-05-08T10:00:00Z",

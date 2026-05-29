@@ -11,13 +11,12 @@ import { readFileSync } from "node:fs";
 const fontData = readFileSync("fonts/SourceSans3-Regular.ttf");
 
 const doc = createDocument({
+  title: "Invoice #INV-2026-0042",
   info: {
-    title: "Invoice #INV-2026-0042",
     author: "ACME Corp",
     creationDate: "D:20260508093000Z"
   },
   xmpMetadata: {
-    title: "Invoice #INV-2026-0042",
     creator: "ACME Corp",
     createDate: "2026-05-08T09:30:00Z",
     modifyDate: "2026-05-08T09:30:00Z",
@@ -72,9 +71,9 @@ const tax = subtotal * taxRate;
 const total = subtotal + tax;
 
 doc.renderTemplate({
-  info: { title: "Invoice #INV-2026-0042", author: "ACME Corp" },
+  title: "Invoice #INV-2026-0042",
+  info: { author: "ACME Corp" },
   xmpMetadata: {
-    title: "Invoice #INV-2026-0042",
     creator: "ACME Corp",
     createDate: "2026-05-08T09:30:00Z",
     modifyDate: "2026-05-08T09:30:00Z",
