@@ -26,18 +26,18 @@ await doc.writeTo(new NodeStreamSink(createWriteStream("out.pdf")));
 
 ## Web streams
 
+`WebStreamSink` wraps a `WritableStream`. Pair it with a `TransformStream` to stream straight into a `Response`:
+
 ```ts
 import { WebStreamSink } from "zeropdf";
 
-const response = new Response(
-  new ReadableStream({
-    async start(controller) {
-      await doc.writeTo(new WebStreamSink(controller));
-      controller.close();
-    }
-  }),
-  { headers: { "Content-Type": "application/pdf" } }
-);
+const { readable, writable } = new TransformStream<Uint8Array>();
+const sink = new WebStreamSink(writable);
+void doc.writeTo(sink).then(() => sink.close());
+
+const response = new Response(readable, {
+  headers: { "Content-Type": "application/pdf" }
+});
 ```
 
 ## Memory sink
@@ -73,8 +73,8 @@ import { TempFileSink } from "zeropdf";
 
 const sink = new TempFileSink();
 await doc.writeTo(sink);
-const bytes = await sink.collect();
-// temp file is cleaned up on collect() or close()
+const bytes = await sink.getBytes();
+await sink.close(); // deletes the temp file
 ```
 
 Keeps memory bounded regardless of document size.
