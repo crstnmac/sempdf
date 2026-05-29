@@ -30,7 +30,7 @@ features:
 import { createDocument, rgb } from "sempdf";
 
 const doc = createDocument({
-  info: { title: "Invoice" }
+  title: "Invoice"
 });
 
 const page = doc.addPage({ size: "A4" });

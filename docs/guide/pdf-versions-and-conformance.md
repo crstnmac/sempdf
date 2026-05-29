@@ -20,7 +20,7 @@ The serializer auto-detects the minimum PDF header version required by the featu
 Set `conformance` to enforce PDF/A or PDF/UA invariants at serialization time:
 
 ```ts
-const archive = createDocument({ conformance: "pdfa-1b", info: { title: "Archive" } });
+const archive = createDocument({ title: "Archive", conformance: "pdfa-1b" });
 const accessible = createDocument({ conformance: "pdfua-1", tagged: true, language: "en-US" });
 ```
 

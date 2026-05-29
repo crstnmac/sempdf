@@ -397,6 +397,26 @@ export function normalizeDocumentInfo(info: DocumentInfo | undefined): Normalize
   return normalized;
 }
 
+export function applyDocumentTitleToInfo(title: string | undefined, info: DocumentInfo | undefined): DocumentInfo | undefined {
+  if (title === undefined) {
+    return info;
+  }
+  return { title, ...info };
+}
+
+export function applyDocumentTitleToXmpMetadata(
+  title: string | undefined,
+  metadata: XmpMetadataInput | undefined
+): XmpMetadataInput | undefined {
+  if (title === undefined || typeof metadata === "string") {
+    return metadata;
+  }
+  if (metadata === undefined) {
+    return { title };
+  }
+  return { title, ...metadata };
+}
+
 export function normalizeXmpMetadata(metadata: XmpMetadataInput | undefined): string | undefined {
   if (metadata === undefined) {
     return undefined;

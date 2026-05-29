@@ -49,6 +49,8 @@ import {
 } from "./internal/page-helpers.js";
 import {
   collectComplianceIssues,
+  applyDocumentTitleToInfo,
+  applyDocumentTitleToXmpMetadata,
   normalizeAttachmentOptions,
   normalizeCheckBoxOptions,
   normalizeChoiceFieldOptions,
@@ -3649,11 +3651,11 @@ export class PdfDocument {
    * @param options Options that control the operation.
    */
   constructor(options: DocumentOptions = {}) {
-    this.info = normalizeDocumentInfo(options.info);
+    this.info = normalizeDocumentInfo(applyDocumentTitleToInfo(options.title, options.info));
     this.defaultPageSize = resolvePageSize(options.defaultPageSize);
     this.accessibility = normalizeDocumentAccessibility(options);
     this.encryption = normalizeDocumentEncryption(options.encryption);
-    this.xmpMetadata = normalizeXmpMetadata(options.xmpMetadata);
+    this.xmpMetadata = normalizeXmpMetadata(applyDocumentTitleToXmpMetadata(options.title, options.xmpMetadata));
     this.compress = options.compress;
     this.objectStreams = options.objectStreams;
     this.linearize = options.linearize;
@@ -3766,11 +3768,12 @@ export class PdfDocument {
    */
   renderTemplate(options: TemplateDocumentOptions): void {
     this._mutate();
-    if (options.info !== undefined) {
-      this.updateInfo(options.info);
+    const info = applyDocumentTitleToInfo(options.title, options.info);
+    if (info !== undefined) {
+      this.updateInfo(info);
     }
-    if ("xmpMetadata" in options) {
-      this.setXmpMetadata(options.xmpMetadata);
+    if (options.title !== undefined || "xmpMetadata" in options) {
+      this.setXmpMetadata(applyDocumentTitleToXmpMetadata(options.title, options.xmpMetadata));
     }
     renderTemplateDocument(this, options, {
       title: this.info.title,
