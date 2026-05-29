@@ -933,6 +933,7 @@ function prepareDocumentSerialization(
       ],
       [
         'ViewerPreferences',
+        model.info.title !== undefined ||
         model.conformance === 'pdfua-1' ||
         model.conformance === 'pdfua-2' ||
         model.conformance === 'wtpdf'

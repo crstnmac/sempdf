@@ -12,8 +12,8 @@ Create a document, add a page, write content, and serialize the result:
 import { createDocument, rgb } from "zeropdf";
 
 const doc = createDocument({
+  title: "Hello PDF",
   info: {
-    title: "Hello PDF",
     author: "zeropdf"
   }
 });

@@ -9,16 +9,15 @@ import { createDocument } from "zeropdf";
 const fontBytes = await readFile("fonts/SourceSans3-Regular.ttf");
 
 const doc = createDocument({
+  title: "Quarterly Report",
   conformance: "pdfua-1",
   tagged: true,
   language: "en-US",
   structureRoot: "Document",
   info: {
-    title: "Quarterly Report",
     author: "zeropdf"
   },
   xmpMetadata: {
-    title: "Quarterly Report",
     creator: "zeropdf",
     createDate: "2026-05-05T00:00:00Z",
     modifyDate: "2026-05-05T00:00:00Z",
@@ -74,12 +73,11 @@ For longer reports, use `renderTemplate()` to render a reusable block tree with 
 
 ```ts
 doc.renderTemplate({
+  title: "Accessibility Audit Report",
   info: {
-    title: "Accessibility Audit Report",
     author: "BarrierBreak"
   },
   xmpMetadata: {
-    title: "Accessibility Audit Report",
     creator: "BarrierBreak",
     createDate: "2026-05-05T00:00:00Z",
     modifyDate: "2026-05-05T00:00:00Z",

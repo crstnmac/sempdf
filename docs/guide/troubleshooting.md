@@ -200,18 +200,18 @@ If `validateCompliance()` reports errors for `pdfua-1` conformance:
 | No structure root | Set `structureRoot: "Document"` in `createDocument()` |
 | Text without embedded font | Use `embedTrueTypeFont()` for all visible text (standard 14 fonts are not allowed in PDF/UA-1) |
 | Missing alt text on images | Pass `altText` in image options: `page.png(data, { altText: "Description" })` |
-| Missing XMP metadata | Provide `xmpMetadata` in `createDocument()` or `renderTemplate()` with at least `title`, `creator`, `createDate`, `modifyDate`, `metadataDate` |
+| Title fails in Adobe checker | Set top-level `title`; it emits `/Title`, XMP title metadata, and `/ViewerPreferences /DisplayDocTitle true` |
+| Missing XMP metadata | Provide top-level `title` plus `xmpMetadata` in `createDocument()` or `renderTemplate()` with `creator`, `createDate`, `modifyDate`, and `metadataDate` |
 | Uncategorized content | Use `flow()` or `renderTemplate()` — raw `text()` without a tag may produce content outside the structure tree |
 
 ```ts
 const doc = createDocument({
+  title: "Report",
   conformance: "pdfua-1",
   tagged: true,
   language: "en-US",
   structureRoot: "Document",
-  info: { title: "Report" },
   xmpMetadata: {
-    title: "Report",
     creator: "zeropdf",
     createDate: "2026-05-08T00:00:00Z",
     modifyDate: "2026-05-08T00:00:00Z",

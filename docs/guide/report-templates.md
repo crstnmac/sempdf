@@ -4,7 +4,8 @@
 
 ```ts
 doc.renderTemplate({
-  info: { title: "Quarterly Report", author: "Finance" },
+  title: "Quarterly Report",
+  info: { author: "Finance" },
   page: {
     size: "A4",
     font,
