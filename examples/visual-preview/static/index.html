@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>zeropdf Visual Preview</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">zeropdf visual QA</p>
+          <h1>Template Preview</h1>
+        </div>
+        <div class="status" id="status">Idle</div>
+      </header>
+
+      <section class="controls" aria-label="Preview controls">
+        <label>
+          <span>Template</span>
+          <select id="fixtureSelect"></select>
+        </label>
+        <label>
+          <span>Fixture data</span>
+          <select id="dataSetSelect"></select>
+        </label>
+        <button id="renderButton" type="button">Regenerate PDF</button>
+        <button id="updateButton" type="button">Update Baseline</button>
+        <a id="pdfLink" class="ghost" href="#" target="_blank" rel="noreferrer">Open PDF</a>
+      </section>
+
+      <section class="metrics" id="metrics" aria-live="polite">
+        <div>
+          <span>Diff pixels</span>
+          <strong id="diffPixels">-</strong>
+        </div>
+        <div>
+          <span>Diff ratio</span>
+          <strong id="diffRatio">-</strong>
+        </div>
+        <div>
+          <span>Max channel</span>
+          <strong id="maxDelta">-</strong>
+        </div>
+        <div>
+          <span>Result</span>
+          <strong id="resultText">-</strong>
+        </div>
+      </section>
+
+      <section class="viewer">
+        <div class="viewer-toolbar">
+          <div class="page-tabs" id="pageTabs"></div>
+          <div class="mode-tabs" role="tablist" aria-label="View mode">
+            <button class="mode active" type="button" data-mode="side">Side by side</button>
+            <button class="mode" type="button" data-mode="overlay">Overlay</button>
+            <button class="mode" type="button" data-mode="diff">Diff only</button>
+          </div>
+        </div>
+
+        <div class="stage mode-side" id="stage">
+          <figure class="pane baseline-pane">
+            <figcaption>Baseline</figcaption>
+            <div class="paper"><img id="baselineImage" alt="Baseline render" /></div>
+          </figure>
+          <figure class="pane actual-pane">
+            <figcaption>Actual</figcaption>
+            <div class="paper overlay-host">
+              <img id="actualImage" alt="Actual render" />
+              <img id="overlayImage" class="overlay" alt="Diff overlay" />
+            </div>
+          </figure>
+          <figure class="pane diff-pane">
+            <figcaption>Diff</figcaption>
+            <div class="paper"><img id="diffImage" alt="Diff render" /></div>
+          </figure>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/static/app.js"></script>
+  </body>
+</html>

@@ -1520,6 +1520,19 @@ export interface TemplateAutoOutlineOptions {
 }
 
 /**
+ * Strict layout options for templates that must fail instead of overflowing.
+ */
+export interface TemplateStrictLayoutOptions {
+  /**
+   * How to handle content that cannot fit in a fresh flow region.
+   * Defaults to "error" when strict layout is enabled.
+   */
+  oversizedContent?: "error" | "allow" | undefined;
+  /** Maximum number of pages the rendered template may produce. */
+  maxPages?: number | undefined;
+}
+
+/**
  * Top-level options for rendering template blocks into a complete document.
  */
 export interface TemplateDocumentOptions {
@@ -1546,6 +1559,12 @@ export interface TemplateDocumentOptions {
    * `true` uses defaults (maxLevel=3, collapsed); pass an object to customise.
    */
   autoOutline?: boolean | TemplateAutoOutlineOptions | undefined;
+  /**
+   * Enables strict layout checks for fixed templates. When true, oversized
+   * content that would overflow a fresh page/column throws instead of being
+   * force-placed.
+   */
+  strictLayout?: boolean | TemplateStrictLayoutOptions | undefined;
 }
 
 /**

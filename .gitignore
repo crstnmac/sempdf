@@ -12,6 +12,7 @@ docs/.vitepress/dist/
 # Test and coverage output
 coverage/
 .nyc_output/
+.visual-output/
 
 # Logs
 logs/

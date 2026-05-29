@@ -234,6 +234,41 @@ await doc.writeTo(/* your sink */);
 | `spread: last item` | A `pageBreak` before the totals section keeps summary on a fresh page for multi-page invoices |
 | Color palette | Use `hex()` for brand colors; keep body text at `#4a4a5e` for readability |
 
+## Designer-locked invoices
+
+For invoice templates that must match approved designs, make the layout deterministic:
+
+- set fixed page margins, font names, font sizes, line heights, table widths, and `columnWidths`
+- provide deterministic `info` and `xmpMetadata` dates
+- keep tax, currency, rounding, discounts, and payment-status logic outside the PDF layer
+- enable `strictLayout` so oversized content fails instead of silently overflowing
+
+```ts
+doc.renderTemplate({
+  strictLayout: { maxPages: 1 },
+  page: {
+    size: "A4",
+    margin: 48,
+    font,
+    fontSize: 10,
+    lineHeight: 13
+  },
+  blocks: [
+    {
+      type: "table",
+      rows: invoiceRows,
+      options: {
+        width: 499.28,
+        columnWidths: [259.28, 50, 95, 95],
+        headerRows: 1
+      }
+    }
+  ]
+});
+```
+
+Use the optional visual regression scripts described in [Pixel-Perfect Invoices](./pixel-perfect-invoices) to compare generated PDFs against approved baselines. These scripts use dev-only Poppler tooling; the published library remains dependency-free.
+
 ## Multi-page invoices
 
 For invoices that span multiple pages, the template engine paginates automatically. Add a `pageBreak` before the totals section to keep the summary together:
@@ -265,5 +300,6 @@ const doc = createDocument({
 ## See also
 
 - [Report Templates](./report-templates) — template block reference
+- [Pixel-Perfect Invoices](./pixel-perfect-invoices) — strict layout and optional visual QA
 - [Encryption and Signatures](./encryption-and-signatures) — protect sensitive documents
 - [Text and Fonts](./text-and-fonts) — font APIs

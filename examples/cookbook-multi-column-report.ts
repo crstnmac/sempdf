@@ -53,7 +53,7 @@ doc.renderTemplate({
       headingAfter: { 1: 12, 2: 8, 3: 6 },
       tableBefore: 6,
       tableAfter: 12
-    }
+    },
   },
   blocks: [
     // ── Metric dashboard tiles ─────────────────────

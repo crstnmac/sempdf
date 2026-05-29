@@ -1,6 +1,6 @@
 # Images
 
-Embed JPEG and PNG images directly from byte arrays. PNG transparency masks and alpha-channel soft masks are preserved.
+Embed images directly from byte arrays. JPEG and PNG are the primary raster paths, with additional helpers for BMP, GIF, JPEG2000, JBIG2, TIFF, WebP, and SVG. PNG transparency masks and alpha-channel soft masks are preserved.
 
 ## JPEG
 
