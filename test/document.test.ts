@@ -1829,3 +1829,99 @@ test("detects concurrent access with debug flag", () => {
     console.warn = originalWarn;
   }
 });
+
+test("template stylesheet applies type-selector styles to matching blocks", () => {
+  const doc = createDocument();
+
+  doc.renderTemplate({
+    page: { size: { width: 300, height: 240 }, margin: 24 },
+    styles: {
+      paragraph: { fontSize: 9 },
+      heading1: { fontSize: 28 }
+    },
+    blocks: [
+      { type: "heading", text: "Styled heading" },
+      { type: "paragraph", text: "Styled paragraph." }
+    ]
+  });
+
+  const [{ runs = [] } = {}] = parseDocument(doc.toUint8Array()).extractText();
+  const heading = runs.find((run) => run.text.includes("Styled heading"));
+  const paragraph = runs.find((run) => run.text.includes("Styled paragraph"));
+  assert.equal(heading?.fontSize, 28);
+  assert.equal(paragraph?.fontSize, 9);
+});
+
+test("template inline options override stylesheet styles", () => {
+  const doc = createDocument();
+
+  doc.renderTemplate({
+    page: { size: { width: 300, height: 200 }, margin: 24 },
+    styles: { paragraph: { fontSize: 9 } },
+    blocks: [
+      { type: "paragraph", text: "Overridden.", options: { fontSize: 18 } }
+    ]
+  });
+
+  const [{ runs = [] } = {}] = parseDocument(doc.toUint8Array()).extractText();
+  assert.equal(runs.find((run) => run.text.includes("Overridden"))?.fontSize, 18);
+});
+
+test("template class selectors cascade with later classes winning", () => {
+  const doc = createDocument();
+
+  doc.renderTemplate({
+    page: { size: { width: 300, height: 200 }, margin: 24 },
+    styles: {
+      paragraph: { fontSize: 9 },
+      big: { fontSize: 20 },
+      bigger: { fontSize: 30 }
+    },
+    blocks: [
+      { type: "paragraph", text: "Cascade.", class: ["big", "bigger"] }
+    ]
+  });
+
+  const [{ runs = [] } = {}] = parseDocument(doc.toUint8Array()).extractText();
+  assert.equal(runs.find((run) => run.text.includes("Cascade"))?.fontSize, 30);
+});
+
+test("template heading-level selector overrides the generic heading selector", () => {
+  const doc = createDocument();
+
+  doc.renderTemplate({
+    page: { size: { width: 320, height: 260 }, margin: 24 },
+    styles: {
+      heading: { fontSize: 12 },
+      heading2: { fontSize: 22 }
+    },
+    blocks: [
+      { type: "heading", text: "Level one", options: { level: 1 } },
+      { type: "heading", text: "Level two", options: { level: 2 } }
+    ]
+  });
+
+  const [{ runs = [] } = {}] = parseDocument(doc.toUint8Array()).extractText();
+  assert.equal(runs.find((run) => run.text.includes("Level one"))?.fontSize, 12);
+  assert.equal(runs.find((run) => run.text.includes("Level two"))?.fontSize, 22);
+});
+
+test("template stylesheet styles propagate into section children", () => {
+  const doc = createDocument();
+
+  doc.renderTemplate({
+    page: { size: { width: 300, height: 220 }, margin: 24 },
+    styles: { paragraph: { fontSize: 7 } },
+    blocks: [
+      {
+        type: "section",
+        blocks: [
+          { type: "paragraph", text: "Nested paragraph." }
+        ]
+      }
+    ]
+  });
+
+  const [{ runs = [] } = {}] = parseDocument(doc.toUint8Array()).extractText();
+  assert.equal(runs.find((run) => run.text.includes("Nested paragraph"))?.fontSize, 7);
+});

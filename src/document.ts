@@ -171,6 +171,7 @@ import type {
   TableOptions,
   TemplateBlock,
   TemplateDocumentOptions,
+  TemplateStylesheet,
   TextBlockOptions,
   TextFieldOptions,
   TextOptions,
@@ -1128,11 +1129,12 @@ export class PdfFlow {
    * Renders a sequence of template blocks into the flow.
    *
    * @param blocks The template blocks to render.
+   * @param stylesheet Optional named styles merged beneath each block's inline options.
    *
    * @returns This flow helper for chaining.
    */
-  render(blocks: readonly TemplateBlock[]): this {
-    renderTemplateBlocksToFlow(this, blocks);
+  render(blocks: readonly TemplateBlock[], stylesheet?: TemplateStylesheet): this {
+    renderTemplateBlocksToFlow(this, blocks, stylesheet);
     return this;
   }
 
@@ -2058,6 +2060,7 @@ export class PdfFlow {
     blocks: readonly TemplateBlock[],
     role?: PdfContainerTag,
     structure?: PdfStructureOptions,
+    stylesheet?: TemplateStylesheet,
   ): this {
     if (role) {
       const node = createStructureNode(
@@ -2068,10 +2071,10 @@ export class PdfFlow {
       );
       const savedParent = this.parent;
       this.parent = node;
-      renderTemplateBlocksToFlow(this, blocks);
+      renderTemplateBlocksToFlow(this, blocks, stylesheet);
       this.parent = savedParent;
     } else {
-      renderTemplateBlocksToFlow(this, blocks);
+      renderTemplateBlocksToFlow(this, blocks, stylesheet);
     }
     return this;
   }

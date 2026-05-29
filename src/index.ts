@@ -169,6 +169,8 @@ export type {
   TemplateSectionBlock,
   TemplateSignatureFieldBlock,
   TemplateStrictLayoutOptions,
+  TemplateStyle,
+  TemplateStylesheet,
   TemplateTableBlock,
   TemplateTextFieldBlock,
   TextAlign,
