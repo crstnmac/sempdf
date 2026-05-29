@@ -72,9 +72,9 @@ The attachment is exposed under the document's `/Names → /EmbeddedFiles` tree 
 import { parseDocument } from "zeropdf";
 
 const parsed = parseDocument(bytes);
-console.log(parsed.metadata.title);
-console.log(parsed.namedDestinations);
-console.log(parsed.outline);
-console.log(parsed.pageLabels);
-console.log(parsed.attachments);
+console.log(parsed.getMetadata().title);
+console.log(parsed.listNamedDestinations());
+console.log(parsed.listOutlines());
+console.log(parsed.listPageLabels());
+console.log(parsed.listAttachments());
 ```

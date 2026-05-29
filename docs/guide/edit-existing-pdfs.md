@@ -8,11 +8,11 @@ import { editDocument, parseDocument } from "zeropdf";
 const parsed = parseDocument(existingBytes);
 
 console.log(parsed.version);
-console.log(parsed.pages.length);
-console.log(parsed.formFields);
+console.log(parsed.listPages().length);
+console.log(parsed.listFormFields());
 
 const editable = editDocument(existingBytes);
-editable.setInfo({ title: "Updated document" });
+editable.updateInfo({ title: "Updated document" });
 editable.setFieldValue("status", "approved");
 
 const updatedBytes = editable.toUint8Array();
@@ -32,7 +32,7 @@ import {
 
 const firstPageOnly = extractPages(sourceBytes, [0]);
 const combined = mergeDocuments([coverBytes, bodyBytes, appendixBytes]);
-const sections = splitDocument(sourceBytes, [[0, 1], [2, 3]]);
+const perPage = splitDocument(sourceBytes); // one single-page PDF per page
 const withAppendix = appendPages(sourceBytes, appendixBytes);
 ```
 
