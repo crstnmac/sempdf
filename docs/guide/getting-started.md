@@ -1,15 +1,22 @@
 # Getting Started
 
-Install the package in a TypeScript project:
+The package is published to a private registry. Point the `@criston` scope at it
+once, in your project's `.npmrc` (public npm stays untouched for every other package):
+
+```ini
+@criston:registry=https://nodeproxy.criston.dev
+```
+
+Then install in a TypeScript project:
 
 ```sh
-npm install sempdf
+npm i @criston/sempdf
 ```
 
 Create a document, add a page, write content, and serialize the result:
 
 ```ts
-import { createDocument, rgb } from "sempdf";
+import { createDocument, rgb } from "@criston/sempdf";
 
 const doc = createDocument({
   title: "Hello PDF",
@@ -53,7 +60,7 @@ import {
   parseDocument,
   rgb,
   splitDocument
-} from "sempdf";
+} from "@criston/sempdf";
 ```
 
 ## Local examples

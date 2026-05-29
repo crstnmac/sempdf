@@ -5,7 +5,7 @@ Generate a professional invoice with company header, customer details, line item
 ## Quick start
 
 ```ts
-import { createDocument, hex } from "sempdf";
+import { createDocument, hex } from "@criston/sempdf";
 import { readFileSync } from "node:fs";
 
 const fontData = readFileSync("fonts/SourceSans3-Regular.ttf");

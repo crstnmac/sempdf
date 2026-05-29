@@ -3705,7 +3705,7 @@ export class PdfDocument {
    *
    * @example
    * ```ts
-   * import { createDocument } from "sempdf";
+   * import { createDocument } from "@criston/sempdf";
    *
    * const doc = createDocument();
    *

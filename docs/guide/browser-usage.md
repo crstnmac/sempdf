@@ -3,7 +3,7 @@
 The package works with browser-friendly binary values. You can generate a PDF, wrap it in a `Blob`, and preview or download it.
 
 ```ts
-import { createDocument } from "sempdf";
+import { createDocument } from "@criston/sempdf";
 
 const doc = createDocument();
 const page = doc.addPage();
@@ -25,7 +25,7 @@ iframe.src = url;
 Use `WebStreamSink` with a `TransformStream` to stream a PDF straight to the browser without buffering the whole document:
 
 ```ts
-import { WebStreamSink } from "sempdf";
+import { WebStreamSink } from "@criston/sempdf";
 
 const { readable, writable } = new TransformStream<Uint8Array>();
 const sink = new WebStreamSink(writable);
