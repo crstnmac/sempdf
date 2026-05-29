@@ -1143,6 +1143,8 @@ export interface TemplateHeadingBlock {
   readonly text: string;
   /** Options that control this item. */
   readonly options?: FlowHeadingOptions | undefined;
+  /** Stylesheet class name(s) applied beneath inline `options`. */
+  readonly class?: string | readonly string[] | undefined;
   /** Inline annotations anchored to substrings of the rendered heading text. */
   readonly annotations?: readonly ParagraphTextAnnotation[] | undefined;
   /** Whether this block should stay on the same page as the following block when possible. */
@@ -1267,6 +1269,8 @@ export interface TemplateParagraphBlock {
   readonly text: string;
   /** Options that control this item. */
   readonly options?: FlowTextOptions | undefined;
+  /** Stylesheet class name(s) applied beneath inline `options`. */
+  readonly class?: string | readonly string[] | undefined;
   /** Inline annotations anchored to specific substrings of the rendered text. */
   readonly annotations?: readonly ParagraphTextAnnotation[] | undefined;
   /** Whether this block should stay on the same page as the following block when possible. */
@@ -1283,6 +1287,8 @@ export interface TemplateTableBlock {
   rows: readonly TableRow[];
   /** Options that control this item. */
   options?: FlowTableOptions | undefined;
+  /** Stylesheet class name(s) applied beneath inline `options`. */
+  class?: string | readonly string[] | undefined;
   /** Whether this block should stay on the same page as the following block when possible. */
   keepWithNext?: boolean | undefined;
 }
@@ -1297,6 +1303,8 @@ export interface TemplateImageBlock {
   data: BinaryData;
   /** Options that control this item. */
   options?: FlowImageOptions | undefined;
+  /** Stylesheet class name(s) applied beneath inline `options`. */
+  class?: string | readonly string[] | undefined;
   /** Whether this block should stay on the same page as the following block when possible. */
   keepWithNext?: boolean | undefined;
 }
@@ -1313,6 +1321,8 @@ export interface TemplateLinkBlock {
   url: string;
   /** Options that control this item. */
   options?: FlowLinkOptions | undefined;
+  /** Stylesheet class name(s) applied beneath inline `options`. */
+  class?: string | readonly string[] | undefined;
   /** Whether this block should stay on the same page as the following block when possible. */
   keepWithNext?: boolean | undefined;
 }
@@ -1468,6 +1478,8 @@ export interface TemplateListBlock {
   readonly type: "list";
   readonly items: ListItem[];
   readonly options?: Omit<ListOptions, "x" | "y"> | undefined;
+  /** Stylesheet class name(s) applied beneath inline `options`. */
+  readonly class?: string | readonly string[] | undefined;
   readonly keepWithNext?: boolean | undefined;
 }
 
@@ -1533,6 +1545,69 @@ export interface TemplateStrictLayoutOptions {
 }
 
 /**
+ * A reusable set of typographic and spacing properties applied to template
+ * blocks through a {@link TemplateStylesheet}. Stylesheet values are merged
+ * beneath each block's inline `options`, so inline options always win.
+ *
+ * Note: `align` accepts the full {@link TextAlign} union; image and link
+ * blocks ignore `"justify"` and treat it as `"left"`.
+ */
+export interface TemplateStyle {
+  /** Font used to render text. */
+  font?: PdfFont | undefined;
+  /** Fallback fonts used when the primary font lacks a glyph. */
+  fallbackFonts?: PdfFont[] | undefined;
+  /** Font size in PDF points. */
+  fontSize?: number | undefined;
+  /** Color used for drawing, text, or highlighting. */
+  color?: PdfColor | undefined;
+  /** Line height in PDF points. */
+  lineHeight?: number | undefined;
+  /** Horizontal alignment for laid-out content. */
+  align?: TextAlign | undefined;
+  /** Whether kerning should be applied where supported. */
+  kerning?: boolean | undefined;
+  /** Text direction used for shaping and layout. */
+  direction?: TextDirection | undefined;
+  /** Text writing mode. */
+  writingMode?: "horizontal" | "vertical" | undefined;
+  /** CSS-like margin shorthand in PDF points. */
+  margin?: FlowMarginShorthand | undefined;
+  /** Top margin in PDF points. */
+  marginTop?: number | undefined;
+  /** Right margin in PDF points. */
+  marginRight?: number | undefined;
+  /** Bottom margin in PDF points. */
+  marginBottom?: number | undefined;
+  /** Left margin in PDF points. */
+  marginLeft?: number | undefined;
+}
+
+/**
+ * Named styles applied to template blocks. Keys are either *type selectors*
+ * matching a block's `type` (`"paragraph"`, `"table"`, `"link"`, `"list"`,
+ * `"image"`, plus per-format image types like `"png"`, and per-level headings
+ * `"heading"`/`"heading1"`..`"heading6"`) or arbitrary *class names* referenced
+ * by a block's `class` field.
+ *
+ * Resolution cascade for each block (low to high priority): page defaults →
+ * matching type selectors (generic before specific) → each class in `class`
+ * order → the block's inline `options`. Merging is shallow.
+ *
+ * @example
+ * ```ts
+ * styles: {
+ *   paragraph: { fontSize: 11, lineHeight: 16 },
+ *   heading1: { fontSize: 24, color: rgb(0.1, 0.2, 0.5) },
+ *   callout: { color: rgb(0.8, 0, 0), marginTop: 12 },
+ * }
+ * ```
+ */
+export interface TemplateStylesheet {
+  readonly [selector: string]: TemplateStyle | undefined;
+}
+
+/**
  * Top-level options for rendering template blocks into a complete document.
  */
 export interface TemplateDocumentOptions {
@@ -1544,6 +1619,11 @@ export interface TemplateDocumentOptions {
   page?: TemplatePageOptions | undefined;
   /** Child template blocks to render. */
   blocks: readonly TemplateBlock[];
+  /**
+   * Reusable named styles merged beneath each block's inline `options`.
+   * See {@link TemplateStylesheet} for the selector and cascade rules.
+   */
+  styles?: TemplateStylesheet | undefined;
   /** Callback that returns header blocks for each page. */
   header?:
     | ((context: TemplateRenderContext) => readonly TemplateBlock[])

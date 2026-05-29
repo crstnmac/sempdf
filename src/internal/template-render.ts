@@ -17,6 +17,8 @@ import type {
   TemplatePageOptions,
   TemplateRenderContext,
   TemplateStrictLayoutOptions,
+  TemplateStyle,
+  TemplateStylesheet,
   TemplateTableBlock,
 } from '../types.js';
 import type { ResolvedPageSize } from './validation.js';
@@ -151,18 +153,18 @@ export function renderTemplateDocument(
     }
 
     if (block.type === 'table') {
-      renderTableWithSplits(block, index, strict, () => current, advanceToNextFlowRegion);
+      renderTableWithSplits(block, index, strict, () => current, advanceToNextFlowRegion, options.styles);
       continue;
     }
 
-    const estimatedHeight = estimateTemplateBlockHeight(block, current.flow);
+    const estimatedHeight = estimateTemplateBlockHeight(block, current.flow, options.styles);
     assertBlockFitsStrictLayout(strict, block, index, current, estimatedHeight);
     const keepWithNext = block.keepWithNext ?? block.type === 'heading';
     const nextEstimatedHeight =
       keepWithNext && options.blocks[index + 1] !== undefined
-        ? estimateTemplateBlockHeight(options.blocks[index + 1]!, current.flow)
+        ? estimateTemplateBlockHeight(options.blocks[index + 1]!, current.flow, options.styles)
         : 0;
-    const balanceTarget = resolveColumnBalanceTarget(options.blocks, index, current);
+    const balanceTarget = resolveColumnBalanceTarget(options.blocks, index, current, options.styles);
     const canSplitTextAcrossColumn =
       block.type === 'paragraph' &&
       current.flow.columnIndex + 1 < current.flow.columnCount;
@@ -188,7 +190,7 @@ export function renderTemplateDocument(
       headings.push({ level, text: block.text, page: current.page });
     }
 
-    renderTemplateBlockToFlow(current.flow, block);
+    renderTemplateBlockToFlow(current.flow, block, options.styles);
   }
 
   assertPageCountWithinStrictLimit(strict, pages.length);
@@ -351,6 +353,7 @@ function resolveColumnBalanceTarget(
   blocks: readonly TemplateBlock[],
   startIndex: number,
   current: CurrentPageRef,
+  stylesheet: TemplateStylesheet | undefined,
 ): number | undefined {
   if (current.flow.columnCount <= 1 || current.flow.columnIndex + 1 >= current.flow.columnCount) {
     return undefined;
@@ -360,7 +363,7 @@ function resolveColumnBalanceTarget(
   for (let index = startIndex; index < blocks.length; index += 1) {
     const block = blocks[index]!;
     if (block.type === 'pageBreak') break;
-    totalHeight += estimateTemplateBlockHeight(block, current.flow);
+    totalHeight += estimateTemplateBlockHeight(block, current.flow, stylesheet);
   }
 
   const marginBottom = current.flow.cursorY - current.flow.remainingHeight;
@@ -383,11 +386,13 @@ function renderTableWithSplits(
   strict: ResolvedStrictLayoutOptions | undefined,
   getCurrent: () => CurrentPageRef,
   advancePage: () => void,
+  stylesheet: TemplateStylesheet | undefined,
 ): void {
   const allRows = block.rows;
   if (allRows.length === 0) return;
 
-  const opts: FlowTableOptions = block.options ?? {};
+  const styled = resolveBlockStyles(block, stylesheet) as TemplateTableBlock;
+  const opts: FlowTableOptions = styled.options ?? {};
   const headerRowCount = Math.max(0, Math.min(opts.headerRows ?? 0, allRows.length));
   const headers = allRows.slice(0, headerRowCount);
 
@@ -488,12 +493,12 @@ function renderTemplateRunningRegions(
     if (options.header) {
       page
         .flow(headerFlowOptions(page.size, options.page))
-        .render(options.header(context));
+        .render(options.header(context), options.styles);
     }
     if (options.footer) {
       page
         .flow(footerFlowOptions(page.size, options.page))
-        .render(options.footer(context));
+        .render(options.footer(context), options.styles);
     }
     renderTemplatePageNumber(page, context, options);
   }
@@ -599,13 +604,78 @@ function defaultTemplatePageNumberFormat(
 export function renderTemplateBlocksToFlow(
   flow: PdfFlow,
   blocks: readonly TemplateBlock[],
+  stylesheet?: TemplateStylesheet | undefined,
 ): void {
   for (const block of blocks) {
-    renderTemplateBlockToFlow(flow, block);
+    renderTemplateBlockToFlow(flow, block, stylesheet);
   }
 }
 
-function renderTemplateBlockToFlow(flow: PdfFlow, block: TemplateBlock): void {
+/**
+ * Computes the stylesheet selectors that apply to a block, in increasing
+ * priority order (generic before specific). Class names are resolved
+ * separately by the caller.
+ */
+function blockStyleSelectors(block: TemplateBlock): readonly string[] {
+  switch (block.type) {
+    case 'heading':
+      return ['heading', `heading${block.options?.level ?? 1}`];
+    case 'png':
+    case 'jpeg':
+    case 'bmp':
+    case 'tiff':
+    case 'jp2':
+    case 'jbig2':
+    case 'webp':
+    case 'gif':
+    case 'svg':
+      return ['image', block.type];
+    default:
+      return [block.type];
+  }
+}
+
+function normalizeClasses(
+  value: string | readonly string[] | undefined,
+): readonly string[] {
+  if (value === undefined) return [];
+  return typeof value === 'string' ? [value] : value;
+}
+
+/**
+ * Returns a shallow clone of `block` with stylesheet styles merged beneath its
+ * inline `options`. Cascade (low to high priority): matching type selectors
+ * (generic before specific) → each class in order → inline `options`. Returns
+ * the original block unchanged when no stylesheet or no matching styles apply.
+ */
+function resolveBlockStyles(
+  block: TemplateBlock,
+  stylesheet: TemplateStylesheet | undefined,
+): TemplateBlock {
+  if (!stylesheet) return block;
+  const layers: TemplateStyle[] = [];
+  for (const selector of blockStyleSelectors(block)) {
+    const style = stylesheet[selector];
+    if (style) layers.push(style);
+  }
+  for (const className of normalizeClasses(
+    (block as { class?: string | readonly string[] | undefined }).class,
+  )) {
+    const style = stylesheet[className];
+    if (style) layers.push(style);
+  }
+  if (layers.length === 0) return block;
+  const inline = (block as { options?: object | undefined }).options;
+  const merged = Object.assign({}, ...layers, inline ?? {});
+  return { ...block, options: merged } as TemplateBlock;
+}
+
+function renderTemplateBlockToFlow(
+  flow: PdfFlow,
+  block: TemplateBlock,
+  stylesheet?: TemplateStylesheet | undefined,
+): void {
+  block = resolveBlockStyles(block, stylesheet);
   switch (block.type) {
     case 'heading':
       flow.heading(block.text, block.options, block.annotations);
@@ -647,7 +717,7 @@ function renderTemplateBlockToFlow(flow: PdfFlow, block: TemplateBlock): void {
       flow.link(block.text, block.url, block.options);
       return;
     case 'section':
-      flow.section(block.blocks, block.role, block.structure);
+      flow.section(block.blocks, block.role, block.structure, stylesheet);
       return;
     case 'pageBreak':
       flow.moveDown(flow.remainingHeight);
@@ -704,6 +774,7 @@ function renderTemplateBlockToFlow(flow: PdfFlow, block: TemplateBlock): void {
 function estimateTemplateBlockHeight(
   block: TemplateBlock,
   flow: PdfFlow,
+  stylesheet?: TemplateStylesheet | undefined,
 ): number {
-  return flow.estimate(block);
+  return flow.estimate(resolveBlockStyles(block, stylesheet));
 }
