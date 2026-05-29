@@ -168,6 +168,25 @@ Spacing is semantic, not a single fixed gap:
 
 Override per block with `marginTop` / `marginBottom`. Override globally with `page.spacing`.
 
+## Stylesheets
+
+Define reusable typography and spacing once with `styles`, then apply them by block type or via a `class` on each block, instead of repeating `options` everywhere. See [Template Stylesheets](./template-stylesheets) for the full selector and cascade rules.
+
+```ts
+doc.renderTemplate({
+  styles: {
+    paragraph: { fontSize: 11, lineHeight: 16 },
+    heading1: { fontSize: 28, color: rgb(0.1, 0.2, 0.5) },
+    callout: { color: rgb(0.8, 0, 0), marginTop: 12 }
+  },
+  blocks: [
+    { type: "heading", text: "Title", options: { level: 1 } },
+    { type: "paragraph", text: "Inherits the shared paragraph style." },
+    { type: "paragraph", text: "Important.", class: "callout" }
+  ]
+});
+```
+
 ## Headers, footers, page numbers
 
 Header/footer callbacks run after body pagination, so `pageNumber` and `totalPages` are accurate. Use `pageNumber` for standard running labels:
