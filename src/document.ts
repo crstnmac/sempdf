@@ -1464,7 +1464,7 @@ export class PdfFlow {
   /**
    * Reserves a rectangular region at the current flow cursor and returns its
    * coordinates without emitting any content. Spacing is applied with the
-   * `link` defaults so this mirrors {@link link}/{@link pageLink} layout. The
+   * `link` defaults so this mirrors {@link link} layout. The
    * cursor advances by the rect height plus trailing spacing.
    *
    * Used by the template engine to defer page-to-page link emission until
@@ -3498,6 +3498,7 @@ export interface InternalSoftMaskModel {
  * Supports path operations only.
  */
 export class PdfSoftMaskBuilder {
+  /** @internal */
   constructor(private readonly ops: PdfOp[]) {}
 
   /**

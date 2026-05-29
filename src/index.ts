@@ -6,6 +6,7 @@ export {
   PdfFlow,
   PdfOutlineItem,
   PdfPage,
+  PdfSoftMaskBuilder,
   PdfStructureContainer,
 } from "./document.js";
 export type {
@@ -30,7 +31,7 @@ export {
   TempFileSink,
   WebStreamSink,
 } from "./internal/byte-sink.js";
-export type { ByteSink, NodeWritableLike } from "./internal/byte-sink.js";
+export type { BufferSinkOptions, ByteSink, NodeWritableLike } from "./internal/byte-sink.js";
 export { parseDocument, ParsedPdfDocument } from "./parser.js";
 export type { PageTextExtraction, PositionedTextRun } from "./internal/text-extract.js";
 export type { ExtractTextOptions } from "./parser.js";
@@ -56,11 +57,14 @@ export type {
   DocumentOutputIntentOptions,
   DocumentPermissions,
   DocumentSignatureOptions,
+  DeviceNColor,
   EmbedTrueTypeFontOptions,
+  ExtGStateOptions,
   FlowBlockSpacingOptions,
   FlowMarginShorthand,
   FlowCheckBoxOptions,
   FlowChoiceFieldOptions,
+  FlowColumnsOptions,
   FlowFreeTextOptions,
   FlowHighlightOptions,
   FlowListOptions,
@@ -105,8 +109,14 @@ export type {
   PageLinkOptions,
   PageOptions,
   PageSize,
+  PageTransparencyGroupOptions,
   PathCommand,
   PathStyle,
+  PdfBlendMode,
+  ProcessColor,
+  SeparationColor,
+  SoftMaskHandle,
+  SoftMaskOptions,
   PdfBoundingBox,
   PngImageOptions,
   PdfColor,
