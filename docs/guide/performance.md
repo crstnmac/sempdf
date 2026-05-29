@@ -42,20 +42,18 @@ await doc.writeTo(new NodeStreamSink(createWriteStream("large.pdf")));
 
 ### `WebStreamSink`
 
-Streams to a browser `ReadableStream` controller.
+Streams to a browser `WritableStream` (pair with a `TransformStream` to feed a `Response`).
 
 ```ts
 import { WebStreamSink } from "sempdf";
 
-const response = new Response(
-  new ReadableStream({
-    async start(controller) {
-      await doc.writeTo(new WebStreamSink(controller));
-      controller.close();
-    }
-  }),
-  { headers: { "Content-Type": "application/pdf" } }
-);
+const { readable, writable } = new TransformStream<Uint8Array>();
+const sink = new WebStreamSink(writable);
+void doc.writeTo(sink).then(() => sink.close());
+
+const response = new Response(readable, {
+  headers: { "Content-Type": "application/pdf" }
+});
 ```
 
 **Use when:** browser-side generation for large documents, progressive download.
@@ -195,14 +193,11 @@ When a document exceeds available RAM, use `TempFileSink` to spill serialized da
 
 ```ts
 import { TempFileSink } from "sempdf";
-import { mkdtemp } from "node:fs/promises";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 
-const dir = await mkdtemp(join(tmpdir(), "pdf-"));
-const sink = new TempFileSink(join(dir, "output.pdf"));
+const sink = new TempFileSink(); // manages its own temp file
 await doc.writeTo(sink);
-// File written to disk; no large in-memory buffer
+const bytes = await sink.getBytes(); // read back when needed
+await sink.close(); // deletes the temp file
 ```
 
 ### writeToFile convenience

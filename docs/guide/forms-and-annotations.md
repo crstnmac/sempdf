@@ -206,7 +206,7 @@ const flat = editable.toUint8Array();
 import { parseDocument } from "sempdf";
 
 const parsed = parseDocument(existingBytes);
-for (const field of parsed.formFields) {
-  console.log(field.name, field.type, field.value);
+for (const field of parsed.listFormFields()) {
+  console.log(field.name, field.fieldType, field.value);
 }
 ```
