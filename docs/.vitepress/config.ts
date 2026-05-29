@@ -104,7 +104,8 @@ export default defineConfig({
             { text: "Forms and Annotations", link: "/guide/forms-and-annotations" },
             { text: "Metadata and Navigation", link: "/guide/metadata-and-navigation" },
             { text: "Report Templates", link: "/guide/report-templates" },
-            { text: "Custom Blocks", link: "/guide/custom-blocks" }
+            { text: "Custom Blocks", link: "/guide/custom-blocks" },
+            { text: "Pixel-Perfect Invoices", link: "/guide/pixel-perfect-invoices" }
           ]
         },
         {

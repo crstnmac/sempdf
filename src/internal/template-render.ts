@@ -16,6 +16,7 @@ import type {
   TemplateDocumentOptions,
   TemplatePageOptions,
   TemplateRenderContext,
+  TemplateStrictLayoutOptions,
   TemplateTableBlock,
 } from '../types.js';
 import type { ResolvedPageSize } from './validation.js';
@@ -96,11 +97,17 @@ interface DeferredPageLink {
   readonly options: PageLinkOptions;
 }
 
+interface ResolvedStrictLayoutOptions {
+  readonly oversizedContent: "error" | "allow";
+  readonly maxPages?: number | undefined;
+}
+
 export function renderTemplateDocument(
   doc: PdfDocument,
   options: TemplateDocumentOptions,
   metadata: Pick<TemplateRenderContext, 'title' | 'author'>,
 ): void {
+  const strict = resolveStrictLayoutOptions(options.strictLayout);
   const pages: Array<{ pageNumber: number; page: PdfPage }> = [];
   let current = createTemplatePage(doc, options, 1);
   pages.push({ pageNumber: current.pageNumber, page: current.page });
@@ -117,6 +124,7 @@ export function renderTemplateDocument(
   const advanceToNewPage = (): void => {
     current = createTemplatePage(doc, options, current.pageNumber + 1);
     pages.push({ pageNumber: current.pageNumber, page: current.page });
+    assertPageCountWithinStrictLimit(strict, pages.length);
     attachOverflowHandler();
   };
 
@@ -143,11 +151,12 @@ export function renderTemplateDocument(
     }
 
     if (block.type === 'table') {
-      renderTableWithSplits(block, () => current, advanceToNextFlowRegion);
+      renderTableWithSplits(block, index, strict, () => current, advanceToNextFlowRegion);
       continue;
     }
 
     const estimatedHeight = estimateTemplateBlockHeight(block, current.flow);
+    assertBlockFitsStrictLayout(strict, block, index, current, estimatedHeight);
     const keepWithNext = block.keepWithNext ?? block.type === 'heading';
     const nextEstimatedHeight =
       keepWithNext && options.blocks[index + 1] !== undefined
@@ -182,12 +191,114 @@ export function renderTemplateDocument(
     renderTemplateBlockToFlow(current.flow, block);
   }
 
+  assertPageCountWithinStrictLimit(strict, pages.length);
   resolveDeferredPageLinks(deferredPageLinks, pages);
   renderTemplateRunningRegions(pages, options, metadata);
 
   if (options.autoOutline && headings.length > 0) {
     buildOutlineFromHeadings(doc, headings, options.autoOutline);
   }
+}
+
+function resolveStrictLayoutOptions(
+  value: TemplateDocumentOptions['strictLayout'],
+): ResolvedStrictLayoutOptions | undefined {
+  if (!value) return undefined;
+  const options: TemplateStrictLayoutOptions = value === true ? {} : value;
+  if (
+    options.maxPages !== undefined &&
+    (!Number.isInteger(options.maxPages) || options.maxPages < 1)
+  ) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_NUMBER,
+      'strictLayout.maxPages must be a positive integer.',
+      { maxPages: options.maxPages },
+    );
+  }
+  if (
+    options.oversizedContent !== undefined &&
+    options.oversizedContent !== 'error' &&
+    options.oversizedContent !== 'allow'
+  ) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_TEXT,
+      'strictLayout.oversizedContent must be "error" or "allow".',
+      { oversizedContent: options.oversizedContent },
+    );
+  }
+  return {
+    oversizedContent: options.oversizedContent ?? 'error',
+    ...(options.maxPages === undefined ? {} : { maxPages: options.maxPages }),
+  };
+}
+
+function flowRegionCapacity(current: CurrentPageRef): number {
+  const marginBottom = current.flow.cursorY - current.flow.remainingHeight;
+  return Math.max(current.startY - marginBottom, 0);
+}
+
+function assertBlockFitsStrictLayout(
+  strict: ResolvedStrictLayoutOptions | undefined,
+  block: TemplateBlock,
+  blockIndex: number,
+  current: CurrentPageRef,
+  estimatedHeight: number,
+): void {
+  if (!strict || strict.oversizedContent === 'allow') return;
+  const availableHeight = flowRegionCapacity(current);
+  if (estimatedHeight <= availableHeight) return;
+  throw new PdfEngineError(
+    PdfErrorCode.LAYOUT_OVERFLOW,
+    'Template block cannot fit in a fresh flow region.',
+    {
+      blockIndex,
+      blockType: block.type,
+      pageNumber: current.pageNumber,
+      availableHeight,
+      estimatedHeight,
+    },
+  );
+}
+
+function assertTableRowFitsStrictLayout(
+  strict: ResolvedStrictLayoutOptions | undefined,
+  blockIndex: number,
+  rowIndex: number,
+  current: CurrentPageRef,
+  rowHeight: number,
+  repeatedHeaderHeight: number,
+): void {
+  if (!strict || strict.oversizedContent === 'allow') return;
+  const availableHeight = Math.max(flowRegionCapacity(current) - repeatedHeaderHeight, 0);
+  if (rowHeight <= availableHeight) return;
+  throw new PdfEngineError(
+    PdfErrorCode.LAYOUT_OVERFLOW,
+    'Template table row cannot fit in a fresh flow region.',
+    {
+      blockIndex,
+      blockType: 'table',
+      rowIndex,
+      pageNumber: current.pageNumber,
+      availableHeight,
+      estimatedHeight: rowHeight,
+    },
+  );
+}
+
+function assertPageCountWithinStrictLimit(
+  strict: ResolvedStrictLayoutOptions | undefined,
+  pageCount: number,
+): void {
+  if (strict?.maxPages === undefined || pageCount <= strict.maxPages) return;
+  throw new PdfEngineError(
+    PdfErrorCode.LAYOUT_OVERFLOW,
+    'Template rendered more pages than strictLayout.maxPages allows.',
+    {
+      pageNumber: pageCount,
+      pageCount,
+      maxPages: strict.maxPages,
+    },
+  );
 }
 
 function renderPageLinkBlock(
@@ -268,6 +379,8 @@ function resolveColumnBalanceTarget(
 
 function renderTableWithSplits(
   block: TemplateTableBlock,
+  blockIndex: number,
+  strict: ResolvedStrictLayoutOptions | undefined,
   getCurrent: () => CurrentPageRef,
   advancePage: () => void,
 ): void {
@@ -304,6 +417,14 @@ function renderTableWithSplits(
         isFirstSlice = false;
         continue;
       }
+      assertTableRowFitsStrictLayout(
+        strict,
+        blockIndex,
+        cursor,
+        getCurrent(),
+        rowHeights[cursor]!,
+        isContinuation ? headerHeight : 0,
+      );
       // At start of a fresh page and even one row exceeds height: force-place that row.
       endCursor = cursor + 1;
     }

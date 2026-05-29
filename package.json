@@ -16,11 +16,12 @@
     }
   },
   "files": [
-    "dist",
+    "dist/src",
     "README.md"
   ],
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.json",
+    "build:lib": "rm -rf dist && tsc -p tsconfig.build.json",
     "docs": "npm run docs:build",
     "docs:api": "rm -rf docs/api && typedoc",
     "docs:build": "npm run docs:api && vitepress build docs",
@@ -30,9 +31,13 @@
     "test:performance": "npm run build && node --test dist/test/performance.test.js",
     "test:stress": "npm run build && node --test dist/test/stress.test.js",
     "lint": "tsc --noEmit",
-    "prepublishOnly": "npm run build && npm run test",
+    "prepublishOnly": "npm run build && npm run test && npm run build:lib",
     "typecheck": "tsc --noEmit",
     "validate:pdf": "node scripts/validate-verapdf.mjs",
+    "visual:render": "npm run build && node scripts/render-visual-fixtures.mjs",
+    "visual:compare": "npm run build && node scripts/compare-visual-fixtures.mjs",
+    "visual:update": "npm run build && node scripts/compare-visual-fixtures.mjs --update",
+    "visual:preview": "npm run build && node examples/visual-preview/server.mjs",
     "example:hello": "npm run build && node dist/examples/hello-world.js",
     "example:image": "npm run build && node dist/examples/jpeg-image.js",
     "example:png": "npm run build && node dist/examples/png-image.js",
@@ -65,6 +70,7 @@
     "@types/node": "^25.6.0",
     "@types/pdfkit": "^0.17.6",
     "pdf-lib": "^1.17.1",
+    "pdf-poppler": "^0.2.3",
     "pdfkit": "^0.18.0",
     "typedoc": "^0.28.19",
     "typedoc-plugin-markdown": "^4.11.0",

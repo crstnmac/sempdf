@@ -168,6 +168,7 @@ export type {
   TemplateRunningRegion,
   TemplateSectionBlock,
   TemplateSignatureFieldBlock,
+  TemplateStrictLayoutOptions,
   TemplateTableBlock,
   TemplateTextFieldBlock,
   TextAlign,
