@@ -7,7 +7,7 @@ Extract text and positioned glyph runs from parsed PDF pages. The extraction eng
 Call `extractText()` on a `ParsedPdfDocument` to get per-page extraction results:
 
 ```ts
-import { parseDocument } from "sempdf";
+import { parseDocument } from "@criston/sempdf";
 
 const pdf = await parseDocument(bytes);
 const extractions = pdf.extractText();

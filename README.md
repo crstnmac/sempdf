@@ -54,7 +54,7 @@ Guides and API reference: [https://sempdf.pages.dev](https://sempdf.pages.dev)
 ## Quick Start
 
 ```ts
-import { cmyk, createDocument, rgb } from "sempdf";
+import { cmyk, createDocument, rgb } from "@criston/sempdf";
 
 const doc = createDocument({
   title: "Hello PDF",
@@ -100,7 +100,7 @@ const bytes = doc.toUint8Array();
 For streaming-style output targets, write to a byte sink:
 
 ```ts
-import { BufferSink, NodeStreamSink, createDocument } from "sempdf";
+import { BufferSink, NodeStreamSink, createDocument } from "@criston/sempdf";
 import { createWriteStream } from "node:fs";
 
 const doc = createDocument();
@@ -121,7 +121,7 @@ const blob = doc.toBlob("application/pdf");
 ```
 
 ```ts
-import { parseDocument } from "sempdf";
+import { parseDocument } from "@criston/sempdf";
 
 const protectedDoc = createDocument({
   encryption: {
@@ -442,7 +442,7 @@ page.text("س\u200Cلام", {
 ```
 
 ```ts
-import { editDocument } from "sempdf";
+import { editDocument } from "@criston/sempdf";
 
 const editable = editDocument(existingPdfBytes, { password: "reader" });
 editable.updateInfo({
@@ -467,7 +467,7 @@ const updatedBytes = editable.toUint8Array();
 Tagged and PDF/A-conformance documents now support a safe incremental-edit subset: metadata/XMP updates, overlay edits on existing pages, and appending new compliant pages. Reordering pages, removing pages, mid-document inserts, and form flattening are still blocked until full structure-tree-safe editing lands.
 
 ```ts
-import { createDocument } from "sempdf";
+import { createDocument } from "@criston/sempdf";
 
 const doc = createDocument();
 const page = doc.addPage({ size: "Letter" });
@@ -484,7 +484,7 @@ const bytes = doc.toUint8Array();
 ```
 
 ```ts
-import { createDocument } from "sempdf";
+import { createDocument } from "@criston/sempdf";
 
 const doc = createDocument();
 const page = doc.addPage({ size: "Letter" });
@@ -496,7 +496,7 @@ page.signatureField("signHere", { x: 48, y: 560, width: 180, height: 36 });
 ```
 
 ```ts
-import { appendPages, extractPages, mergeDocuments, splitDocument } from "sempdf";
+import { appendPages, extractPages, mergeDocuments, splitDocument } from "@criston/sempdf";
 
 const extracted = extractPages(existingPdfBytes, [1, 3]);
 const split = splitDocument(existingPdfBytes);
@@ -505,7 +505,7 @@ const appended = appendPages(firstPdfBytes, secondPdfBytes, [0]);
 ```
 
 ```ts
-import { editDocument } from "sempdf";
+import { editDocument } from "@criston/sempdf";
 
 const editable = editDocument(existingPdfBytes);
 editable.editPage(0).text("Overlay layer", { x: 48, y: 740, font: "Courier" });
@@ -515,7 +515,7 @@ const updatedBytes = editable.toUint8Array();
 ```
 
 ```ts
-import { editDocument } from "sempdf";
+import { editDocument } from "@criston/sempdf";
 
 const editable = editDocument(existingPdfBytes);
 editable.setFieldValue("customerName", "Grace Hopper");
@@ -527,7 +527,7 @@ const updatedBytes = editable.toUint8Array();
 ```
 
 ```ts
-import { createDocument } from "sempdf";
+import { createDocument } from "@criston/sempdf";
 
 const doc = createDocument();
 const page = doc.addPage({ size: "Letter" });
@@ -543,7 +543,7 @@ const bytes = doc.toUint8Array();
 ```
 
 ```ts
-import { createDocument } from "sempdf";
+import { createDocument } from "@criston/sempdf";
 
 const doc = createDocument();
 const page = doc.addPage({ size: "Letter" });
@@ -561,7 +561,7 @@ const bytes = doc.toUint8Array();
 ```
 
 ```ts
-import { createDocument } from "sempdf";
+import { createDocument } from "@criston/sempdf";
 
 const doc = createDocument();
 const page = doc.addPage({ size: "Letter" });

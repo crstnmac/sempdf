@@ -27,7 +27,7 @@ features:
 `sempdf` keeps PDF workflows close to regular TypeScript: you compose a document, add pages and annotations, then write bytes wherever your runtime needs them.
 
 ```ts
-import { createDocument, rgb } from "sempdf";
+import { createDocument, rgb } from "@criston/sempdf";
 
 const doc = createDocument({
   title: "Invoice"

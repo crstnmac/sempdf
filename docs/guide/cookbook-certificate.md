@@ -5,7 +5,7 @@ Generate an achievement certificate with decorative borders, recipient name, iss
 ## Quick start
 
 ```ts
-import { createDocument, hex, rgb } from "sempdf";
+import { createDocument, hex, rgb } from "@criston/sempdf";
 import { readFileSync } from "node:fs";
 
 const fontData = readFileSync("fonts/SourceSans3-Regular.ttf");
