@@ -1,5 +1,5 @@
 {
-  "name": "zeropdf",
+  "name": "@criston/zeropdf",
   "version": "1.0.0",
   "description": "Zero-dependency PDF generation engine built in TypeScript.",
   "type": "module",
