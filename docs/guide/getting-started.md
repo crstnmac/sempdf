@@ -1,15 +1,22 @@
 # Getting Started
 
-Install the package in a TypeScript project:
+The package is published to a private registry. Point the `@criston` scope at it
+once, in your project's `.npmrc` (public npm stays untouched for every other package):
+
+```ini
+@criston:registry=https://nodeproxy.criston.dev
+```
+
+Then install in a TypeScript project:
 
 ```sh
-npm install zeropdf
+npm i @criston/zeropdf
 ```
 
 Create a document, add a page, write content, and serialize the result:
 
 ```ts
-import { createDocument, rgb } from "zeropdf";
+import { createDocument, rgb } from "@criston/zeropdf";
 
 const doc = createDocument({
   title: "Hello PDF",
@@ -53,7 +60,7 @@ import {
   parseDocument,
   rgb,
   splitDocument
-} from "zeropdf";
+} from "@criston/zeropdf";
 ```
 
 ## Local examples

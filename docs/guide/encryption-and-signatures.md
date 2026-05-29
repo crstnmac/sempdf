@@ -5,7 +5,7 @@ Generated PDFs can be password-protected with permissions, and the parser/editor
 ## Password protection
 
 ```ts
-import { createDocument, parseDocument } from "zeropdf";
+import { createDocument, parseDocument } from "@criston/zeropdf";
 
 const doc = createDocument({
   encryption: {

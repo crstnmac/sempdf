@@ -17,7 +17,7 @@ The example below uses `renderTemplate()` with `page.columns` — the recommende
 ## Setup
 
 ```ts
-import { createDocument, hex } from "zeropdf";
+import { createDocument, hex } from "@criston/zeropdf";
 import { readFileSync } from "node:fs";
 
 const fontData = readFileSync("fonts/SourceSans3-Regular.ttf");

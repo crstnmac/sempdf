@@ -11,7 +11,7 @@ const sampleEl = document.querySelector("#sample");
 const SAMPLES = [
   {
     label: "Stylesheets & tables",
-    code: `import { createDocument, rgb } from "zeropdf";
+    code: `import { createDocument, rgb } from "@criston/zeropdf";
 
 // Build a PDF and \`export default\` the document.
 const doc = createDocument({
@@ -56,7 +56,7 @@ export default doc;
   },
   {
     label: "Single page (low level)",
-    code: `import { createDocument, rgb } from "zeropdf";
+    code: `import { createDocument, rgb } from "@criston/zeropdf";
 
 const doc = createDocument({
   title: "Single Page Demo",
@@ -75,7 +75,7 @@ export default doc;
   },
   {
     label: "Invoice",
-    code: `import { createDocument, rgb } from "zeropdf";
+    code: `import { createDocument, rgb } from "@criston/zeropdf";
 
 const doc = createDocument({
   title: "Invoice 1042",
@@ -113,7 +113,7 @@ export default doc;
   },
   {
     label: "Multi-column",
-    code: `import { createDocument } from "zeropdf";
+    code: `import { createDocument } from "@criston/zeropdf";
 
 const lorem = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. ".repeat(8);
 
@@ -175,8 +175,8 @@ async function loadTypes() {
 
   // Minimal package manifest so module resolution finds the entry types.
   defaults.addExtraLib(
-    JSON.stringify({ name: "zeropdf", types: "index.d.ts" }),
-    "file:///node_modules/zeropdf/package.json"
+    JSON.stringify({ name: "@criston/zeropdf", types: "index.d.ts" }),
+    "file:///node_modules/@criston/zeropdf/package.json"
   );
 
   async function add(relPath) {
@@ -185,7 +185,7 @@ async function loadTypes() {
     const response = await fetch(base + relPath);
     if (!response.ok) return;
     const text = await response.text();
-    defaults.addExtraLib(text, `file:///node_modules/zeropdf/${relPath}`);
+    defaults.addExtraLib(text, `file:///node_modules/@criston/zeropdf/${relPath}`);
 
     const dir = relPath.includes("/") ? `${relPath.slice(0, relPath.lastIndexOf("/"))}/` : "";
     const re = /from\s+["'](\.[^"']+)["']/g;
@@ -303,7 +303,7 @@ resizerEl.addEventListener("keydown", (event) => {
     noEmit: false,
     strict: false,
     baseUrl: "file:///",
-    paths: { zeropdf: ["node_modules/zeropdf/index.d.ts"] },
+    paths: { "@criston/zeropdf": ["node_modules/@criston/zeropdf/index.d.ts"] },
     lib: ["esnext", "dom"]
   });
 

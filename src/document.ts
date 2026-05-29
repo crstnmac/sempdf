@@ -3705,7 +3705,7 @@ export class PdfDocument {
    *
    * @example
    * ```ts
-   * import { createDocument } from "zeropdf";
+   * import { createDocument } from "@criston/zeropdf";
    *
    * const doc = createDocument();
    *
