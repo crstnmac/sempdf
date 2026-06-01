@@ -1,9 +1,67 @@
 import { readdirSync, statSync } from "node:fs";
 import { basename, join, relative, sep } from "node:path";
 import { defineConfig, type DefaultTheme } from "vitepress";
+import llmstxt from "vitepress-plugin-llms";
 
 const apiDir = join(process.cwd(), "docs", "api");
 
+// Guide navigation, shared by the VitePress sidebar (kept as a single source of
+// truth after extracting it from the inline themeConfig).
+const guideSidebar: DefaultTheme.SidebarItem[] = [
+  {
+    text: "Introduction",
+    items: [
+      { text: "Getting Started", link: "/guide/getting-started" },
+      { text: "Browser Usage", link: "/guide/browser-usage" },
+      { text: "Streaming and Output", link: "/guide/streaming-and-output" },
+      { text: "Performance", link: "/guide/performance" }
+    ]
+  },
+  {
+    text: "Authoring",
+    items: [
+      { text: "Text and Fonts", link: "/guide/text-and-fonts" },
+      { text: "Images", link: "/guide/images" },
+      { text: "Vector Graphics", link: "/guide/vector-graphics" },
+      { text: "Forms and Annotations", link: "/guide/forms-and-annotations" },
+      { text: "Metadata and Navigation", link: "/guide/metadata-and-navigation" },
+      { text: "Report Templates", link: "/guide/report-templates" },
+      { text: "Template Stylesheets", link: "/guide/template-stylesheets" },
+      { text: "Custom Blocks", link: "/guide/custom-blocks" },
+      { text: "Pixel-Perfect Invoices", link: "/guide/pixel-perfect-invoices" }
+    ]
+  },
+  {
+    text: "Cookbook",
+    items: [
+      { text: "Invoice", link: "/guide/cookbook-invoice" },
+      { text: "Event Ticket", link: "/guide/cookbook-ticket" },
+      { text: "Certificate", link: "/guide/cookbook-certificate" },
+      { text: "Multi-Column Report", link: "/guide/cookbook-multi-column-report" }
+    ]
+  },
+  {
+    text: "Editing and Assembly",
+    items: [
+      { text: "Edit Existing PDFs", link: "/guide/edit-existing-pdfs" },
+      { text: "Text Extraction", link: "/guide/text-extraction" },
+      { text: "Page Assembly", link: "/guide/page-assembly" }
+    ]
+  },
+  {
+    text: "Standards and Security",
+    items: [
+      { text: "Accessibility and Compliance", link: "/guide/accessibility-and-compliance" },
+      { text: "PDF Versions and Conformance", link: "/guide/pdf-versions-and-conformance" },
+      { text: "Encryption and Signatures", link: "/guide/encryption-and-signatures" },
+      { text: "Security Hardening", link: "/guide/security-hardening" }
+    ]
+  },
+  {
+    text: "Support",
+    items: [{ text: "Troubleshooting", link: "/guide/troubleshooting" }]
+  }
+];
 function titleFromFile(file: string): string {
   return basename(file, ".md")
     .replace(/_/g, " ")
@@ -76,7 +134,11 @@ export default defineConfig({
   description: "Zero-dependency PDF generation and editing in TypeScript.",
   cleanUrls: true,
   lastUpdated: true,
-  head: [["link", { rel: "icon", type: "image/svg+xml", href: "/logo.svg" }]],
+  head: [
+    ["link", { rel: "icon", type: "image/svg+xml", href: "/logo.svg" }],
+    // Autodiscovery for AI assistants (Claude, ChatGPT, etc.) — llmstxt.org.
+    ["link", { rel: "alternate", type: "text/plain", title: "llms.txt", href: "/llms.txt" }]
+  ],
   themeConfig: {
     logo: { src: "/logo.svg", alt: "zeropdf" },
     nav: [
@@ -85,63 +147,7 @@ export default defineConfig({
       { text: "Examples", link: "/guide/browser-usage" }
     ],
     sidebar: {
-      "/guide/": [
-        {
-          text: "Introduction",
-          items: [
-            { text: "Getting Started", link: "/guide/getting-started" },
-            { text: "Browser Usage", link: "/guide/browser-usage" },
-            { text: "Streaming and Output", link: "/guide/streaming-and-output" },
-            { text: "Performance", link: "/guide/performance" }
-          ]
-        },
-        {
-          text: "Authoring",
-          items: [
-            { text: "Text and Fonts", link: "/guide/text-and-fonts" },
-            { text: "Images", link: "/guide/images" },
-            { text: "Vector Graphics", link: "/guide/vector-graphics" },
-            { text: "Forms and Annotations", link: "/guide/forms-and-annotations" },
-            { text: "Metadata and Navigation", link: "/guide/metadata-and-navigation" },
-            { text: "Report Templates", link: "/guide/report-templates" },
-            { text: "Template Stylesheets", link: "/guide/template-stylesheets" },
-            { text: "Custom Blocks", link: "/guide/custom-blocks" },
-            { text: "Pixel-Perfect Invoices", link: "/guide/pixel-perfect-invoices" }
-          ]
-        },
-        {
-          text: "Cookbook",
-          items: [
-            { text: "Invoice", link: "/guide/cookbook-invoice" },
-            { text: "Event Ticket", link: "/guide/cookbook-ticket" },
-            { text: "Certificate", link: "/guide/cookbook-certificate" },
-            { text: "Multi-Column Report", link: "/guide/cookbook-multi-column-report" }
-          ]
-        },
-        {
-          text: "Editing and Assembly",
-          items: [
-            { text: "Edit Existing PDFs", link: "/guide/edit-existing-pdfs" },
-            { text: "Text Extraction", link: "/guide/text-extraction" },
-            { text: "Page Assembly", link: "/guide/page-assembly" }
-          ]
-        },
-        {
-          text: "Standards and Security",
-          items: [
-            { text: "Accessibility and Compliance", link: "/guide/accessibility-and-compliance" },
-            { text: "PDF Versions and Conformance", link: "/guide/pdf-versions-and-conformance" },
-            { text: "Encryption and Signatures", link: "/guide/encryption-and-signatures" },
-            { text: "Security Hardening", link: "/guide/security-hardening" }
-          ]
-        },
-        {
-          text: "Support",
-          items: [
-            { text: "Troubleshooting", link: "/guide/troubleshooting" }
-          ]
-        }
-      ],
+      "/guide/": guideSidebar,
       "/api/": apiSidebar()
     },
     search: {
@@ -151,5 +157,10 @@ export default defineConfig({
     footer: {
       message: "Released under the ISC license."
     }
+  },
+  vite: {
+    // Emits /llms.txt, /llms-full.txt, and an LLM-friendly .md for every page so
+    // AI assistants (Claude, ChatGPT, etc.) can fetch grounded documentation.
+    plugins: [llmstxt({ domain: "https://zeropdf.criston.dev" })]
   }
 });
