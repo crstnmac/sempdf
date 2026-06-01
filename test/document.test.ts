@@ -276,6 +276,48 @@ test("emits an opt-in linearization dictionary", async () => {
   assert.deepEqual(sink.collect(), bytes);
 });
 
+test("streams multi-page documents with non-colliding deferred stream lengths", async () => {
+  // Non-linearized, multi-page docs take the lazy sink path, where each page
+  // content stream is emitted with a deferred `/Length N 0 R`. Regression test
+  // for an offset-collision bug where lazy length object IDs were allocated from
+  // the same range as real objects, so `/Length` resolved to a font/page dict
+  // and corrupted the streamed output (Kids/Contents unreadable by qpdf).
+  const doc = createDocument({ info: { title: "Streamed" } });
+  for (let p = 0; p < 3; p += 1) {
+    const page = doc.addPage({ size: "A4" });
+    for (let line = 0; line < 40; line += 1) {
+      page.text(`Page ${p} line ${line} ${"lorem ipsum dolor ".repeat(5)}`, {
+        x: 56,
+        y: 800 - line * 18,
+        fontSize: 10,
+      });
+    }
+  }
+
+  const sink = new BufferSink();
+  await doc.writeTo(sink);
+  const streamed = sink.collect();
+
+  // The streamed bytes must parse back to the same page count.
+  assert.equal(parseDocument(streamed).getPageCount(), 3);
+
+  // Every deferred `/Length N 0 R` must reference an integer-valued object,
+  // never a real object (font, page, etc.). A non-integer body here is exactly
+  // the corruption the bug produced.
+  const text = Buffer.from(streamed).toString("latin1");
+  const lengthRefs = [...text.matchAll(/\/Length (\d+) 0 R/g)].map((m) => Number(m[1]));
+  assert.ok(lengthRefs.length > 0, "expected deferred length objects in streamed output");
+  for (const id of lengthRefs) {
+    const objMatch = new RegExp(`(?:^|\\n)${id} 0 obj\\s+([\\s\\S]*?)\\s*endobj`).exec(text);
+    assert.ok(objMatch, `deferred length object ${id} is missing`);
+    assert.match(
+      objMatch[1]!.trim(),
+      /^\d+$/,
+      `deferred length object ${id} is not an integer: ${objMatch[1]!.slice(0, 60)}`,
+    );
+  }
+});
+
 test("rejects multi-page linearization until page hint tables are complete", () => {
   const doc = createDocument({ linearize: true });
   doc.addPage().text("One", { x: 72, y: 720 });
