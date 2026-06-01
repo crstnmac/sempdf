@@ -322,6 +322,7 @@ resizerEl.addEventListener("keydown", (event) => {
     minimap: { enabled: false },
     fontSize: 13,
     tabSize: 2,
+    wordWrap: "on",
     scrollBeyondLastLine: false,
     padding: { top: 12 }
   });
