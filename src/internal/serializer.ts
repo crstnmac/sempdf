@@ -772,6 +772,10 @@ function prepareDocumentSerialization(
       : undefined;
 
   let nextObjectId = reservedObjectId;
+  // Lazy-stream length objects (deferred /Length N 0 R) must occupy a fresh ID
+  // range *above* every real object. This is seeded to the final nextObjectId
+  // once all real objects are allocated (see below); the initial value here is a
+  // placeholder so the prepareByteStream closure can capture the binding.
   let nextLazyLengthObjectId = nextObjectId;
   const prepareByteStream = (value: PdfStream): PdfStream | PdfLazyStream =>
     options.lazyByteStreams === true &&
@@ -912,6 +916,11 @@ function prepareDocumentSerialization(
   if (acroFormObjectId !== undefined) {
     nextObjectId += 1;
   }
+
+  // All real object IDs are now allocated. Place lazy-stream length objects
+  // immediately above them so deferred /Length references never collide with a
+  // real object (e.g. a font or page), which would corrupt the streamed output.
+  nextLazyLengthObjectId = nextObjectId;
 
   const documentObjects: PdfIndirectObject[] = [];
   documentObjects.push({
