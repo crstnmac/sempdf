@@ -60,6 +60,15 @@ const guideSidebar: DefaultTheme.SidebarItem[] = [
   {
     text: "Support",
     items: [{ text: "Troubleshooting", link: "/guide/troubleshooting" }]
+  },
+  {
+    // Plain-text docs for AI assistants, emitted by vitepress-plugin-llms.
+    // Absolute URLs so the static files load directly instead of SPA-routing.
+    text: "For LLMs",
+    items: [
+      { text: "llms.txt", link: "https://zeropdf.criston.dev/llms.txt" },
+      { text: "llms-full.txt", link: "https://zeropdf.criston.dev/llms-full.txt" }
+    ]
   }
 ];
 function titleFromFile(file: string): string {
