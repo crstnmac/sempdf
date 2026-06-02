@@ -153,7 +153,8 @@ export default defineConfig({
     nav: [
       { text: "Guide", link: "/guide/getting-started" },
       { text: "API", link: "/api/" },
-      { text: "Examples", link: "/guide/browser-usage" }
+      { text: "Examples", link: "/guide/browser-usage" },
+      { text: "Playground", link: "https://playzeropdf.criston.dev/" }
     ],
     sidebar: {
       "/guide/": guideSidebar,
