@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.1.0] - 2026-06-02
+
+### Added
+- `bold` and `italic` text options that resolve to the matching font face for the standard-14 base families (Helvetica, Times, Courier)
+- `PdfDocument.registerFontFamily()` to group font faces (built-in or embedded) under a name, selectable with the `bold`/`italic` flags
+- Document-wide text defaults via `createDocument({ defaults })` (font, bold, italic, fontSize, color, kerning, direction)
+- Unit helpers `mm()`, `cm()`, `inch()`, and `pt()` for authoring layouts in physical units
+- `PdfDocument.save(path)` convenience alias for `writeToFile()`
+
+### Changed
+- `PdfPage` builder methods (text, images, annotations, form fields, graphics state, transforms) now return `this` for fluent chaining
+- `bold`/`italic`, registered font families, and document defaults resolve uniformly across `page.text()`/`textBlock()`, the `PdfFlow` cursor API, `renderTemplate()` blocks, and structure containers
+
 ## [1.0.0] - 2026-05-11
 
 ### Added

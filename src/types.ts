@@ -38,6 +38,27 @@ export interface PdfEmbeddedFont {
 export type PdfFont = FontName | PdfEmbeddedFont;
 
 /**
+ * The set of faces that make up a font family registered with
+ * {@link PdfDocument.registerFontFamily}. Once registered, text APIs can
+ * select a face by passing the family name as `font` together with the
+ * `bold` and `italic` flags, instead of juggling individual font handles.
+ *
+ * Each face may be a built-in {@link FontName} or an embedded-font handle.
+ * Only `regular` is required; missing faces fall back to the closest
+ * available face (bold italic → bold → italic → regular).
+ */
+export interface FontFamilyFaces {
+  /** Face used when neither `bold` nor `italic` is requested. */
+  regular: PdfFont;
+  /** Face used when `bold` is requested without `italic`. */
+  bold?: PdfFont | undefined;
+  /** Face used when `italic` is requested without `bold`. */
+  italic?: PdfFont | undefined;
+  /** Face used when both `bold` and `italic` are requested. */
+  boldItalic?: PdfFont | undefined;
+}
+
+/**
  * Names of page-size presets that can be passed anywhere a PageSize is accepted.
  */
 export type BuiltInPageSize =
@@ -381,11 +402,35 @@ export interface DocumentSignatureOptions {
 /**
  * Top-level options for creating a new PDF document.
  */
+/**
+ * Document-wide text defaults applied to {@link PdfPage.text} and
+ * {@link PdfPage.textBlock} when the corresponding option is omitted on the
+ * call. Per-call options always take precedence.
+ */
+export interface TextDefaults {
+  /** Default font (built-in name, embedded handle, or registered family name). */
+  font?: PdfFont | undefined;
+  /** Default bold flag. */
+  bold?: boolean | undefined;
+  /** Default italic flag. */
+  italic?: boolean | undefined;
+  /** Default font size in PDF points. */
+  fontSize?: number | undefined;
+  /** Default text color. */
+  color?: PdfColor | undefined;
+  /** Default kerning behavior. */
+  kerning?: boolean | undefined;
+  /** Default text direction. */
+  direction?: TextDirection | undefined;
+}
+
 export interface DocumentOptions {
   /** Document title applied to the information dictionary, structured XMP metadata, and display-title viewer preference. */
   title?: string | undefined;
   /** Page size used when a page does not specify its own size. */
   defaultPageSize?: PageSize;
+  /** Document-wide text defaults filled in when a text call omits them. */
+  defaults?: TextDefaults | undefined;
   /** Document information dictionary values. */
   info?: DocumentInfo;
   /** XMP metadata packet or structured XMP metadata input. */
@@ -680,6 +725,19 @@ export interface TextOptions {
   y: number;
   /** Font used to render text. */
   font?: PdfFont | undefined;
+  /**
+   * Selects the bold variant of `font`. For a built-in family (`Helvetica`,
+   * `Times-Roman`, `Courier`) this resolves to the matching bold base font.
+   * For a font family registered with {@link PdfDocument.registerFontFamily}
+   * it selects the registered bold face. Ignored when `font` is an explicit
+   * embedded-font handle.
+   */
+  bold?: boolean | undefined;
+  /**
+   * Selects the italic/oblique variant of `font`, following the same
+   * resolution rules as {@link bold}. Combine with `bold` for bold italic.
+   */
+  italic?: boolean | undefined;
   /** Fallback fonts used when the primary font lacks a glyph. */
   fallbackFonts?: PdfFont[] | undefined;
   /** Text direction used for shaping and layout. */
@@ -736,6 +794,10 @@ export interface TextBlockOptions {
   width: number;
   /** Font used to render text. */
   font?: PdfFont | undefined;
+  /** Selects the bold variant of `font`. See {@link TextOptions.bold}. */
+  bold?: boolean | undefined;
+  /** Selects the italic variant of `font`. See {@link TextOptions.italic}. */
+  italic?: boolean | undefined;
   /** Fallback fonts used when the primary font lacks a glyph. */
   fallbackFonts?: PdfFont[] | undefined;
   /** Text direction used for shaping and layout. */
@@ -2793,4 +2855,55 @@ export function hex(value: string): RgbColor {
     g: ((intValue >> 8) & 0xff) / 255,
     b: (intValue & 0xff) / 255,
   };
+}
+
+/**
+ * PDF user-space unit. All coordinate and size options are expressed in points,
+ * where one point equals 1/72 inch. Use the converters below to author layouts
+ * in physical units without computing the point math by hand.
+ */
+
+/**
+ * Converts millimetres to points (1 mm = 72 / 25.4 pt).
+ *
+ * @param value Length in millimetres.
+ *
+ * @returns The equivalent length in points.
+ */
+export function mm(value: number): number {
+  return (value * 72) / 25.4;
+}
+
+/**
+ * Converts centimetres to points (1 cm = 72 / 2.54 pt).
+ *
+ * @param value Length in centimetres.
+ *
+ * @returns The equivalent length in points.
+ */
+export function cm(value: number): number {
+  return (value * 72) / 2.54;
+}
+
+/**
+ * Converts inches to points (1 in = 72 pt).
+ *
+ * @param value Length in inches.
+ *
+ * @returns The equivalent length in points.
+ */
+export function inch(value: number): number {
+  return value * 72;
+}
+
+/**
+ * Identity converter for points. Provided for symmetry with {@link mm},
+ * {@link cm}, and {@link inch} so unit intent stays explicit at call sites.
+ *
+ * @param value Length in points.
+ *
+ * @returns The same length in points.
+ */
+export function pt(value: number): number {
+  return value;
 }
