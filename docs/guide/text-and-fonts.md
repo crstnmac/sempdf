@@ -29,6 +29,51 @@ page.text("Hello Ω 漢", { x: 56, y: 700, font, fontSize: 14 });
 
 The embedder subsets glyphs, computes widths, and writes a `ToUnicode` CMap so extracted text round-trips.
 
+## Font weights and styles (bold & italic)
+
+The library does **not** synthesize bold or italic. There is no `bold: true` flag and no faux-bold/oblique transform. Each weight and style is a distinct font, selected through the `font` option. This matches the PDF font model and keeps glyph metrics correct.
+
+### Built-in fonts
+
+Pick the bold or italic variant by name:
+
+```ts
+page.text("Regular",     { x: 56, y: 760, font: "Helvetica" });
+page.text("Bold",        { x: 56, y: 740, font: "Helvetica-Bold" });
+page.text("Italic",      { x: 56, y: 720, font: "Helvetica-Oblique" });
+page.text("Bold Italic", { x: 56, y: 700, font: "Helvetica-BoldOblique" });
+```
+
+Variant naming differs per family:
+
+| Family | Regular | Bold | Italic | Bold + Italic |
+|--------|---------|------|--------|---------------|
+| Helvetica | `Helvetica` | `Helvetica-Bold` | `Helvetica-Oblique` | `Helvetica-BoldOblique` |
+| Times | `Times-Roman` | `Times-Bold` | `Times-Italic` | `Times-BoldItalic` |
+| Courier | `Courier` | `Courier-Bold` | `Courier-Oblique` | `Courier-BoldOblique` |
+
+`Symbol` and `ZapfDingbats` have no weight variants.
+
+### Embedded fonts
+
+Embed each weight as its own file and keep the returned handles:
+
+```ts
+const regular = doc.embedTrueTypeFont(
+  await readFile("fonts/Inter-Regular.ttf"),
+  { family: "Inter" }
+);
+const bold = doc.embedTrueTypeFont(
+  await readFile("fonts/Inter-Bold.ttf"),
+  { family: "Inter" }
+);
+
+page.text("Regular weight", { x: 56, y: 700, font: regular, fontSize: 14 });
+page.text("Bold weight",    { x: 56, y: 680, font: bold,    fontSize: 14 });
+```
+
+To mix weights inside one paragraph, split the runs and position each, or maintain a small map of handles (`{ regular, bold, italic }`) and pass the right one per call. Variable fonts are embedded at their default instance; embed a separate file per named instance to ship multiple weights.
+
 ## Kerning and ligatures
 
 Embedded fonts emit kerning-aware `TJ` strings and apply common GSUB ligatures by default. Toggle with `kerning`:
@@ -120,14 +165,15 @@ interface TextShaper {
 }
 ```
 
-Pass the custom shaper when embedding the font:
+The shaper is document-wide, not per-font. Set it at construction or with `setTextShaper()`:
 
 ```ts
-const font = doc.embedTrueTypeFont(fontBytes, {
-  family: "CustomScript",
-  textShaper: myShaper
-});
+const doc = new PdfDocument({ textShaper: myShaper });
+// or, later:
+doc.setTextShaper(myShaper);
 ```
+
+External shapers such as harfbuzzjs or fontkit can be plugged in here to enable full complex-script shaping.
 
 ## Vertical Writing Mode
 
@@ -250,7 +296,7 @@ The font embedder accepts TrueType-based formats via `embedTrueTypeFont()`:
 | **OpenType CFF** | `.otf` | PostScript outlines (Type 2 charstrings), compact file size |
 | **OpenType CFF2** | `.otf` | Variable-font version of CFF, reduced charstring overhead |
 | **Type 1** | `.pfb` / `.pfa` | PostScript Type 1 format. PFA (ASCII) and PFB (binary) both supported. Limited to 256 glyphs; no Unicode cmap—use only for legacy compatibility |
-| **TrueType Collection** | `.ttc` | Multi-font archive. Pass the collection file and specify a `fontIndex` to select a face |
+| **TrueType Collection** | `.ttc` | Multi-font archive. Pass the collection file and specify a `ttcIndex` to select a face |
 
 ```ts
 // OpenType CFF
@@ -261,7 +307,7 @@ const otfFont = doc.embedTrueTypeFont(otfBytes, { family: "SourceSerif4" });
 const ttcBytes = await readFile("fonts/Cambria.ttc");
 const cambria = doc.embedTrueTypeFont(ttcBytes, {
   family: "Cambria",
-  fontIndex: 1
+  ttcIndex: 1
 });
 ```
 
