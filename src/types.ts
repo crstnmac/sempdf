@@ -783,6 +783,12 @@ export interface TextOptions {
 export type TextAlign = "left" | "center" | "right" | "justify";
 
 /**
+ * Vertical alignment of content within a box of known height (a table cell or a
+ * text block given an explicit `height`).
+ */
+export type VerticalAlign = "top" | "middle" | "bottom";
+
+/**
  * Options for laying out wrapped text blocks.
  */
 export interface TextBlockOptions {
@@ -814,6 +820,17 @@ export interface TextBlockOptions {
   lineHeight?: number | undefined;
   /** Horizontal alignment for laid-out content. */
   align?: TextAlign | undefined;
+  /**
+   * Box height in PDF points. When set together with {@link verticalAlign},
+   * the wrapped lines are positioned within a box of this height starting at
+   * `y` and extending downward. Has no effect unless `verticalAlign` is given.
+   */
+  height?: number | undefined;
+  /**
+   * Vertical alignment of the wrapped text within `height`. Requires `height`.
+   * Defaults to "top".
+   */
+  verticalAlign?: VerticalAlign | undefined;
   /** Maximum number of lines to render. */
   maxLines?: number | undefined;
   /** Whether kerning should be applied where supported. */
@@ -833,6 +850,93 @@ export interface TextBlockOptions {
    * the default encoding is used.
    */
   encoding?: "winansi" | "macroman" | "pdfdoc" | undefined;
+}
+
+/**
+ * A single styled segment of inline rich text. Runs passed together to
+ * {@link PdfPage.richText} or {@link PdfFlow.richParagraph} flow on the same
+ * line and wrap together as one paragraph; each run carries its own style.
+ *
+ * Any style omitted on a run inherits from the block-level options
+ * ({@link RichTextOptions}). Whitespace between words is taken from the run
+ * `text` verbatim — include trailing/leading spaces where you want them
+ * between adjacent runs (e.g. `"Hello "` then a bold `"world"`).
+ */
+export interface InlineTextRun {
+  /** Text content of this segment. */
+  text: string;
+  /** Font for this run (built-in name, embedded handle, or registered family name). */
+  font?: PdfFont | undefined;
+  /** Selects the bold variant of this run's font. See {@link TextOptions.bold}. */
+  bold?: boolean | undefined;
+  /** Selects the italic variant of this run's font. See {@link TextOptions.italic}. */
+  italic?: boolean | undefined;
+  /** Font size in PDF points for this run. */
+  fontSize?: number | undefined;
+  /** Color for this run. */
+  color?: PdfColor | undefined;
+  /** Whether kerning is applied for this run. */
+  kerning?: boolean | undefined;
+  /** Additional spacing between characters in PDF points. */
+  characterSpacing?: number | undefined;
+  /** When set, wraps this run in a clickable URI link annotation. */
+  link?: string | undefined;
+}
+
+/**
+ * Options for laying out a paragraph of inline rich-text runs. Coordinates and
+ * width behave like {@link TextBlockOptions}; the style fields supply defaults
+ * inherited by any {@link InlineTextRun} that omits them.
+ *
+ * Horizontal writing mode supports left/center/right/justify alignment and
+ * left-to-right or right-to-left ordering. Vertical writing mode stacks the
+ * runs in a single column.
+ */
+export interface RichTextOptions {
+  /** Horizontal position in PDF points. */
+  x: number;
+  /** Vertical position (baseline of the first line, or top of the column in vertical mode) in PDF points. */
+  y: number;
+  /** Width in PDF points that runs wrap within (horizontal mode). */
+  width: number;
+  /** Line height in PDF points (column spacing in vertical mode). Defaults to 1.2 × the largest run font size. */
+  lineHeight?: number | undefined;
+  /** Horizontal alignment of each line. Defaults to "left". Ignored in vertical mode. */
+  align?: "left" | "center" | "right" | "justify" | undefined;
+  /**
+   * Box height in PDF points. With {@link verticalAlign}, the wrapped lines are
+   * positioned within a box of this height starting at `y` and extending
+   * downward. Has no effect unless `verticalAlign` is given. Horizontal mode only.
+   */
+  height?: number | undefined;
+  /**
+   * Vertical alignment of the wrapped runs within `height`. Requires `height`.
+   * Defaults to "top". Horizontal mode only.
+   */
+  verticalAlign?: VerticalAlign | undefined;
+  /**
+   * Reading direction for the runs. "auto" detects from the run text.
+   * Right-to-left lays each line out from the right edge; this is line-level
+   * direction, not full mixed-direction bidirectional reordering.
+   */
+  direction?: TextDirection | undefined;
+  /**
+   * Writing mode. "horizontal" (default) flows runs left-to-right and wraps
+   * onto new lines. "vertical" stacks the runs top-to-bottom in one column.
+   */
+  writingMode?: "horizontal" | "vertical" | undefined;
+  /** Default font for runs that omit one. */
+  font?: PdfFont | undefined;
+  /** Default font size for runs that omit one. */
+  fontSize?: number | undefined;
+  /** Default color for runs that omit one. */
+  color?: PdfColor | undefined;
+  /** Default kerning behavior for runs that omit it. */
+  kerning?: boolean | undefined;
+  /** Structure tag used for tagged PDF output. Defaults to "P". */
+  tag?: PdfTextStructureTag | "Artifact" | undefined;
+  /** Additional structure metadata for tagged PDF output. */
+  structure?: PdfStructureOptions | undefined;
 }
 
 /**
@@ -966,6 +1070,19 @@ export interface FlowTextOptions
 export interface FlowHeadingOptions extends FlowTextOptions {
   /** Heading level to render and tag. */
   level?: HeadingLevel | undefined;
+}
+
+/**
+ * Options for placing a paragraph of inline rich-text runs through the flow
+ * layout API. Position and width are supplied by the flow cursor; the
+ * remaining fields mirror {@link RichTextOptions}.
+ */
+export interface FlowRichTextOptions
+  extends Omit<RichTextOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+  /** Optional width for the flow text block within the flow column. */
+  blockWidth?: number | undefined;
+  /** Alignment of the block inside the flow column. */
+  blockAlign?: "left" | "center" | "right" | undefined;
 }
 
 /**
@@ -1342,6 +1459,22 @@ export interface TemplateParagraphBlock {
 }
 
 /**
+ * Template block for rendering a paragraph of inline rich-text runs, mixing
+ * fonts, weights, sizes, colors, and links on the same wrapping lines.
+ */
+export interface TemplateRichParagraphBlock {
+  readonly type: "richParagraph";
+  /** The styled inline runs to lay out together. */
+  readonly runs: readonly InlineTextRun[];
+  /** Options that control this block. */
+  readonly options?: FlowRichTextOptions | undefined;
+  /** Stylesheet class name(s) applied beneath inline `options`. */
+  readonly class?: string | readonly string[] | undefined;
+  /** Whether this block should stay on the same page as the following block when possible. */
+  readonly keepWithNext?: boolean | undefined;
+}
+
+/**
  * Template block for rendering a table.
  */
 export interface TemplateTableBlock {
@@ -1565,6 +1698,7 @@ export interface TemplateCustomBlock {
 export type TemplateBlock =
   | TemplateHeadingBlock
   | TemplateParagraphBlock
+  | TemplateRichParagraphBlock
   | TemplateTableBlock
   | TemplateImageBlock
   | TemplateLinkBlock
@@ -1799,6 +1933,11 @@ export interface TableCellDefinition {
   structure?: PdfStructureOptions | undefined;
   /** Inline annotations anchored to substrings of the rendered cell text. */
   annotations?: readonly ParagraphTextAnnotation[] | undefined;
+  /**
+   * Vertical alignment of this cell's content within the row height, overriding
+   * {@link TableOptions.verticalAlign}.
+   */
+  verticalAlign?: VerticalAlign | undefined;
 }
 
 /**
@@ -1848,6 +1987,12 @@ export interface TableOptions {
   lineHeight?: number | undefined;
   /** Horizontal alignment for laid-out content. */
   align?: TextAlign | undefined;
+  /**
+   * Vertical alignment of each cell's content within its row height. Applies to
+   * cells shorter than the tallest cell in the row. Defaults to "top". Can be
+   * overridden per cell via {@link TableCellDefinition.verticalAlign}.
+   */
+  verticalAlign?: VerticalAlign | undefined;
   /** Whether kerning should be applied where supported. */
   kerning?: boolean | undefined;
   /** Additional structure metadata for tagged PDF output. */

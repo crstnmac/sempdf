@@ -9,6 +9,11 @@ import {
 } from "./parser.js";
 import { parseImage } from "./internal/image.js";
 import { layoutTextBlock, measureTextWidth } from "./internal/text-layout.js";
+import {
+  breakInlineLines,
+  placeInlineLine,
+  type InlineBlockGeometry,
+} from "./internal/inline-layout.js";
 import type { TextShaper } from "./internal/text-shaper.js";
 import {
   parseTrueTypeFont,
@@ -35,6 +40,7 @@ import {
   addFlowTextBlockToPage,
   addImageToPage,
   addLinkToPage,
+  addRichTextToPage,
   addTextBlockToPage,
   addTextToPage,
   createStructureNode,
@@ -46,6 +52,9 @@ import {
   placementBoundingBox,
   pushPositionedTextRuns,
   radioGroupBoundingBox,
+  normalizeRichRuns,
+  richLineHeight,
+  type RichRunInput,
 } from "./internal/page-helpers.js";
 import {
   collectComplianceIssues,
@@ -89,6 +98,7 @@ import {
   validateExtGStateOptions,
   validateTransform,
   validateText,
+  resolveTextDirection,
   type ComplianceCheckInput,
   type NormalizedDocumentAccessibility,
   type NormalizedDocumentEncryption,
@@ -142,7 +152,10 @@ import type {
   FlowSpacingScale,
   FlowTableOptions,
   FlowTextFieldOptions,
+  FlowRichTextOptions,
   FlowTextOptions,
+  InlineTextRun,
+  RichTextOptions,
   FreeTextAnnotationOptions,
   HighlightAnnotationOptions,
   JpegImageOptions,
@@ -460,6 +473,51 @@ function prepareTextOptions<T extends TextOptions | TextBlockOptions>(
   defaults: TextDefaults | undefined,
 ): T {
   return resolveFontFamilyOptions(fillTextDefaults(options, defaults), families);
+}
+
+/** Block-level style defaults inherited by inline runs that omit them. */
+type RichBlockStyle = {
+  font?: PdfFont | undefined;
+  fontSize?: number | undefined;
+  color?: PdfColor | undefined;
+  kerning?: boolean | undefined;
+};
+
+/**
+ * Resolves each inline run's style with the precedence
+ * run > block defaults > document defaults, then resolves any registered font
+ * family, producing the run inputs consumed by {@link addRichTextToPage}.
+ * Built-in bold/italic variants are resolved later during normalization.
+ */
+function buildRichRunInputs(
+  runs: readonly InlineTextRun[],
+  block: RichBlockStyle,
+  families: ReadonlyMap<string, FontFamilyFaces>,
+  defaults: TextDefaults | undefined,
+): RichRunInput[] {
+  return runs.map((run) => {
+    const font = run.font ?? block.font;
+    const fontSize = run.fontSize ?? block.fontSize;
+    const color = run.color ?? block.color;
+    const kerning = run.kerning ?? block.kerning;
+    const merged: TextOptions = {
+      x: 0,
+      y: 0,
+      direction: "ltr",
+      ...(font !== undefined ? { font } : {}),
+      ...(run.bold !== undefined ? { bold: run.bold } : {}),
+      ...(run.italic !== undefined ? { italic: run.italic } : {}),
+      ...(fontSize !== undefined ? { fontSize } : {}),
+      ...(color !== undefined ? { color } : {}),
+      ...(kerning !== undefined ? { kerning } : {}),
+      ...(run.characterSpacing !== undefined ? { characterSpacing: run.characterSpacing } : {}),
+    };
+    return {
+      text: run.text,
+      options: prepareTextOptions(merged, families, defaults),
+      ...(run.link !== undefined ? { link: run.link } : {}),
+    };
+  });
 }
 
 /**
@@ -1274,6 +1332,8 @@ export class PdfFlow {
           block.text,
           block.options,
         );
+      case "richParagraph":
+        return this.estimateRichParagraphHeight(block.runs, block.options ?? {});
       case "table":
         return this.estimateTableHeight(block.rows, block.options);
       case "png":
@@ -1345,6 +1405,97 @@ export class PdfFlow {
     annotations?: readonly import("./types.js").ParagraphTextAnnotation[],
   ): this {
     this.textBlock(text, { ...options, tag: options.tag ?? "P" }, annotations);
+    return this;
+  }
+
+  /**
+   * Adds a paragraph of inline rich-text runs at the current flow cursor. Runs
+   * flow on the same line and wrap together; each keeps its own style and may
+   * carry a `link`. Styles omitted on a run inherit from `options`, then the
+   * flow's configured defaults, then the document defaults.
+   *
+   * Note: a rich paragraph is placed as a unit and does not split across
+   * columns or pages. For very long flowing copy that must break across
+   * columns, use {@link paragraph}.
+   *
+   * @param runs The styled inline runs to lay out together.
+   * @param options Flow spacing and inherited style defaults.
+   */
+  richParagraph(runs: readonly InlineTextRun[], options: FlowRichTextOptions = {}): this {
+    const spacing = this.resolveSpacing("paragraph", options);
+    this.applyMarginTop(spacing.before);
+    const blockWidth = Math.min(
+      options.blockWidth ?? Math.max(this.state.width - spacing.left - spacing.right, 1),
+      Math.max(this.state.width - spacing.left - spacing.right, 1),
+    );
+    const font = options.font ?? this.state.font;
+    const fontSize = options.fontSize ?? this.state.fontSize;
+    const color = options.color ?? this.state.color;
+    const kerning = options.kerning ?? this.state.kerning;
+    const blockStyle: RichBlockStyle = {
+      ...(font !== undefined ? { font } : {}),
+      ...(fontSize !== undefined ? { fontSize } : {}),
+      ...(color !== undefined ? { color } : {}),
+      ...(kerning !== undefined ? { kerning } : {}),
+    };
+    const inputs = buildRichRunInputs(runs, blockStyle, this.fontFamilies, this.textDefaults);
+    const normalizedRuns = normalizeRichRuns(inputs);
+    const writingMode = options.writingMode ?? "horizontal";
+    const direction = resolveTextDirection(runs.map((run) => run.text).join(""), options.direction ?? "ltr");
+    const lineHeight = richLineHeight(normalizedRuns, options.lineHeight);
+    const align = options.align ?? "left";
+    const blockAlign = options.blockAlign ?? "left";
+    const tag = options.tag ?? "P";
+
+    const createNode = (): InternalStructureNode | undefined =>
+      tag === "Artifact" ? undefined : createStructureNode(this.page, tag, options.structure, this.parent);
+    let structureNode = createNode();
+
+    const lines = breakInlineLines(normalizedRuns, { width: blockWidth, writingMode }, this.embeddedFonts);
+    const placeLine = (line: (typeof lines)[number]): void => {
+      const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
+      const blockX = computeBlockX(this.state.x, spacing.left, innerWidth, blockWidth, blockAlign);
+      const geometry: InlineBlockGeometry = {
+        x: blockX,
+        y: this.state.y,
+        width: blockWidth,
+        lineHeight,
+        align,
+        direction,
+        writingMode,
+      };
+      const placed = placeInlineLine(line, geometry, this.state.y, this.embeddedFonts);
+      pushPositionedTextRuns(this.page, placed.runs, structureNode?.id);
+      for (const link of placed.links) {
+        addLinkToPage(
+          this.page,
+          link.url,
+          { x: link.x, y: link.y, width: link.width, height: link.height },
+          structureNode,
+        );
+      }
+    };
+
+    if (writingMode === "vertical") {
+      // Vertical rich text is a single column; column/page splitting is not applied.
+      for (const line of lines) {
+        placeLine(line);
+        this.state.y -= line.mainSize;
+      }
+      this.state.y -= spacing.after;
+      return this;
+    }
+
+    for (const line of lines) {
+      if (this.remainingHeight < lineHeight && this.state.y < this.state.startY) {
+        if (!this.advanceColumn() && this.advanceFlowRegion()) {
+          structureNode = createNode();
+        }
+      }
+      placeLine(line);
+      this.state.y -= lineHeight;
+    }
+    this.state.y -= spacing.after;
     return this;
   }
 
@@ -1754,6 +1905,31 @@ export class PdfFlow {
     const runs = layoutTextBlock(text, normalized, this.embeddedFonts);
     const lineCount = new Set(runs.map((run) => run.options.y)).size || 1;
     return spacing.before + lineCount * normalized.lineHeight + spacing.after;
+  }
+
+  private estimateRichParagraphHeight(
+    runs: readonly InlineTextRun[],
+    options: FlowRichTextOptions,
+  ): number {
+    const spacing = this.resolveSpacing("paragraph", options);
+    const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
+    const blockWidth = Math.min(options.blockWidth ?? innerWidth, innerWidth);
+    const blockStyle: RichBlockStyle = {
+      ...((options.font ?? this.state.font) !== undefined ? { font: options.font ?? this.state.font } : {}),
+      ...((options.fontSize ?? this.state.fontSize) !== undefined ? { fontSize: options.fontSize ?? this.state.fontSize } : {}),
+      ...((options.color ?? this.state.color) !== undefined ? { color: options.color ?? this.state.color } : {}),
+      ...((options.kerning ?? this.state.kerning) !== undefined ? { kerning: options.kerning ?? this.state.kerning } : {}),
+    };
+    const inputs = buildRichRunInputs(runs, blockStyle, this.fontFamilies, this.textDefaults);
+    const normalizedRuns = normalizeRichRuns(inputs);
+    const writingMode = options.writingMode ?? "horizontal";
+    const lineHeight = richLineHeight(normalizedRuns, options.lineHeight);
+    const lines = breakInlineLines(normalizedRuns, { width: blockWidth, writingMode }, this.embeddedFonts);
+    const body =
+      writingMode === "vertical"
+        ? lines.reduce((max, line) => Math.max(max, line.mainSize), 0)
+        : lines.length * lineHeight;
+    return spacing.before + body + spacing.after;
   }
 
   /**
@@ -2847,6 +3023,54 @@ export class PdfPage {
    */
   textBlock(text: string, options: TextBlockOptions): this {
     addTextBlockToPage(this.page, this.embeddedFonts, text, prepareTextOptions(options, this.fontFamilies, this.textDefaults));
+    return this;
+  }
+
+  /**
+   * Adds a paragraph of inline rich-text runs. Each {@link InlineTextRun}
+   * carries its own style yet the runs flow on the same line and wrap together
+   * as one paragraph. Runs that omit a style inherit it from `options`, then
+   * from the document defaults; runs carrying a `link` become clickable.
+   *
+   * Supports left/center/right/justify alignment via `options.align`, line-level
+   * `direction` ("ltr"/"rtl"/"auto"), and `writingMode: "vertical"` (single
+   * column). In the flow and template layouts the paragraph wraps and splits
+   * across columns and pages.
+   *
+   * @example
+   * ```ts
+   * page.richText(
+   *   [
+   *     { text: "Read the " },
+   *     { text: "terms", bold: true, link: "https://x.com/terms" },
+   *     { text: " before continuing." },
+   *   ],
+   *   { x: 56, y: 700, width: 300, fontSize: 12 },
+   * );
+   * ```
+   *
+   * @param runs The styled inline runs to lay out together.
+   * @param options Block geometry and inherited style defaults.
+   */
+  richText(runs: readonly InlineTextRun[], options: RichTextOptions): this {
+    const inputs = buildRichRunInputs(runs, options, this.fontFamilies, this.textDefaults);
+    const direction = resolveTextDirection(
+      runs.map((run) => run.text).join(""),
+      options.direction ?? "ltr",
+    );
+    addRichTextToPage(this.page, this.embeddedFonts, inputs, {
+      x: options.x,
+      y: options.y,
+      width: options.width,
+      align: options.align ?? "left",
+      direction,
+      writingMode: options.writingMode ?? "horizontal",
+      tag: options.tag ?? "P",
+      ...(options.lineHeight !== undefined ? { lineHeight: options.lineHeight } : {}),
+      ...(options.height !== undefined ? { height: options.height } : {}),
+      ...(options.verticalAlign !== undefined ? { verticalAlign: options.verticalAlign } : {}),
+      ...(options.structure !== undefined ? { structure: options.structure } : {}),
+    });
     return this;
   }
 

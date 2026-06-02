@@ -1,5 +1,5 @@
 import { PdfEngineError, PdfErrorCode } from "../errors.js";
-import type { AttachmentOptions, BmpImageOptions, BuiltInPageSize, CheckBoxOptions, ChoiceFieldMode, ChoiceFieldOptions, CustomPageSize, DocumentConformanceProfile, DocumentEncryptionAlgorithm, DocumentEncryptionOptions, DocumentInfo, DocumentPermissions, ExtGStateOptions, FieldActions, FillStyle, FontName, FreeTextAnnotationOptions, HighlightAnnotationOptions, JpegImageOptions, LineCap, LineJoin, ListItem, ListOptions, NoteAnnotationOptions, OutlineOptions, PageLabelOptions, PageLabelStyle, PageLinkOptions, PageSize, ParagraphTextAnnotation, PathCommand, PathStyle, PdfColor, PdfComplianceIssue, PdfContainerTag, PdfFigureStructureTag, PdfFont, PdfRoleMap, PdfStandardStructureTag, PdfStructureAttributeValue, PdfStructureOptions, PdfStructureTag, PdfTextStructureTag, PngImageOptions, PushButtonOptions, RadioGroupOptions, SignatureFieldOptions, SquigglyAnnotationOptions, StrikeOutAnnotationOptions, StrokeStyle, TableCell, TableHeaderScope, TableOptions, TextAlign, TextBlockOptions, TextDirection, TextFieldOptions, TextOptions, Transform, UnderlineAnnotationOptions, UriLinkOptions, XmpMetadataInput } from "../types.js";
+import type { AttachmentOptions, BmpImageOptions, BuiltInPageSize, CheckBoxOptions, ChoiceFieldMode, ChoiceFieldOptions, CustomPageSize, DocumentConformanceProfile, DocumentEncryptionAlgorithm, DocumentEncryptionOptions, DocumentInfo, DocumentPermissions, ExtGStateOptions, FieldActions, FillStyle, FontName, FreeTextAnnotationOptions, HighlightAnnotationOptions, JpegImageOptions, LineCap, LineJoin, ListItem, ListOptions, NoteAnnotationOptions, OutlineOptions, PageLabelOptions, PageLabelStyle, PageLinkOptions, PageSize, ParagraphTextAnnotation, PathCommand, PathStyle, PdfColor, PdfComplianceIssue, PdfContainerTag, PdfFigureStructureTag, PdfFont, PdfRoleMap, PdfStandardStructureTag, PdfStructureAttributeValue, PdfStructureOptions, PdfStructureTag, PdfTextStructureTag, PngImageOptions, PushButtonOptions, RadioGroupOptions, SignatureFieldOptions, SquigglyAnnotationOptions, StrikeOutAnnotationOptions, StrokeStyle, TableCell, TableHeaderScope, TableOptions, TextAlign, TextBlockOptions, TextDirection, TextFieldOptions, TextOptions, Transform, UnderlineAnnotationOptions, UriLinkOptions, VerticalAlign, XmpMetadataInput } from "../types.js";
 import { PAGE_SIZES, gray } from "../types.js";
 import type { NormalizedImageOptions, NormalizedPathStyle, NormalizedTextOptions } from "./ops.js";
 import { buildXmpMetadataPacket } from "./xmp.js";
@@ -228,6 +228,8 @@ export interface NormalizedTextBlockOptions extends NormalizedTextBaseOptions {
   width: number;
   lineHeight: number;
   align: TextAlign;
+  height?: number | undefined;
+  verticalAlign?: VerticalAlign | undefined;
   maxLines?: number | undefined;
   writingMode?: "horizontal" | "vertical" | undefined;
   tateChuYoko?: boolean | undefined;
@@ -260,6 +262,7 @@ export interface NormalizedTableCell {
   colSpan: number;
   structure?: PdfStructureOptions | undefined;
   annotations?: readonly ParagraphTextAnnotation[] | undefined;
+  verticalAlign?: VerticalAlign | undefined;
 }
 
 export type NormalizedTableRow = NormalizedTableCell[];
@@ -273,6 +276,7 @@ export interface NormalizedTableOptions extends NormalizedTextBaseOptions {
   rowGap: number;
   lineHeight: number;
   align: TextAlign;
+  verticalAlign: VerticalAlign;
   structure?: PdfStructureOptions | undefined;
   summary?: string | undefined;
 }
@@ -1007,11 +1011,15 @@ export function normalizeTextBlockOptions(text: string, options: TextBlockOption
     throw new PdfEngineError(PdfErrorCode.INVALID_TEXT, "Text block maxLines must be an integer.", { maxLines });
   }
 
+  const height = normalizeOptionalPositiveNumber(options.height, "height");
+
   return {
     ...normalizedText,
     width: options.width,
     lineHeight,
     align: options.align ?? (resolveTextDirection(text, normalizedText.direction) === "rtl" ? "right" : "left"),
+    ...(height !== undefined ? { height } : {}),
+    ...(options.verticalAlign !== undefined ? { verticalAlign: options.verticalAlign } : {}),
     ...(maxLines !== undefined ? { maxLines } : {})
   };
 }
@@ -1158,6 +1166,7 @@ export function normalizeTableOptions(rows: readonly NormalizedTableRow[], optio
     rowGap,
     lineHeight,
     align: options.align ?? "left",
+    verticalAlign: options.verticalAlign ?? "top",
     ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {}),
     ...(options.summary !== undefined ? { summary: options.summary } : {})
   };
@@ -1191,7 +1200,8 @@ function normalizeTableCell(cell: TableCell, rowIndex: number, cellIndex: number
     rowSpan,
     colSpan,
     ...(definition.structure !== undefined ? { structure: normalizeStructureOptions(definition.structure) } : {}),
-    ...(definition.annotations !== undefined ? { annotations: definition.annotations } : {})
+    ...(definition.annotations !== undefined ? { annotations: definition.annotations } : {}),
+    ...(definition.verticalAlign !== undefined ? { verticalAlign: definition.verticalAlign } : {})
   };
 }
 
