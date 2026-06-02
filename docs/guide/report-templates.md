@@ -68,6 +68,7 @@ doc.renderTemplate({
 | Type | Purpose |
 |------|---------|
 | `paragraph` | Body text with wrapping |
+| `richParagraph` | Inline runs with mixed fonts/sizes/colors/links on one line ([Inline rich text](./text-and-fonts#inline-rich-text-mixed-styles-on-one-line)) |
 | `heading` | H1–H6 with semantic spacing |
 | `table` | Grid with header rows/columns |
 | `image` | Embedded JPEG/PNG with alt text |

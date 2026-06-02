@@ -30,6 +30,11 @@ import {
   type PositionedTextRun,
   type SubstringRect
 } from "./text-layout.js";
+import {
+  layoutInlineRuns,
+  type InlineBlockGeometry,
+  type NormalizedInlineRun
+} from "./inline-layout.js";
 import type { ParsedTrueTypeFont } from "./truetype.js";
 import type { ParagraphTextAnnotation } from "../types.js";
 import {
@@ -211,7 +216,136 @@ export function addTextBlockToPage(
     structureTag !== undefined && structureTag !== "Artifact"
       ? createStructureNode(page, structureTag, normalized.structure, parent)
       : undefined;
-  pushPositionedTextRuns(page, layoutTextBlock(text, effectiveOptions, embeddedFonts), structureNode?.id);
+  let runs = layoutTextBlock(text, effectiveOptions, embeddedFonts);
+  if (normalized.height !== undefined && normalized.verticalAlign !== undefined && normalized.verticalAlign !== "top") {
+    const contentHeight = measurePositionedRunHeight(runs, normalized.lineHeight);
+    runs = shiftRunsDown(runs, verticalAlignOffset(normalized.verticalAlign, normalized.height, contentHeight));
+  }
+  pushPositionedTextRuns(page, runs, structureNode?.id);
+}
+
+/** A single inline rich-text run with its per-run style resolved to a `TextOptions`. */
+export interface RichRunInput {
+  readonly text: string;
+  /** Per-run style; `x`/`y` are placeholders filled during layout. */
+  readonly options: TextOptions;
+  /** Optional link URL wrapping this run. */
+  readonly link?: string | undefined;
+}
+
+/** Block-level geometry and tagging for a rich-text paragraph. */
+export interface RichTextBlock {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly lineHeight?: number | undefined;
+  readonly align: "left" | "center" | "right" | "justify";
+  readonly direction: "ltr" | "rtl";
+  readonly writingMode: "horizontal" | "vertical";
+  readonly height?: number | undefined;
+  readonly verticalAlign?: "top" | "middle" | "bottom" | undefined;
+  readonly tag?: PdfStructureTag | "Artifact" | undefined;
+  readonly structure?: PdfStructureOptions | undefined;
+}
+
+/**
+ * Normalizes rich-text run inputs into laid-out runs, resolving built-in
+ * bold/italic and validating each run's text. Shared by the page and flow
+ * rich-text paths.
+ */
+export function normalizeRichRuns(runs: readonly RichRunInput[]): NormalizedInlineRun[] {
+  return runs
+    .filter((run) => run.text.length > 0)
+    .map((run) => {
+      validateText(run.text);
+      return {
+        text: run.text,
+        options: normalizeTextBaseOptions(run.options),
+        ...(run.link !== undefined ? { link: run.link } : {})
+      };
+    });
+}
+
+/**
+ * Downward offset that vertically aligns content of `contentHeight` within a
+ * box of `boxHeight`. "top" yields 0; the offset is clamped to be non-negative
+ * so overflowing content is never pushed up.
+ */
+export function verticalAlignOffset(
+  align: "top" | "middle" | "bottom",
+  boxHeight: number,
+  contentHeight: number
+): number {
+  const slack = Math.max(boxHeight - contentHeight, 0);
+  return align === "middle" ? slack / 2 : align === "bottom" ? slack : 0;
+}
+
+/** Returns copies of the runs moved down the page (smaller `y`) by `offset`. */
+export function shiftRunsDown(
+  runs: readonly PositionedTextRun[],
+  offset: number
+): PositionedTextRun[] {
+  if (offset === 0) {
+    return [...runs];
+  }
+  return runs.map((run) => ({
+    ...run,
+    options: { ...run.options, y: run.options.y - offset }
+  }));
+}
+
+/** Default line height for a set of runs when none is supplied. */
+export function richLineHeight(runs: readonly NormalizedInlineRun[], explicit?: number): number {
+  if (explicit !== undefined) {
+    return explicit;
+  }
+  const maxFontSize = runs.reduce((max, run) => Math.max(max, run.options.fontSize), 0);
+  return (maxFontSize > 0 ? maxFontSize : 12) * 1.2;
+}
+
+/**
+ * Lays out a paragraph of inline rich-text runs onto the page: each run is
+ * normalized (resolving built-in bold/italic and defaults), positioned so the
+ * runs flow on the same line and wrap together, tagged under a single structure
+ * node, and linked where a run carries a URL. Returns the consumed height.
+ */
+export function addRichTextToPage(
+  page: InternalPageModel,
+  embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>,
+  runs: readonly RichRunInput[],
+  block: RichTextBlock,
+  parent?: InternalStructureNode
+): number {
+  const normalizedRuns = normalizeRichRuns(runs);
+  const geometry: InlineBlockGeometry = {
+    x: block.x,
+    y: block.y,
+    width: block.width,
+    lineHeight: richLineHeight(normalizedRuns, block.lineHeight),
+    align: block.align,
+    direction: block.direction,
+    writingMode: block.writingMode
+  };
+
+  const result = layoutInlineRuns(normalizedRuns, geometry, embeddedFonts);
+  const offset =
+    block.writingMode !== "vertical" && block.height !== undefined && block.verticalAlign !== undefined
+      ? verticalAlignOffset(block.verticalAlign, block.height, result.height)
+      : 0;
+  const structureNode =
+    block.tag !== undefined && block.tag !== "Artifact"
+      ? createStructureNode(page, block.tag, block.structure, parent)
+      : undefined;
+  pushPositionedTextRuns(page, shiftRunsDown(result.runs, offset), structureNode?.id);
+  for (const link of result.links) {
+    addLinkToPage(
+      page,
+      link.url,
+      { x: link.x, y: link.y - offset, width: link.width, height: link.height },
+      structureNode
+    );
+  }
+  return result.height;
 }
 
 export function addImageToPage(
@@ -738,10 +872,19 @@ export function layoutTable(
       )
     );
 
+    const innerHeight = rowHeight - options.cellPadding * 2;
     for (const placed of placedCells) {
-      pushPositionedTextRuns(page, placed.runs, placed.node.id);
+      const align = placed.cell.verticalAlign ?? options.verticalAlign;
+      const runs =
+        align === "top"
+          ? placed.runs
+          : shiftRunsDown(
+              placed.runs,
+              verticalAlignOffset(align, innerHeight, measurePositionedRunHeight(placed.runs, options.lineHeight)),
+            );
+      pushPositionedTextRuns(page, runs, placed.node.id);
       if (placed.cell.annotations && placed.cell.annotations.length > 0) {
-        emitParagraphTextAnnotations(page, placed.runs, placed.cell.annotations, embeddedFonts, placed.node);
+        emitParagraphTextAnnotations(page, runs, placed.cell.annotations, embeddedFonts, placed.node);
       }
     }
 
