@@ -155,6 +155,8 @@ import type {
   PageOptions,
   PathCommand,
   PathStyle,
+  FontFamilyFaces,
+  TextDefaults,
   PdfColor,
   PdfComplianceIssue,
   PdfContainerTag,
@@ -391,6 +393,75 @@ interface EditableAppendedPageEntry {
 
 type EditablePageEntry = EditableExistingPageEntry | EditableAppendedPageEntry;
 
+/** Minimal shape the text resolvers operate on, shared by page, container, and flow paths. */
+type StyleableTextOptions = {
+  font?: PdfFont | undefined;
+  bold?: boolean | undefined;
+  italic?: boolean | undefined;
+};
+
+/**
+ * Resolves a registered font-family name on a text options object to a concrete
+ * face based on its `bold`/`italic` flags. Built-in font variants and
+ * embedded-font handles are left for downstream normalization; this only
+ * rewrites `font` when it names a registered family, in which case the
+ * `bold`/`italic` flags are consumed.
+ */
+function resolveFontFamilyOptions<T extends StyleableTextOptions>(
+  options: T,
+  families: ReadonlyMap<string, FontFamilyFaces>,
+): T {
+  const requested = options.font;
+  if (typeof requested !== "string" || !families.has(requested)) {
+    return options;
+  }
+  const faces = families.get(requested) as FontFamilyFaces;
+  const { bold, italic } = options;
+  const picked =
+    bold && italic
+      ? faces.boldItalic ?? faces.bold ?? faces.italic
+      : bold
+        ? faces.bold ?? faces.boldItalic
+        : italic
+          ? faces.italic ?? faces.boldItalic
+          : faces.regular;
+  return { ...options, font: picked ?? faces.regular, bold: undefined, italic: undefined };
+}
+
+/**
+ * Fills in document-wide text defaults for any text option omitted on the call.
+ * Per-call options always win; defaults only supply missing values.
+ */
+function fillTextDefaults<T extends TextOptions | TextBlockOptions>(
+  options: T,
+  defaults: TextDefaults | undefined,
+): T {
+  if (defaults === undefined) {
+    return options;
+  }
+  const merged = { ...options };
+  if (merged.font === undefined && defaults.font !== undefined) merged.font = defaults.font;
+  if (merged.bold === undefined && defaults.bold !== undefined) merged.bold = defaults.bold;
+  if (merged.italic === undefined && defaults.italic !== undefined) merged.italic = defaults.italic;
+  if (merged.fontSize === undefined && defaults.fontSize !== undefined) merged.fontSize = defaults.fontSize;
+  if (merged.color === undefined && defaults.color !== undefined) merged.color = defaults.color;
+  if (merged.kerning === undefined && defaults.kerning !== undefined) merged.kerning = defaults.kerning;
+  if (merged.direction === undefined && defaults.direction !== undefined) merged.direction = defaults.direction;
+  return merged;
+}
+
+/**
+ * Applies document text defaults and then resolves a registered font family,
+ * producing concrete text options for the page and container text paths.
+ */
+function prepareTextOptions<T extends TextOptions | TextBlockOptions>(
+  options: T,
+  families: ReadonlyMap<string, FontFamilyFaces>,
+  defaults: TextDefaults | undefined,
+): T {
+  return resolveFontFamilyOptions(fillTextDefaults(options, defaults), families);
+}
+
 /**
  *
  * A builder for grouping tagged PDF content under a shared structure element. It can add text, blocks, lists, tables, images, and nested sections to the same semantic container.
@@ -402,11 +473,15 @@ export class PdfStructureContainer {
    * @param page The internal page model to write into.
    * @param embeddedFonts The embedded font registry used for text layout.
    * @param node The parent structure node for tagged content.
+   * @param fontFamilies Font families registered with the document.
+   * @param textDefaults Document-wide text defaults.
    */
   constructor(
     private readonly page: InternalPageModel,
     private readonly embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>,
     private readonly node: InternalStructureNode,
+    private readonly fontFamilies: ReadonlyMap<string, FontFamilyFaces> = new Map(),
+    private readonly textDefaults?: TextDefaults | undefined,
   ) {}
 
   /**
@@ -416,7 +491,14 @@ export class PdfStructureContainer {
    * @param options Options that control the operation.
    */
   text(text: string, options: TextOptions): void {
-    addTextToPage(this.page, this.embeddedFonts, text, options, this.node, "P");
+    addTextToPage(
+      this.page,
+      this.embeddedFonts,
+      text,
+      prepareTextOptions(options, this.fontFamilies, this.textDefaults),
+      this.node,
+      "P",
+    );
   }
 
   /**
@@ -430,7 +512,7 @@ export class PdfStructureContainer {
       this.page,
       this.embeddedFonts,
       text,
-      options,
+      prepareTextOptions(options, this.fontFamilies, this.textDefaults),
       this.node,
       "P",
     );
@@ -634,6 +716,8 @@ export class PdfStructureContainer {
         normalizeStructureOptions(options),
         this.node,
       ),
+      this.fontFamilies,
+      this.textDefaults,
     );
     if (build) {
       build(child);
@@ -696,6 +780,8 @@ export class PdfStructureContainer {
         normalizeStructureOptions(options),
         this.node,
       ),
+      this.fontFamilies,
+      this.textDefaults,
     );
     if (build) {
       build(child);
@@ -716,6 +802,9 @@ export class PdfStructureContainer {
       this.embeddedFonts,
       createFlowState(this.page, options),
       this.node,
+      undefined,
+      this.fontFamilies,
+      this.textDefaults,
     );
   }
 }
@@ -1023,7 +1112,24 @@ export class PdfFlow {
     private state: FlowState,
     private parent: InternalStructureNode | undefined = undefined,
     private overflowHandler: (() => PdfFlow) | undefined = undefined,
+    private readonly fontFamilies: ReadonlyMap<string, FontFamilyFaces> = new Map(),
+    private readonly textDefaults?: TextDefaults | undefined,
   ) {}
+
+  /**
+   * Merges document text defaults (lowest priority), flow-configured defaults,
+   * and per-call options (highest priority), then resolves a registered font
+   * family to a concrete face. Built-in `bold`/`italic` variants are resolved
+   * later during normalization.
+   */
+  private composeFlowText(options: FlowTextOptions): FlowTextOptions {
+    const merged: FlowTextOptions = {
+      ...(this.textDefaults ?? {}),
+      ...flowTextDefaults(this.state),
+      ...options,
+    };
+    return resolveFontFamilyOptions(merged, this.fontFamilies);
+  }
 
   /**
    * Gets the current vertical cursor position.
@@ -1640,8 +1746,7 @@ export class PdfFlow {
     const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
     const blockWidth = Math.min(options.blockWidth ?? innerWidth, innerWidth);
     const normalized = normalizeTextBlockOptions(text, {
-      ...flowTextDefaults(this.state),
-      ...options,
+      ...this.composeFlowText(options),
       x: this.state.x,
       y: this.state.y,
       width: blockWidth,
@@ -1882,8 +1987,7 @@ export class PdfFlow {
     if (this.state.columnCount > 1 && options.writingMode !== "vertical") {
       validateText(text);
       const normalized = normalizeTextBlockOptions(text, {
-        ...flowTextDefaults(this.state),
-        ...options,
+        ...this.composeFlowText(options),
         x: blockX,
         y: this.state.y,
         width: blockWidth,
@@ -1938,8 +2042,7 @@ export class PdfFlow {
       this.embeddedFonts,
       text,
       {
-        ...flowTextDefaults(this.state),
-        ...options,
+        ...this.composeFlowText(options),
         x: blockX,
         y: this.state.y,
         width: blockWidth,
@@ -2706,10 +2809,14 @@ export class PdfPage {
    *
    * @param page The internal page model to write into.
    * @param embeddedFonts The embedded font registry used for text layout.
+   * @param fontFamilies Font families registered with the document, used to
+   *   resolve a family name plus `bold`/`italic` flags to a concrete face.
    */
   constructor(
     private readonly page: InternalPageModel,
     private readonly embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>,
+    private readonly fontFamilies: ReadonlyMap<string, FontFamilyFaces> = new Map(),
+    private readonly textDefaults?: TextDefaults | undefined,
   ) {}
 
   /**
@@ -2727,8 +2834,9 @@ export class PdfPage {
    * @param text The text to add.
    * @param options Options that control the operation.
    */
-  text(text: string, options: TextOptions): void {
-    addTextToPage(this.page, this.embeddedFonts, text, options);
+  text(text: string, options: TextOptions): this {
+    addTextToPage(this.page, this.embeddedFonts, text, prepareTextOptions(options, this.fontFamilies, this.textDefaults));
+    return this;
   }
 
   /**
@@ -2737,8 +2845,9 @@ export class PdfPage {
    * @param text The text to add.
    * @param options Options that control the operation.
    */
-  textBlock(text: string, options: TextBlockOptions): void {
-    addTextBlockToPage(this.page, this.embeddedFonts, text, options);
+  textBlock(text: string, options: TextBlockOptions): this {
+    addTextBlockToPage(this.page, this.embeddedFonts, text, prepareTextOptions(options, this.fontFamilies, this.textDefaults));
+    return this;
   }
 
   /**
@@ -2747,7 +2856,7 @@ export class PdfPage {
    * @param items The list items to add.
    * @param options Options that control the operation.
    */
-  list(items: readonly ListItem[], options: ListOptions): void {
+  list(items: readonly ListItem[], options: ListOptions): this {
     const normalizedItems = normalizeListItems(items);
     const normalizedOptions = normalizeListOptions(normalizedItems, options);
     const listNode = createStructureNode(this.page, "L");
@@ -2758,6 +2867,7 @@ export class PdfPage {
       normalizedOptions,
       this.embeddedFonts,
     );
+    return this;
   }
 
   /**
@@ -2766,7 +2876,7 @@ export class PdfPage {
    * @param rows The table rows to add.
    * @param options Options that control the operation.
    */
-  table(rows: readonly TableRow[], options: TableOptions): void {
+  table(rows: readonly TableRow[], options: TableOptions): this {
     const normalizedRows = normalizeTableRows(rows);
     const normalizedOptions = normalizeTableOptions(normalizedRows, options);
     layoutTable(
@@ -2776,6 +2886,7 @@ export class PdfPage {
       normalizedOptions,
       this.embeddedFonts,
     );
+    return this;
   }
 
   /**
@@ -2912,6 +3023,10 @@ export class PdfPage {
       this.page,
       this.embeddedFonts,
       createFlowState(this.page, options),
+      undefined,
+      undefined,
+      this.fontFamilies,
+      this.textDefaults,
     );
   }
 
@@ -2921,13 +3036,14 @@ export class PdfPage {
    * @param commands The vector path commands to add.
    * @param style The drawing style for the path.
    */
-  path(commands: PathCommand[], style: PathStyle): void {
+  path(commands: PathCommand[], style: PathStyle): this {
     validatePathCommands(commands);
     this.page.ops.push({
       type: "path",
       commands,
       style: normalizePathStyle(style),
     });
+    return this;
   }
 
   /**
@@ -2936,8 +3052,9 @@ export class PdfPage {
    * @param data The binary image or font data.
    * @param options Options that control the operation.
    */
-  jpeg(data: BinaryData, options: JpegImageOptions): void {
+  jpeg(data: BinaryData, options: JpegImageOptions): this {
     addImageToPage(this.page, "jpeg", data, options);
+    return this;
   }
 
   /**
@@ -2946,8 +3063,9 @@ export class PdfPage {
    * @param data The binary image or font data.
    * @param options Options that control the operation.
    */
-  png(data: BinaryData, options: PngImageOptions): void {
+  png(data: BinaryData, options: PngImageOptions): this {
     addImageToPage(this.page, "png", data, options);
+    return this;
   }
 
   /**
@@ -2956,8 +3074,9 @@ export class PdfPage {
    * @param data The binary image or font data.
    * @param options Options that control the operation.
    */
-  bmp(data: BinaryData, options: BmpImageOptions): void {
+  bmp(data: BinaryData, options: BmpImageOptions): this {
     addImageToPage(this.page, "bmp", data, options);
+    return this;
   }
 
   /**
@@ -2966,8 +3085,9 @@ export class PdfPage {
    * @param data The binary image or font data.
    * @param options Options that control the operation.
    */
-  jbig2(data: BinaryData, options: import("./types.js").Jbig2ImageOptions): void {
+  jbig2(data: BinaryData, options: import("./types.js").Jbig2ImageOptions): this {
     addImageToPage(this.page, "jbig2", data, options);
+    return this;
   }
 
   /**
@@ -2976,8 +3096,9 @@ export class PdfPage {
    * @param data The binary image or font data.
    * @param options Options that control the operation.
    */
-  tiff(data: BinaryData, options: import("./types.js").TiffImageOptions): void {
+  tiff(data: BinaryData, options: import("./types.js").TiffImageOptions): this {
     addImageToPage(this.page, "tiff", data, options);
+    return this;
   }
 
   /**
@@ -2986,8 +3107,9 @@ export class PdfPage {
    * @param data The binary image or font data.
    * @param options Options that control the operation.
    */
-  jp2(data: BinaryData, options: import("./types.js").Jp2ImageOptions): void {
+  jp2(data: BinaryData, options: import("./types.js").Jp2ImageOptions): this {
     addImageToPage(this.page, "jp2", data, options);
+    return this;
   }
 
   /**
@@ -2996,8 +3118,9 @@ export class PdfPage {
    * @param data The binary image or font data.
    * @param options Options that control the operation.
    */
-  webp(data: BinaryData, options: import("./types.js").WebpImageOptions): void {
+  webp(data: BinaryData, options: import("./types.js").WebpImageOptions): this {
     addImageToPage(this.page, "webp", data, options);
+    return this;
   }
 
   /**
@@ -3006,8 +3129,9 @@ export class PdfPage {
    * @param data The binary image or font data.
    * @param options Options that control the operation.
    */
-  gif(data: BinaryData, options: import("./types.js").GifImageOptions): void {
+  gif(data: BinaryData, options: import("./types.js").GifImageOptions): this {
     addImageToPage(this.page, "gif", data, options);
+    return this;
   }
 
   /**
@@ -3016,9 +3140,10 @@ export class PdfPage {
    * @param data The SVG text data.
    * @param options Options that control the operation.
    */
-  svg(data: BinaryData | string, options: import("./types.js").SvgImageOptions): void {
+  svg(data: BinaryData | string, options: import("./types.js").SvgImageOptions): this {
     const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
     addImageToPage(this.page, "svg", bytes, options);
+    return this;
   }
 
   /**
@@ -3027,8 +3152,9 @@ export class PdfPage {
    * @param url The URI target.
    * @param options Options that control the operation.
    */
-  link(url: string, options: UriLinkOptions): void {
+  link(url: string, options: UriLinkOptions): this {
     addLinkToPage(this.page, url, options);
+    return this;
   }
 
   /**
@@ -3037,7 +3163,7 @@ export class PdfPage {
    * @param target The destination page, outline target, or structure element.
    * @param options Options that control the operation.
    */
-  linkToPage(target: PdfPage, options: PageLinkOptions): void {
+  linkToPage(target: PdfPage, options: PageLinkOptions): this {
     const normalizedOptions = normalizePageLinkOptions(options);
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
@@ -3054,6 +3180,7 @@ export class PdfPage {
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
     });
+    return this;
   }
 
   /**
@@ -3061,7 +3188,7 @@ export class PdfPage {
    *
    * @param options Options that control the operation.
    */
-  highlight(options: HighlightAnnotationOptions): void {
+  highlight(options: HighlightAnnotationOptions): this {
     const normalizedOptions = normalizeHighlightAnnotationOptions(options);
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
@@ -3077,6 +3204,7 @@ export class PdfPage {
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
     });
+    return this;
   }
 
   /**
@@ -3084,7 +3212,7 @@ export class PdfPage {
    *
    * @param options Options that control the operation.
    */
-  underline(options: UnderlineAnnotationOptions): void {
+  underline(options: UnderlineAnnotationOptions): this {
     const normalizedOptions = normalizeUnderlineAnnotationOptions(options);
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
@@ -3100,6 +3228,7 @@ export class PdfPage {
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
     });
+    return this;
   }
 
   /**
@@ -3107,7 +3236,7 @@ export class PdfPage {
    *
    * @param options Options that control the operation.
    */
-  strikeOut(options: StrikeOutAnnotationOptions): void {
+  strikeOut(options: StrikeOutAnnotationOptions): this {
     const normalizedOptions = normalizeStrikeOutAnnotationOptions(options);
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
@@ -3123,6 +3252,7 @@ export class PdfPage {
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
     });
+    return this;
   }
 
   /**
@@ -3130,7 +3260,7 @@ export class PdfPage {
    *
    * @param options Options that control the operation.
    */
-  squiggly(options: SquigglyAnnotationOptions): void {
+  squiggly(options: SquigglyAnnotationOptions): this {
     const normalizedOptions = normalizeSquigglyAnnotationOptions(options);
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
@@ -3146,6 +3276,7 @@ export class PdfPage {
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
     });
+    return this;
   }
 
   /**
@@ -3153,7 +3284,7 @@ export class PdfPage {
    *
    * @param options Options that control the operation.
    */
-  note(options: NoteAnnotationOptions): void {
+  note(options: NoteAnnotationOptions): this {
     const normalizedOptions = normalizeNoteAnnotationOptions(options);
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
@@ -3169,6 +3300,7 @@ export class PdfPage {
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
     });
+    return this;
   }
 
   /**
@@ -3176,7 +3308,7 @@ export class PdfPage {
    *
    * @param options Options that control the operation.
    */
-  freeText(options: FreeTextAnnotationOptions): void {
+  freeText(options: FreeTextAnnotationOptions): this {
     const normalizedOptions = normalizeFreeTextAnnotationOptions(options);
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
@@ -3192,6 +3324,7 @@ export class PdfPage {
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
     });
+    return this;
   }
 
   /**
@@ -3240,7 +3373,7 @@ export class PdfPage {
    * @param name The name to assign or look up.
    * @param options Options that control the operation.
    */
-  textField(name: string, options: TextFieldOptions): void {
+  textField(name: string, options: TextFieldOptions): this {
     this.registerFieldName(name);
     const normalizedOptions = normalizeTextFieldOptions(name, options);
     const annotationIndex = this.page.annotations.length;
@@ -3258,6 +3391,7 @@ export class PdfPage {
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
     });
+    return this;
   }
 
   /**
@@ -3266,7 +3400,7 @@ export class PdfPage {
    * @param name The name to assign or look up.
    * @param options Options that control the operation.
    */
-  checkBox(name: string, options: CheckBoxOptions): void {
+  checkBox(name: string, options: CheckBoxOptions): this {
     this.registerFieldName(name);
     const normalizedOptions = normalizeCheckBoxOptions(name, options);
     const annotationIndex = this.page.annotations.length;
@@ -3284,6 +3418,7 @@ export class PdfPage {
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
     });
+    return this;
   }
 
   /**
@@ -3292,7 +3427,7 @@ export class PdfPage {
    * @param name The name to assign or look up.
    * @param options Options that control the operation.
    */
-  choiceField(name: string, options: ChoiceFieldOptions): void {
+  choiceField(name: string, options: ChoiceFieldOptions): this {
     this.registerFieldName(name);
     const normalizedOptions = normalizeChoiceFieldOptions(name, options);
     const annotationIndex = this.page.annotations.length;
@@ -3310,6 +3445,7 @@ export class PdfPage {
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
     });
+    return this;
   }
 
   /**
@@ -3318,7 +3454,7 @@ export class PdfPage {
    * @param name The name to assign or look up.
    * @param options Options that control the operation.
    */
-  radioGroup(name: string, options: RadioGroupOptions): void {
+  radioGroup(name: string, options: RadioGroupOptions): this {
     this.registerFieldName(name);
     const normalizedOptions = normalizeRadioGroupOptions(name, options);
     const annotationIndex = this.page.annotations.length;
@@ -3336,6 +3472,7 @@ export class PdfPage {
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
     });
+    return this;
   }
 
   /**
@@ -3344,7 +3481,7 @@ export class PdfPage {
    * @param name The name to assign or look up.
    * @param options Options that control the operation.
    */
-  pushButton(name: string, options: PushButtonOptions): void {
+  pushButton(name: string, options: PushButtonOptions): this {
     this.registerFieldName(name);
     const normalizedOptions = normalizePushButtonOptions(name, options);
     const annotationIndex = this.page.annotations.length;
@@ -3362,6 +3499,7 @@ export class PdfPage {
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
     });
+    return this;
   }
 
   /**
@@ -3370,7 +3508,7 @@ export class PdfPage {
    * @param name The name to assign or look up.
    * @param options Options that control the operation.
    */
-  signatureField(name: string, options: SignatureFieldOptions): void {
+  signatureField(name: string, options: SignatureFieldOptions): this {
     this.registerFieldName(name);
     const normalizedOptions = normalizeSignatureFieldOptions(name, options);
     const annotationIndex = this.page.annotations.length;
@@ -3388,20 +3526,22 @@ export class PdfPage {
       options: normalizedOptions,
       ...(structureGroupId === undefined ? {} : { structureGroupId }),
     });
+    return this;
   }
 
   /**
    * Saves the current graphics state.
    */
-  saveState(): void {
+  saveState(): this {
     this.page.graphicsDepth += 1;
     this.page.ops.push({ type: "saveState" });
+    return this;
   }
 
   /**
    * Restores the most recently saved graphics state.
    */
-  restoreState(): void {
+  restoreState(): this {
     if (this.page.graphicsDepth === 0) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_GRAPHICS_STATE,
@@ -3411,6 +3551,7 @@ export class PdfPage {
 
     this.page.graphicsDepth -= 1;
     this.page.ops.push({ type: "restoreState" });
+    return this;
   }
 
   /**
@@ -3419,8 +3560,9 @@ export class PdfPage {
    * @param x The horizontal transform value.
    * @param y The vertical transform value.
    */
-  translate(x: number, y: number): void {
+  translate(x: number, y: number): this {
     this.transform({ a: 1, b: 0, c: 0, d: 1, e: x, f: y });
+    return this;
   }
 
   /**
@@ -3429,8 +3571,9 @@ export class PdfPage {
    * @param x The horizontal transform value.
    * @param y The vertical transform value.
    */
-  scale(x: number, y: number = x): void {
+  scale(x: number, y: number = x): this {
     this.transform({ a: x, b: 0, c: 0, d: y, e: 0, f: 0 });
+    return this;
   }
 
   /**
@@ -3438,7 +3581,7 @@ export class PdfPage {
    *
    * @param degrees The rotation angle in degrees.
    */
-  rotate(degrees: number): void {
+  rotate(degrees: number): this {
     const radians = (degrees * Math.PI) / 180;
     this.transform({
       a: Math.cos(radians),
@@ -3448,6 +3591,7 @@ export class PdfPage {
       e: 0,
       f: 0,
     });
+    return this;
   }
 
   /**
@@ -3455,9 +3599,10 @@ export class PdfPage {
    *
    * @param matrix The transformation matrix to apply.
    */
-  transform(matrix: Transform): void {
+  transform(matrix: Transform): this {
     validateTransform(matrix);
     this.page.ops.push({ type: "transform", matrix });
+    return this;
   }
 
   /**
@@ -3468,9 +3613,10 @@ export class PdfPage {
    *
    * @param options Alpha and blend-mode options.
    */
-  setExtGState(options: ExtGStateOptions): void {
+  setExtGState(options: ExtGStateOptions): this {
     validateExtGStateOptions(options);
     this.page.ops.push({ type: "extGState", options: { ...options } });
+    return this;
   }
 
   /**
@@ -3577,6 +3723,9 @@ export class PdfDocument {
   /** TrueType fonts embedded in the document, keyed by their internal font id ({@link ParsedTrueTypeFont.id}). */
   private readonly embeddedFonts = new Map<string, ParsedTrueTypeFont>();
 
+  /** Font families registered via {@link registerFontFamily}, keyed by family name. */
+  private readonly fontFamilies = new Map<string, FontFamilyFaces>();
+
   /** Named destinations registered on the document. Used to populate the Names tree on serialization. */
   private readonly namedDestinations: InternalNamedDestinationModel[] = [];
 
@@ -3625,6 +3774,9 @@ export class PdfDocument {
   /** Custom text shaper for complex script shaping. */
   private textShaper?: TextShaper | undefined;
 
+  /** Document-wide text defaults applied to text APIs when options are omitted. */
+  private readonly textDefaults?: TextDefaults | undefined;
+
   /** Calculation order for form fields. */
   private calculationOrder?: string[] | undefined;
 
@@ -3663,6 +3815,9 @@ export class PdfDocument {
     this.outputIntent = options.outputIntent;
     this.signature = options.signature;
     this.textShaper = options.textShaper;
+    if (options.defaults !== undefined) {
+      this.textDefaults = { ...options.defaults };
+    }
   }
 
   /**
@@ -3732,7 +3887,36 @@ export class PdfDocument {
     const page = createPageModel(options.size ?? this.defaultPageSize, options.transparencyGroup, options.tabOrder);
     this.pages.push(page);
     this._unlock();
-    return new PdfPage(page, this.embeddedFonts);
+    return new PdfPage(page, this.embeddedFonts, this.fontFamilies, this.textDefaults);
+  }
+
+  /**
+   * Registers a named font family so text APIs can select a face with the
+   * `bold` and `italic` flags instead of tracking individual font handles.
+   *
+   * Faces may be built-in {@link FontName}s or handles returned by
+   * {@link embedTrueTypeFont}. Pass the family name as the `font` option on
+   * subsequent {@link PdfPage.text}/{@link PdfPage.textBlock} calls.
+   *
+   * @example
+   * ```ts
+   * const inter = doc.registerFontFamily("Inter", {
+   *   regular: doc.embedTrueTypeFont(regularBytes, { family: "Inter" }),
+   *   bold: doc.embedTrueTypeFont(boldBytes, { family: "Inter" }),
+   * });
+   * page.text("Heading", { x: 56, y: 760, font: inter, bold: true });
+   * ```
+   *
+   * @param name The family name used as the `font` option.
+   * @param faces The faces that make up the family.
+   *
+   * @returns The family name, for convenient inline use as a `font` value.
+   */
+  registerFontFamily(name: string, faces: FontFamilyFaces): string {
+    this._mutate();
+    this.fontFamilies.set(name, faces);
+    this._unlock();
+    return name;
   }
 
   /**
@@ -4375,6 +4559,17 @@ export class PdfDocument {
     const { writeFile } = await import('node:fs/promises');
     const bytes = this.toUint8Array();
     await writeFile(path, bytes);
+  }
+
+  /**
+   * Serializes the document and writes it to a file path. Convenience alias
+   * for {@link writeToFile} for Node.js callers. In the browser, use
+   * {@link toUint8Array} or {@link toBlob} instead.
+   *
+   * @param path The file path to write to.
+   */
+  async save(path: string): Promise<void> {
+    await this.writeToFile(path);
   }
 
   /**
@@ -5566,6 +5761,16 @@ export class PdfEditableDocument {
     const { writeFile } = await import('node:fs/promises');
     const bytes = this.toUint8Array();
     await writeFile(path, bytes);
+  }
+
+  /**
+   * Serializes the incremental update and writes it to a file path.
+   * Convenience alias for {@link writeToFile} for Node.js callers.
+   *
+   * @param path The file path to write to.
+   */
+  async save(path: string): Promise<void> {
+    await this.writeToFile(path);
   }
 }
 

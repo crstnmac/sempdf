@@ -37,7 +37,7 @@ export type { PageTextExtraction, PositionedTextRun } from "./internal/text-extr
 export type { ExtractTextOptions } from "./parser.js";
 export { validatePdf2Conformance } from "./internal/pdf2-validation.js";
 export type { Pdf2ComplianceIssue } from "./internal/pdf2-validation.js";
-export { cmyk, deviceN, gray, hex, PAGE_SIZES, rgb, separation } from "./types.js";
+export { cm, cmyk, deviceN, gray, hex, inch, mm, PAGE_SIZES, pt, rgb, separation } from "./types.js";
 export type {
   BinaryData,
   BmpImageOptions,
@@ -81,6 +81,7 @@ export type {
   FlowSpacingScale,
   FlowTableOptions,
   FlowTextOptions,
+  FontFamilyFaces,
   FontName,
   FieldActions,
   FreeTextAnnotationOptions,
@@ -184,6 +185,7 @@ export type {
   TemplateTableBlock,
   TemplateTextFieldBlock,
   TextAlign,
+  TextDefaults,
   TextBlockOptions,
   TextDirection,
   TextFieldOptions,
