@@ -59,7 +59,10 @@ const guideSidebar: DefaultTheme.SidebarItem[] = [
   },
   {
     text: "Support",
-    items: [{ text: "Troubleshooting", link: "/guide/troubleshooting" }]
+    items: [
+      { text: "Troubleshooting", link: "/guide/troubleshooting" },
+      { text: "Changelog", link: "/changelog" }
+    ]
   },
   {
     // Plain-text docs for AI assistants, emitted by vitepress-plugin-llms.
@@ -154,6 +157,7 @@ export default defineConfig({
       { text: "Guide", link: "/guide/getting-started" },
       { text: "API", link: "/api/" },
       { text: "Examples", link: "/guide/browser-usage" },
+      { text: "Changelog", link: "/changelog" },
       { text: "Playground", link: "https://playzeropdf.criston.dev/" }
     ],
     sidebar: {
