@@ -10,6 +10,98 @@ const sampleEl = document.querySelector("#sample");
 // and `export default`s it. Keep all text ASCII so the built-in font renders it.
 const SAMPLES = [
   {
+    label: "What's new (1.1 + 1.2)",
+    code: `import { createDocument, rgb, mm } from "@criston/sempdf";
+
+// 1.1: document-wide text defaults inherited by every text call.
+const doc = createDocument({
+  title: "What's New in 1.1 and 1.2",
+  language: "en-US",
+  defaults: { font: "Helvetica", fontSize: 12, color: rgb(0.15, 0.15, 0.2) }
+});
+
+// 1.1: register a font family so bold/italic resolve by flag.
+// Faces may be built-in names (shown here) or embedded font handles.
+const sans = doc.registerFontFamily("Sans", {
+  regular: "Helvetica",
+  bold: "Helvetica-Bold",
+  italic: "Helvetica-Oblique",
+  boldItalic: "Helvetica-BoldOblique"
+});
+
+const page = doc.addPage({ size: "A4" });
+
+// 1.1: mm() units + chained calls + bold/italic flags.
+page
+  .text("What's new in 1.1 + 1.2", { x: mm(20), y: mm(272), font: sans, bold: true, fontSize: 22 })
+  .text("Authored with mm() units and chained calls.", { x: mm(20), y: mm(264), italic: true, color: rgb(0.45, 0.45, 0.45) });
+
+// 1.2: inline rich text - mixed styles and an inline link wrapping together.
+page.richText(
+  [
+    { text: "Inline rich text mixes " },
+    { text: "bold", bold: true },
+    { text: ", " },
+    { text: "italic", italic: true },
+    { text: ", " },
+    { text: "color", color: rgb(0.80, 0.10, 0.10) },
+    { text: ", and a " },
+    { text: "clickable link", color: rgb(0.10, 0.30, 0.80), link: "https://sempdf.criston.dev" },
+    { text: " on the same wrapping lines." }
+  ],
+  { x: mm(20), y: mm(250), width: mm(170), fontSize: 13, lineHeight: 18 }
+);
+
+// 1.2: justified alignment for rich text.
+page.richText(
+  [{ text: "Justify spreads words across the full measure so both edges of the column line up cleanly along its width." }],
+  { x: mm(20), y: mm(230), width: mm(170), fontSize: 12, align: "justify" }
+);
+
+// 1.2: vertical alignment inside a fixed-height box (framed for clarity).
+page.path(
+  [{ type: "rect", x: mm(20), y: mm(168), width: mm(80), height: mm(40) }],
+  { paint: "stroke", stroke: { width: 0.5, color: rgb(0.7, 0.7, 0.7) } }
+);
+page.textBlock("Centered in a 40mm box (verticalAlign: middle).", {
+  x: mm(22), y: mm(206), width: mm(76), height: mm(36),
+  verticalAlign: "middle", align: "center", fontSize: 12, lineHeight: 16
+});
+
+// 1.2: per-cell vertical alignment in a table row.
+page.table(
+  [[
+    { text: "A long cell that wraps onto a few lines inside its column to make the row tall." },
+    { text: "top", verticalAlign: "top" },
+    { text: "middle", verticalAlign: "middle" },
+    { text: "bottom", verticalAlign: "bottom" }
+  ]],
+  { x: mm(20), y: mm(120), width: mm(170), columnWidths: [mm(85), mm(28), mm(28), mm(29)], fontSize: 11, cellPadding: 4 }
+);
+
+// 1.2: richParagraph template block (rendered on a second page).
+doc.renderTemplate({
+  page: { size: "A4", margin: 56 },
+  styles: { heading1: { fontSize: 22, color: rgb(0.11, 0.22, 0.45) } },
+  blocks: [
+    { type: "heading", text: "richParagraph template block", options: { level: 1 } },
+    {
+      type: "richParagraph",
+      runs: [
+        { text: "Status: " },
+        { text: "PASSED", bold: true, color: rgb(0, 0.5, 0) },
+        { text: " - see the " },
+        { text: "report", link: "https://sempdf.criston.dev", color: rgb(0.1, 0.3, 0.8) },
+        { text: " for details." }
+      ]
+    }
+  ]
+});
+
+export default doc;
+`
+  },
+  {
     label: "Stylesheets & tables",
     code: `import { createDocument, rgb } from "@criston/sempdf";
 

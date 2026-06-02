@@ -683,6 +683,9 @@ function renderTemplateBlockToFlow(
     case 'paragraph':
       flow.paragraph(block.text, block.options, block.annotations);
       return;
+    case 'richParagraph':
+      flow.richParagraph(block.runs, block.options);
+      return;
     case 'table':
       flow.table(block.rows, block.options);
       return;

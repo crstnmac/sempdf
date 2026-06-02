@@ -2,6 +2,17 @@
 
 All notable changes to `@criston/sempdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-06-02
+
+### Added
+
+- Inline rich text: `PdfPage.richText()` and `PdfFlow.richParagraph()` lay out an array of `InlineTextRun` segments that flow on the same line and wrap together, each with its own font, weight, size, color, and optional `link`.
+- `richParagraph` template block (`TemplateRichParagraphBlock`) for inline rich text in `renderTemplate()`.
+- Inline rich text supports `align: "justify"`, line-level `direction` (`"ltr" | "rtl" | "auto"`), and `writingMode: "vertical"` (single-column stacking); flow and template rich paragraphs wrap and split across columns and pages.
+- Vertical alignment: `verticalAlign` (`"top" | "middle" | "bottom"`) on table cells (`TableOptions` default and per-`TableCellDefinition`).
+- Vertical alignment within a fixed-height box via `height` + `verticalAlign` on `TextBlockOptions` and `RichTextOptions`.
+- New exported types: `InlineTextRun`, `RichTextOptions`, `FlowRichTextOptions`, `TemplateRichParagraphBlock`, `VerticalAlign`.
+
 ## [1.1.0] - 2026-06-02
 
 ### Added
