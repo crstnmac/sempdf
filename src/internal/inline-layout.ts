@@ -40,9 +40,22 @@ export interface InlineLinkRect {
   readonly height: number;
 }
 
+/** A drawn underline/strike segment for a run, anchored at its text baseline. */
+export interface InlineDecoration {
+  readonly x: number;
+  /** Text baseline y. */
+  readonly baselineY: number;
+  readonly width: number;
+  readonly fontSize: number;
+  readonly color: import("../types.js").PdfColor;
+  readonly underline: boolean;
+  readonly strike: boolean;
+}
+
 export interface InlineLayoutResult {
   readonly runs: PositionedTextRun[];
   readonly links: InlineLinkRect[];
+  readonly decorations: InlineDecoration[];
   /** Total space consumed (line count × line height). */
   readonly height: number;
   readonly lineCount: number;
@@ -173,6 +186,7 @@ function linkRectHeight(fontSize: number): number {
 interface PlacedLine {
   readonly runs: PositionedTextRun[];
   readonly links: InlineLinkRect[];
+  readonly decorations: InlineDecoration[];
 }
 
 /**
@@ -192,6 +206,7 @@ export function placeInlineLine(
 
   const runs: PositionedTextRun[] = [];
   const links: InlineLinkRect[] = [];
+  const decorations: InlineDecoration[] = [];
   const rtl = geometry.direction === "rtl";
   const gaps = line.pieces.filter((p) => p.isSpace).length;
   const slack = Math.max(geometry.width - line.mainSize, 0);
@@ -241,10 +256,21 @@ export function placeInlineLine(
         activeFontSize = piece.run.options.fontSize;
       }
     }
+    if (piece.run.options.underline === true || piece.run.options.strike === true) {
+      decorations.push({
+        x: cursorX,
+        baselineY,
+        width: piece.mainSize,
+        fontSize: piece.run.options.fontSize,
+        color: piece.run.options.color,
+        underline: piece.run.options.underline === true,
+        strike: piece.run.options.strike === true,
+      });
+    }
     cursorX += piece.mainSize + (piece.isSpace ? extraPerGap : 0);
   }
   closeLink(cursorX);
-  return { runs, links };
+  return { runs, links, decorations };
 }
 
 /** Stacks a single vertical column of pieces from the column top downward. */
@@ -273,7 +299,7 @@ function placeVerticalColumn(
     }
     cursorY -= piece.mainSize;
   }
-  return { runs, links };
+  return { runs, links, decorations: [] };
 }
 
 /**
@@ -294,6 +320,7 @@ export function layoutInlineRuns(
   const lines = breakInlineLines(runs, geometry, embeddedFonts);
   const positioned: PositionedTextRun[] = [];
   const links: InlineLinkRect[] = [];
+  const decorations: InlineDecoration[] = [];
 
   if (geometry.writingMode === "vertical") {
     let columnX = geometry.x;
@@ -301,10 +328,11 @@ export function layoutInlineRuns(
       const placed = placeInlineLine(line, geometry, columnX, embeddedFonts);
       positioned.push(...placed.runs);
       links.push(...placed.links);
+      decorations.push(...placed.decorations);
       columnX -= geometry.lineHeight;
     }
     const tallest = lines.reduce((m, l) => Math.max(m, l.mainSize), 0);
-    return { runs: positioned, links, height: tallest, lineCount: lines.length };
+    return { runs: positioned, links, decorations, height: tallest, lineCount: lines.length };
   }
 
   let y = geometry.y;
@@ -312,9 +340,10 @@ export function layoutInlineRuns(
     const placed = placeInlineLine(line, geometry, y, embeddedFonts);
     positioned.push(...placed.runs);
     links.push(...placed.links);
+    decorations.push(...placed.decorations);
     y -= geometry.lineHeight;
   }
-  return { runs: positioned, links, height: lines.length * geometry.lineHeight, lineCount: lines.length };
+  return { runs: positioned, links, decorations, height: lines.length * geometry.lineHeight, lineCount: lines.length };
 }
 
 /**

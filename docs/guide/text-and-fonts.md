@@ -56,14 +56,14 @@ You can still pass an explicit variant name (e.g. `font: "Helvetica-Bold"`) dire
 
 ### Embedded fonts: font families
 
-Embed each weight as its own file, then register them as a **font family** so the `bold`/`italic` flags work the same way as for built-ins:
+Register the weights as a **font family** so the `bold`/`italic` flags work the same way as for built-ins. Pass raw font bytes per face — they are embedded automatically under the family name:
 
 ```ts
 const inter = doc.registerFontFamily("Inter", {
-  regular:    doc.embedTrueTypeFont(await readFile("fonts/Inter-Regular.ttf"),    { family: "Inter" }),
-  bold:       doc.embedTrueTypeFont(await readFile("fonts/Inter-Bold.ttf"),       { family: "Inter" }),
-  italic:     doc.embedTrueTypeFont(await readFile("fonts/Inter-Italic.ttf"),     { family: "Inter" }),
-  boldItalic: doc.embedTrueTypeFont(await readFile("fonts/Inter-BoldItalic.ttf"), { family: "Inter" }),
+  regular:    await readFile("fonts/Inter-Regular.ttf"),
+  bold:       await readFile("fonts/Inter-Bold.ttf"),
+  italic:     await readFile("fonts/Inter-Italic.ttf"),
+  boldItalic: await readFile("fonts/Inter-BoldItalic.ttf"),
 });
 
 page.text("Regular", { x: 56, y: 700, font: inter, fontSize: 14 });
@@ -71,7 +71,7 @@ page.text("Bold",    { x: 56, y: 680, font: inter, fontSize: 14, bold: true });
 page.text("Italic",  { x: 56, y: 660, font: inter, fontSize: 14, italic: true });
 ```
 
-`registerFontFamily()` returns the family name, so you can use it inline as the `font` value. Only `regular` is required; a missing face falls back to the closest available one (bold italic → bold → italic → regular). Faces may be built-in names or embedded handles.
+`registerFontFamily()` returns the family name, so you can use it inline as the `font` value. Each face may be raw font **bytes** (embedded for you), a handle from `embedTrueTypeFont()`, or a built-in name. Only `regular` is required; a missing face falls back to the closest available one (bold italic → bold → italic → regular).
 
 The `bold`/`italic` flags and registered families resolve the same way across `page.text()`, `page.textBlock()`, the `PdfFlow` cursor API (`flow.paragraph()`, `flow.heading()`), and `renderTemplate()` blocks. Document-wide [text defaults](./getting-started#convenience-helpers) (`createDocument({ defaults })`) also apply to all of these; per-call options always win, and a font configured on a flow takes precedence over document defaults.
 
@@ -124,6 +124,43 @@ doc.renderTemplate({
 `align` supports `"left" | "center" | "right" | "justify"`, and `direction` accepts `"ltr" | "rtl" | "auto"` (line-level direction — runs are laid out from the right edge, not full mixed-direction bidi). Set `writingMode: "vertical"` to stack the runs in a single column. In flow and template layouts a `richParagraph` wraps and **splits across columns and pages** like a normal paragraph (vertical rich text stays in one column).
 
 > For inline **links, highlights, underlines, or notes** over a substring of an *otherwise uniform* paragraph, you can also keep using `paragraph(text, options, annotations)` with `{ type: "link", match, url }` annotations — no need to split the text into runs. Reach for `richText`/`richParagraph` when you need differing **fonts/sizes/colors** on the same line.
+
+## Underline and strike-through
+
+Set `underline` and/or `strike` on any text call. They draw a line beneath or through the text (as a decorative artifact), and work per-run in `richText`:
+
+```ts
+page.text("Important", { x: 56, y: 700, underline: true });
+page.text("Removed", { x: 56, y: 684, strike: true, color: "red" });
+
+page.richText(
+  [{ text: "See " }, { text: "the link", underline: true, link: "https://example.com" }],
+  { x: 56, y: 660, width: 200 }
+);
+```
+
+## Measuring text
+
+Measure text without drawing it — useful for fitting, dynamic box sizing, or manual layout. The document's registered fonts and defaults are applied.
+
+```ts
+const { width, height } = doc.measureText("Heading", { fontSize: 24, bold: true });
+const block = doc.measureTextBlock("Long copy…", { width: 200, fontSize: 12 });
+// block => { width, height, lineCount }
+const rich = doc.measureRichText([{ text: "A " }, { text: "B", bold: true }], { width: 200 });
+```
+
+`measureText` returns the single-line `{ width, height }`; `measureTextBlock` and `measureRichText` return `{ width, height, lineCount }` after wrapping to the given `width`. Measurements use the same engine that draws the text, so they account for the resolved font, `bold`/`italic`, kerning, and registered families.
+
+A common use is sizing a box to its content — for example a right-aligned label or a background that hugs the text:
+
+```ts
+const label = "Total: $1,240.00";
+const { width } = doc.measureText(label, { fontSize: 12, bold: true });
+const x = pageRight - width;                 // right-align without a text block
+page.rect(x - 6, y - 4, width + 12, 20, { fill: "silver" });
+page.text(label, { x, y, fontSize: 12, bold: true });
+```
 
 ## Kerning and ligatures
 
