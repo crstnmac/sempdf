@@ -19,6 +19,47 @@ const LINE_JOINS: Record<LineJoin, 0 | 1 | 2> = {
 const DEFAULT_FONT = "Helvetica";
 const DEFAULT_COLOR = gray(0);
 
+/**
+ * Maps a built-in base font family to its bold, italic, and bold-italic
+ * variants. Used to resolve the `bold`/`italic` text options to a concrete
+ * standard-14 font name. Already-styled names (e.g. `Helvetica-Bold`) are not
+ * keys here and are left untouched.
+ */
+const BUILTIN_FONT_VARIANTS: Partial<
+  Record<FontName, { bold?: FontName; italic?: FontName; boldItalic?: FontName }>
+> = {
+  Helvetica: { bold: "Helvetica-Bold", italic: "Helvetica-Oblique", boldItalic: "Helvetica-BoldOblique" },
+  "Times-Roman": { bold: "Times-Bold", italic: "Times-Italic", boldItalic: "Times-BoldItalic" },
+  Courier: { bold: "Courier-Bold", italic: "Courier-Oblique", boldItalic: "Courier-BoldOblique" },
+};
+
+/**
+ * Resolves the `bold`/`italic` flags against a built-in font family, returning
+ * the matching standard-14 variant. Embedded-font handles and font names with
+ * no registered variants are returned unchanged (font-family handles are
+ * resolved earlier, before normalization).
+ *
+ * @param font The requested font.
+ * @param bold Whether the bold variant was requested.
+ * @param italic Whether the italic variant was requested.
+ *
+ * @returns The resolved font.
+ */
+export function resolveStyledFont(font: PdfFont, bold?: boolean, italic?: boolean): PdfFont {
+  if (!bold && !italic) {
+    return font;
+  }
+  if (typeof font !== "string") {
+    return font;
+  }
+  const variants = BUILTIN_FONT_VARIANTS[font as FontName];
+  if (variants === undefined) {
+    return font;
+  }
+  const picked = bold && italic ? variants.boldItalic : bold ? variants.bold : variants.italic;
+  return picked ?? font;
+}
+
 export interface NormalizedDocumentInfo {
   title?: string | undefined;
   author?: string | undefined;
@@ -922,7 +963,7 @@ export function normalizeTextBaseOptions(options: TextOptions | TextBlockOptions
   const normalized: NormalizedTextBaseOptions = {
     x: options.x,
     y: options.y,
-    font: options.font ?? DEFAULT_FONT,
+    font: resolveStyledFont(options.font ?? DEFAULT_FONT, options.bold, options.italic),
     fallbackFonts: options.fallbackFonts ? [...options.fallbackFonts] : [],
     direction: options.direction ?? "ltr",
     fontSize,

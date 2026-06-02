@@ -31,20 +31,20 @@ The embedder subsets glyphs, computes widths, and writes a `ToUnicode` CMap so e
 
 ## Font weights and styles (bold & italic)
 
-The library does **not** synthesize bold or italic. There is no `bold: true` flag and no faux-bold/oblique transform. Each weight and style is a distinct font, selected through the `font` option. This matches the PDF font model and keeps glyph metrics correct.
+The library does not synthesize bold or italic with a faux transform — each weight is a real font face for correct glyph metrics. But you don't have to juggle face names by hand: the `bold` and `italic` options on `text()` and `textBlock()` resolve to the right face.
 
 ### Built-in fonts
 
-Pick the bold or italic variant by name:
+Set `bold` and/or `italic` against a base family name:
 
 ```ts
 page.text("Regular",     { x: 56, y: 760, font: "Helvetica" });
-page.text("Bold",        { x: 56, y: 740, font: "Helvetica-Bold" });
-page.text("Italic",      { x: 56, y: 720, font: "Helvetica-Oblique" });
-page.text("Bold Italic", { x: 56, y: 700, font: "Helvetica-BoldOblique" });
+page.text("Bold",        { x: 56, y: 740, font: "Helvetica", bold: true });
+page.text("Italic",      { x: 56, y: 720, font: "Helvetica", italic: true });
+page.text("Bold Italic", { x: 56, y: 700, font: "Helvetica", bold: true, italic: true });
 ```
 
-Variant naming differs per family:
+The base name resolves to the matching standard-14 variant:
 
 | Family | Regular | Bold | Italic | Bold + Italic |
 |--------|---------|------|--------|---------------|
@@ -52,27 +52,30 @@ Variant naming differs per family:
 | Times | `Times-Roman` | `Times-Bold` | `Times-Italic` | `Times-BoldItalic` |
 | Courier | `Courier` | `Courier-Bold` | `Courier-Oblique` | `Courier-BoldOblique` |
 
-`Symbol` and `ZapfDingbats` have no weight variants.
+You can still pass an explicit variant name (e.g. `font: "Helvetica-Bold"`) directly. `Symbol` and `ZapfDingbats` have no weight variants. The `bold`/`italic` flags only resolve against the three base families above; on an already-styled name or an embedded handle they are ignored.
 
-### Embedded fonts
+### Embedded fonts: font families
 
-Embed each weight as its own file and keep the returned handles:
+Embed each weight as its own file, then register them as a **font family** so the `bold`/`italic` flags work the same way as for built-ins:
 
 ```ts
-const regular = doc.embedTrueTypeFont(
-  await readFile("fonts/Inter-Regular.ttf"),
-  { family: "Inter" }
-);
-const bold = doc.embedTrueTypeFont(
-  await readFile("fonts/Inter-Bold.ttf"),
-  { family: "Inter" }
-);
+const inter = doc.registerFontFamily("Inter", {
+  regular:    doc.embedTrueTypeFont(await readFile("fonts/Inter-Regular.ttf"),    { family: "Inter" }),
+  bold:       doc.embedTrueTypeFont(await readFile("fonts/Inter-Bold.ttf"),       { family: "Inter" }),
+  italic:     doc.embedTrueTypeFont(await readFile("fonts/Inter-Italic.ttf"),     { family: "Inter" }),
+  boldItalic: doc.embedTrueTypeFont(await readFile("fonts/Inter-BoldItalic.ttf"), { family: "Inter" }),
+});
 
-page.text("Regular weight", { x: 56, y: 700, font: regular, fontSize: 14 });
-page.text("Bold weight",    { x: 56, y: 680, font: bold,    fontSize: 14 });
+page.text("Regular", { x: 56, y: 700, font: inter, fontSize: 14 });
+page.text("Bold",    { x: 56, y: 680, font: inter, fontSize: 14, bold: true });
+page.text("Italic",  { x: 56, y: 660, font: inter, fontSize: 14, italic: true });
 ```
 
-To mix weights inside one paragraph, split the runs and position each, or maintain a small map of handles (`{ regular, bold, italic }`) and pass the right one per call. Variable fonts are embedded at their default instance; embed a separate file per named instance to ship multiple weights.
+`registerFontFamily()` returns the family name, so you can use it inline as the `font` value. Only `regular` is required; a missing face falls back to the closest available one (bold italic → bold → italic → regular). Faces may be built-in names or embedded handles.
+
+The `bold`/`italic` flags and registered families resolve the same way across `page.text()`, `page.textBlock()`, the `PdfFlow` cursor API (`flow.paragraph()`, `flow.heading()`), and `renderTemplate()` blocks. Document-wide [text defaults](./getting-started#convenience-helpers) (`createDocument({ defaults })`) also apply to all of these; per-call options always win, and a font configured on a flow takes precedence over document defaults.
+
+If you prefer to manage handles yourself, you can still pass an embedded-font handle directly as `font` and skip the registry entirely. Variable fonts are embedded at their default instance; embed a separate file per named instance to ship multiple weights.
 
 ## Kerning and ligatures
 
