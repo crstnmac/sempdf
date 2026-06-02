@@ -48,6 +48,34 @@ const bytes = doc.toUint8Array();
 
 The library returns standard binary data, so you can write the bytes in Node.js, upload them, or create a `Blob` in the browser.
 
+## Convenience helpers
+
+A few options keep call sites short:
+
+```ts
+import { createDocument, mm, rgb } from "@criston/sempdf";
+
+// Document-wide text defaults: fill in font/size/color so calls stay terse.
+const doc = createDocument({
+  defaults: { font: "Helvetica", fontSize: 12, color: rgb(0.1, 0.1, 0.1) }
+});
+
+// Author in physical units (mm/cm/inch) instead of raw points.
+// Page builder methods are chainable.
+doc.addPage({ size: "A4" })
+  .text("Title", { x: mm(20), y: mm(270), fontSize: 18, bold: true })
+  .text("Body copy uses the document defaults.", { x: mm(20), y: mm(258) });
+
+// Node.js shortcut for writing to disk (alias of writeToFile).
+await doc.save("out.pdf");
+```
+
+- **Units** — `mm()`, `cm()`, `inch()`, and `pt()` convert to PDF points.
+- **`bold` / `italic`** — resolve to the right font face. See [Text and Fonts](./text-and-fonts).
+- **`defaults`** — document-wide `font`, `fontSize`, `color`, `kerning`, `direction`, overridden per call.
+- **Chaining** — page builder methods return the page, so calls compose.
+- **`doc.save(path)`** — Node-only; in the browser use `toUint8Array()` or `toBlob()`.
+
 ## Common imports
 
 ```ts
