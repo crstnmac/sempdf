@@ -2364,11 +2364,14 @@ function collectBuiltInFonts(model: PdfDocumentModel): Map<FontName, "winansi" |
   for (const page of model.pages) {
     for (const op of page.ops) {
       if (op.type === 'text' && typeof op.options.font === 'string') {
-        const existing = fonts.get(op.options.font);
+        // A string font here is always a built-in standard-14 name; family
+        // names and embedded handles are resolved before serialization.
+        const fontName = op.options.font as FontName;
+        const existing = fonts.get(fontName);
         if (existing === undefined && op.options.encoding !== undefined) {
-          fonts.set(op.options.font, op.options.encoding);
-        } else if (!fonts.has(op.options.font)) {
-          fonts.set(op.options.font, undefined);
+          fonts.set(fontName, op.options.encoding);
+        } else if (!fonts.has(fontName)) {
+          fonts.set(fontName, undefined);
         }
       }
     }

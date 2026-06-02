@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.1] - 2026-06-02
+
+### Fixed
+
+- The `font` text option now accepts a font-family name registered with `registerFontFamily()` (and any `string`-typed value), instead of rejecting it at compile time. `PdfFont` widened to `FontName | PdfEmbeddedFont | (string & {})`, preserving built-in name autocomplete.
+
 ## [1.2.0] - 2026-06-02
 
 ### Added

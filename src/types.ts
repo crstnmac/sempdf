@@ -33,9 +33,15 @@ export interface PdfEmbeddedFont {
 }
 
 /**
- * Font value accepted by text APIs, either built-in or embedded.
+ * Font value accepted by text APIs: a built-in {@link FontName}, an embedded
+ * font handle, or the name of a family registered with
+ * {@link PdfDocument.registerFontFamily}.
+ *
+ * The `string & {}` member keeps `FontName` literals in editor autocomplete
+ * while still accepting an arbitrary registered family name.
  */
-export type PdfFont = FontName | PdfEmbeddedFont;
+// eslint-disable-next-line @typescript-eslint/ban-types
+export type PdfFont = FontName | PdfEmbeddedFont | (string & {});
 
 /**
  * The set of faces that make up a font family registered with
