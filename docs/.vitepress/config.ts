@@ -12,6 +12,7 @@ const guideSidebar: DefaultTheme.SidebarItem[] = [
     text: "Introduction",
     items: [
       { text: "Getting Started", link: "/guide/getting-started" },
+      { text: "Choosing an API", link: "/guide/choosing-an-api" },
       { text: "Browser Usage", link: "/guide/browser-usage" },
       { text: "Streaming and Output", link: "/guide/streaming-and-output" },
       { text: "Performance", link: "/guide/performance" }

@@ -37,7 +37,7 @@ export type { PageTextExtraction, PositionedTextRun } from "./internal/text-extr
 export type { ExtractTextOptions } from "./parser.js";
 export { validatePdf2Conformance } from "./internal/pdf2-validation.js";
 export type { Pdf2ComplianceIssue } from "./internal/pdf2-validation.js";
-export { cm, cmyk, deviceN, gray, hex, inch, mm, PAGE_SIZES, pt, rgb, separation } from "./types.js";
+export { cm, cmyk, color, deviceN, gray, hex, inch, mm, PAGE_SIZES, pt, rgb, separation } from "./types.js";
 export type {
   BinaryData,
   BmpImageOptions,
@@ -51,6 +51,8 @@ export type {
   DocumentEncryptionAlgorithm,
   CurveToCommand,
   CmykColor,
+  ColorInput,
+  NamedColor,
   DocumentEncryptionOptions,
   DocumentInfo,
   DocumentOptions,
@@ -83,14 +85,24 @@ export type {
   FlowTableOptions,
   FlowTextOptions,
   FontFamilyFaces,
+  FontFamilyInput,
   FontName,
   FieldActions,
   FreeTextAnnotationOptions,
   GifImageOptions,
   GrayColor,
   HighlightAnnotationOptions,
+  ImageOptions,
   InlineTextRun,
   RichTextOptions,
+  ShapeStyle,
+  MeasureTextOptions,
+  MeasureTextBlockOptions,
+  MeasureRichTextOptions,
+  TextMetrics,
+  BlockTextMetrics,
+  PlacedTextResult,
+  PlacedTextBlockResult,
   UnderlineAnnotationOptions,
   StrikeOutAnnotationOptions,
   SquigglyAnnotationOptions,

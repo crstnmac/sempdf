@@ -2,6 +2,18 @@
 
 Embed images directly from byte arrays. JPEG and PNG are the primary raster paths, with additional helpers for BMP, GIF, JPEG2000, JBIG2, TIFF, WebP, and SVG. PNG transparency masks and alpha-channel soft masks are preserved.
 
+## Auto-detecting the format
+
+`page.image()` sniffs the raster format from the data's magic bytes (PNG, JPEG, GIF, BMP, TIFF, WebP, JPEG 2000) and dispatches to the right decoder — handy when the format isn't known ahead of time:
+
+```ts
+import { readFile } from "node:fs/promises";
+
+page.image(await readFile("logo"), { x: 56, y: 600, width: 120, height: 60, altText: "Logo" });
+```
+
+It throws `UNSUPPORTED_IMAGE_FORMAT` if the bytes match no known raster format. For SVG (text, not raster) use `page.svg()`. Use the format-specific methods below when you want a specific decoder or format-only options.
+
 ## JPEG
 
 ```ts

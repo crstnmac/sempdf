@@ -1,6 +1,6 @@
 import { PdfEngineError, PdfErrorCode } from "../errors.js";
-import type { AttachmentOptions, BmpImageOptions, BuiltInPageSize, CheckBoxOptions, ChoiceFieldMode, ChoiceFieldOptions, CustomPageSize, DocumentConformanceProfile, DocumentEncryptionAlgorithm, DocumentEncryptionOptions, DocumentInfo, DocumentPermissions, ExtGStateOptions, FieldActions, FillStyle, FontName, FreeTextAnnotationOptions, HighlightAnnotationOptions, JpegImageOptions, LineCap, LineJoin, ListItem, ListOptions, NoteAnnotationOptions, OutlineOptions, PageLabelOptions, PageLabelStyle, PageLinkOptions, PageSize, ParagraphTextAnnotation, PathCommand, PathStyle, PdfColor, PdfComplianceIssue, PdfContainerTag, PdfFigureStructureTag, PdfFont, PdfRoleMap, PdfStandardStructureTag, PdfStructureAttributeValue, PdfStructureOptions, PdfStructureTag, PdfTextStructureTag, PngImageOptions, PushButtonOptions, RadioGroupOptions, SignatureFieldOptions, SquigglyAnnotationOptions, StrikeOutAnnotationOptions, StrokeStyle, TableCell, TableHeaderScope, TableOptions, TextAlign, TextBlockOptions, TextDirection, TextFieldOptions, TextOptions, Transform, UnderlineAnnotationOptions, UriLinkOptions, VerticalAlign, XmpMetadataInput } from "../types.js";
-import { PAGE_SIZES, gray } from "../types.js";
+import type { AttachmentOptions, BmpImageOptions, BuiltInPageSize, CheckBoxOptions, ChoiceFieldMode, ChoiceFieldOptions, CustomPageSize, DocumentConformanceProfile, DocumentEncryptionAlgorithm, DocumentEncryptionOptions, DocumentInfo, DocumentPermissions, ExtGStateOptions, FieldActions, FillStyle, FontName, FreeTextAnnotationOptions, HighlightAnnotationOptions, JpegImageOptions, LineCap, LineJoin, ListItem, ListOptions, NoteAnnotationOptions, OutlineOptions, PageLabelOptions, PageLabelStyle, PageLinkOptions, PageSize, ParagraphTextAnnotation, PathCommand, PathStyle, PdfColor, PdfComplianceIssue, PdfContainerTag, PdfFigureStructureTag, PdfFont, PdfRoleMap, PdfStandardStructureTag, PdfStructureAttributeValue, PdfStructureOptions, PdfStructureTag, PdfTextStructureTag, PngImageOptions, PushButtonOptions, RadioGroupOptions, SignatureFieldOptions, SquigglyAnnotationOptions, StrikeOutAnnotationOptions, StrokeStyle, TableCell, TableHeaderScope, TableOptions, TextAlign, TextBlockOptions, TextDirection, TextFieldOptions, TextOptions, Transform, UnderlineAnnotationOptions, UriLinkOptions, VerticalAlign, ColorInput, XmpMetadataInput } from "../types.js";
+import { PAGE_SIZES, gray, color as resolveColorName } from "../types.js";
 import type { NormalizedImageOptions, NormalizedPathStyle, NormalizedTextOptions } from "./ops.js";
 import { buildXmpMetadataPacket } from "./xmp.js";
 
@@ -32,6 +32,50 @@ const BUILTIN_FONT_VARIANTS: Partial<
   "Times-Roman": { bold: "Times-Bold", italic: "Times-Italic", boldItalic: "Times-BoldItalic" },
   Courier: { bold: "Courier-Bold", italic: "Courier-Oblique", boldItalic: "Courier-BoldOblique" },
 };
+
+/** The 14 standard PDF base fonts that may be used without embedding. */
+const STANDARD_FONTS: readonly string[] = [
+  "Courier", "Courier-Bold", "Courier-Oblique", "Courier-BoldOblique",
+  "Helvetica", "Helvetica-Bold", "Helvetica-Oblique", "Helvetica-BoldOblique",
+  "Times-Roman", "Times-Bold", "Times-Italic", "Times-BoldItalic",
+  "Symbol", "ZapfDingbats",
+];
+
+/** Levenshtein distance, used to suggest the closest valid font name. */
+function editDistance(a: string, b: string): number {
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const dist = Array.from({ length: rows }, () => new Array<number>(cols).fill(0));
+  for (let i = 0; i < rows; i += 1) dist[i]![0] = i;
+  for (let j = 0; j < cols; j += 1) dist[0]![j] = j;
+  for (let i = 1; i < rows; i += 1) {
+    for (let j = 1; j < cols; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dist[i]![j] = Math.min(dist[i - 1]![j]! + 1, dist[i]![j - 1]! + 1, dist[i - 1]![j - 1]! + cost);
+    }
+  }
+  return dist[a.length]![b.length]!;
+}
+
+/**
+ * Validates that a string font names a standard-14 base font, throwing a
+ * helpful "did you mean" error otherwise. Embedded-font handles and registered
+ * font families are resolved before this runs, so a string here must be built-in.
+ */
+function assertKnownBuiltInFont(font: PdfFont): void {
+  if (typeof font !== "string" || STANDARD_FONTS.includes(font)) {
+    return;
+  }
+  const suggestion = [...STANDARD_FONTS]
+    .map((name) => ({ name, score: editDistance(font.toLowerCase(), name.toLowerCase()) }))
+    .sort((left, right) => left.score - right.score)[0];
+  const hint = suggestion && suggestion.score <= Math.max(3, Math.ceil(font.length / 2)) ? ` Did you mean "${suggestion.name}"?` : "";
+  throw new PdfEngineError(
+    PdfErrorCode.INVALID_FONT,
+    `Unknown font "${font}".${hint} Use a standard-14 name (${STANDARD_FONTS.join(", ")}), an embedded font, or register a family with registerFontFamily().`,
+    { font },
+  );
+}
 
 /**
  * Resolves the `bold`/`italic` flags against a built-in font family, returning
@@ -409,7 +453,20 @@ function normalizeFieldAppearance(
 export function resolvePageSize(size: PageSize | undefined): ResolvedPageSize {
   const pageSize = size ?? "A4";
   if (typeof pageSize === "string") {
-    return PAGE_SIZES[pageSize as BuiltInPageSize];
+    const resolved = PAGE_SIZES[pageSize as BuiltInPageSize];
+    if (resolved === undefined) {
+      const names = Object.keys(PAGE_SIZES);
+      const closest = names
+        .map((name) => ({ name, score: editDistance(pageSize.toLowerCase(), name.toLowerCase()) }))
+        .sort((left, right) => left.score - right.score)[0];
+      const hint = closest && closest.score <= Math.max(3, Math.ceil(pageSize.length / 2)) ? ` Did you mean "${closest.name}"?` : "";
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_PAGE_SIZE,
+        `Unknown page size "${pageSize}".${hint} Use a preset (${names.join(", ")}) or a { width, height } object.`,
+        { size: pageSize },
+      );
+    }
+    return resolved;
   }
 
   assertFinite(pageSize.width, "width");
@@ -964,10 +1021,13 @@ export function normalizeTextBaseOptions(options: TextOptions | TextBlockOptions
 
   const encoding = "encoding" in options ? options.encoding : undefined;
 
+  const resolvedFont = resolveStyledFont(options.font ?? DEFAULT_FONT, options.bold, options.italic);
+  assertKnownBuiltInFont(resolvedFont);
+
   const normalized: NormalizedTextBaseOptions = {
     x: options.x,
     y: options.y,
-    font: resolveStyledFont(options.font ?? DEFAULT_FONT, options.bold, options.italic),
+    font: resolvedFont,
     fallbackFonts: options.fallbackFonts ? [...options.fallbackFonts] : [],
     direction: options.direction ?? "ltr",
     fontSize,
@@ -978,6 +1038,8 @@ export function normalizeTextBaseOptions(options: TextOptions | TextBlockOptions
     ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {}),
     ...(encoding !== undefined ? { encoding } : {}),
     ...(('artifactType' in options && options.artifactType !== undefined) ? { artifactType: options.artifactType } : {}),
+    ...(options.underline !== undefined ? { underline: options.underline } : {}),
+    ...(options.strike !== undefined ? { strike: options.strike } : {}),
     tateChuYoko: options.writingMode === "vertical" ? true : undefined,
   };
 
@@ -2003,7 +2065,10 @@ function normalizeAnnotationStructureTag(tag: "Annot" | "Artifact" | PdfStructur
   return tag as "Annot" | "Artifact";
 }
 
-export function normalizeColor(color: PdfColor): PdfColor {
+export function normalizeColor(color: ColorInput): PdfColor {
+  if (typeof color === "string") {
+    return resolveColorName(color);
+  }
   if (color.kind === "gray") {
     assertRange(color.value, "gray.value");
     return color;
