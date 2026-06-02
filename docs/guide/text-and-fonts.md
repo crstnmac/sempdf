@@ -77,6 +77,54 @@ The `bold`/`italic` flags and registered families resolve the same way across `p
 
 If you prefer to manage handles yourself, you can still pass an embedded-font handle directly as `font` and skip the registry entirely. Variable fonts are embedded at their default instance; embed a separate file per named instance to ship multiple weights.
 
+## Inline rich text (mixed styles on one line)
+
+`page.text()` and `textBlock()` apply one style to the whole string. To mix fonts, weights, sizes, colors, or links **within a line** — and have them wrap together as one paragraph — use `page.richText()` with an array of `InlineTextRun`s:
+
+```ts
+import { rgb } from "@criston/sempdf";
+
+page.richText(
+  [
+    { text: "Read the " },
+    { text: "terms", bold: true, link: "https://example.com/terms" },
+    { text: " and " },
+    { text: "privacy policy", italic: true, color: rgb(0.1, 0.3, 0.8) },
+    { text: " before continuing." },
+  ],
+  { x: 56, y: 700, width: 280, fontSize: 12 }
+);
+```
+
+Each run carries its own `font`, `bold`, `italic`, `fontSize`, `color`, `kerning`, and `characterSpacing`; anything omitted inherits from the block `options`, then the document defaults. A run with a `link` becomes a clickable URI annotation covering exactly that span (contiguous linked runs on a line merge into one rectangle). Include spaces in the run `text` where you want them between adjacent runs.
+
+In the flow/template layout, the same thing is `flow.richParagraph(runs, options)`, or a `richParagraph` template block:
+
+```ts
+flow.richParagraph([
+  { text: "Status: " },
+  { text: "PASSED", bold: true, color: rgb(0, 0.5, 0) },
+]);
+
+// As a template block:
+doc.renderTemplate({
+  blocks: [
+    {
+      type: "richParagraph",
+      runs: [
+        { text: "See the " },
+        { text: "report", link: "https://example.com/report" },
+        { text: " for details." },
+      ],
+    },
+  ],
+});
+```
+
+`align` supports `"left" | "center" | "right" | "justify"`, and `direction` accepts `"ltr" | "rtl" | "auto"` (line-level direction — runs are laid out from the right edge, not full mixed-direction bidi). Set `writingMode: "vertical"` to stack the runs in a single column. In flow and template layouts a `richParagraph` wraps and **splits across columns and pages** like a normal paragraph (vertical rich text stays in one column).
+
+> For inline **links, highlights, underlines, or notes** over a substring of an *otherwise uniform* paragraph, you can also keep using `paragraph(text, options, annotations)` with `{ type: "link", match, url }` annotations — no need to split the text into runs. Reach for `richText`/`richParagraph` when you need differing **fonts/sizes/colors** on the same line.
+
 ## Kerning and ligatures
 
 Embedded fonts emit kerning-aware `TJ` strings and apply common GSUB ligatures by default. Toggle with `kerning`:
@@ -102,6 +150,42 @@ page.textBlock("Wrapped copy with predictable line breaks.", {
 ```
 
 Alignment: `"left" | "center" | "right" | "justify"`.
+
+## Vertical alignment
+
+Horizontal `align` positions lines across the width. To position content *vertically* within a box of known height, give the box a `height` and a `verticalAlign` of `"top"` (default), `"middle"`, or `"bottom"`. The text is laid out as usual, then shifted down within the box. Works on `textBlock()` and `page.richText()`:
+
+```ts
+// Vertically centered within a 120pt-tall box starting at y
+page.textBlock("Centered label", {
+  x: 56, y: 700, width: 200, height: 120, verticalAlign: "middle"
+});
+
+page.richText(
+  [{ text: "Card " }, { text: "title", bold: true }],
+  { x: 56, y: 560, width: 200, height: 100, verticalAlign: "bottom" }
+);
+```
+
+`height`/`verticalAlign` apply to horizontal writing mode; without `verticalAlign` the box `height` has no effect (text still starts at `y`).
+
+### Table cells
+
+Tables accept `verticalAlign` for the whole table and per cell. In a row where one cell wraps to several lines, shorter cells align within the row height:
+
+```ts
+page.table(
+  [[
+    { text: "A long cell that wraps across several lines in its column." },
+    { text: "Top",    verticalAlign: "top" },
+    { text: "Middle", verticalAlign: "middle" },
+    { text: "Bottom", verticalAlign: "bottom" },
+  ]],
+  { x: 56, y: 760, width: 460, columnWidths: [160, 100, 100, 100], verticalAlign: "middle" }
+);
+```
+
+Per-cell `verticalAlign` overrides the table default; the table default overrides the built-in `"top"`.
 
 ## Font fallback
 
