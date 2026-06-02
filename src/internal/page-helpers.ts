@@ -1,7 +1,6 @@
 import { PdfEngineError, PdfErrorCode } from "../errors.js";
 import type {
   BinaryData,
-  BmpImageOptions,
   GifImageOptions,
   JpegImageOptions,
   PdfBoundingBox,
@@ -12,7 +11,10 @@ import type {
   TextBlockOptions,
   TextOptions,
   UriLinkOptions,
-  WebpImageOptions
+  WebpImageOptions,
+  PathCommand,
+  PdfColor,
+  ParagraphTextAnnotation
 } from "../types.js";
 import { decrementRowSpanOccupancy, sumNumbers } from "./document-helpers.js";
 import { parseImage } from "./image.js";
@@ -33,10 +35,10 @@ import {
 import {
   layoutInlineRuns,
   type InlineBlockGeometry,
+  type InlineDecoration,
   type NormalizedInlineRun
 } from "./inline-layout.js";
 import type { ParsedTrueTypeFont } from "./truetype.js";
-import type { ParagraphTextAnnotation } from "../types.js";
 import {
   normalizeHighlightAnnotationOptions,
   normalizeImageOptions,
@@ -47,7 +49,9 @@ import {
   normalizeTextBlockOptions,
   normalizeUnderlineAnnotationOptions,
   normalizeUriLinkOptions,
+  normalizePathStyle,
   validateText,
+  type NormalizedTextBaseOptions,
   type NormalizedListItem,
   type NormalizedListOptions,
   type NormalizedRadioGroupOptions,
@@ -178,7 +182,7 @@ export function addTextToPage(
   options: TextOptions,
   parent?: InternalStructureNode,
   defaultTag?: TextOptions["tag"]
-): void {
+): { width: number; height: number } {
   validateText(text);
   const normalized = normalizeTextBaseOptions(options);
   const structureTag = normalized.tag ?? defaultTag;
@@ -190,11 +194,10 @@ export function addTextToPage(
     structureTag === undefined || structureTag === "Artifact"
       ? undefined
       : createStructureNode(page, structureTag, normalized.structure, parent);
-  pushPositionedTextRuns(
-    page,
-    positionTextRuns(text, effectiveOptions, embeddedFonts),
-    structureNode?.id
-  );
+  const positioned = positionTextRuns(text, effectiveOptions, embeddedFonts);
+  pushPositionedTextRuns(page, positioned, structureNode?.id);
+  pushTextDecorations(page, positioned, normalized, embeddedFonts);
+  return { width: measureTextWidth(text, effectiveOptions, embeddedFonts), height: normalized.fontSize };
 }
 
 export function addTextBlockToPage(
@@ -204,7 +207,7 @@ export function addTextBlockToPage(
   options: TextBlockOptions,
   parent?: InternalStructureNode,
   defaultTag?: TextBlockOptions["tag"]
-): void {
+): { width: number; height: number; lineCount: number } {
   validateText(text);
   const normalized = normalizeTextBlockOptions(text, options);
   const structureTag = normalized.tag ?? defaultTag;
@@ -222,6 +225,13 @@ export function addTextBlockToPage(
     runs = shiftRunsDown(runs, verticalAlignOffset(normalized.verticalAlign, normalized.height, contentHeight));
   }
   pushPositionedTextRuns(page, runs, structureNode?.id);
+  pushTextDecorations(page, runs, normalized, embeddedFonts);
+  const lineCount = new Set(runs.map((run) => run.options.y)).size || 1;
+  let right = normalized.x;
+  for (const run of runs) {
+    right = Math.max(right, run.options.x + measureTextWidth(run.text, normalized, embeddedFonts));
+  }
+  return { width: right - normalized.x, height: lineCount * normalized.lineHeight, lineCount };
 }
 
 /** A single inline rich-text run with its per-run style resolved to a `TextOptions`. */
@@ -294,6 +304,52 @@ export function shiftRunsDown(
   }));
 }
 
+/** Builds a stroked path op for one underline/strike segment, tagged as an artifact. */
+function decorationOp(x: number, baselineY: number, width: number, fontSize: number, kind: "underline" | "strike", color: PdfColor): {
+  type: "path";
+  commands: PathCommand[];
+  style: ReturnType<typeof normalizePathStyle>;
+} {
+  const offset = kind === "underline" ? -fontSize * 0.12 : fontSize * 0.26;
+  const ly = baselineY + offset;
+  const thickness = Math.max(fontSize * 0.06, 0.4);
+  return {
+    type: "path",
+    commands: [
+      { type: "moveTo", x, y: ly },
+      { type: "lineTo", x: x + width, y: ly },
+    ],
+    style: normalizePathStyle({ paint: "stroke", stroke: { color, width: thickness }, tag: "Artifact" }),
+  };
+}
+
+/** Draws underline/strike beneath each positioned run sharing the given base style. */
+export function pushTextDecorations(
+  page: InternalPageModel,
+  runs: readonly PositionedTextRun[],
+  base: NormalizedTextBaseOptions,
+  embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>
+): void {
+  if (base.underline !== true && base.strike !== true) {
+    return;
+  }
+  for (const run of runs) {
+    const width = measureTextWidth(run.text, base, embeddedFonts);
+    if (width <= 0) continue;
+    if (base.underline === true) page.ops.push(decorationOp(run.options.x, run.options.y, width, base.fontSize, "underline", base.color));
+    if (base.strike === true) page.ops.push(decorationOp(run.options.x, run.options.y, width, base.fontSize, "strike", base.color));
+  }
+}
+
+/** Draws underline/strike segments produced by the inline layout engine. */
+export function pushInlineDecorations(page: InternalPageModel, decorations: readonly InlineDecoration[]): void {
+  for (const d of decorations) {
+    if (d.width <= 0) continue;
+    if (d.underline) page.ops.push(decorationOp(d.x, d.baselineY, d.width, d.fontSize, "underline", d.color));
+    if (d.strike) page.ops.push(decorationOp(d.x, d.baselineY, d.width, d.fontSize, "strike", d.color));
+  }
+}
+
 /** Default line height for a set of runs when none is supplied. */
 export function richLineHeight(runs: readonly NormalizedInlineRun[], explicit?: number): number {
   if (explicit !== undefined) {
@@ -345,6 +401,10 @@ export function addRichTextToPage(
       structureNode
     );
   }
+  pushInlineDecorations(
+    page,
+    offset === 0 ? result.decorations : result.decorations.map((d) => ({ ...d, baselineY: d.baselineY - offset })),
+  );
   return result.height;
 }
 

@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.3.0] - 2026-06-02
+
+### Added
+
+- Shape helpers on `PdfPage`: `rect()`, `line()`, `circle()`, `ellipse()` with a simplified `ShapeStyle` (inferred fill/stroke paint mode).
+- Text measurement: `PdfDocument.measureText()`, `measureTextBlock()`, and `measureRichText()` return width/height/line-count without drawing.
+- `PdfPage.image()` auto-detects the raster format (PNG, JPEG, GIF, BMP, TIFF, WebP, JPEG 2000) from the data.
+- `addPage({ origin: "top-left" })` flips the y-axis so coordinates grow downward from the top edge — applied across the page drawing, annotation, and form-field methods.
+- `underline` and `strike` options on text and inline runs, drawn as decorative lines.
+- Named colors: text/shape `color` options accept names like `"red"`, plus a `color()` helper that resolves named and `#hex` colors.
+- Shape and image helpers on `PdfStructureContainer` (`rect`, `line`, `circle`, `ellipse`, `image`, `path`) and `ellipse`/`line` on `PdfFlow`.
+- `registerFontFamily()` accepts raw font bytes per face (embedded automatically) in addition to handles and built-in names (`FontFamilyInput`).
+- Document-wide shape defaults via `createDocument({ shapeDefaults })`, merged beneath per-call styles by the page shape helpers.
+- Layout-feedback methods `PdfPage.placeText()` and `placeTextBlock()` that draw and return `{ width, height, (lineCount,) endY }` for manual stacking.
+- "Choosing an API" guide page mapping common goals to the right API.
+
+### Changed
+
+- The `font` option now reports a clear "did you mean" error (`INVALID_FONT`) for an unknown string font instead of silently falling back, suggesting the closest standard-14 name. Unknown page-size names throw `INVALID_PAGE_SIZE` with the same suggestion treatment.
+- `PdfStructureContainer` builder methods (`text`, `textBlock`, `list`, `table`, image, `link`) now return `this` for chaining, consistent with `PdfPage` and `PdfFlow`.
+
 ## [1.2.1] - 2026-06-02
 
 ### Fixed

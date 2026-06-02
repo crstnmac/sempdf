@@ -2,6 +2,46 @@
 
 Draw paths, apply transforms, and control the graphics state directly on pages.
 
+## Shape helpers
+
+For common shapes, the chainable `rect`, `line`, `circle`, and `ellipse` helpers wrap `path()` with a simplified `ShapeStyle`. The paint mode is inferred: a `fill` and `stroke` together paint both; `fill` alone fills; otherwise the shape is stroked.
+
+```ts
+page
+  .rect(56, 700, 200, 80, { fill: "yellow", stroke: "red", lineWidth: 1 })
+  .line(56, 690, 256, 690, { stroke: "blue", lineWidth: 2 })
+  .circle(150, 600, 40, { fill: rgb(0.1, 0.5, 0.2) })
+  .ellipse(150, 500, 60, 30, { stroke: "purple" });
+```
+
+`ShapeStyle` fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `fill` | color | Fill color. Its presence enables fill painting. |
+| `stroke` | color | Stroke color. Defaults to black when only `lineWidth` is set. |
+| `lineWidth` | `number` | Stroke width in points. |
+| `lineCap` | `"butt" \| "round" \| "square"` | Line cap for stroked shapes. |
+| `lineJoin` | `"miter" \| "round" \| "bevel"` | Line join for stroked shapes. |
+| `dashArray` | `number[]` | Dash pattern for stroked shapes. |
+| `tag` | `"Artifact"` | Mark a purely decorative shape so it is excluded from the structure tree. |
+
+Paint mode is inferred: `fill` + `stroke` → both, `fill` only → fill, otherwise stroke. The helper signatures are `rect(x, y, width, height, style?)`, `line(x1, y1, x2, y2, style?)`, `circle(cx, cy, radius, style?)`, and `ellipse(cx, cy, rx, ry, style?)`. For arbitrary geometry or per-subpath control, use `path()` directly.
+
+These helpers are available on `PdfPage` and `PdfStructureContainer` (absolute coordinates), and on the `PdfFlow` cursor (`rect`/`circle`/`ellipse` position relative to the cursor and advance it; `line` takes absolute points). All builder methods return the builder, so calls chain.
+
+## Colors
+
+Color options accept structured colors — `rgb()`, `gray()`, `cmyk()`, `hex()`, `separation()`, `deviceN()` — or a **named color** string resolved to RGB:
+
+```ts
+page.text("Alert", { x: 56, y: 760, color: "red" });
+page.rect(56, 700, 80, 24, { fill: "navy" });
+const c = color("teal"); // or color("#0a7") for hex
+```
+
+Named colors: `black white gray grey silver red green blue yellow cyan magenta orange purple pink brown navy teal lime maroon olive`. The `color()` helper also parses `#RGB`/`#RRGGBB`.
+
 ## Path commands
 
 Use `page.path()` with an array of path commands and a paint style. Commands execute in order; the current point carries across commands.

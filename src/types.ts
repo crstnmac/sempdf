@@ -65,6 +65,23 @@ export interface FontFamilyFaces {
 }
 
 /**
+ * Input accepted by {@link PdfDocument.registerFontFamily}. Each face may be a
+ * built-in {@link FontName}, an already-embedded font handle, or **raw font
+ * bytes** — bytes are embedded automatically under the family name, so you can
+ * register a family in one call without embedding each weight first.
+ */
+export interface FontFamilyInput {
+  /** Face used when neither `bold` nor `italic` is requested. */
+  regular: PdfFont | BinaryData;
+  /** Face used when `bold` is requested without `italic`. */
+  bold?: PdfFont | BinaryData | undefined;
+  /** Face used when `italic` is requested without `bold`. */
+  italic?: PdfFont | BinaryData | undefined;
+  /** Face used when both `bold` and `italic` are requested. */
+  boldItalic?: PdfFont | BinaryData | undefined;
+}
+
+/**
  * Names of page-size presets that can be passed anywhere a PageSize is accepted.
  */
 export type BuiltInPageSize =
@@ -423,7 +440,7 @@ export interface TextDefaults {
   /** Default font size in PDF points. */
   fontSize?: number | undefined;
   /** Default text color. */
-  color?: PdfColor | undefined;
+  color?: ColorInput | undefined;
   /** Default kerning behavior. */
   kerning?: boolean | undefined;
   /** Default text direction. */
@@ -437,6 +454,12 @@ export interface DocumentOptions {
   defaultPageSize?: PageSize;
   /** Document-wide text defaults filled in when a text call omits them. */
   defaults?: TextDefaults | undefined;
+  /**
+   * Document-wide default styling for the {@link PdfPage} shape helpers
+   * (`rect`, `line`, `circle`, `ellipse`). Per-call {@link ShapeStyle} fields
+   * override these.
+   */
+  shapeDefaults?: ShapeStyle | undefined;
   /** Document information dictionary values. */
   info?: DocumentInfo;
   /** XMP metadata packet or structured XMP metadata input. */
@@ -537,6 +560,18 @@ export interface PageOptions {
    * Defaults to structure order ("S") for tagged documents, row order otherwise.
    */
   tabOrder?: "R" | "C" | "S" | undefined;
+  /**
+   * Coordinate origin for this page's drawing APIs. "bottom-left" (default) is
+   * the native PDF system where `y` grows upward. "top-left" flips `y` so it
+   * grows downward from the top edge, matching screen/CSS conventions.
+   *
+   * Applies to the page drawing, annotation, and form-field methods (`text`,
+   * `textBlock`, `richText`, `rect`, `line`, `circle`, `ellipse`, `image`,
+   * `path`, `link`, `highlight`, `note`, `freeText`, `textField`, `checkBox`,
+   * `choiceField`, `radioGroup`, `pushButton`, `signatureField`, …). The
+   * flow/template layout APIs always use bottom-left coordinates.
+   */
+  origin?: "bottom-left" | "top-left" | undefined;
 }
 
 /**
@@ -744,6 +779,10 @@ export interface TextOptions {
    * resolution rules as {@link bold}. Combine with `bold` for bold italic.
    */
   italic?: boolean | undefined;
+  /** Draws an underline beneath the text. */
+  underline?: boolean | undefined;
+  /** Draws a strike-through line over the text. */
+  strike?: boolean | undefined;
   /** Fallback fonts used when the primary font lacks a glyph. */
   fallbackFonts?: PdfFont[] | undefined;
   /** Text direction used for shaping and layout. */
@@ -751,7 +790,7 @@ export interface TextOptions {
   /** Font size in PDF points. */
   fontSize?: number | undefined;
   /** Color used for drawing, text, or highlighting. */
-  color?: PdfColor | undefined;
+  color?: ColorInput | undefined;
   /** Additional spacing between characters in PDF points. */
   characterSpacing?: number | undefined;
   /** Additional spacing between words in PDF points. */
@@ -810,6 +849,10 @@ export interface TextBlockOptions {
   bold?: boolean | undefined;
   /** Selects the italic variant of `font`. See {@link TextOptions.italic}. */
   italic?: boolean | undefined;
+  /** Draws an underline beneath the text. */
+  underline?: boolean | undefined;
+  /** Draws a strike-through line over the text. */
+  strike?: boolean | undefined;
   /** Fallback fonts used when the primary font lacks a glyph. */
   fallbackFonts?: PdfFont[] | undefined;
   /** Text direction used for shaping and layout. */
@@ -817,7 +860,7 @@ export interface TextBlockOptions {
   /** Font size in PDF points. */
   fontSize?: number | undefined;
   /** Color used for drawing, text, or highlighting. */
-  color?: PdfColor | undefined;
+  color?: ColorInput | undefined;
   /** Additional spacing between characters in PDF points. */
   characterSpacing?: number | undefined;
   /** Additional spacing between words in PDF points. */
@@ -877,10 +920,14 @@ export interface InlineTextRun {
   bold?: boolean | undefined;
   /** Selects the italic variant of this run's font. See {@link TextOptions.italic}. */
   italic?: boolean | undefined;
+  /** Draws an underline beneath this run. */
+  underline?: boolean | undefined;
+  /** Draws a strike-through line over this run. */
+  strike?: boolean | undefined;
   /** Font size in PDF points for this run. */
   fontSize?: number | undefined;
   /** Color for this run. */
-  color?: PdfColor | undefined;
+  color?: ColorInput | undefined;
   /** Whether kerning is applied for this run. */
   kerning?: boolean | undefined;
   /** Additional spacing between characters in PDF points. */
@@ -936,7 +983,7 @@ export interface RichTextOptions {
   /** Default font size for runs that omit one. */
   fontSize?: number | undefined;
   /** Default color for runs that omit one. */
-  color?: PdfColor | undefined;
+  color?: ColorInput | undefined;
   /** Default kerning behavior for runs that omit it. */
   kerning?: boolean | undefined;
   /** Structure tag used for tagged PDF output. Defaults to "P". */
@@ -944,6 +991,45 @@ export interface RichTextOptions {
   /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
+
+/** Measured size of a single line of text. */
+export interface TextMetrics {
+  /** Rendered width in PDF points. */
+  width: number;
+  /** Height in PDF points (the font size). */
+  height: number;
+}
+
+/** Measured size of a wrapped block of text. */
+export interface BlockTextMetrics {
+  /** Width of the longest rendered line in PDF points. */
+  width: number;
+  /** Total height in PDF points (line count × line height). */
+  height: number;
+  /** Number of lines after wrapping. */
+  lineCount: number;
+}
+
+/** Result of {@link PdfPage.placeText}: the drawn size plus the next y to continue at. */
+export interface PlacedTextResult extends TextMetrics {
+  /** The y at the far edge of the drawn text — where the next element can start (accounts for the page origin). */
+  endY: number;
+}
+
+/** Result of {@link PdfPage.placeTextBlock}: the drawn block metrics plus the next y to continue at. */
+export interface PlacedTextBlockResult extends BlockTextMetrics {
+  /** The y below the drawn block — where the next element can start (accounts for the page origin). */
+  endY: number;
+}
+
+/** Options for {@link PdfDocument.measureText} (position-independent). */
+export type MeasureTextOptions = Omit<TextOptions, "x" | "y">;
+
+/** Options for {@link PdfDocument.measureTextBlock} (position-independent). */
+export type MeasureTextBlockOptions = Omit<TextBlockOptions, "x" | "y">;
+
+/** Options for {@link PdfDocument.measureRichText} (position-independent). */
+export type MeasureRichTextOptions = Omit<RichTextOptions, "x" | "y">;
 
 /**
  * Newspaper-style column layout options for flow and template pages.
@@ -990,7 +1076,7 @@ export interface FlowOptions {
   /** Font size in PDF points. */
   fontSize?: number | undefined;
   /** Color used for drawing, text, or highlighting. */
-  color?: PdfColor | undefined;
+  color?: ColorInput | undefined;
   /** Line height in PDF points. */
   lineHeight?: number | undefined;
   /** Horizontal alignment for laid-out content. */
@@ -1128,7 +1214,7 @@ export interface FlowLinkOptions
   /** Font size in PDF points. */
   fontSize?: number | undefined;
   /** Color used for drawing, text, or highlighting. */
-  color?: PdfColor | undefined;
+  color?: ColorInput | undefined;
   /** Line height in PDF points. */
   lineHeight?: number | undefined;
   /** Whether kerning should be applied where supported. */
@@ -1764,7 +1850,7 @@ export interface TemplateStyle {
   /** Font size in PDF points. */
   fontSize?: number | undefined;
   /** Color used for drawing, text, or highlighting. */
-  color?: PdfColor | undefined;
+  color?: ColorInput | undefined;
   /** Line height in PDF points. */
   lineHeight?: number | undefined;
   /** Horizontal alignment for laid-out content. */
@@ -1891,7 +1977,7 @@ export interface ListOptions {
   /** Font size in PDF points. */
   fontSize?: number | undefined;
   /** Color used for drawing, text, or highlighting. */
-  color?: PdfColor | undefined;
+  color?: ColorInput | undefined;
   /** Additional spacing between characters in PDF points. */
   characterSpacing?: number | undefined;
   /** Additional spacing between words in PDF points. */
@@ -1984,7 +2070,7 @@ export interface TableOptions {
   /** Font size in PDF points. */
   fontSize?: number | undefined;
   /** Color used for drawing, text, or highlighting. */
-  color?: PdfColor | undefined;
+  color?: ColorInput | undefined;
   /** Additional spacing between characters in PDF points. */
   characterSpacing?: number | undefined;
   /** Additional spacing between words in PDF points. */
@@ -2274,7 +2360,7 @@ export interface HighlightAnnotationOptions {
   /** Height in PDF points. */
   height: number;
   /** Color used for drawing, text, or highlighting. */
-  color?: PdfColor | undefined;
+  color?: ColorInput | undefined;
   /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;
   /** Additional structure metadata for tagged PDF output. */
@@ -2296,7 +2382,7 @@ export interface UnderlineAnnotationOptions {
   /** Height in PDF points. */
   height: number;
   /** Color used for the underline stroke. Defaults to black. */
-  color?: PdfColor | undefined;
+  color?: ColorInput | undefined;
   /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;
   /** Additional structure metadata for tagged PDF output. */
@@ -2317,7 +2403,7 @@ export interface StrikeOutAnnotationOptions {
   /** Height in PDF points. */
   height: number;
   /** Color used for the strike-out stroke. Defaults to red. */
-  color?: PdfColor | undefined;
+  color?: ColorInput | undefined;
   /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;
   /** Additional structure metadata for tagged PDF output. */
@@ -2339,7 +2425,7 @@ export interface SquigglyAnnotationOptions {
   /** Height in PDF points. */
   height: number;
   /** Color used for the squiggly stroke. Defaults to red. */
-  color?: PdfColor | undefined;
+  color?: ColorInput | undefined;
   /** Structure tag used for tagged PDF output. */
   tag?: "Annot" | "Artifact" | undefined;
   /** Additional structure metadata for tagged PDF output. */
@@ -2387,7 +2473,7 @@ export interface FreeTextAnnotationOptions {
   /** Font size in PDF points. */
   fontSize?: number | undefined;
   /** Color used for drawing, text, or highlighting. */
-  color?: PdfColor | undefined;
+  color?: ColorInput | undefined;
   /** Annotation or field border width in PDF points. */
   borderWidth?: number | undefined;
   /** Structure tag used for tagged PDF output. */
@@ -2439,7 +2525,7 @@ export interface TextFieldOptions {
   /** Font size in PDF points. */
   fontSize?: number | undefined;
   /** Color used for drawing, text, or highlighting. */
-  color?: PdfColor | undefined;
+  color?: ColorInput | undefined;
   /** Annotation or field border width in PDF points. */
   borderWidth?: number | undefined;
   /** Whether the form field is read-only. */
@@ -2547,7 +2633,7 @@ export interface ChoiceFieldOptions {
   /** Font size in PDF points. */
   fontSize?: number | undefined;
   /** Color used for drawing, text, or highlighting. */
-  color?: PdfColor | undefined;
+  color?: ColorInput | undefined;
   /** Annotation or field border width in PDF points. */
   borderWidth?: number | undefined;
   /** Whether the form field is read-only. */
@@ -2656,7 +2742,7 @@ export interface PushButtonOptions {
   /** Font size in PDF points. */
   fontSize?: number | undefined;
   /** Color used for drawing, text, or highlighting. */
-  color?: PdfColor | undefined;
+  color?: ColorInput | undefined;
   /** Annotation or field border width in PDF points. */
   borderWidth?: number | undefined;
   /** Whether the form field is read-only. */
@@ -2748,7 +2834,7 @@ export type LineJoin = "miter" | "round" | "bevel";
  */
 export interface StrokeStyle {
   /** Color used for drawing, text, or highlighting. */
-  color?: PdfColor | undefined;
+  color?: ColorInput | undefined;
   /** Width in PDF points. */
   width?: number | undefined;
   /** Line cap. */
@@ -2768,7 +2854,7 @@ export interface StrokeStyle {
  */
 export interface FillStyle {
   /** Color used for drawing, text, or highlighting. */
-  color?: PdfColor | undefined;
+  color?: ColorInput | undefined;
 }
 
 /**
@@ -2784,6 +2870,34 @@ export interface PathStyle {
   /** Structure tag used for tagged PDF output. */
   tag?: "Artifact" | undefined;
 }
+
+/**
+ * Simplified styling for the {@link PdfPage} shape helpers (`rect`, `line`,
+ * `circle`, `ellipse`). The paint mode is inferred: a `fill` and `stroke`
+ * together paint both; `fill` alone fills; otherwise the shape is stroked.
+ */
+export interface ShapeStyle {
+  /** Fill color. Presence enables fill painting. */
+  fill?: ColorInput | undefined;
+  /** Stroke color. Defaults to black when only `lineWidth` is set. */
+  stroke?: ColorInput | undefined;
+  /** Stroke width in PDF points. */
+  lineWidth?: number | undefined;
+  /** Line cap for stroked shapes. */
+  lineCap?: LineCap | undefined;
+  /** Line join for stroked shapes. */
+  lineJoin?: LineJoin | undefined;
+  /** Dash pattern for stroked shapes. */
+  dashArray?: number[] | undefined;
+  /** Structure tag; use "Artifact" to mark decorative shapes. */
+  tag?: "Artifact" | undefined;
+}
+
+/**
+ * Options for the auto-detecting {@link PdfPage.image} method. The raster
+ * format (PNG, JPEG, GIF, BMP, TIFF, WebP, JPEG 2000) is sniffed from the data.
+ */
+export type ImageOptions = JpegImageOptions;
 
 /**
  * Affine transform tuple used for graphics and text placement.
@@ -3007,6 +3121,50 @@ export function hex(value: string): RgbColor {
     b: (intValue & 0xff) / 255,
   };
 }
+
+/** Named colors accepted anywhere a {@link ColorInput} is expected. */
+export type NamedColor =
+  | "black" | "white" | "gray" | "grey" | "silver"
+  | "red" | "green" | "blue"
+  | "yellow" | "cyan" | "magenta"
+  | "orange" | "purple" | "pink" | "brown"
+  | "navy" | "teal" | "lime" | "maroon" | "olive";
+
+const NAMED_COLORS: Record<NamedColor, readonly [number, number, number]> = {
+  black: [0, 0, 0], white: [255, 255, 255], gray: [128, 128, 128], grey: [128, 128, 128], silver: [192, 192, 192],
+  red: [255, 0, 0], green: [0, 128, 0], blue: [0, 0, 255],
+  yellow: [255, 255, 0], cyan: [0, 255, 255], magenta: [255, 0, 255],
+  orange: [255, 165, 0], purple: [128, 0, 128], pink: [255, 192, 203], brown: [165, 42, 42],
+  navy: [0, 0, 128], teal: [0, 128, 128], lime: [0, 255, 0], maroon: [128, 0, 0], olive: [128, 128, 0],
+};
+
+/**
+ * Resolves a {@link NamedColor} to an RGB color. Also accepts a `#RGB`/`#RRGGBB`
+ * hex string. Throws {@link PdfErrorCode.INVALID_COLOR} for an unknown name.
+ *
+ * @param name A named color or hex string.
+ *
+ * @returns The RGB color.
+ */
+export function color(name: NamedColor | string): RgbColor {
+  if (name.startsWith("#")) {
+    return hex(name);
+  }
+  const rgb255 = NAMED_COLORS[name as NamedColor];
+  if (rgb255 === undefined) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_COLOR,
+      `Unknown color name: "${name}". Use one of ${Object.keys(NAMED_COLORS).join(", ")}, a #hex string, or rgb()/cmyk()/gray().`,
+    );
+  }
+  return { kind: "rgb", r: rgb255[0] / 255, g: rgb255[1] / 255, b: rgb255[2] / 255 };
+}
+
+/**
+ * A color accepted by drawing and text APIs: a structured {@link PdfColor} or a
+ * {@link NamedColor} string (resolved to RGB during normalization).
+ */
+export type ColorInput = PdfColor | NamedColor;
 
 /**
  * PDF user-space unit. All coordinate and size options are expressed in points,

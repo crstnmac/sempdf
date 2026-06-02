@@ -51,6 +51,7 @@ import {
   measurePositionedRunHeight,
   placementBoundingBox,
   pushPositionedTextRuns,
+  pushInlineDecorations,
   radioGroupBoundingBox,
   normalizeRichRuns,
   richLineHeight,
@@ -99,6 +100,7 @@ import {
   validateTransform,
   validateText,
   resolveTextDirection,
+  normalizeTextBaseOptions,
   type ComplianceCheckInput,
   type NormalizedDocumentAccessibility,
   type NormalizedDocumentEncryption,
@@ -156,6 +158,13 @@ import type {
   FlowTextOptions,
   InlineTextRun,
   RichTextOptions,
+  MeasureTextOptions,
+  MeasureTextBlockOptions,
+  MeasureRichTextOptions,
+  TextMetrics,
+  BlockTextMetrics,
+  PlacedTextResult,
+  PlacedTextBlockResult,
   FreeTextAnnotationOptions,
   HighlightAnnotationOptions,
   JpegImageOptions,
@@ -169,7 +178,11 @@ import type {
   PathCommand,
   PathStyle,
   FontFamilyFaces,
+  FontFamilyInput,
   TextDefaults,
+  ColorInput,
+  ShapeStyle,
+  ImageOptions,
   PdfColor,
   PdfComplianceIssue,
   PdfContainerTag,
@@ -406,6 +419,68 @@ interface EditableAppendedPageEntry {
 
 type EditablePageEntry = EditableExistingPageEntry | EditableAppendedPageEntry;
 
+/** Builds a {@link PathStyle} from the simplified {@link ShapeStyle}, inferring paint mode. */
+function shapeToPathStyle(style?: ShapeStyle): PathStyle {
+  const hasFill = style?.fill !== undefined;
+  const hasStroke = style?.stroke !== undefined || style?.lineWidth !== undefined || style?.lineCap !== undefined ||
+    style?.lineJoin !== undefined || style?.dashArray !== undefined;
+  const paint: PathStyle["paint"] = hasFill && hasStroke ? "fillStroke" : hasFill ? "fill" : "stroke";
+  const result: PathStyle = { paint };
+  if (hasFill) {
+    result.fill = { color: style!.fill };
+  }
+  if (paint !== "fill") {
+    result.stroke = {
+      ...(style?.stroke !== undefined ? { color: style.stroke } : {}),
+      ...(style?.lineWidth !== undefined ? { width: style.lineWidth } : {}),
+      ...(style?.lineCap !== undefined ? { lineCap: style.lineCap } : {}),
+      ...(style?.lineJoin !== undefined ? { lineJoin: style.lineJoin } : {}),
+      ...(style?.dashArray !== undefined ? { dashArray: style.dashArray } : {}),
+    };
+  }
+  if (style?.tag !== undefined) {
+    result.tag = style.tag;
+  }
+  return result;
+}
+
+/** Four cubic-Bézier segments approximating an ellipse, as path commands. */
+function ellipseCommands(cx: number, cy: number, rx: number, ry: number): PathCommand[] {
+  const k = (4 * (Math.SQRT2 - 1)) / 3;
+  const ox = k * rx;
+  const oy = k * ry;
+  return [
+    { type: "moveTo", x: cx, y: cy + ry },
+    { type: "curveTo", x1: cx + ox, y1: cy + ry, x2: cx + rx, y2: cy + oy, x3: cx + rx, y3: cy },
+    { type: "curveTo", x1: cx + rx, y1: cy - oy, x2: cx + ox, y2: cy - ry, x3: cx, y3: cy - ry },
+    { type: "curveTo", x1: cx - ox, y1: cy - ry, x2: cx - rx, y2: cy - oy, x3: cx - rx, y3: cy },
+    { type: "curveTo", x1: cx - rx, y1: cy + oy, x2: cx - ox, y2: cy + ry, x3: cx, y3: cy + ry },
+    { type: "closePath" },
+  ];
+}
+
+/** Sniffs a raster image format from its leading magic bytes. */
+function detectImageFormat(bytes: Uint8Array): "jpeg" | "png" | "gif" | "bmp" | "tiff" | "jp2" | "webp" {
+  const b = bytes;
+  const at = (i: number): number => b[i] ?? -1;
+  if (at(0) === 0xff && at(1) === 0xd8 && at(2) === 0xff) return "jpeg";
+  if (at(0) === 0x89 && at(1) === 0x50 && at(2) === 0x4e && at(3) === 0x47) return "png";
+  if (at(0) === 0x47 && at(1) === 0x49 && at(2) === 0x46) return "gif";
+  if (at(0) === 0x42 && at(1) === 0x4d) return "bmp";
+  if ((at(0) === 0x49 && at(1) === 0x49 && at(2) === 0x2a && at(3) === 0x00) ||
+      (at(0) === 0x4d && at(1) === 0x4d && at(2) === 0x00 && at(3) === 0x2a)) return "tiff";
+  if (at(0) === 0x52 && at(1) === 0x49 && at(2) === 0x46 && at(3) === 0x46 &&
+      at(8) === 0x57 && at(9) === 0x45 && at(10) === 0x42 && at(11) === 0x50) return "webp";
+  if ((at(0) === 0x00 && at(1) === 0x00 && at(2) === 0x00 && at(3) === 0x0c &&
+       at(4) === 0x6a && at(5) === 0x50) || (at(0) === 0xff && at(1) === 0x4f && at(2) === 0xff && at(3) === 0x51)) {
+    return "jp2";
+  }
+  throw new PdfEngineError(
+    PdfErrorCode.UNSUPPORTED_IMAGE_FORMAT,
+    "Could not detect the image format from its data. Use a format-specific method (e.g. page.png/jpeg) or page.svg for SVG.",
+  );
+}
+
 /** Minimal shape the text resolvers operate on, shared by page, container, and flow paths. */
 type StyleableTextOptions = {
   font?: PdfFont | undefined;
@@ -479,7 +554,7 @@ function prepareTextOptions<T extends TextOptions | TextBlockOptions>(
 type RichBlockStyle = {
   font?: PdfFont | undefined;
   fontSize?: number | undefined;
-  color?: PdfColor | undefined;
+  color?: ColorInput | undefined;
   kerning?: boolean | undefined;
 };
 
@@ -507,6 +582,8 @@ function buildRichRunInputs(
       ...(font !== undefined ? { font } : {}),
       ...(run.bold !== undefined ? { bold: run.bold } : {}),
       ...(run.italic !== undefined ? { italic: run.italic } : {}),
+      ...(run.underline !== undefined ? { underline: run.underline } : {}),
+      ...(run.strike !== undefined ? { strike: run.strike } : {}),
       ...(fontSize !== undefined ? { fontSize } : {}),
       ...(color !== undefined ? { color } : {}),
       ...(kerning !== undefined ? { kerning } : {}),
@@ -548,7 +625,7 @@ export class PdfStructureContainer {
    * @param text The text to add.
    * @param options Options that control the operation.
    */
-  text(text: string, options: TextOptions): void {
+  text(text: string, options: TextOptions): this {
     addTextToPage(
       this.page,
       this.embeddedFonts,
@@ -557,6 +634,7 @@ export class PdfStructureContainer {
       this.node,
       "P",
     );
+    return this;
   }
 
   /**
@@ -565,7 +643,7 @@ export class PdfStructureContainer {
    * @param text The text to add.
    * @param options Options that control the operation.
    */
-  textBlock(text: string, options: TextBlockOptions): void {
+  textBlock(text: string, options: TextBlockOptions): this {
     addTextBlockToPage(
       this.page,
       this.embeddedFonts,
@@ -574,6 +652,7 @@ export class PdfStructureContainer {
       this.node,
       "P",
     );
+    return this;
   }
 
   /**
@@ -582,7 +661,7 @@ export class PdfStructureContainer {
    * @param items The list items to add.
    * @param options Options that control the operation.
    */
-  list(items: readonly ListItem[], options: ListOptions): void {
+  list(items: readonly ListItem[], options: ListOptions): this {
     const normalizedItems = normalizeListItems(items);
     const normalizedOptions = normalizeListOptions(normalizedItems, options);
     const listNode = createStructureNode(this.page, "L", undefined, this.node);
@@ -593,6 +672,7 @@ export class PdfStructureContainer {
       normalizedOptions,
       this.embeddedFonts,
     );
+    return this;
   }
 
   /**
@@ -601,7 +681,7 @@ export class PdfStructureContainer {
    * @param rows The table rows to add.
    * @param options Options that control the operation.
    */
-  table(rows: readonly TableRow[], options: TableOptions): void {
+  table(rows: readonly TableRow[], options: TableOptions): this {
     const normalizedRows = normalizeTableRows(rows);
     const normalizedOptions = normalizeTableOptions(normalizedRows, options);
     layoutTable(
@@ -616,6 +696,7 @@ export class PdfStructureContainer {
       normalizedOptions,
       this.embeddedFonts,
     );
+    return this;
   }
 
   /**
@@ -624,8 +705,9 @@ export class PdfStructureContainer {
    * @param data The binary image or font data.
    * @param options Options that control the operation.
    */
-  jpeg(data: BinaryData, options: JpegImageOptions): void {
+  jpeg(data: BinaryData, options: JpegImageOptions): this {
     addImageToPage(this.page, "jpeg", data, options, this.node, "Figure");
+    return this;
   }
 
   /**
@@ -634,8 +716,9 @@ export class PdfStructureContainer {
    * @param data The binary image or font data.
    * @param options Options that control the operation.
    */
-  png(data: BinaryData, options: PngImageOptions): void {
+  png(data: BinaryData, options: PngImageOptions): this {
     addImageToPage(this.page, "png", data, options, this.node, "Figure");
+    return this;
   }
 
   /**
@@ -644,8 +727,9 @@ export class PdfStructureContainer {
    * @param data The binary image or font data.
    * @param options Options that control the operation.
    */
-  bmp(data: BinaryData, options: BmpImageOptions): void {
+  bmp(data: BinaryData, options: BmpImageOptions): this {
     addImageToPage(this.page, "bmp", data, options, this.node, "Figure");
+    return this;
   }
 
   /**
@@ -654,8 +738,9 @@ export class PdfStructureContainer {
    * @param data The binary image or font data.
    * @param options Options that control the operation.
    */
-  jbig2(data: BinaryData, options: import("./types.js").Jbig2ImageOptions): void {
+  jbig2(data: BinaryData, options: import("./types.js").Jbig2ImageOptions): this {
     addImageToPage(this.page, "jbig2", data, options, this.node, "Figure");
+    return this;
   }
 
   /**
@@ -664,8 +749,9 @@ export class PdfStructureContainer {
    * @param data The binary image or font data.
    * @param options Options that control the operation.
    */
-  tiff(data: BinaryData, options: import("./types.js").TiffImageOptions): void {
+  tiff(data: BinaryData, options: import("./types.js").TiffImageOptions): this {
     addImageToPage(this.page, "tiff", data, options, this.node, "Figure");
+    return this;
   }
 
   /**
@@ -674,8 +760,9 @@ export class PdfStructureContainer {
    * @param data The binary image or font data.
    * @param options Options that control the operation.
    */
-  jp2(data: BinaryData, options: import("./types.js").Jp2ImageOptions): void {
+  jp2(data: BinaryData, options: import("./types.js").Jp2ImageOptions): this {
     addImageToPage(this.page, "jp2", data, options, this.node, "Figure");
+    return this;
   }
 
   /**
@@ -684,8 +771,9 @@ export class PdfStructureContainer {
    * @param data The binary image or font data.
    * @param options Options that control the operation.
    */
-  webp(data: BinaryData, options: import("./types.js").WebpImageOptions): void {
+  webp(data: BinaryData, options: import("./types.js").WebpImageOptions): this {
     addImageToPage(this.page, "webp", data, options, this.node, "Figure");
+    return this;
   }
 
   /**
@@ -694,8 +782,9 @@ export class PdfStructureContainer {
    * @param data The binary image or font data.
    * @param options Options that control the operation.
    */
-  gif(data: BinaryData, options: import("./types.js").GifImageOptions): void {
+  gif(data: BinaryData, options: import("./types.js").GifImageOptions): this {
     addImageToPage(this.page, "gif", data, options, this.node, "Figure");
+    return this;
   }
 
   /**
@@ -704,9 +793,10 @@ export class PdfStructureContainer {
    * @param data The SVG text data.
    * @param options Options that control the operation.
    */
-  svg(data: BinaryData | string, options: import("./types.js").SvgImageOptions): void {
+  svg(data: BinaryData | string, options: import("./types.js").SvgImageOptions): this {
     const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
     addImageToPage(this.page, "svg", bytes, options, this.node, "Figure");
+    return this;
   }
 
   /**
@@ -715,8 +805,60 @@ export class PdfStructureContainer {
    * @param url The URI target.
    * @param options Options that control the operation.
    */
-  link(url: string, options: UriLinkOptions): void {
+  link(url: string, options: UriLinkOptions): this {
     addLinkToPage(this.page, url, options, this.node);
+    return this;
+  }
+
+  /**
+   * Adds a raster image (auto-detecting the format) tagged under this container.
+   *
+   * @param data The image bytes.
+   * @param options Placement and tagging options.
+   */
+  image(data: BinaryData, options: ImageOptions): this {
+    addImageToPage(this.page, detectImageFormat(toBytes(data)), data, options, this.node, "Figure");
+    return this;
+  }
+
+  /**
+   * Draws a rectangle. See {@link PdfPage.rect}.
+   */
+  rect(x: number, y: number, width: number, height: number, style?: ShapeStyle): this {
+    return this.path([{ type: "rect", x, y, width, height }], shapeToPathStyle(style));
+  }
+
+  /**
+   * Draws a straight line between two points. See {@link PdfPage.line}.
+   */
+  line(x1: number, y1: number, x2: number, y2: number, style?: ShapeStyle): this {
+    return this.path(
+      [{ type: "moveTo", x: x1, y: y1 }, { type: "lineTo", x: x2, y: y2 }],
+      shapeToPathStyle({ ...style, fill: undefined }),
+    );
+  }
+
+  /**
+   * Draws a circle. See {@link PdfPage.circle}.
+   */
+  circle(cx: number, cy: number, radius: number, style?: ShapeStyle): this {
+    return this.ellipse(cx, cy, radius, radius, style);
+  }
+
+  /**
+   * Draws an ellipse. See {@link PdfPage.ellipse}.
+   */
+  ellipse(cx: number, cy: number, rx: number, ry: number, style?: ShapeStyle): this {
+    return this.path(ellipseCommands(cx, cy, rx, ry), shapeToPathStyle(style));
+  }
+
+  /**
+   * Adds vector path commands. Mirrors {@link PdfPage.path}.
+   */
+  path(commands: PathCommand[], style: PathStyle): this {
+    validatePathCommands(commands);
+    this.page.ops.push({ type: "path", commands, style: normalizePathStyle(style) });
+    return this;
   }
 
   /**
@@ -899,7 +1041,7 @@ interface FlowState {
   /** Font size in PDF points. */
   fontSize?: number | undefined;
   /** Color used for drawing, text, or highlighting. */
-  color?: PdfColor | undefined;
+  color?: ColorInput | undefined;
   /** Line height in PDF points. */
   lineHeight?: number | undefined;
   /** Horizontal alignment for laid-out content. */
@@ -1466,6 +1608,7 @@ export class PdfFlow {
       };
       const placed = placeInlineLine(line, geometry, this.state.y, this.embeddedFonts);
       pushPositionedTextRuns(this.page, placed.runs, structureNode?.id);
+      pushInlineDecorations(this.page, placed.decorations);
       for (const link of placed.links) {
         addLinkToPage(
           this.page,
@@ -2878,6 +3021,61 @@ export class PdfFlow {
   }
 
   /**
+   * Adds an ellipse at the current flow cursor. Like {@link circle} but with
+   * independent horizontal (`rx`) and vertical (`ry`) radii; advances the
+   * cursor by the full height (`2 × ry`).
+   *
+   * @param cx Center x override (defaults to the column center).
+   * @param cy Center y override (defaults to one `ry` below the cursor).
+   * @param rx Horizontal radius override.
+   * @param ry Vertical radius override.
+   * @param style The drawing style for the ellipse.
+   *
+   * @returns This flow helper for chaining.
+   */
+  ellipse(
+    cx?: number,
+    cy?: number,
+    rx?: number,
+    ry?: number,
+    style?: PathStyle,
+  ): this {
+    const radiusX = rx ?? this.state.width / 4;
+    const radiusY = ry ?? radiusX;
+    this.advanceColumnIfNeeded(radiusY * 2);
+    const centerX = cx ?? this.state.x + this.state.width / 2;
+    const centerY = cy ?? this.state.y - radiusY;
+    this.page.ops.push({
+      type: "path",
+      commands: ellipseCommands(centerX, centerY, radiusX, radiusY),
+      style: normalizePathStyle(style ?? { paint: "stroke" }),
+    });
+    this.state.y -= radiusY * 2;
+    return this;
+  }
+
+  /**
+   * Draws a straight line between two absolute points. Unlike {@link rect} and
+   * {@link circle}, a line does not consume vertical flow space.
+   *
+   * @param x1 Start x in PDF points.
+   * @param y1 Start y in PDF points.
+   * @param x2 End x in PDF points.
+   * @param y2 End y in PDF points.
+   * @param style The drawing style for the line.
+   *
+   * @returns This flow helper for chaining.
+   */
+  line(x1: number, y1: number, x2: number, y2: number, style?: PathStyle): this {
+    this.page.ops.push({
+      type: "path",
+      commands: [{ type: "moveTo", x: x1, y: y1 }, { type: "lineTo", x: x2, y: y2 }],
+      style: normalizePathStyle(style ?? { paint: "stroke" }),
+    });
+    return this;
+  }
+
+  /**
    * Adds a tagged list at the current flow cursor.
    *
    * @param items The list items to add.
@@ -2993,7 +3191,56 @@ export class PdfPage {
     private readonly embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>,
     private readonly fontFamilies: ReadonlyMap<string, FontFamilyFaces> = new Map(),
     private readonly textDefaults?: TextDefaults | undefined,
+    private readonly origin: "bottom-left" | "top-left" = "bottom-left",
+    private readonly shapeDefaults?: ShapeStyle | undefined,
   ) {}
+
+  /** Merges the document shape defaults beneath a per-call shape style. */
+  private withShapeDefaults(style?: ShapeStyle): ShapeStyle | undefined {
+    if (this.shapeDefaults === undefined) {
+      return style;
+    }
+    return { ...this.shapeDefaults, ...style };
+  }
+
+  /** Converts a point-anchored `y` (e.g. a text baseline) to PDF coordinates. */
+  private fy(y: number): number {
+    return this.origin === "top-left" ? this.page.size.height - y : y;
+  }
+
+  /** Converts a box's top `y` (with height `h`) to a PDF bottom-left `y`. */
+  private fyBox(y: number, h: number): number {
+    return this.origin === "top-left" ? this.page.size.height - y - h : y;
+  }
+
+  /** Converts an annotation/form options object's top `y` to bottom-left coordinates. */
+  private fyAnnot<T extends { y: number; height?: number | undefined }>(options: T): T {
+    return this.origin === "top-left"
+      ? { ...options, y: this.page.size.height - options.y - (options.height ?? 0) }
+      : options;
+  }
+
+  /** Converts path command y-coordinates for the active origin. */
+  private fyCommands(commands: readonly PathCommand[]): PathCommand[] {
+    if (this.origin !== "top-left") {
+      return [...commands];
+    }
+    return commands.map((command) => {
+      switch (command.type) {
+        case "moveTo":
+        case "lineTo":
+          return { ...command, y: this.fy(command.y) };
+        case "curveTo":
+          return { ...command, y1: this.fy(command.y1), y2: this.fy(command.y2), y3: this.fy(command.y3) };
+        case "rect":
+          return { ...command, y: this.fyBox(command.y, command.height) };
+        case "closePath":
+          return command;
+        default:
+          return command;
+      }
+    });
+  }
 
   /**
    * Gets the page size.
@@ -3011,7 +3258,8 @@ export class PdfPage {
    * @param options Options that control the operation.
    */
   text(text: string, options: TextOptions): this {
-    addTextToPage(this.page, this.embeddedFonts, text, prepareTextOptions(options, this.fontFamilies, this.textDefaults));
+    const placed = this.origin === "top-left" ? { ...options, y: this.fy(options.y) } : options;
+    addTextToPage(this.page, this.embeddedFonts, text, prepareTextOptions(placed, this.fontFamilies, this.textDefaults));
     return this;
   }
 
@@ -3022,7 +3270,8 @@ export class PdfPage {
    * @param options Options that control the operation.
    */
   textBlock(text: string, options: TextBlockOptions): this {
-    addTextBlockToPage(this.page, this.embeddedFonts, text, prepareTextOptions(options, this.fontFamilies, this.textDefaults));
+    const placed = this.origin === "top-left" ? { ...options, y: this.fy(options.y) } : options;
+    addTextBlockToPage(this.page, this.embeddedFonts, text, prepareTextOptions(placed, this.fontFamilies, this.textDefaults));
     return this;
   }
 
@@ -3060,7 +3309,7 @@ export class PdfPage {
     );
     addRichTextToPage(this.page, this.embeddedFonts, inputs, {
       x: options.x,
-      y: options.y,
+      y: this.fy(options.y),
       width: options.width,
       align: options.align ?? "left",
       direction,
@@ -3072,6 +3321,39 @@ export class PdfPage {
       ...(options.structure !== undefined ? { structure: options.structure } : {}),
     });
     return this;
+  }
+
+  /**
+   * Draws a single line of text and returns its measured size plus `endY` —
+   * the y where the next element can start. Unlike {@link text} (which chains),
+   * this returns layout feedback for manual stacking.
+   *
+   * @param text The text to draw.
+   * @param options Text options.
+   *
+   * @returns `{ width, height, endY }` in PDF points.
+   */
+  placeText(text: string, options: TextOptions): PlacedTextResult {
+    const placed = this.origin === "top-left" ? { ...options, y: this.fy(options.y) } : options;
+    const metrics = addTextToPage(this.page, this.embeddedFonts, text, prepareTextOptions(placed, this.fontFamilies, this.textDefaults));
+    const endY = this.origin === "top-left" ? options.y + metrics.height : options.y - metrics.height;
+    return { ...metrics, endY };
+  }
+
+  /**
+   * Draws a wrapped text block and returns its measured size, line count, and
+   * `endY` — the y just below the block, for stacking the next element.
+   *
+   * @param text The text to wrap and draw.
+   * @param options Text block options.
+   *
+   * @returns `{ width, height, lineCount, endY }` in PDF points.
+   */
+  placeTextBlock(text: string, options: TextBlockOptions): PlacedTextBlockResult {
+    const placed = this.origin === "top-left" ? { ...options, y: this.fy(options.y) } : options;
+    const metrics = addTextBlockToPage(this.page, this.embeddedFonts, text, prepareTextOptions(placed, this.fontFamilies, this.textDefaults));
+    const endY = this.origin === "top-left" ? options.y + metrics.height : options.y - metrics.height;
+    return { ...metrics, endY };
   }
 
   /**
@@ -3261,12 +3543,81 @@ export class PdfPage {
    * @param style The drawing style for the path.
    */
   path(commands: PathCommand[], style: PathStyle): this {
-    validatePathCommands(commands);
+    const placed = this.fyCommands(commands);
+    validatePathCommands(placed);
     this.page.ops.push({
       type: "path",
-      commands,
+      commands: placed,
       style: normalizePathStyle(style),
     });
+    return this;
+  }
+
+  /**
+   * Draws a rectangle. Convenience wrapper over {@link path}.
+   *
+   * @param x Left edge in PDF points.
+   * @param y Bottom edge in PDF points.
+   * @param width Width in PDF points.
+   * @param height Height in PDF points.
+   * @param style Fill/stroke styling. Stroked when omitted.
+   */
+  rect(x: number, y: number, width: number, height: number, style?: ShapeStyle): this {
+    return this.path([{ type: "rect", x, y, width, height }], shapeToPathStyle(this.withShapeDefaults(style)));
+  }
+
+  /**
+   * Draws a straight line between two points.
+   *
+   * @param x1 Start x in PDF points.
+   * @param y1 Start y in PDF points.
+   * @param x2 End x in PDF points.
+   * @param y2 End y in PDF points.
+   * @param style Stroke styling.
+   */
+  line(x1: number, y1: number, x2: number, y2: number, style?: ShapeStyle): this {
+    return this.path(
+      [{ type: "moveTo", x: x1, y: y1 }, { type: "lineTo", x: x2, y: y2 }],
+      shapeToPathStyle({ ...this.withShapeDefaults(style), fill: undefined }),
+    );
+  }
+
+  /**
+   * Draws a circle centered at (`cx`, `cy`).
+   *
+   * @param cx Center x in PDF points.
+   * @param cy Center y in PDF points.
+   * @param radius Radius in PDF points.
+   * @param style Fill/stroke styling. Stroked when omitted.
+   */
+  circle(cx: number, cy: number, radius: number, style?: ShapeStyle): this {
+    return this.ellipse(cx, cy, radius, radius, style);
+  }
+
+  /**
+   * Draws an ellipse centered at (`cx`, `cy`) with horizontal radius `rx` and
+   * vertical radius `ry`.
+   *
+   * @param cx Center x in PDF points.
+   * @param cy Center y in PDF points.
+   * @param rx Horizontal radius in PDF points.
+   * @param ry Vertical radius in PDF points.
+   * @param style Fill/stroke styling. Stroked when omitted.
+   */
+  ellipse(cx: number, cy: number, rx: number, ry: number, style?: ShapeStyle): this {
+    return this.path(ellipseCommands(cx, cy, rx, ry), shapeToPathStyle(this.withShapeDefaults(style)));
+  }
+
+  /**
+   * Adds a raster image, auto-detecting the format (PNG, JPEG, GIF, BMP, TIFF,
+   * WebP, JPEG 2000) from the data. For SVG use {@link svg}.
+   *
+   * @param data The image bytes.
+   * @param options Placement and tagging options.
+   */
+  image(data: BinaryData, options: ImageOptions): this {
+    const placed = this.origin === "top-left" ? { ...options, y: this.fyBox(options.y, options.height) } : options;
+    addImageToPage(this.page, detectImageFormat(toBytes(data)), data, placed);
     return this;
   }
 
@@ -3377,6 +3728,7 @@ export class PdfPage {
    * @param options Options that control the operation.
    */
   link(url: string, options: UriLinkOptions): this {
+    options = this.fyAnnot(options);
     addLinkToPage(this.page, url, options);
     return this;
   }
@@ -3388,6 +3740,7 @@ export class PdfPage {
    * @param options Options that control the operation.
    */
   linkToPage(target: PdfPage, options: PageLinkOptions): this {
+    options = this.fyAnnot(options);
     const normalizedOptions = normalizePageLinkOptions(options);
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
@@ -3413,6 +3766,7 @@ export class PdfPage {
    * @param options Options that control the operation.
    */
   highlight(options: HighlightAnnotationOptions): this {
+    options = this.fyAnnot(options);
     const normalizedOptions = normalizeHighlightAnnotationOptions(options);
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
@@ -3437,6 +3791,7 @@ export class PdfPage {
    * @param options Options that control the operation.
    */
   underline(options: UnderlineAnnotationOptions): this {
+    options = this.fyAnnot(options);
     const normalizedOptions = normalizeUnderlineAnnotationOptions(options);
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
@@ -3461,6 +3816,7 @@ export class PdfPage {
    * @param options Options that control the operation.
    */
   strikeOut(options: StrikeOutAnnotationOptions): this {
+    options = this.fyAnnot(options);
     const normalizedOptions = normalizeStrikeOutAnnotationOptions(options);
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
@@ -3485,6 +3841,7 @@ export class PdfPage {
    * @param options Options that control the operation.
    */
   squiggly(options: SquigglyAnnotationOptions): this {
+    options = this.fyAnnot(options);
     const normalizedOptions = normalizeSquigglyAnnotationOptions(options);
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
@@ -3509,6 +3866,7 @@ export class PdfPage {
    * @param options Options that control the operation.
    */
   note(options: NoteAnnotationOptions): this {
+    options = this.fyAnnot(options);
     const normalizedOptions = normalizeNoteAnnotationOptions(options);
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
@@ -3533,6 +3891,7 @@ export class PdfPage {
    * @param options Options that control the operation.
    */
   freeText(options: FreeTextAnnotationOptions): this {
+    options = this.fyAnnot(options);
     const normalizedOptions = normalizeFreeTextAnnotationOptions(options);
     const annotationIndex = this.page.annotations.length;
     const structureGroupId = addAnnotationStructureNode(
@@ -3598,6 +3957,7 @@ export class PdfPage {
    * @param options Options that control the operation.
    */
   textField(name: string, options: TextFieldOptions): this {
+    options = this.fyAnnot(options);
     this.registerFieldName(name);
     const normalizedOptions = normalizeTextFieldOptions(name, options);
     const annotationIndex = this.page.annotations.length;
@@ -3625,6 +3985,7 @@ export class PdfPage {
    * @param options Options that control the operation.
    */
   checkBox(name: string, options: CheckBoxOptions): this {
+    options = this.fyAnnot(options);
     this.registerFieldName(name);
     const normalizedOptions = normalizeCheckBoxOptions(name, options);
     const annotationIndex = this.page.annotations.length;
@@ -3652,6 +4013,7 @@ export class PdfPage {
    * @param options Options that control the operation.
    */
   choiceField(name: string, options: ChoiceFieldOptions): this {
+    options = this.fyAnnot(options);
     this.registerFieldName(name);
     const normalizedOptions = normalizeChoiceFieldOptions(name, options);
     const annotationIndex = this.page.annotations.length;
@@ -3679,6 +4041,10 @@ export class PdfPage {
    * @param options Options that control the operation.
    */
   radioGroup(name: string, options: RadioGroupOptions): this {
+    if (this.origin === "top-left") {
+      const ph = this.page.size.height;
+      options = { ...options, items: options.items.map((item) => ({ ...item, y: ph - item.y - item.height })) };
+    }
     this.registerFieldName(name);
     const normalizedOptions = normalizeRadioGroupOptions(name, options);
     const annotationIndex = this.page.annotations.length;
@@ -3706,6 +4072,7 @@ export class PdfPage {
    * @param options Options that control the operation.
    */
   pushButton(name: string, options: PushButtonOptions): this {
+    options = this.fyAnnot(options);
     this.registerFieldName(name);
     const normalizedOptions = normalizePushButtonOptions(name, options);
     const annotationIndex = this.page.annotations.length;
@@ -3733,6 +4100,7 @@ export class PdfPage {
    * @param options Options that control the operation.
    */
   signatureField(name: string, options: SignatureFieldOptions): this {
+    options = this.fyAnnot(options);
     this.registerFieldName(name);
     const normalizedOptions = normalizeSignatureFieldOptions(name, options);
     const annotationIndex = this.page.annotations.length;
@@ -4001,6 +4369,9 @@ export class PdfDocument {
   /** Document-wide text defaults applied to text APIs when options are omitted. */
   private readonly textDefaults?: TextDefaults | undefined;
 
+  /** Document-wide default styling for page shape helpers. */
+  private readonly shapeDefaults?: ShapeStyle | undefined;
+
   /** Calculation order for form fields. */
   private calculationOrder?: string[] | undefined;
 
@@ -4041,6 +4412,9 @@ export class PdfDocument {
     this.textShaper = options.textShaper;
     if (options.defaults !== undefined) {
       this.textDefaults = { ...options.defaults };
+    }
+    if (options.shapeDefaults !== undefined) {
+      this.shapeDefaults = { ...options.shapeDefaults };
     }
   }
 
@@ -4111,7 +4485,7 @@ export class PdfDocument {
     const page = createPageModel(options.size ?? this.defaultPageSize, options.transparencyGroup, options.tabOrder);
     this.pages.push(page);
     this._unlock();
-    return new PdfPage(page, this.embeddedFonts, this.fontFamilies, this.textDefaults);
+    return new PdfPage(page, this.embeddedFonts, this.fontFamilies, this.textDefaults, options.origin ?? "bottom-left", this.shapeDefaults);
   }
 
   /**
@@ -4136,11 +4510,78 @@ export class PdfDocument {
    *
    * @returns The family name, for convenient inline use as a `font` value.
    */
-  registerFontFamily(name: string, faces: FontFamilyFaces): string {
+  registerFontFamily(name: string, faces: FontFamilyInput): string {
+    const resolveFace = (face: PdfFont | BinaryData): PdfFont =>
+      face instanceof Uint8Array || face instanceof ArrayBuffer
+        ? this.embedTrueTypeFont(face, { family: name })
+        : face;
+    const resolved: FontFamilyFaces = {
+      regular: resolveFace(faces.regular),
+      ...(faces.bold !== undefined ? { bold: resolveFace(faces.bold) } : {}),
+      ...(faces.italic !== undefined ? { italic: resolveFace(faces.italic) } : {}),
+      ...(faces.boldItalic !== undefined ? { boldItalic: resolveFace(faces.boldItalic) } : {}),
+    };
     this._mutate();
-    this.fontFamilies.set(name, faces);
+    this.fontFamilies.set(name, resolved);
     this._unlock();
     return name;
+  }
+
+  /**
+   * Measures a single line of text without drawing it, using the document's
+   * registered fonts and defaults. Returns the rendered width and the line
+   * height (font size). For wrapped multi-line text use {@link measureTextBlock}.
+   *
+   * @param text The text to measure (treated as a single line).
+   * @param options Font and style options (no position needed).
+   *
+   * @returns The measured width and height in PDF points.
+   */
+  measureText(text: string, options: MeasureTextOptions = {}): TextMetrics {
+    const prepared = prepareTextOptions({ ...options, x: 0, y: 0 }, this.fontFamilies, this.textDefaults);
+    const normalized = normalizeTextBaseOptions(prepared);
+    return { width: measureTextWidth(text, normalized, this.embeddedFonts), height: normalized.fontSize };
+  }
+
+  /**
+   * Measures a wrapped text block without drawing it. Returns the width of the
+   * longest line, the total height, and the line count after wrapping.
+   *
+   * @param text The text to wrap and measure.
+   * @param options Block options including `width` (no position needed).
+   *
+   * @returns The measured block metrics in PDF points.
+   */
+  measureTextBlock(text: string, options: MeasureTextBlockOptions): BlockTextMetrics {
+    const prepared = prepareTextOptions({ ...options, x: 0, y: 0 }, this.fontFamilies, this.textDefaults);
+    const normalized = normalizeTextBlockOptions(text, prepared);
+    const runs = layoutTextBlock(text, normalized, this.embeddedFonts);
+    const lineCount = new Set(runs.map((run) => run.options.y)).size || 1;
+    let width = 0;
+    for (const run of runs) {
+      width = Math.max(width, run.options.x + measureTextWidth(run.text, normalized, this.embeddedFonts));
+    }
+    return { width, height: lineCount * normalized.lineHeight, lineCount };
+  }
+
+  /**
+   * Measures a paragraph of inline rich-text runs without drawing it.
+   *
+   * @param runs The styled inline runs.
+   * @param options Block options including `width` (no position needed).
+   *
+   * @returns The measured block metrics in PDF points.
+   */
+  measureRichText(runs: readonly InlineTextRun[], options: MeasureRichTextOptions): BlockTextMetrics {
+    const inputs = buildRichRunInputs(runs, options, this.fontFamilies, this.textDefaults);
+    const normalizedRuns = normalizeRichRuns(inputs);
+    const writingMode = options.writingMode ?? "horizontal";
+    const lineHeight = richLineHeight(normalizedRuns, options.lineHeight);
+    const lines = breakInlineLines(normalizedRuns, { width: options.width, writingMode }, this.embeddedFonts);
+    const longest = lines.reduce((max, line) => Math.max(max, line.mainSize), 0);
+    return writingMode === "vertical"
+      ? { width: lines.length * lineHeight, height: longest, lineCount: lines.length }
+      : { width: longest, height: lines.length * lineHeight, lineCount: lines.length };
   }
 
   /**

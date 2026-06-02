@@ -23,7 +23,7 @@ try {
 |------|--------------|-----|
 | `INVALID_PDF` | Malformed or unsupported PDF input | Verify the source PDF is valid (not truncated, correct header); if possible, re-export or repair the PDF with a standards-compliant writer |
 | `UNSUPPORTED_XREF_FORMAT` | Cross-reference stream format is not recognized | The library supports classic xref tables, xref streams, object streams, and incremental xref chains. If you encounter this, the PDF may use malformed or non-standard cross-reference data |
-| `INVALID_FONT` | Font name is not a standard 14 font, or embedded font data is corrupt | Use exact PostScript names (`"Helvetica"`, `"Times-Roman"`, etc.) or verify TTF data is valid |
+| `INVALID_FONT` | Font name is not a standard-14 font (the message suggests the closest match, e.g. `Did you mean "Helvetica"?`), or embedded font data is corrupt | Use exact PostScript names (`"Helvetica"`, `"Times-Roman"`, etc.), register a family with `registerFontFamily()`, or verify TTF data is valid |
 | `UNSUPPORTED_CHARACTER` | A character has no glyph in any available font | Add an embedded font that covers the character or provide a `fallbackFonts` array |
 | `INVALID_IMAGE` | Image is corrupt, unsupported format, or wrong color space | Verify image data and use the matching image API: `jpeg`, `png`, `bmp`, `gif`, `jpeg2000`, `jbig2`, `tiff`, `webp`, or `svg` |
 | `UNSUPPORTED_IMAGE_FORMAT` | Image format variant is not supported | Convert to a supported variant, such as RGB/CMYK JPEG, non-interlaced PNG, lossless WebP, baseline LZW TIFF, or first-frame GIF |
