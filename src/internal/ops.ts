@@ -21,6 +21,8 @@ export interface NormalizedTextOptions {
   leading?: number | undefined;
   kerning: boolean;
   encoding?: "winansi" | "macroman" | "pdfdoc" | undefined;
+  underline?: boolean | undefined;
+  strike?: boolean | undefined;
 }
 
 export interface NormalizedPathStyle {

@@ -75,6 +75,27 @@ await doc.save("out.pdf");
 - **`defaults`** — document-wide `font`, `fontSize`, `color`, `kerning`, `direction`, overridden per call.
 - **Chaining** — page builder methods return the page, so calls compose.
 - **`doc.save(path)`** — Node-only; in the browser use `toUint8Array()` or `toBlob()`.
+- **Top-left origin** — see [Coordinate system](#coordinate-system) below.
+
+## Coordinate system
+
+All positions and sizes are in **points** (1 pt = 1/72 inch). By default the origin is the **bottom-left** corner and `y` grows **upward** — the native PDF convention. So on an A4 page (842 pt tall) `y: 800` is near the top and `y: 40` is near the bottom.
+
+If you prefer the screen/CSS convention where `y` grows **downward** from the top, pass `origin: "top-left"` when creating the page:
+
+```ts
+const page = doc.addPage({ size: "A4", origin: "top-left" });
+page.text("Near the top", { x: 56, y: 56 });   // 56 pt down from the top edge
+page.rect(56, 100, 200, 80, { stroke: "navy" }); // y is the box's top edge
+```
+
+With `origin: "top-left"`:
+
+- For text, `y` is the baseline distance from the top.
+- For boxes and images (`rect`, `image`, `path` rectangles), `y` is the **top** edge.
+- Lines, circles, and ellipses flip their `y`/`cy` coordinates accordingly.
+
+This applies to the page drawing methods (`text`, `textBlock`, `richText`, `rect`, `line`, `circle`, `ellipse`, `image`, `path`) **and** the annotation and form-field methods (`link`, `highlight`, `note`, `freeText`, `textField`, `checkBox`, `choiceField`, `radioGroup`, `pushButton`, `signatureField`). The flow/template layout APIs always use bottom-left coordinates. Use the [unit helpers](#convenience-helpers) (`mm`/`cm`/`inch`) with either origin.
 
 ## Common imports
 
