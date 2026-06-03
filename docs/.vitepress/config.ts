@@ -55,6 +55,7 @@ const guideSidebar: DefaultTheme.SidebarItem[] = [
       { text: "Accessibility and Compliance", link: "/guide/accessibility-and-compliance" },
       { text: "PDF Versions and Conformance", link: "/guide/pdf-versions-and-conformance" },
       { text: "Encryption and Signatures", link: "/guide/encryption-and-signatures" },
+      { text: "Digital Signatures", link: "/guide/digital-signatures" },
       { text: "Security Hardening", link: "/guide/security-hardening" }
     ]
   },
