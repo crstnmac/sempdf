@@ -23,6 +23,12 @@ blocks.
 
 <<< ../../examples/website/samples/rich-text-and-layout.ts{ts}
 
+## Google Fonts
+
+Fetch several Google Fonts (Inter, Geist, Instrument Serif with an italic face, and Bitcount Grid Single) and embed them as font families. In Node, use `loadGoogleFont("Inter", { weight: 700 })`; this browser sample fetches ready-made `.ttf` files from the CORS-enabled `@expo-google-fonts` packages on jsDelivr instead, because the Google Fonts API serves woff2 to browsers, which the engine cannot decode. See [Text and Fonts → Google Fonts](./text-and-fonts#google-fonts).
+
+<<< ../../examples/website/samples/google-fonts.ts{ts}
+
 ## Stylesheets & tables
 
 Define reusable styles once and apply them by block type or class, then render a
