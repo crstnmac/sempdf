@@ -147,3 +147,5 @@ const bytes = signed.toUint8Array();
 ```
 
 `sign` receives the bytes covered by `/ByteRange` and must return a DER-encoded CMS `SignedData` value. Use Node `crypto`, `node-forge`, or any PKCS#7 toolkit. The serializer pads `/Contents` to fit the returned blob.
+
+For the full workflow — incremental signing of existing PDFs, a working `node-forge` signer, `placeholderBytes` sizing, visible signature fields, and verification — see [Digital Signatures](./digital-signatures).
