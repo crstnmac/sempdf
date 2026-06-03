@@ -264,6 +264,7 @@ export interface NormalizedTextFieldOptions {
   encrypt: boolean;
   appearance?: NormalizedFieldAppearance | undefined;
   actions?: FieldActions | undefined;
+  description?: string | undefined;
   tag?: "Annot" | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;
 }
@@ -337,6 +338,7 @@ export interface NormalizedCheckBoxOptions {
   encrypt: boolean;
   appearance?: NormalizedFieldAppearance | undefined;
   actions?: FieldActions | undefined;
+  description?: string | undefined;
   tag?: "Annot" | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;
 }
@@ -359,6 +361,7 @@ export interface NormalizedChoiceFieldOptions {
   encrypt: boolean;
   appearance?: NormalizedFieldAppearance | undefined;
   actions?: FieldActions | undefined;
+  description?: string | undefined;
   tag?: "Annot" | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;
 }
@@ -380,6 +383,7 @@ export interface NormalizedRadioGroupOptions {
   encrypt: boolean;
   appearance?: NormalizedFieldAppearance | undefined;
   actions?: FieldActions | undefined;
+  description?: string | undefined;
   tag?: "Annot" | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;
 }
@@ -398,6 +402,7 @@ export interface NormalizedPushButtonOptions {
   encrypt: boolean;
   appearance?: NormalizedFieldAppearance | undefined;
   actions?: FieldActions | undefined;
+  description?: string | undefined;
   tag?: "Annot" | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;
 }
@@ -413,6 +418,7 @@ export interface NormalizedSignatureFieldOptions {
   encrypt: boolean;
   appearance?: NormalizedFieldAppearance | undefined;
   actions?: FieldActions | undefined;
+  description?: string | undefined;
   tag?: "Annot" | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;
 }
@@ -1413,6 +1419,7 @@ export function normalizeTextFieldOptions(fieldName: string, options: TextFieldO
     encrypt: options.encrypt ?? true,
     ...(options.actions !== undefined ? { actions: options.actions } : {}),
     ...(options.appearance !== undefined ? { appearance: normalizeFieldAppearance(options.appearance) } : {}),
+    ...(options.description !== undefined ? { description: options.description } : {}),
     ...(options.tag !== undefined ? { tag: normalizeAnnotationStructureTag(options.tag) } : {}),
     ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
   };
@@ -1456,6 +1463,7 @@ export function normalizeCheckBoxOptions(fieldName: string, options: CheckBoxOpt
     encrypt: options.encrypt ?? true,
     ...(options.actions !== undefined ? { actions: options.actions } : {}),
     ...(options.appearance !== undefined ? { appearance: normalizeFieldAppearance(options.appearance) } : {}),
+    ...(options.description !== undefined ? { description: options.description } : {}),
     ...(options.tag !== undefined ? { tag: normalizeAnnotationStructureTag(options.tag) } : {}),
     ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
   };
@@ -1528,6 +1536,7 @@ export function normalizeChoiceFieldOptions(fieldName: string, options: ChoiceFi
     encrypt: options.encrypt ?? true,
     ...(options.actions !== undefined ? { actions: options.actions } : {}),
     ...(options.appearance !== undefined ? { appearance: normalizeFieldAppearance(options.appearance) } : {}),
+    ...(options.description !== undefined ? { description: options.description } : {}),
     ...(options.tag !== undefined ? { tag: normalizeAnnotationStructureTag(options.tag) } : {}),
     ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
   };
@@ -1600,6 +1609,7 @@ export function normalizeRadioGroupOptions(fieldName: string, options: RadioGrou
     encrypt: options.encrypt ?? true,
     ...(options.actions !== undefined ? { actions: options.actions } : {}),
     ...(options.appearance !== undefined ? { appearance: normalizeFieldAppearance(options.appearance) } : {}),
+    ...(options.description !== undefined ? { description: options.description } : {}),
     ...(options.tag !== undefined ? { tag: normalizeAnnotationStructureTag(options.tag) } : {}),
     ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
   };
@@ -1642,6 +1652,7 @@ export function normalizePushButtonOptions(fieldName: string, options: PushButto
     encrypt: options.encrypt ?? true,
     ...(options.actions !== undefined ? { actions: options.actions } : {}),
     ...(options.appearance !== undefined ? { appearance: normalizeFieldAppearance(options.appearance) } : {}),
+    ...(options.description !== undefined ? { description: options.description } : {}),
     ...(options.tag !== undefined ? { tag: normalizeAnnotationStructureTag(options.tag) } : {}),
     ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
   };
@@ -1670,6 +1681,7 @@ export function normalizeSignatureFieldOptions(fieldName: string, options: Signa
     encrypt: options.encrypt ?? true,
     ...(options.actions !== undefined ? { actions: options.actions } : {}),
     ...(options.appearance !== undefined ? { appearance: normalizeFieldAppearance(options.appearance) } : {}),
+    ...(options.description !== undefined ? { description: options.description } : {}),
     ...(options.tag !== undefined ? { tag: normalizeAnnotationStructureTag(options.tag) } : {}),
     ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
   };
