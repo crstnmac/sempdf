@@ -2,6 +2,16 @@
 
 All notable changes to `@criston/zeropdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] - 2026-06-03
+
+### Added
+
+- `description` option on all form fields (`textField`, `checkBox`, `choiceField`, `radioGroup`, `pushButton`, `signatureField`, and their `renderTemplate` blocks), emitted as `/TU`. Assistive technology reads it as the field's accessible name, and it satisfies the "form fields have a description" accessibility check.
+
+### Changed
+
+- `renderTemplate` now tags form-field widgets into the structure tree automatically (default `tag: "Annot"`, emitting an `OBJR` reference), so generated forms pass the "tagged annotations" and "tagged form fields" accessibility checks without per-field configuration. Set `tag: "Artifact"` on a field block to opt out.
+
 ## [1.3.0] - 2026-06-02
 
 ### Added

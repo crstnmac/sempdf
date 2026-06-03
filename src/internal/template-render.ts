@@ -725,23 +725,26 @@ function renderTemplateBlockToFlow(
     case 'pageBreak':
       flow.moveDown(flow.remainingHeight);
       return;
+    // Form fields default to tag: "Annot" so their widgets are referenced from
+    // the structure tree (via an OBJR), consistent with the template tagging
+    // the rest of its content. Callers can override per block (e.g. "Artifact").
     case 'textField':
-      flow.textField(block.name, { height: 20, ...block.options } as FlowTextFieldOptions);
+      flow.textField(block.name, { height: 20, tag: 'Annot', ...block.options } as FlowTextFieldOptions);
       return;
     case 'checkBox':
-      flow.checkBox(block.name, { height: 20, ...block.options } as FlowCheckBoxOptions);
+      flow.checkBox(block.name, { height: 20, tag: 'Annot', ...block.options } as FlowCheckBoxOptions);
       return;
     case 'choiceField':
-      flow.choiceField(block.name, { height: 20, options: [], ...block.options } as FlowChoiceFieldOptions);
+      flow.choiceField(block.name, { height: 20, tag: 'Annot', options: [], ...block.options } as FlowChoiceFieldOptions);
       return;
     case 'radioGroup':
-      flow.radioGroup(block.name, { items: [], ...block.options } as FlowRadioGroupOptions);
+      flow.radioGroup(block.name, { tag: 'Annot', items: [], ...block.options } as FlowRadioGroupOptions);
       return;
     case 'pushButton':
-      flow.pushButton(block.name, { height: 20, label: block.name, ...block.options } as FlowPushButtonOptions);
+      flow.pushButton(block.name, { height: 20, tag: 'Annot', label: block.name, ...block.options } as FlowPushButtonOptions);
       return;
     case 'signatureField':
-      flow.signatureField(block.name, { height: 40, ...block.options } as FlowSignatureFieldOptions);
+      flow.signatureField(block.name, { height: 40, tag: 'Annot', ...block.options } as FlowSignatureFieldOptions);
       return;
     case 'highlight':
       flow.highlight(block.options);

@@ -3297,6 +3297,12 @@ function buildAnnotationDictionary(
         ['F', 4],
         ['FT', name('Tx')],
         ['T', literalString(annotation.name)],
+        [
+          'TU',
+          annotation.options.description !== undefined
+            ? literalString(annotation.options.description)
+            : undefined,
+        ],
         ['Rect', rect],
         ['Parent', parentFieldObjectId !== undefined ? ref(parentFieldObjectId) : undefined],
         ['Border', array([0, 0, annotation.options.borderWidth])],
@@ -3348,6 +3354,12 @@ function buildAnnotationDictionary(
         ['F', 4],
         ['FT', name('Ch')],
         ['T', literalString(annotation.name)],
+        [
+          'TU',
+          annotation.options.description !== undefined
+            ? literalString(annotation.options.description)
+            : undefined,
+        ],
         ['Rect', rect],
         ['Parent', parentFieldObjectId !== undefined ? ref(parentFieldObjectId) : undefined],
         ['Border', array([0, 0, annotation.options.borderWidth])],
@@ -3399,6 +3411,12 @@ function buildAnnotationDictionary(
         ['F', 4],
         ['FT', name('Btn')],
         ['T', literalString(annotation.name)],
+        [
+          'TU',
+          annotation.options.description !== undefined
+            ? literalString(annotation.options.description)
+            : undefined,
+        ],
         ['Rect', rect],
         ['Parent', parentFieldObjectId !== undefined ? ref(parentFieldObjectId) : undefined],
         ['Border', array([0, 0, annotation.options.borderWidth])],
@@ -3431,6 +3449,12 @@ function buildAnnotationDictionary(
         ['F', 4],
         ['FT', name('Sig')],
         ['T', literalString(annotation.name)],
+        [
+          'TU',
+          annotation.options.description !== undefined
+            ? literalString(annotation.options.description)
+            : undefined,
+        ],
         ['Rect', rect],
         ['Parent', parentFieldObjectId !== undefined ? ref(parentFieldObjectId) : undefined],
         ['Border', array([0, 0, annotation.options.borderWidth])],
@@ -3462,6 +3486,12 @@ function buildAnnotationDictionary(
         ['F', 4],
         ['FT', name('Btn')],
         ['T', literalString(annotation.name)],
+        [
+          'TU',
+          annotation.options.description !== undefined
+            ? literalString(annotation.options.description)
+            : undefined,
+        ],
         ['Rect', rect],
         ['Parent', parentFieldObjectId !== undefined ? ref(parentFieldObjectId) : undefined],
         ['Border', array([0, 0, annotation.options.borderWidth])],
@@ -4052,6 +4082,12 @@ function buildRadioGroupFieldDictionary(
   return dict([
     ['FT', name('Btn')],
     ['T', literalString(annotation.name)],
+    [
+      'TU',
+      annotation.options.description !== undefined
+        ? literalString(annotation.options.description)
+        : undefined,
+    ],
     [
       'V',
       annotation.options.value !== undefined

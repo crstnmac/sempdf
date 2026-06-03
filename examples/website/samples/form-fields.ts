@@ -11,6 +11,11 @@ const doc = createDocument({
 // renderTemplate auto-flows each block down the page, so the labels and form
 // fields stack without overlapping. Field blocks (textField, choiceField,
 // checkBox, pushButton, signatureField) omit x/y - the template positions them.
+//
+// Each field sets a `description`, emitted as /TU - the field's accessible name
+// (read by screen readers, and required by the "form fields have a description"
+// accessibility check). renderTemplate tags the field widgets into the
+// structure tree automatically, so no per-field tag is needed.
 doc.renderTemplate({
   info: { title: "Registration Form", author: "zeropdf" },
   page: { size: "A4" },
@@ -34,7 +39,7 @@ doc.renderTemplate({
     {
       type: "textField",
       name: "name",
-      options: { width: 300, height: 24, value: "John Doe", fontSize: 11, required: true }
+      options: { width: 300, height: 24, value: "John Doe", fontSize: 11, required: true, description: "Full name" }
     },
     {
       type: "paragraph",
@@ -44,7 +49,7 @@ doc.renderTemplate({
     {
       type: "textField",
       name: "email",
-      options: { width: 300, height: 24, fontSize: 11, required: true }
+      options: { width: 300, height: 24, fontSize: 11, required: true, description: "Email address" }
     },
     {
       type: "paragraph",
@@ -60,7 +65,8 @@ doc.renderTemplate({
         options: ["United States", "Canada", "United Kingdom", "Germany", "Japan", "Australia"],
         value: "United States",
         mode: "combo",
-        fontSize: 10
+        fontSize: 10,
+        description: "Country"
       }
     },
     {
@@ -76,13 +82,14 @@ doc.renderTemplate({
         height: 60,
         options: ["TypeScript", "JavaScript", "Python", "Rust", "Go"],
         mode: "list",
-        fontSize: 10
+        fontSize: 10,
+        description: "Skills"
       }
     },
     {
       type: "checkBox",
       name: "subscribe",
-      options: { width: 16, height: 16, checked: true }
+      options: { width: 16, height: 16, checked: true, description: "Subscribe to newsletter" }
     },
     {
       type: "paragraph",
@@ -92,7 +99,7 @@ doc.renderTemplate({
     {
       type: "pushButton",
       name: "submit",
-      options: { width: 140, height: 32, label: "Submit", fontSize: 12, color: hex("#ffffff") }
+      options: { width: 140, height: 32, label: "Submit", fontSize: 12, color: hex("#ffffff"), description: "Submit form" }
     },
     {
       type: "paragraph",
@@ -102,7 +109,7 @@ doc.renderTemplate({
     {
       type: "signatureField",
       name: "signature",
-      options: { width: 300, height: 60, required: true }
+      options: { width: 300, height: 60, required: true, description: "Signature" }
     }
   ]
 });
