@@ -12,6 +12,7 @@ const guideSidebar: DefaultTheme.SidebarItem[] = [
     text: "Introduction",
     items: [
       { text: "Getting Started", link: "/guide/getting-started" },
+      { text: "Examples", link: "/guide/examples" },
       { text: "Choosing an API", link: "/guide/choosing-an-api" },
       { text: "Browser Usage", link: "/guide/browser-usage" },
       { text: "Streaming and Output", link: "/guide/streaming-and-output" },
@@ -38,7 +39,8 @@ const guideSidebar: DefaultTheme.SidebarItem[] = [
       { text: "Invoice", link: "/guide/cookbook-invoice" },
       { text: "Event Ticket", link: "/guide/cookbook-ticket" },
       { text: "Certificate", link: "/guide/cookbook-certificate" },
-      { text: "Multi-Column Report", link: "/guide/cookbook-multi-column-report" }
+      { text: "Multi-Column Report", link: "/guide/cookbook-multi-column-report" },
+      { text: "Sign an Existing PDF", link: "/guide/cookbook-sign-existing-pdf" }
     ]
   },
   {
@@ -158,7 +160,7 @@ export default defineConfig({
     nav: [
       { text: "Guide", link: "/guide/getting-started" },
       { text: "API", link: "/api/" },
-      { text: "Examples", link: "/guide/browser-usage" },
+      { text: "Examples", link: "/guide/examples" },
       { text: "Changelog", link: "/changelog" },
       { text: "Playground", link: "https://playzeropdf.criston.dev/" }
     ],
