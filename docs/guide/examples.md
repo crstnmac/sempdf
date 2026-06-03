@@ -83,8 +83,9 @@ Highlight, sticky note, free text, URI link, and page-to-page link annotations.
 
 ## Form fields
 
-Interactive AcroForm fields: text, checkbox, combo/list choice, radio group,
-push button, and signature.
+Interactive AcroForm fields — text, combo/list choice, checkbox, push button,
+and signature — laid out with `renderTemplate()` so the labels and fields flow
+down the page without overlapping (the field blocks omit `x`/`y`).
 
 <<< ../../examples/website/samples/form-fields.ts{ts}
 
