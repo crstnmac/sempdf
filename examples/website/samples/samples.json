@@ -1,5 +1,6 @@
 [
   { "label": "Rich text & layout", "file": "rich-text-and-layout.ts" },
+  { "label": "Google Fonts", "file": "google-fonts.ts" },
   { "label": "Stylesheets & tables", "file": "stylesheets-and-tables.ts" },
   { "label": "Single page (low level)", "file": "single-page.ts" },
   { "label": "Hello world (template)", "file": "hello-world.ts" },

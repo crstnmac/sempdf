@@ -29,6 +29,38 @@ page.text("Hello Ω 漢", { x: 56, y: 700, font, fontSize: 14 });
 
 The embedder subsets glyphs, computes widths, and writes a `ToUnicode` CMap so extracted text round-trips.
 
+## Google Fonts
+
+`loadGoogleFont()` downloads a [Google Font](https://fonts.google.com/) and returns its bytes, ready for `embedTrueTypeFont()` or `registerFontFamily()`:
+
+```ts
+import { createDocument, loadGoogleFont } from "@criston/sempdf";
+
+const doc = createDocument({ language: "en-US" });
+const interBytes = await loadGoogleFont("Inter", { weight: 700 });
+const inter = doc.embedTrueTypeFont(interBytes, { family: "Inter" });
+
+doc.addPage().text("Hello from Inter", { x: 56, y: 760, font: inter, fontSize: 24 });
+```
+
+Register multiple weights as a family so `bold`/`italic` resolve by flag:
+
+```ts
+doc.registerFontFamily("Roboto", {
+  regular: doc.embedTrueTypeFont(await loadGoogleFont("Roboto"), { family: "Roboto" }),
+  bold: doc.embedTrueTypeFont(await loadGoogleFont("Roboto", { weight: 700 }), { family: "Roboto" }),
+  italic: doc.embedTrueTypeFont(await loadGoogleFont("Roboto", { italic: true }), { family: "Roboto" })
+});
+
+page.text("Roboto bold", { x: 56, y: 700, font: "Roboto", bold: true });
+```
+
+Options: `weight` (1–1000, default 400), `italic` (default false), `text` (restrict the download to the glyphs in this string via Google's `&text=` subsetting), `signal` (an `AbortSignal`), and `fetch` (a custom `fetch` implementation).
+
+::: warning Node-first
+The Google Fonts API serves **woff2** (Brotli-compressed) to clients that advertise woff2 support — including browsers — and this zero-dependency engine cannot decode woff2. Node's `fetch` does not advertise woff2, so it receives an embeddable `.ttf`/`.otf`. Call `loadGoogleFont()` from Node. In the browser, download a `.ttf`/`.otf` yourself (for example from [@fontsource](https://fontsource.org/)) and pass the bytes straight to `embedTrueTypeFont()`.
+:::
+
 ## Font weights and styles (bold & italic)
 
 The library does not synthesize bold or italic with a faux transform — each weight is a real font face for correct glyph metrics. But you don't have to juggle face names by hand: the `bold` and `italic` options on `text()` and `textBlock()` resolve to the right face.
