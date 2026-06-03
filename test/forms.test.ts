@@ -397,6 +397,59 @@ test("serializes push buttons and signature fields through AcroForm", () => {
   assert.equal(signatureField?.fieldType, "Sig");
 });
 
+test("emits field descriptions as /TU across field types", () => {
+  const doc = createDocument();
+  const page = doc.addPage();
+  page.textField("name", { x: 36, y: 700, width: 180, height: 24, description: "Full name" });
+  page.checkBox("agree", { x: 36, y: 660, width: 16, height: 16, description: "Agree to terms" });
+  page.choiceField("country", { x: 36, y: 620, width: 180, height: 24, options: ["US", "CA"], description: "Country" });
+  page.pushButton("submit", { x: 36, y: 580, width: 96, height: 24, label: "Submit", description: "Submit form" });
+  page.signatureField("sign-here", { x: 36, y: 540, width: 180, height: 36, description: "Signature" });
+  page.radioGroup("plan", {
+    items: [{ value: "basic", x: 36, y: 500, width: 16, height: 16 }],
+    description: "Plan"
+  });
+
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  for (const tu of ["Full name", "Agree to terms", "Country", "Submit form", "Signature", "Plan"]) {
+    assert.match(text, new RegExp(`/TU \\(${tu}\\)`));
+  }
+
+  // Omitting the description must not emit a /TU entry for that field.
+  const plain = createDocument();
+  plain.addPage().textField("plain", { x: 36, y: 700, width: 180, height: 24 });
+  assert.doesNotMatch(new TextDecoder().decode(plain.toUint8Array()), /\/TU/);
+});
+
+test("renderTemplate auto-tags form-field widgets into the structure tree", () => {
+  const doc = createDocument({ language: "en-US", info: { title: "Tagged form" } });
+  doc.renderTemplate({
+    page: { size: "A4" },
+    blocks: [
+      { type: "heading", text: "Form", options: { level: 1 } },
+      // No explicit tag: the template tags the widget automatically.
+      { type: "textField", name: "name", options: { width: 200, height: 22, description: "Name" } }
+    ]
+  });
+
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /OBJR/);
+  assert.match(text, /\/TU \(Name\)/);
+});
+
+test("a template field can opt out of tagging with tag: Artifact", () => {
+  const doc = createDocument({ language: "en-US", info: { title: "Form" } });
+  doc.renderTemplate({
+    page: { size: "A4" },
+    blocks: [
+      { type: "heading", text: "Form", options: { level: 1 } },
+      { type: "textField", name: "decorative", options: { width: 200, height: 22, tag: "Artifact" } }
+    ]
+  });
+
+  assert.doesNotMatch(new TextDecoder().decode(doc.toUint8Array()), /OBJR/);
+});
+
 test("applies detached digital signatures with patched byte ranges", () => {
   let signedInput: Uint8Array | undefined;
   const cms = Uint8Array.from([0xde, 0xad, 0xbe, 0xef]);
