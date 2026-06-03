@@ -1,0 +1,14 @@
+[
+  { "label": "Rich text & layout", "file": "rich-text-and-layout.ts" },
+  { "label": "Stylesheets & tables", "file": "stylesheets-and-tables.ts" },
+  { "label": "Single page (low level)", "file": "single-page.ts" },
+  { "label": "Hello world (template)", "file": "hello-world.ts" },
+  { "label": "Invoice", "file": "invoice.ts" },
+  { "label": "Multi-column", "file": "multi-column.ts" },
+  { "label": "Color spaces", "file": "colors.ts" },
+  { "label": "Graphics state & transforms", "file": "graphics-state.ts" },
+  { "label": "Outlines (bookmarks)", "file": "outlines.ts" },
+  { "label": "Annotations", "file": "annotations.ts" },
+  { "label": "Form fields", "file": "form-fields.ts" },
+  { "label": "Incremental editing", "file": "incremental-editing.ts" }
+]
