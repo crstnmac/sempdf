@@ -2510,6 +2510,12 @@ export interface FieldActions {
  * Options for creating a text form field.
  */
 export interface TextFieldOptions {
+  /**
+   * Field description, emitted as `/TU` (the field's user-facing name).
+   * Assistive technology reads it as the field's accessible name, and it
+   * satisfies the "form fields have a description" accessibility check.
+   */
+  description?: string | undefined;
   /** Horizontal position in PDF points. */
   x: number;
   /** Vertical position in PDF points. */
@@ -2567,6 +2573,12 @@ export interface TextFieldOptions {
  * Options for creating a checkbox form field widget.
  */
 export interface CheckBoxOptions {
+  /**
+   * Field description, emitted as `/TU` (the field's user-facing name).
+   * Assistive technology reads it as the field's accessible name, and it
+   * satisfies the "form fields have a description" accessibility check.
+   */
+  description?: string | undefined;
   /** Horizontal position in PDF points. */
   x: number;
   /** Vertical position in PDF points. */
@@ -2616,6 +2628,12 @@ export type ChoiceFieldMode = "combo" | "list";
  * Options for creating a list box or combo box form field.
  */
 export interface ChoiceFieldOptions {
+  /**
+   * Field description, emitted as `/TU` (the field's user-facing name).
+   * Assistive technology reads it as the field's accessible name, and it
+   * satisfies the "form fields have a description" accessibility check.
+   */
+  description?: string | undefined;
   /** Horizontal position in PDF points. */
   x: number;
   /** Vertical position in PDF points. */
@@ -2690,6 +2708,12 @@ export interface RadioGroupItemOptions {
  * Options for creating a radio-button group form field.
  */
 export interface RadioGroupOptions {
+  /**
+   * Field description, emitted as `/TU` (the field's user-facing name).
+   * Assistive technology reads it as the field's accessible name, and it
+   * satisfies the "form fields have a description" accessibility check.
+   */
+  description?: string | undefined;
   /** Radio-button items in the group. */
   items: RadioGroupItemOptions[];
   /** Current or default value for the option. */
@@ -2727,6 +2751,12 @@ export interface RadioGroupOptions {
  * Options for creating a push-button form field.
  */
 export interface PushButtonOptions {
+  /**
+   * Field description, emitted as `/TU` (the field's user-facing name).
+   * Assistive technology reads it as the field's accessible name, and it
+   * satisfies the "form fields have a description" accessibility check.
+   */
+  description?: string | undefined;
   /** Horizontal position in PDF points. */
   x: number;
   /** Vertical position in PDF points. */
@@ -2773,6 +2803,12 @@ export interface PushButtonOptions {
  * Options for creating a signature form field.
  */
 export interface SignatureFieldOptions {
+  /**
+   * Field description, emitted as `/TU` (the field's user-facing name).
+   * Assistive technology reads it as the field's accessible name, and it
+   * satisfies the "form fields have a description" accessibility check.
+   */
+  description?: string | undefined;
   /** Horizontal position in PDF points. */
   x: number;
   /** Vertical position in PDF points. */
