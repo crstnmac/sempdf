@@ -2,6 +2,12 @@
 
 All notable changes to `@criston/sempdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.4.1] - 2026-06-03
+
+### Added
+
+- `loadGoogleFont(family, { weight, italic, text })` — downloads a Google Font and returns its TrueType/OpenType bytes, ready for `embedTrueTypeFont()` or `registerFontFamily()`. Node-first: the Google Fonts API serves `woff2` to browsers (which the zero-dependency engine cannot decode) and an embeddable `.ttf`/`.otf` to Node. Supports `&text=` subsetting and a custom `fetch`.
+
 ## [1.4.0] - 2026-06-03
 
 ### Added

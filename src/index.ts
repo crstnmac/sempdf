@@ -19,6 +19,8 @@ export type {
   TextShaper,
 } from "./internal/text-shaper.js";
 export { PdfEngineError, PdfErrorCode } from "./errors.js";
+export { loadGoogleFont } from "./google-fonts.js";
+export type { LoadGoogleFontOptions } from "./google-fonts.js";
 export {
   appendPages,
   extractPages,
