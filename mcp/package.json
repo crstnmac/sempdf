@@ -1,0 +1,40 @@
+{
+  "name": "@criston/sempdf-mcp",
+  "version": "0.1.0",
+  "description": "Model Context Protocol server exposing @criston/sempdf PDF generation and manipulation as tools.",
+  "type": "module",
+  "bin": {
+    "sempdf-mcp": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "npm run build && node dist/index.js",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "bundle": "node scripts/build-mcpb.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "registry": "https://nodeproxy.criston.dev"
+  },
+  "dependencies": {
+    "@criston/sempdf": "^1.4.1",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@anthropic-ai/mcpb": "^1.1.0",
+    "@types/node": "^25.6.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^6.0.2"
+  },
+  "license": "MIT"
+}
