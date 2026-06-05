@@ -5,7 +5,7 @@
 // Run: npm test   (builds first, then `node --test`)
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,9 +45,9 @@ describe("sempdf MCP server", () => {
 
   const call = (name, args) => client.callTool({ name, arguments: args });
 
-  it("lists 8 tools, each with required annotations", async () => {
+  it("lists 9 tools, each with required annotations", async () => {
     const { tools } = await client.listTools();
-    assert.equal(tools.length, 8);
+    assert.equal(tools.length, 9);
     for (const tool of tools) {
       const ann = tool.annotations ?? {};
       assert.ok(ann.title, `${tool.name} missing annotations.title`);
@@ -96,6 +96,71 @@ describe("sempdf MCP server", () => {
     const res = await call("extract_text", { path: a });
     assert.equal(res.structuredContent.pages.length, 2);
     assert.match(res.structuredContent.pages[0].text, /Document A/);
+  });
+
+  it("generate_pdf applies documentOptions (tagged + language)", async () => {
+    const out = join(dir, "tagged.pdf");
+    const spec = { title: "Tagged", page: { size: "A4" }, blocks: [{ type: "paragraph", text: "Hi." }] };
+    const res = await call("generate_pdf", {
+      spec,
+      documentOptions: { tagged: true, language: "en-US" },
+      outputPath: out,
+    });
+    assert.ok(!res.isError, res.content[0].text);
+    const inspected = await call("inspect_pdf", { path: out });
+    const info = JSON.parse(inspected.content[0].text);
+    assert.equal(info.tagged, true);
+    assert.equal(info.language, "en-US");
+  });
+
+  it("generate_pdf encrypts output with a user password", async () => {
+    const out = join(dir, "encrypted.pdf");
+    const spec = { blocks: [{ type: "paragraph", text: "secret" }] };
+    const res = await call("generate_pdf", {
+      spec,
+      documentOptions: { encryption: { userPassword: "pw", algorithm: "aes-256" } },
+      outputPath: out,
+    });
+    assert.ok(!res.isError, res.content[0].text);
+    assert.match(readFileSync(out).toString("latin1"), /\/Encrypt/);
+  });
+
+  it("generate_pdf embeds an image referenced by path", async () => {
+    // Hand-built 1x1 24-bit BMP (no CRC/compression, guaranteed valid).
+    const bmp = Buffer.alloc(58);
+    bmp.write("BM", 0, "ascii");
+    bmp.writeUInt32LE(58, 2); // file size
+    bmp.writeUInt32LE(54, 10); // pixel data offset
+    bmp.writeUInt32LE(40, 14); // DIB header size
+    bmp.writeInt32LE(1, 18); // width
+    bmp.writeInt32LE(1, 22); // height
+    bmp.writeUInt16LE(1, 26); // planes
+    bmp.writeUInt16LE(24, 28); // bits per pixel
+    bmp.writeUInt32LE(4, 34); // image size
+    bmp[54] = 0; bmp[55] = 0; bmp[56] = 255; bmp[57] = 0; // one red pixel + pad
+    const bmpPath = join(dir, "dot.bmp");
+    writeFileSync(bmpPath, bmp);
+
+    const out = join(dir, "with-image.pdf");
+    const spec = {
+      blocks: [
+        { type: "paragraph", text: "Logo:" },
+        { type: "bmp", path: bmpPath, options: { width: 32 } },
+      ],
+    };
+    const res = await call("generate_pdf", { spec, outputPath: out });
+    assert.ok(!res.isError, res.content[0].text);
+    const info = await call("get_pdf_info", { path: out });
+    assert.equal(info.structuredContent.pageCount, 1);
+  });
+
+  it("inspect_pdf returns the structural shape", async () => {
+    const res = await call("inspect_pdf", { path: a });
+    const info = JSON.parse(res.content[0].text);
+    assert.equal(typeof info.pageCount, "number");
+    assert.ok(Array.isArray(info.formFields));
+    assert.ok(Array.isArray(info.outlines));
+    assert.ok(Array.isArray(info.attachments));
   });
 
   it("merge_pdfs concatenates whole documents", async () => {

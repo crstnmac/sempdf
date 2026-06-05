@@ -33,6 +33,7 @@
     { "name": "generate_pdf", "description": "Render a PDF from a declarative template spec." },
     { "name": "extract_text", "description": "Extract text from a PDF, per page." },
     { "name": "get_pdf_info", "description": "Read PDF metadata and page count." },
+    { "name": "inspect_pdf", "description": "Read forms, bookmarks, attachments, and accessibility flags." },
     { "name": "merge_pdfs", "description": "Concatenate multiple PDFs into one." },
     { "name": "split_pdf", "description": "Split a PDF into one file per page." },
     { "name": "extract_pages", "description": "Extract a subset of pages into a new PDF." },

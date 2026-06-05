@@ -11,6 +11,7 @@ Code, etc.) can call. PDFs move in and out as **filesystem paths**.
 | `generate_pdf`   | Render a PDF from a declarative `TemplateDocumentOptions` spec  |
 | `extract_text`   | Pull text out of a PDF, per page                               |
 | `get_pdf_info`   | Document metadata + page count                                 |
+| `inspect_pdf`    | Forms, bookmarks, attachments, tagged/conformance flags        |
 | `merge_pdfs`     | Concatenate several PDFs in order                              |
 | `split_pdf`      | One single-page PDF per source page                            |
 | `extract_pages`  | Keep a subset of pages (by index)                              |
@@ -106,5 +107,27 @@ The `spec` argument is a `TemplateDocumentOptions` object. Minimal:
 }
 ```
 
-> `header` / `footer` accept callbacks in the library and therefore cannot be
-> expressed in JSON. Use `pageNumber` for page numbering instead.
+Optional `documentOptions` (sibling of `spec`) covers document-level settings —
+encryption, conformance, language, tagged, compress:
+
+```json
+{
+  "spec": { "blocks": [{ "type": "paragraph", "text": "Confidential." }] },
+  "documentOptions": {
+    "encryption": { "userPassword": "open-sesame", "algorithm": "aes-256" },
+    "tagged": true,
+    "language": "en-US"
+  },
+  "outputPath": "./out/secure.pdf"
+}
+```
+
+Image blocks embed a file by `path` (read relative to the workspace root):
+
+```json
+{ "type": "png", "path": "assets/logo.png", "options": { "width": 96 } }
+```
+
+> **Not expressible over JSON:** `header`/`footer` callbacks (use `pageNumber`)
+> and document signing (needs a signing callback — use the library's programmatic
+> API for that).
