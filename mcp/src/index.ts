@@ -23,6 +23,7 @@ import {
   parseDocument,
   splitDocument,
   validatePdf2Conformance,
+  type DocumentOptions,
   type TemplateDocumentOptions,
 } from "@criston/zeropdf";
 
@@ -62,13 +63,40 @@ function fail(error: unknown) {
   return { isError: true, content: [{ type: "text" as const, text: `Error: ${message}` }] };
 }
 
-async function readPdf(path: string): Promise<Uint8Array> {
+/** Reads any file (PDF or image), scoped to the workspace root and size-capped. */
+async function readBytes(path: string): Promise<Uint8Array> {
   const full = resolvePath(path);
   const buf = await readFile(full);
   if (buf.length > MAX_PDF_BYTES) {
     throw new Error(`${full} is ${buf.length} bytes — exceeds the ${MAX_PDF_BYTES}-byte limit.`);
   }
   return new Uint8Array(buf);
+}
+
+// Template image block discriminators (see TemplateImageBlock).
+const IMAGE_TYPES = new Set(["png", "jpeg", "bmp", "jbig2", "tiff", "jp2", "webp", "gif", "svg"]);
+
+/**
+ * Walks a template spec and replaces image blocks written as
+ * `{ type: "png", path: "logo.png", ... }` with the file's bytes in `data`,
+ * so images can be embedded over JSON (which can't carry binary). Paths are
+ * scoped to the workspace root by readBytes. Mutates the spec in place.
+ */
+async function materializeImages(node: unknown): Promise<void> {
+  if (Array.isArray(node)) {
+    for (const child of node) await materializeImages(child);
+    return;
+  }
+  if (!node || typeof node !== "object") return;
+  const obj = node as Record<string, unknown>;
+  if (typeof obj.path === "string" && IMAGE_TYPES.has(obj.type as string) && obj.data === undefined) {
+    obj.data = await readBytes(obj.path);
+    delete obj.path;
+  }
+  for (const [key, value] of Object.entries(obj)) {
+    if (key === "data" || ArrayBuffer.isView(value)) continue;
+    await materializeImages(value);
+  }
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -116,6 +144,46 @@ const overwriteParam = z
   .default(false)
   .describe("Replace the output file if it already exists. Defaults to false (refuse to clobber).");
 
+// Document-level options applied at creation time (encryption, conformance, etc).
+// Signing is intentionally omitted — it needs a signing callback that can't cross JSON.
+const documentOptionsParam = z
+  .object({
+    encryption: z
+      .object({
+        userPassword: z.string().optional().describe("Password required to open the document."),
+        ownerPassword: z.string().optional().describe("Password granting owner-level permissions."),
+        algorithm: z
+          .enum(["rc4-40", "rc4-128", "aes-128", "aes-256", "aes-256-r6"])
+          .optional()
+          .describe("Encryption algorithm. Defaults to the library's strongest."),
+        encryptMetadata: z.boolean().optional().describe("Encrypt the metadata stream. Defaults to true."),
+        permissions: z
+          .object({
+            printing: z.boolean().optional(),
+            modifying: z.boolean().optional(),
+            copying: z.boolean().optional(),
+            annotating: z.boolean().optional(),
+            accessibility: z.boolean().optional(),
+            assemble: z.boolean().optional(),
+            highQualityPrint: z.boolean().optional(),
+            fillForms: z.boolean().optional(),
+          })
+          .optional()
+          .describe("Permission flags for encrypted output."),
+      })
+      .optional()
+      .describe("Password-encrypt the output."),
+    conformance: z
+      .enum(["pdfa-1b", "pdfa-2b", "pdfa-3b", "pdfa-4", "pdfua-1", "pdfua-2", "wtpdf"])
+      .optional()
+      .describe("Validate and emit a PDF/A or PDF/UA conformance profile. PDF/UA implies tagged."),
+    language: z.string().optional().describe("BCP 47 language tag for the document."),
+    tagged: z.boolean().optional().describe("Emit a tagged (accessible) PDF structure tree."),
+    compress: z.boolean().optional().describe("Compress content streams. Defaults to true."),
+  })
+  .optional()
+  .describe("Document-level options (encryption, conformance, language, tagged, compress).");
+
 /** Server ----------------------------------------------------------------- */
 
 const server = new McpServer(
@@ -139,22 +207,25 @@ server.registerTool(
       "Render a PDF from a declarative zeropdf TemplateDocumentOptions JSON spec and write it to disk. " +
       "The `spec` shape (blocks[], page, styles, pageNumber, autoOutline, info, title) is documented in the " +
       "`zeropdf://template-schema` resource — read it first. Each block is discriminated by `type` " +
-      "(e.g. {\"type\":\"heading\",\"text\":\"...\",\"options\":{\"level\":1}}). `header`/`footer` callbacks " +
-      "cannot be expressed in JSON; use `pageNumber` for page numbering. To combine or edit existing PDFs " +
-      "use merge_pdfs / append_pages / extract_pages instead.",
+      "(e.g. {\"type\":\"heading\",\"text\":\"...\",\"options\":{\"level\":1}}). Image blocks may reference a " +
+      "file with `path` (e.g. {\"type\":\"png\",\"path\":\"logo.png\"}) — its bytes are embedded. `header`/`footer` " +
+      "callbacks cannot be expressed in JSON; use `pageNumber` for page numbering. To combine or edit existing " +
+      "PDFs use merge_pdfs / append_pages / extract_pages instead.",
     inputSchema: {
       spec: z
         .object({ blocks: z.array(z.record(z.unknown())) })
         .passthrough()
         .describe("TemplateDocumentOptions JSON. Must include a `blocks` array of template blocks."),
+      documentOptions: documentOptionsParam,
       outputPath: z.string().describe("Filesystem path to write the resulting PDF to."),
       overwrite: overwriteParam,
     },
     annotations: write("Generate PDF from a template spec"),
   },
-  async ({ spec, outputPath, overwrite }) => {
+  async ({ spec, documentOptions, outputPath, overwrite }) => {
     try {
-      const doc = createDocument();
+      await materializeImages(spec);
+      const doc = createDocument((documentOptions ?? {}) as DocumentOptions);
       doc.renderTemplate(spec as unknown as TemplateDocumentOptions);
       const bytes = doc.toUint8Array();
       const full = await writePdf(outputPath, bytes, overwrite);
@@ -186,7 +257,7 @@ server.registerTool(
   },
   async ({ path }) => {
     try {
-      const extracted = parseDocument(await readPdf(path)).extractText();
+      const extracted = parseDocument(await readBytes(path)).extractText();
       const pages = extracted.map((p) => ({ pageIndex: p.pageIndex, text: p.text }));
       return ok(JSON.stringify(pages, null, 2), { pages });
     } catch (error) {
@@ -222,9 +293,57 @@ server.registerTool(
   },
   async ({ path }) => {
     try {
-      const doc = parseDocument(await readPdf(path));
+      const doc = parseDocument(await readBytes(path));
       const info = { ...doc.getMetadata(), pageCount: doc.listPages().length };
       return ok(JSON.stringify(info, null, 2), info);
+    } catch (error) {
+      return fail(error);
+    }
+  },
+);
+
+/* inspect_pdf --------------------------------------------------------------- */
+
+server.registerTool(
+  "inspect_pdf",
+  {
+    title: "Inspect PDF structure",
+    description:
+      "Read structural details from a PDF: form fields, outline/bookmarks, attachments (names and sizes, " +
+      "not contents), named destinations, page labels, and accessibility/conformance flags (tagged, " +
+      "language, PDF/A or PDF/UA profile). For plain metadata use get_pdf_info; for page text use extract_text.",
+    inputSchema: {
+      path: z.string().describe("Path to the source PDF."),
+    },
+    annotations: readOnly("Inspect PDF structure"),
+  },
+  async ({ path }) => {
+    try {
+      const doc = parseDocument(await readBytes(path));
+      const result = {
+        pageCount: doc.getPageCount(),
+        tagged: doc.isTagged(),
+        language: doc.getLanguage() ?? null,
+        conformanceProfile: doc.getConformanceProfile() ?? null,
+        hasXmpMetadata: doc.getXmpMetadata() !== undefined,
+        formFields: doc.listFormFields().map((f) => ({
+          name: f.name,
+          fieldType: f.fieldType ?? null,
+          buttonKind: f.buttonKind ?? null,
+          value: f.value ?? null,
+          options: f.options ?? null,
+        })),
+        outlines: doc.listOutlines(),
+        attachments: doc.listAttachments().map((a) => ({
+          name: a.name,
+          description: a.description ?? null,
+          mimeType: a.mimeType ?? null,
+          byteLength: a.byteLength ?? null,
+        })),
+        namedDestinations: doc.listNamedDestinations().map((d) => d.name),
+        pageLabels: doc.listPageLabels(),
+      };
+      return ok(JSON.stringify(result, null, 2));
     } catch (error) {
       return fail(error);
     }
@@ -249,7 +368,7 @@ server.registerTool(
   },
   async ({ paths, outputPath, overwrite }) => {
     try {
-      const sources = await Promise.all(paths.map(readPdf));
+      const sources = await Promise.all(paths.map(readBytes));
       const bytes = mergeDocuments(sources);
       const full = await writePdf(outputPath, bytes, overwrite);
       return ok(`Merged ${paths.length} PDFs → ${full} (${bytes.length} bytes)`);
@@ -278,7 +397,7 @@ server.registerTool(
   },
   async ({ path, outputDir, prefix, overwrite }) => {
     try {
-      const parts = splitDocument(await readPdf(path));
+      const parts = splitDocument(await readBytes(path));
       const written: string[] = [];
       for (let i = 0; i < parts.length; i++) {
         const full = await writePdf(join(outputDir, `${prefix}-${i + 1}.pdf`), parts[i]!, overwrite);
@@ -310,7 +429,7 @@ server.registerTool(
   },
   async ({ path, pages, outputPath, overwrite }) => {
     try {
-      const bytes = extractPages(await readPdf(path), pages);
+      const bytes = extractPages(await readBytes(path), pages);
       const full = await writePdf(outputPath, bytes, overwrite);
       return ok(`Extracted ${pages.length} pages → ${full} (${bytes.length} bytes)`);
     } catch (error) {
@@ -342,7 +461,7 @@ server.registerTool(
   },
   async ({ targetPath, sourcePath, pages, outputPath, overwrite }) => {
     try {
-      const bytes = appendPages(await readPdf(targetPath), await readPdf(sourcePath), pages);
+      const bytes = appendPages(await readBytes(targetPath), await readBytes(sourcePath), pages);
       const full = await writePdf(outputPath, bytes, overwrite);
       return ok(`Appended → ${full} (${bytes.length} bytes)`);
     } catch (error) {
@@ -371,7 +490,7 @@ server.registerTool(
   },
   async ({ path }) => {
     try {
-      const found = validatePdf2Conformance(parseDocument(await readPdf(path)));
+      const found = validatePdf2Conformance(parseDocument(await readBytes(path)));
       const issues = found.map((i) => ({ code: i.code, message: i.message }));
       const result = { conformant: issues.length === 0, issues };
       const text =
