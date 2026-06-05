@@ -4,7 +4,7 @@
   "description": "Model Context Protocol server exposing @criston/sempdf PDF generation and manipulation as tools.",
   "type": "module",
   "bin": {
-    "sempdf-mcp": "./dist/index.js"
+    "sempdf-mcp": "dist/index.js"
   },
   "main": "./dist/index.js",
   "files": [
