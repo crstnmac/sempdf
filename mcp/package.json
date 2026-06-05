@@ -4,7 +4,7 @@
   "description": "Model Context Protocol server exposing @criston/zeropdf PDF generation and manipulation as tools.",
   "type": "module",
   "bin": {
-    "zeropdf-mcp": "./dist/index.js"
+    "zeropdf-mcp": "dist/index.js"
   },
   "main": "./dist/index.js",
   "files": [
