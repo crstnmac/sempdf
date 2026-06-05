@@ -1,0 +1,48 @@
+{
+  "$schema": "https://raw.githubusercontent.com/anthropics/mcpb/main/schemas/mcpb-manifest-v0.2.schema.json",
+  "manifest_version": "0.2",
+  "name": "sempdf",
+  "display_name": "sempdf",
+  "version": "0.0.0",
+  "description": "Generate and manipulate PDFs locally with the zero-dependency sempdf engine.",
+  "long_description": "Generate PDFs from a declarative template spec and parse, merge, split, extract, append, and validate existing PDFs — all on your machine. Files are read and written under a workspace directory you choose at install time; the server refuses paths outside it and never overwrites a file unless told to.",
+  "author": { "name": "Criston Mascarenhas", "email": "criston2011@gmail.com" },
+  "license": "MIT",
+  "keywords": ["pdf", "generate", "merge", "split", "extract-text"],
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.js"],
+      "env": {
+        "WORKSPACE_DIR": "${user_config.workspaceDir}"
+      }
+    }
+  },
+  "user_config": {
+    "workspaceDir": {
+      "type": "directory",
+      "title": "Workspace directory",
+      "description": "Folder the server may read and write PDFs in. Paths outside it are rejected.",
+      "default": "${HOME}/Documents",
+      "required": true
+    }
+  },
+  "tools": [
+    { "name": "generate_pdf", "description": "Render a PDF from a declarative template spec." },
+    { "name": "extract_text", "description": "Extract text from a PDF, per page." },
+    { "name": "get_pdf_info", "description": "Read PDF metadata and page count." },
+    { "name": "merge_pdfs", "description": "Concatenate multiple PDFs into one." },
+    { "name": "split_pdf", "description": "Split a PDF into one file per page." },
+    { "name": "extract_pages", "description": "Extract a subset of pages into a new PDF." },
+    { "name": "append_pages", "description": "Append pages from one PDF onto another." },
+    { "name": "validate_pdf2", "description": "Check a PDF for PDF 2.0 conformance issues." }
+  ],
+  "tools_generated": false,
+  "compatibility": {
+    "claude_desktop": ">=1.0.0",
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": { "node": ">=22" }
+  }
+}
