@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.5.0] - 2026-06-06
+
+### Added
+
+- `renderDocumentJson(document)` and `renderDocumentJsonSync(document)` — render a PDF from a single, fully serializable `PdfDocumentJson` value. Fonts are declared by source (`base64` / file `path` / `url` / Google Fonts) and referenced by name; images carry a `src` instead of raw bytes; headers/footers are static block arrays with `{{pageNumber}}` / `{{pageCount}}` / `{{title}}` / `{{author}}` tokens; document options (encryption, conformance, language, tagged, metadata) live on the root. `renderDocumentJson` is async; `renderDocumentJsonSync` handles fully inline (`base64`) documents.
+- Absolute positioning in `PdfDocumentJson`: add a `position` (`{ x, y, width?, height?, page?, origin? }`) to a block to draw it at exact PDF-point coordinates instead of flowing. Positionable types: `paragraph`, the image formats, `rect`, `textField`, `checkBox`, `signatureField`.
+- `PdfDocument.getPage(index, origin?)` and `PdfDocument.pageCount` — return a `PdfPage` builder for an already-created page so finished pages can be drawn on with the absolute-coordinate APIs.
+- `PdfErrorCode.INVALID_DOCUMENT_JSON` for a malformed `PdfDocumentJson`.
+
+### Fixed
+
+- `ParsedPdfDocument.extractText()` returned empty text for pages whose content stream was FlateDecode-compressed (common once a page carried a table, list, or header/footer). The extractor decoded the already-inflated lazy-stream bytes a second time and discarded the page; text and `ToUnicode` decoding now tolerate the pre-decoded bytes.
+
 ## [1.3.0] - 2026-06-02
 
 ### Added

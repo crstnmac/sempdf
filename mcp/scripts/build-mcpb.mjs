@@ -37,11 +37,14 @@ run("npx", [
 ]);
 
 console.log("• copying lib type declarations");
-// Ship under a non-".d.ts" name — mcpb pack strips *.d.ts from the bundle.
-cpSync(
-  join(root, "node_modules", "@criston", "zeropdf", "dist", "src", "types.d.ts"),
-  join(serverDir, "template-types.txt"),
-);
+// Concatenate the PdfDocumentJson types + referenced template types, shipped
+// under a non-".d.ts" name (mcpb pack strips *.d.ts from the bundle).
+const libSrc = join(root, "node_modules", "@criston", "zeropdf", "dist", "src");
+const documentTypes =
+  readFileSync(join(libSrc, "document-json.d.ts"), "utf8") +
+  "\n\n/* ── Referenced template & option types ───────────────────── */\n\n" +
+  readFileSync(join(libSrc, "types.d.ts"), "utf8");
+writeFileSync(join(serverDir, "document-types.txt"), documentTypes);
 
 // Mark the bundled entry as ESM so `node index.js` loads it correctly.
 writeFileSync(join(serverDir, "package.json"), JSON.stringify({ type: "module" }, null, 2));

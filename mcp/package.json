@@ -1,6 +1,6 @@
 {
   "name": "@criston/zeropdf-mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Model Context Protocol server exposing @criston/zeropdf PDF generation and manipulation as tools.",
   "type": "module",
   "bin": {
@@ -26,7 +26,7 @@
     "registry": "https://nodeproxy.criston.dev"
   },
   "dependencies": {
-    "@criston/zeropdf": "^1.4.1",
+    "@criston/zeropdf": "^1.5.0",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "zod": "^3.23.8"
   },

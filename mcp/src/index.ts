@@ -17,14 +17,13 @@ import { z } from "zod";
 
 import {
   appendPages,
-  createDocument,
   extractPages,
   mergeDocuments,
   parseDocument,
+  renderDocumentJson,
   splitDocument,
   validatePdf2Conformance,
-  type DocumentOptions,
-  type TemplateDocumentOptions,
+  type PdfDocumentJson,
 } from "@criston/zeropdf";
 
 /** Filesystem scoping ----------------------------------------------------- */
@@ -73,30 +72,31 @@ async function readBytes(path: string): Promise<Uint8Array> {
   return new Uint8Array(buf);
 }
 
-// Template image block discriminators (see TemplateImageBlock).
-const IMAGE_TYPES = new Set(["png", "jpeg", "bmp", "jbig2", "tiff", "jp2", "webp", "gif", "svg"]);
-
 /**
- * Walks a template spec and replaces image blocks written as
- * `{ type: "png", path: "logo.png", ... }` with the file's bytes in `data`,
- * so images can be embedded over JSON (which can't carry binary). Paths are
- * scoped to the workspace root by readBytes. Mutates the spec in place.
+ * Walks a PdfDocumentJson and makes its font/image sources safe for the library
+ * to load: every `{ path }` source is read through the workspace-scoped,
+ * size-capped readBytes and rewritten to inline `{ base64 }`, and `{ url }`
+ * sources are rejected (no outbound fetch from the local server). The library's
+ * renderDocumentJson therefore never touches the filesystem or network itself.
+ * Mutates the document in place.
  */
-async function materializeImages(node: unknown): Promise<void> {
+async function inlineLocalSources(node: unknown): Promise<void> {
   if (Array.isArray(node)) {
-    for (const child of node) await materializeImages(child);
+    for (const child of node) await inlineLocalSources(child);
     return;
   }
   if (!node || typeof node !== "object") return;
   const obj = node as Record<string, unknown>;
-  if (typeof obj.path === "string" && IMAGE_TYPES.has(obj.type as string) && obj.data === undefined) {
-    obj.data = await readBytes(obj.path);
+  if (typeof obj.url === "string" && obj.path === undefined && obj.base64 === undefined) {
+    throw new Error("`url` sources are not allowed; use a workspace file `path` or inline `base64`.");
+  }
+  if (typeof obj.path === "string") {
+    const bytes = await readBytes(obj.path); // scoped + size-capped
     delete obj.path;
+    obj.base64 = Buffer.from(bytes).toString("base64");
+    return; // leaf source — nothing further to walk
   }
-  for (const [key, value] of Object.entries(obj)) {
-    if (key === "data" || ArrayBuffer.isView(value)) continue;
-    await materializeImages(value);
-  }
+  for (const value of Object.values(obj)) await inlineLocalSources(value);
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -144,90 +144,56 @@ const overwriteParam = z
   .default(false)
   .describe("Replace the output file if it already exists. Defaults to false (refuse to clobber).");
 
-// Document-level options applied at creation time (encryption, conformance, etc).
-// Signing is intentionally omitted — it needs a signing callback that can't cross JSON.
-const documentOptionsParam = z
-  .object({
-    encryption: z
-      .object({
-        userPassword: z.string().optional().describe("Password required to open the document."),
-        ownerPassword: z.string().optional().describe("Password granting owner-level permissions."),
-        algorithm: z
-          .enum(["rc4-40", "rc4-128", "aes-128", "aes-256", "aes-256-r6"])
-          .optional()
-          .describe("Encryption algorithm. Defaults to the library's strongest."),
-        encryptMetadata: z.boolean().optional().describe("Encrypt the metadata stream. Defaults to true."),
-        permissions: z
-          .object({
-            printing: z.boolean().optional(),
-            modifying: z.boolean().optional(),
-            copying: z.boolean().optional(),
-            annotating: z.boolean().optional(),
-            accessibility: z.boolean().optional(),
-            assemble: z.boolean().optional(),
-            highQualityPrint: z.boolean().optional(),
-            fillForms: z.boolean().optional(),
-          })
-          .optional()
-          .describe("Permission flags for encrypted output."),
-      })
-      .optional()
-      .describe("Password-encrypt the output."),
-    conformance: z
-      .enum(["pdfa-1b", "pdfa-2b", "pdfa-3b", "pdfa-4", "pdfua-1", "pdfua-2", "wtpdf"])
-      .optional()
-      .describe("Validate and emit a PDF/A or PDF/UA conformance profile. PDF/UA implies tagged."),
-    language: z.string().optional().describe("BCP 47 language tag for the document."),
-    tagged: z.boolean().optional().describe("Emit a tagged (accessible) PDF structure tree."),
-    compress: z.boolean().optional().describe("Compress content streams. Defaults to true."),
-  })
-  .optional()
-  .describe("Document-level options (encryption, conformance, language, tagged, compress).");
-
 /** Server ----------------------------------------------------------------- */
 
 const server = new McpServer(
   { name: "zeropdf", version: "0.1.0" },
   {
     instructions:
-      "Generates and manipulates PDFs via @criston/zeropdf. To author a `generate_pdf` spec, " +
-      "first read the `zeropdf://template-schema` resource for the TemplateDocumentOptions / TemplateBlock " +
-      "types. PDFs are passed as filesystem paths. Write tools refuse to overwrite existing files unless " +
+      "Generates and manipulates PDFs via @criston/zeropdf. To author a `generate_pdf` document, first read " +
+      "the `zeropdf://document-schema` resource for the PdfDocumentJson / TemplateBlock types. PDFs and image/" +
+      "font file paths are workspace-scoped. Write tools refuse to overwrite existing files unless " +
       "`overwrite: true` is set.",
   },
 );
 
-/* generate_pdf — declarative template passthrough --------------------------- */
+/* generate_pdf — declarative JSON document via renderDocumentJson ------------ */
 
 server.registerTool(
   "generate_pdf",
   {
-    title: "Generate PDF from a template spec",
+    title: "Generate PDF from a JSON document",
     description:
-      "Render a PDF from a declarative zeropdf TemplateDocumentOptions JSON spec and write it to disk. " +
-      "The `spec` shape (blocks[], page, styles, pageNumber, autoOutline, info, title) is documented in the " +
-      "`zeropdf://template-schema` resource — read it first. Each block is discriminated by `type` " +
-      "(e.g. {\"type\":\"heading\",\"text\":\"...\",\"options\":{\"level\":1}}). Image blocks may reference a " +
-      "file with `path` (e.g. {\"type\":\"png\",\"path\":\"logo.png\"}) — its bytes are embedded. `header`/`footer` " +
-      "callbacks cannot be expressed in JSON; use `pageNumber` for page numbering. To combine or edit existing " +
-      "PDFs use merge_pdfs / append_pages / extract_pages instead.",
+      "Render a PDF from a single declarative zeropdf PdfDocumentJson value and write it to disk. The " +
+      "`document` describes everything: `blocks[]` (body), optional `page`, `styles`, `header`/`footer` " +
+      "(arrays with {{pageNumber}}/{{pageCount}}/{{title}}/{{author}} tokens), `fonts[]`, `defaultFont`, and " +
+      "document options (`title`, `info`, `encryption`, `conformance`, `tagged`, `language`, `compress`). " +
+      "Blocks are discriminated by `type` (e.g. {\"type\":\"heading\",\"text\":\"...\",\"options\":{\"level\":1}}). " +
+      "Images and fonts load from a workspace file `path` or inline `base64` (e.g. image block " +
+      "{\"type\":\"png\",\"src\":{\"path\":\"logo.png\"}}); `url` sources are not allowed. A block flows by " +
+      "default, or is placed at absolute PDF-point coordinates when it carries a `position`: " +
+      "{ x, y, width?, height?, page?, origin? } (e.g. {\"type\":\"textField\",\"name\":\"sig\"," +
+      "\"position\":{\"x\":72,\"y\":640,\"width\":220,\"height\":14}}). Positionable block types: paragraph, image " +
+      "(png/jpeg/...), rect, textField, checkBox, signatureField. The full shape is in the " +
+      "`zeropdf://document-schema` resource — read it first. To combine or edit existing PDFs use " +
+      "merge_pdfs / append_pages / extract_pages instead.",
     inputSchema: {
-      spec: z
-        .object({ blocks: z.array(z.record(z.unknown())) })
+      document: z
+        .object({ blocks: z.array(z.record(z.unknown())).min(1) })
         .passthrough()
-        .describe("TemplateDocumentOptions JSON. Must include a `blocks` array of template blocks."),
-      documentOptions: documentOptionsParam,
+        .describe(
+          "A PdfDocumentJson value. `blocks` is a non-empty array of flow blocks and/or " +
+            "positioned blocks (those with an x/x1/cx coordinate anchor).",
+        ),
       outputPath: z.string().describe("Filesystem path to write the resulting PDF to."),
       overwrite: overwriteParam,
     },
-    annotations: write("Generate PDF from a template spec"),
+    annotations: write("Generate PDF from a JSON document"),
   },
-  async ({ spec, documentOptions, outputPath, overwrite }) => {
+  async ({ document, outputPath, overwrite }) => {
     try {
-      await materializeImages(spec);
-      const doc = createDocument((documentOptions ?? {}) as DocumentOptions);
-      doc.renderTemplate(spec as unknown as TemplateDocumentOptions);
-      const bytes = doc.toUint8Array();
+      await inlineLocalSources(document); // scope file paths, reject url, inline as base64
+      const bytes = await renderDocumentJson(document as unknown as PdfDocumentJson);
       const full = await writePdf(outputPath, bytes, overwrite);
       return ok(`Wrote ${bytes.length} bytes to ${full}`);
     } catch (error) {
@@ -502,16 +468,16 @@ server.registerTool(
   },
 );
 
-/* Resource: template schema ------------------------------------------------- */
+/* Resource: document schema ------------------------------------------------- */
 
 server.registerResource(
-  "template-schema",
-  "zeropdf://template-schema",
+  "document-schema",
+  "zeropdf://document-schema",
   {
-    title: "zeropdf template type declarations",
+    title: "zeropdf PdfDocumentJson type declarations",
     description:
-      "TypeScript .d.ts declarations covering TemplateDocumentOptions and every TemplateBlock variant. " +
-      "Read this to author `generate_pdf` specs.",
+      "TypeScript .d.ts declarations for PdfDocumentJson (the `generate_pdf` `document` shape) and every " +
+      "TemplateBlock / style / option type it references. Read this to author `generate_pdf` documents.",
     mimeType: "text/plain",
   },
   async (uri) => {
@@ -520,15 +486,19 @@ server.registerResource(
   },
 );
 
-/** Loads the library's type declarations, whether running from node_modules or a bundle. */
+/** Loads the PdfDocumentJson + supporting type declarations, from node_modules or a bundle. */
 async function loadTypeDeclarations(): Promise<string> {
-  // Bundled (MCPB): shipped beside the entry as template-types.txt
-  // (mcpb pack strips *.d.ts, so it can't be named types.d.ts).
-  const beside = join(dirname(fileURLToPath(import.meta.url)), "template-types.txt");
+  // Bundled (MCPB): shipped beside the entry as document-types.txt
+  // (mcpb pack strips *.d.ts, so it can't be named *.d.ts).
+  const beside = join(dirname(fileURLToPath(import.meta.url)), "document-types.txt");
   if (await exists(beside)) return readFile(beside, "utf8");
   // Dev: resolve from the installed package. import.meta.resolve honors `exports`.
-  const entry = fileURLToPath(import.meta.resolve("@criston/zeropdf"));
-  return readFile(join(dirname(entry), "types.d.ts"), "utf8");
+  const dir = dirname(fileURLToPath(import.meta.resolve("@criston/zeropdf")));
+  const [documentJson, types] = await Promise.all([
+    readFile(join(dir, "document-json.d.ts"), "utf8"),
+    readFile(join(dir, "types.d.ts"), "utf8"),
+  ]);
+  return `${documentJson}\n\n/* ── Referenced template & option types ───────────────────── */\n\n${types}`;
 }
 
 /* Boot ---------------------------------------------------------------------- */
