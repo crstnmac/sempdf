@@ -8,7 +8,7 @@ Code, etc.) can call. PDFs move in and out as **filesystem paths**.
 
 | Tool             | Purpose                                                        |
 | ---------------- | -------------------------------------------------------------- |
-| `generate_pdf`   | Render a PDF from a declarative `TemplateDocumentOptions` spec  |
+| `generate_pdf`   | Render a PDF from a declarative `PdfDocumentJson` document       |
 | `extract_text`   | Pull text out of a PDF, per page                               |
 | `get_pdf_info`   | Document metadata + page count                                 |
 | `inspect_pdf`    | Forms, bookmarks, attachments, tagged/conformance flags        |
@@ -20,8 +20,9 @@ Code, etc.) can call. PDFs move in and out as **filesystem paths**.
 
 ### Resource
 
-`sempdf://template-schema` returns the library's type declarations so the model
-can author `generate_pdf` specs against the real type surface.
+`sempdf://document-schema` returns the library's `PdfDocumentJson` type
+declarations (plus the template/option types they reference) so the model can
+author `generate_pdf` documents against the real type surface.
 
 ## Filesystem scoping
 
@@ -91,11 +92,13 @@ the workspace directory at install time.
 
 ## `generate_pdf` example
 
-The `spec` argument is a `TemplateDocumentOptions` object. Minimal:
+The `document` argument is a single `PdfDocumentJson` value (rendered by the
+library's `renderDocumentJson`). It describes the whole PDF — body, page,
+header/footer, fonts, and document options. Minimal:
 
 ```json
 {
-  "spec": {
+  "document": {
     "title": "Hello",
     "page": { "size": "A4" },
     "blocks": [
@@ -107,13 +110,13 @@ The `spec` argument is a `TemplateDocumentOptions` object. Minimal:
 }
 ```
 
-Optional `documentOptions` (sibling of `spec`) covers document-level settings —
-encryption, conformance, language, tagged, compress:
+Document-level options live on the `document` root — encryption, conformance,
+language, tagged, compress:
 
 ```json
 {
-  "spec": { "blocks": [{ "type": "paragraph", "text": "Confidential." }] },
-  "documentOptions": {
+  "document": {
+    "blocks": [{ "type": "paragraph", "text": "Confidential." }],
     "encryption": { "userPassword": "open-sesame", "algorithm": "aes-256" },
     "tagged": true,
     "language": "en-US"
@@ -122,12 +125,49 @@ encryption, conformance, language, tagged, compress:
 }
 ```
 
-Image blocks embed a file by `path` (read relative to the workspace root):
+Fonts are declared once and referenced by name; images and fonts load from a
+workspace file `path` or inline `base64`. Header/footer are block arrays with
+`{{pageNumber}}` / `{{pageCount}}` / `{{title}}` / `{{author}}` tokens:
 
 ```json
-{ "type": "png", "path": "assets/logo.png", "options": { "width": 96 } }
+{
+  "document": {
+    "fonts": [{ "name": "Body", "source": { "google": { "family": "Inter" } } }],
+    "defaultFont": "Body",
+    "footer": [{ "type": "paragraph", "text": "Page {{pageNumber}} of {{pageCount}}" }],
+    "blocks": [
+      { "type": "png", "src": { "path": "assets/logo.png" }, "options": { "width": 96 } },
+      { "type": "heading", "text": "Report", "options": { "level": 1, "font": "Body" } }
+    ]
+  },
+  "outputPath": "./out/report.pdf"
+}
 ```
 
-> **Not expressible over JSON:** `header`/`footer` callbacks (use `pageNumber`)
-> and document signing (needs a signing callback — use the library's programmatic
-> API for that).
+For **absolute placement** (coordinate system), add a `position` to a block: any
+block with `position: { x, y, width?, height?, page?, origin? }` is drawn at exact
+PDF points instead of flowing. Positioned and flow blocks mix in the same
+`blocks` array. `origin` is `bottom-left` (default) or `top-left`; `page` is
+1-based:
+
+```json
+{
+  "document": {
+    "blocks": [
+      { "type": "paragraph", "text": "Body." },
+      { "type": "paragraph", "text": "PAID", "options": { "fontSize": 28, "color": "red" }, "position": { "x": 400, "y": 736 } },
+      { "type": "rect", "width": 130, "height": 48, "style": { "paint": "stroke", "stroke": { "color": "red" } }, "position": { "x": 380, "y": 720 } },
+      { "type": "textField", "name": "sig", "position": { "x": 72, "y": 600, "width": 220, "height": 14, "page": 1 } }
+    ]
+  },
+  "outputPath": "./out/stamped.pdf"
+}
+```
+
+Positionable block `type`s: `paragraph`, image (`png`/`jpeg`/…), `rect`,
+`textField`, `checkBox`, `signatureField`. A `position` on any other type is
+rejected.
+
+> **Not allowed in the MCP:** `url` font/image sources (use a workspace `path`
+> or `base64`). **Not expressible over JSON:** document signing (needs a signing
+> callback — use the library's programmatic API).

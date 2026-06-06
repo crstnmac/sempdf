@@ -18,6 +18,17 @@ export type {
   ShapedGlyph,
   TextShaper,
 } from "./internal/text-shaper.js";
+export { renderDocumentJson, renderDocumentJsonSync } from "./document-json.js";
+export type {
+  BlockPosition,
+  JsonBinarySource,
+  JsonBlock,
+  JsonFontDeclaration,
+  JsonFontFaces,
+  JsonFontSource,
+  JsonImageBlock,
+  PdfDocumentJson,
+} from "./document-json.js";
 export { PdfEngineError, PdfErrorCode } from "./errors.js";
 export { loadGoogleFont } from "./google-fonts.js";
 export type { LoadGoogleFontOptions } from "./google-fonts.js";

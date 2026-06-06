@@ -55,6 +55,14 @@ table.
 
 <<< ../../examples/website/samples/invoice.ts{ts}
 
+## JSON to PDF
+
+An entire document — metadata, a footer with page tokens, a table, and
+absolute-positioned blocks — described as one [`PdfDocumentJson`](./json-to-pdf)
+value and rendered with `renderDocumentJson()`.
+
+<<< ../../examples/json-to-pdf.ts{ts}
+
 ## Multi-column
 
 A two-column newspaper layout that flows paragraphs across columns.

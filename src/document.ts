@@ -4488,6 +4488,34 @@ export class PdfDocument {
     return new PdfPage(page, this.embeddedFonts, this.fontFamilies, this.textDefaults, options.origin ?? "bottom-left", this.shapeDefaults);
   }
 
+  /** The number of pages currently in the document. */
+  get pageCount(): number {
+    return this.pages.length;
+  }
+
+  /**
+   * Returns a {@link PdfPage} builder for an existing page, so already-created
+   * pages (for example those produced by `renderTemplate`) can be drawn on with
+   * the absolute coordinate APIs.
+   *
+   * @param index Zero-based page index.
+   * @param origin Coordinate origin for the returned builder. Defaults to "bottom-left".
+   *
+   * @returns A page builder writing into the existing page.
+   */
+  getPage(index: number, origin: "bottom-left" | "top-left" = "bottom-left"): PdfPage {
+    const page = this.pages[index];
+    if (page === undefined) {
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_PAGE,
+        `No page at index ${index}; the document has ${this.pages.length} page(s).`,
+      );
+    }
+    this._mutate();
+    this._unlock();
+    return new PdfPage(page, this.embeddedFonts, this.fontFamilies, this.textDefaults, origin, this.shapeDefaults);
+  }
+
   /**
    * Registers a named font family so text APIs can select a face with the
    * `bold` and `italic` flags instead of tracking individual font handles.
