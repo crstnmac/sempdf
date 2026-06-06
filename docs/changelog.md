@@ -2,6 +2,19 @@
 
 All notable changes to `@criston/zeropdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] - 2026-06-06
+
+### Added
+
+- `renderDocumentJson(document)` and `renderDocumentJsonSync(document)` — render a PDF from a single, fully serializable [`PdfDocumentJson`](./guide/json-to-pdf) value. Closes the three parts of the template API that cannot be expressed as JSON: fonts are declared by source (`base64` / file `path` / `url` / Google Fonts) and referenced by name; images carry a `src` instead of raw bytes; headers/footers are static block arrays with `{{pageNumber}}` / `{{pageCount}}` / `{{title}}` / `{{author}}` tokens. Document options (encryption, conformance, language, tagged, metadata) live on the root. `renderDocumentJson` is async (assets may load from disk or network); `renderDocumentJsonSync` handles fully inline (`base64`) documents.
+- Absolute positioning in `PdfDocumentJson`: add a `position` (`{ x, y, width?, height?, page?, origin? }`) to a block to draw it at exact PDF-point coordinates instead of flowing. Positionable types: `paragraph`, the image formats, `rect`, `textField`, `checkBox`, `signatureField`. Flow and positioned blocks mix in the same `blocks` array. See [JSON to PDF](./guide/json-to-pdf#absolute-positioning-coordinate-system).
+- `PdfDocument.getPage(index, origin?)` and `PdfDocument.pageCount` — return a `PdfPage` builder for an already-created page (for example one produced by `renderTemplate`), so finished pages can be drawn on with the absolute-coordinate APIs.
+- `PdfErrorCode.INVALID_DOCUMENT_JSON`, thrown for a malformed `PdfDocumentJson` with a message that names the offending path.
+
+### Fixed
+
+- `ParsedPdfDocument.extractText()` returned empty text for pages whose content stream was FlateDecode-compressed (common once a page carried a table, list, or header/footer). `getObject()` inflates a lazy stream while leaving its `Filter` in the dict; the extractor then decoded the already-inflated bytes a second time and silently discarded the page. Text and `ToUnicode` decoding now tolerate the pre-decoded bytes.
+
 ## [1.4.1] - 2026-06-03
 
 ### Added

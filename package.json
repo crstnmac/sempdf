@@ -1,6 +1,6 @@
 {
   "name": "@criston/zeropdf",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "description": "Zero-dependency PDF generation engine built in TypeScript.",
   "type": "module",
   "author": {
@@ -55,7 +55,8 @@
     "example:template-annotations": "npm run build && node dist/examples/template-annotations.js",
     "example:template-graphics": "npm run build && node dist/examples/template-graphics.js",
     "example:template-custom": "npm run build && node dist/examples/template-custom.js",
-    "example:web": "npm run build && node examples/website/server.mjs"
+    "example:web": "npm run build && node examples/website/server.mjs",
+    "example:json": "npm run build && node dist/examples/json-to-pdf.js"
   },
   "keywords": [
     "pdf",

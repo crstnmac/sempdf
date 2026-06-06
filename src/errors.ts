@@ -48,6 +48,8 @@ export enum PdfErrorCode {
   INVALID_PATH = "INVALID_PATH",
   /** Text content or text layout options are invalid. */
   INVALID_TEXT = "INVALID_TEXT",
+  /** A declarative JSON document description is malformed. */
+  INVALID_DOCUMENT_JSON = "INVALID_DOCUMENT_JSON",
   /** A graphics transform matrix is invalid. */
   INVALID_TRANSFORM = "INVALID_TRANSFORM",
   /** Text contains a character unsupported by the selected font set. */
