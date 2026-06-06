@@ -11,6 +11,7 @@ sempdf offers a few layers, from absolute drawing to automatic multi-page layout
 | Mixed fonts/sizes/colors/links on the same line | [`page.richText(runs, options)`](./text-and-fonts#inline-rich-text-mixed-styles-on-one-line) |
 | Inline link/highlight over a substring of a uniform paragraph | `paragraph` + `annotations` (see [Forms and Annotations](./forms-and-annotations)) |
 | Flowing content with auto-pagination, headers/footers | [`renderTemplate()`](./report-templates) or the [`PdfFlow`](./report-templates) cursor |
+| Whole document as one serializable value (config/API/LLM) | [`renderDocumentJson(document)`](./json-to-pdf) |
 | Know a size before drawing | [`doc.measureText` / `measureTextBlock` / `measureRichText`](./text-and-fonts#measuring-text) |
 | Draw and stack manually using the consumed height | `page.placeText` / `page.placeTextBlock` (return `endY`) |
 

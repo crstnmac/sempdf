@@ -67,7 +67,7 @@ describe("sempdf MCP server", () => {
         { type: "paragraph", text: "Page two of A." },
       ],
     };
-    const res = await call("generate_pdf", { spec, outputPath: a });
+    const res = await call("generate_pdf", { document: spec, outputPath: a });
     assert.ok(!res.isError, res.content[0].text);
     assert.ok(isPdf(a));
   });
@@ -81,7 +81,7 @@ describe("sempdf MCP server", () => {
         { type: "paragraph", text: "Only page of B." },
       ],
     };
-    const res = await call("generate_pdf", { spec, outputPath: b });
+    const res = await call("generate_pdf", { document: spec, outputPath: b });
     assert.ok(!res.isError, res.content[0].text);
     assert.ok(isPdf(b));
   });
@@ -100,12 +100,14 @@ describe("sempdf MCP server", () => {
 
   it("generate_pdf applies documentOptions (tagged + language)", async () => {
     const out = join(dir, "tagged.pdf");
-    const spec = { title: "Tagged", page: { size: "A4" }, blocks: [{ type: "paragraph", text: "Hi." }] };
-    const res = await call("generate_pdf", {
-      spec,
-      documentOptions: { tagged: true, language: "en-US" },
-      outputPath: out,
-    });
+    const document = {
+      title: "Tagged",
+      page: { size: "A4" },
+      tagged: true,
+      language: "en-US",
+      blocks: [{ type: "paragraph", text: "Hi." }],
+    };
+    const res = await call("generate_pdf", { document, outputPath: out });
     assert.ok(!res.isError, res.content[0].text);
     const inspected = await call("inspect_pdf", { path: out });
     const info = JSON.parse(inspected.content[0].text);
@@ -115,12 +117,11 @@ describe("sempdf MCP server", () => {
 
   it("generate_pdf encrypts output with a user password", async () => {
     const out = join(dir, "encrypted.pdf");
-    const spec = { blocks: [{ type: "paragraph", text: "secret" }] };
-    const res = await call("generate_pdf", {
-      spec,
-      documentOptions: { encryption: { userPassword: "pw", algorithm: "aes-256" } },
-      outputPath: out,
-    });
+    const document = {
+      blocks: [{ type: "paragraph", text: "secret" }],
+      encryption: { userPassword: "pw", algorithm: "aes-256" },
+    };
+    const res = await call("generate_pdf", { document, outputPath: out });
     assert.ok(!res.isError, res.content[0].text);
     assert.match(readFileSync(out).toString("latin1"), /\/Encrypt/);
   });
@@ -145,10 +146,37 @@ describe("sempdf MCP server", () => {
     const spec = {
       blocks: [
         { type: "paragraph", text: "Logo:" },
-        { type: "bmp", path: bmpPath, options: { width: 32 } },
+        { type: "bmp", src: { path: bmpPath }, options: { width: 32 } },
       ],
     };
-    const res = await call("generate_pdf", { spec, outputPath: out });
+    const res = await call("generate_pdf", { document: spec, outputPath: out });
+    assert.ok(!res.isError, res.content[0].text);
+    const info = await call("get_pdf_info", { path: out });
+    assert.equal(info.structuredContent.pageCount, 1);
+  });
+
+  it("generate_pdf places positioned blocks at absolute coordinates", async () => {
+    const out = join(dir, "positioned.pdf");
+    const document = {
+      page: { size: "A4" },
+      blocks: [
+        { type: "paragraph", text: "Body." },
+        { type: "paragraph", text: "Stamped", position: { x: 72, y: 640 } },
+        { type: "textField", name: "sig", position: { x: 72, y: 600, width: 220, height: 14 } },
+      ],
+    };
+    const res = await call("generate_pdf", { document, outputPath: out });
+    assert.ok(!res.isError, res.content[0].text);
+    const text = await call("extract_text", { path: out });
+    assert.match(text.structuredContent.pages[0].text, /Stamped/);
+  });
+
+  it("generate_pdf accepts a coordinate-only document", async () => {
+    const out = join(dir, "coords-only.pdf");
+    const res = await call("generate_pdf", {
+      document: { page: { size: "A4" }, blocks: [{ type: "paragraph", text: "Coords", position: { x: 80, y: 700 } }] },
+      outputPath: out,
+    });
     assert.ok(!res.isError, res.content[0].text);
     const info = await call("get_pdf_info", { path: out });
     assert.equal(info.structuredContent.pageCount, 1);
@@ -209,14 +237,14 @@ describe("sempdf MCP server", () => {
 
   it("write tools refuse to overwrite by default", async () => {
     const spec = { blocks: [{ type: "paragraph", text: "x" }] };
-    const blocked = await call("generate_pdf", { spec, outputPath: a });
+    const blocked = await call("generate_pdf", { document: spec, outputPath: a });
     assert.ok(blocked.isError);
     assert.match(blocked.content[0].text, /already exists/);
   });
 
   it("write tools overwrite when overwrite:true", async () => {
     const spec = { blocks: [{ type: "paragraph", text: "x" }] };
-    const res = await call("generate_pdf", { spec, outputPath: a, overwrite: true });
+    const res = await call("generate_pdf", { document: spec, outputPath: a, overwrite: true });
     assert.ok(!res.isError, res.content[0].text);
   });
 
@@ -228,14 +256,23 @@ describe("sempdf MCP server", () => {
 
   it("returns a tool error for an invalid template block", async () => {
     const res = await call("generate_pdf", {
-      spec: { blocks: [{ type: "bogus_block_kind" }] },
+      document: { blocks: [{ type: "bogus_block_kind" }] },
       outputPath: join(dir, "bad.pdf"),
     });
     assert.ok(res.isError);
   });
 
-  it("serves the template-schema resource", async () => {
-    const res = await client.readResource({ uri: "sempdf://template-schema" });
-    assert.match(res.contents[0].text, /TemplateDocumentOptions/);
+  it("rejects url sources in generate_pdf", async () => {
+    const res = await call("generate_pdf", {
+      document: { blocks: [{ type: "png", src: { url: "https://example.com/x.png" } }] },
+      outputPath: join(dir, "url.pdf"),
+    });
+    assert.ok(res.isError);
+    assert.match(res.content[0].text, /url/i);
+  });
+
+  it("serves the document-schema resource", async () => {
+    const res = await client.readResource({ uri: "sempdf://document-schema" });
+    assert.match(res.contents[0].text, /PdfDocumentJson/);
   });
 });

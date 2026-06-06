@@ -1992,6 +1992,21 @@ function parseObjectStream(
   return values;
 }
 
+/**
+ * Decodes a stream's bytes, tolerating a stream object whose bytes were already
+ * inflated by {@link ParsedPdfDocument.getObject} while its dict still advertises
+ * a Filter. A second decode of already-decoded bytes throws, in which case the
+ * bytes are already plain and returned as-is. Best-effort: also returns the raw
+ * bytes for genuinely undecodable streams.
+ */
+function decodeStreamBytesLenient(streamValue: PdfStream, context: string): Uint8Array {
+  try {
+    return decodePdfStreamBytes(streamValue, context);
+  } catch {
+    return streamValue.bytes;
+  }
+}
+
 function decodePdfStreamBytes(
   streamValue: PdfStream,
   context: string,
@@ -2728,11 +2743,9 @@ function readPageContentStreams(document: ParsedPdfDocument, page: ParsedPdfPage
   for (const contentObjectId of page.contentObjectIds) {
     const object = document.getObject(contentObjectId);
     if (!object || !isPdfStream(object.value)) continue;
-    try {
-      parts.push(decodeLatin1(decodePdfStreamBytes(object.value, "page content stream")));
-    } catch {
-      // Best-effort: skip unsupported streams.
-    }
+    // getObject() may have already inflated a lazy stream while leaving its
+    // Filter in the dict; decodeStreamBytesLenient handles that double-decode.
+    parts.push(decodeLatin1(decodeStreamBytesLenient(object.value, "page content stream")));
   }
   return parts.join("\n");
 }
@@ -2756,7 +2769,7 @@ function collectPageFonts(document: ParsedPdfDocument, resources: PdfDict | unde
       const cmapObject = document.getObject(toUnicodeRef.objectId);
       if (cmapObject && isPdfStream(cmapObject.value)) {
         try {
-          const source = decodeLatin1(decodePdfStreamBytes(cmapObject.value, "ToUnicode CMap"));
+          const source = decodeLatin1(decodeStreamBytesLenient(cmapObject.value, "ToUnicode CMap"));
           const parsed = parseToUnicodeCMap(source);
           toUnicode = parsed;
           if (parsed.codeRanges.length > 0) codeRanges = parsed.codeRanges;

@@ -30,7 +30,7 @@
     }
   },
   "tools": [
-    { "name": "generate_pdf", "description": "Render a PDF from a declarative template spec." },
+    { "name": "generate_pdf", "description": "Render a PDF from a declarative JSON document (text, tables, images, fonts, headers)." },
     { "name": "extract_text", "description": "Extract text from a PDF, per page." },
     { "name": "get_pdf_info", "description": "Read PDF metadata and page count." },
     { "name": "inspect_pdf", "description": "Read forms, bookmarks, attachments, and accessibility flags." },
