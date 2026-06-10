@@ -296,6 +296,102 @@ test("infers structure bounding boxes and supports flow-authored tagged content"
   assert.equal(root?.children?.[2]?.children?.[0]?.role, "Link");
 });
 
+test("richParagraph emits tagged structure content with text and mcids", () => {
+  const doc = createDocument({
+    tagged: true,
+    language: "en-US",
+    structureRoot: "Document"
+  });
+  const page = doc.addPage({ size: "Letter" });
+
+  page.richText(
+    [
+      { text: "Hello ", bold: true },
+      { text: "world", italic: true }
+    ],
+    { x: 36, y: 720, width: 200, tag: "P" }
+  );
+
+  const inspected = parseDocument(doc.toUint8Array()).inspectStructureElements();
+  const pElement = inspected[0]?.children?.find((e) => e.role === "P");
+  assert.ok(pElement, "richText should produce a P structure element");
+  assert.equal(pElement?.text, "Hello world");
+
+  const struct = parseDocument(doc.toUint8Array()).listStructureElements();
+  const pStruct = struct[0]?.children?.find((e) => e.role === "P");
+  assert.ok(pStruct?.mcids, "richText P element should have mcids");
+  assert.ok(pStruct!.mcids!.length > 0, "richText P element mcids should not be empty");
+});
+
+test("flow richParagraph emits tagged structure content with text and mcids", () => {
+  const doc = createDocument({
+    tagged: true,
+    language: "en-US",
+    structureRoot: "Document"
+  });
+  const page = doc.addPage({ size: "Letter" });
+
+  page.flow({ margin: 48, width: 300 })
+    .richParagraph(
+      [
+        { text: "Bold ", bold: true },
+        { text: "and italic", italic: true }
+      ],
+      { tag: "P" }
+    );
+
+  const inspected = parseDocument(doc.toUint8Array()).inspectStructureElements();
+  const pElement = inspected[0]?.children?.find((e) => e.role === "P");
+  assert.ok(pElement, "flow richParagraph should produce a P structure element");
+  assert.equal(pElement?.text, "Bold and italic");
+
+  const struct = parseDocument(doc.toUint8Array()).listStructureElements();
+  const pStruct = struct[0]?.children?.find((e) => e.role === "P");
+  assert.ok(pStruct?.mcids, "flow richParagraph P element should have mcids");
+  assert.ok(pStruct!.mcids!.length > 0, "flow richParagraph P element mcids should not be empty");
+});
+
+test("richParagraph uses custom tag on structure element", () => {
+  const doc = createDocument({
+    tagged: true,
+    language: "en-US",
+    structureRoot: "Document"
+  });
+  const page = doc.addPage({ size: "Letter" });
+
+  page.flow({ margin: 48, width: 300 })
+    .richParagraph(
+      [{ text: "Custom tagged content" }],
+      { tag: "H3" }
+    );
+
+  const struct = parseDocument(doc.toUint8Array()).listStructureElements();
+  const h3Element = struct[0]?.children?.find((e) => e.role === "H3");
+  assert.ok(h3Element, "richParagraph should accept custom tag H3");
+  assert.ok(h3Element?.mcids?.length, "H3 element should have mcids");
+});
+
+test("richParagraph multiple paragraphs each have distinct mcids", () => {
+  const doc = createDocument({
+    tagged: true,
+    language: "en-US",
+    structureRoot: "Document"
+  });
+  const page = doc.addPage({ size: "Letter" });
+
+  page.flow({ margin: 48, width: 300 })
+    .richParagraph([{ text: "First paragraph" }])
+    .richParagraph([{ text: "Second paragraph" }]);
+
+  const struct = parseDocument(doc.toUint8Array()).listStructureElements();
+  const pElements = struct[0]?.children?.filter((e) => e.role === "P") ?? [];
+  assert.equal(pElements.length, 2, "should have two P elements");
+  for (const [i, p] of pElements.entries()) {
+    assert.ok(p.mcids, `P element ${i} should have mcids`);
+    assert.ok(p.mcids!.length > 0, `P element ${i} mcids should not be empty`);
+  }
+});
+
 test("flow block margins control placement without legacy spacing props", () => {
   const doc = createDocument({
     tagged: true,
