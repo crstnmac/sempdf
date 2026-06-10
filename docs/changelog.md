@@ -2,6 +2,17 @@
 
 All notable changes to `@criston/zeropdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.5.2] - 2026-06-10
+
+### Added
+
+- `loadExtensionFont(doc, family, paths)` and `loadExtensionFontBytes(path)` — load font files bundled with a Chrome extension via `chrome.runtime.getURL()` and register them as a font family in one call. Fonts are fetched in parallel and passed to `registerFontFamily()`. Exported as `@criston/zeropdf/chrome-extension-fonts`.
+
+### Docs
+
+- New **Chrome Extension Fonts** section in [Text and Fonts](./guide/text-and-fonts#chrome-extension-fonts) guide.
+- New **Chrome Extensions** section in [Browser Usage](./guide/browser-usage#chrome-extensions) guide.
+
 ## [1.5.1] - 2026-06-10
 
 ### Fixed

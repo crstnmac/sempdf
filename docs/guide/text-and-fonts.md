@@ -61,6 +61,50 @@ Options: `weight` (1–1000, default 400), `italic` (default false), `text` (res
 The Google Fonts API serves **woff2** (Brotli-compressed) to clients that advertise woff2 support — including browsers — and this zero-dependency engine cannot decode woff2. Node's `fetch` does not advertise woff2, so it receives an embeddable `.ttf`/`.otf`. Call `loadGoogleFont()` from Node. In the browser, download a `.ttf`/`.otf` yourself (for example from [@fontsource](https://fontsource.org/)) and pass the bytes straight to `embedTrueTypeFont()`.
 :::
 
+## Chrome Extension Fonts
+
+`loadExtensionFont()` loads font files bundled with a Chrome extension and registers them as a named family in one call, ready for `text()`, `textBlock()`, and flow/template APIs:
+
+```ts
+import { createDocument } from "@criston/zeropdf";
+import { loadExtensionFont } from "@criston/zeropdf/chrome-extension-fonts";
+
+const doc = createDocument({ language: "en-US" });
+await loadExtensionFont(doc, "Roboto", {
+  regular: "fonts/Roboto-Regular.ttf",
+  bold: "fonts/Roboto-Bold.ttf",
+  italic: "fonts/Roboto-Italic.ttf",
+  boldItalic: "fonts/Roboto-BoldItalic.ttf",
+});
+
+doc.addPage().text("Hello from Roboto", { x: 56, y: 760, font: "Roboto", fontSize: 24 });
+doc.addPage().text("Roboto Bold", { x: 56, y: 730, font: "Roboto", bold: true });
+```
+
+Each path is relative to the extension root and resolved via `chrome.runtime.getURL()`. Fonts are fetched in parallel, converted to bytes, and passed to [`registerFontFamily()`](./text-and-fonts#embedded-fonts-font-families). Only `regular` is required — missing faces fall back to the closest available one.
+
+For more control, use `loadExtensionFontBytes()` to fetch a single face and register it yourself:
+
+```ts
+import { loadExtensionFontBytes } from "@criston/zeropdf/chrome-extension-fonts";
+
+const bytes = await loadExtensionFontBytes("fonts/Inter-Regular.ttf");
+const inter = doc.embedTrueTypeFont(bytes, { family: "Inter" });
+```
+
+::: warning Extension context only
+`loadExtensionFont()` and `loadExtensionFontBytes()` require `chrome.runtime.getURL` to be available. They work in service workers, background scripts, and extension pages. When used from a content script, the font files must be listed in `web_accessible_resources` in `manifest.json`:
+
+```json
+{
+  "web_accessible_resources": [{
+    "resources": ["fonts/*.ttf"],
+    "matches": ["<all_urls>"]
+  }]
+}
+```
+:::
+
 ## Font weights and styles (bold & italic)
 
 The library does not synthesize bold or italic with a faux transform — each weight is a real font face for correct glyph metrics. But you don't have to juggle face names by hand: the `bold` and `italic` options on `text()` and `textBlock()` resolve to the right face.
