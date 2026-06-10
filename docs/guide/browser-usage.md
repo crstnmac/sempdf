@@ -47,6 +47,10 @@ The core engine — generation, parsing, editing, fonts, images, tables, templat
 
 The Node-only sinks load `node:fs` through a lazy dynamic `import()`, so bundlers building for the browser will not pull them into the core path.
 
+## Chrome Extensions
+
+When running inside a Chrome extension, use [`loadExtensionFont()`](./text-and-fonts#chrome-extension-fonts) to load font files bundled with the extension. Fonts bundled as `.ttf`/`.otf` files are fetched via `chrome.runtime.getURL()` and registered in one call.
+
 ## Playground
 
 The repo includes a browser playground in `examples/website`: write template code on the left and see the rendered PDF on the right, all in-browser.

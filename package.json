@@ -1,6 +1,6 @@
 {
   "name": "@criston/sempdf",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "Zero-dependency PDF generation engine built in TypeScript.",
   "type": "module",
   "author": {
@@ -13,6 +13,10 @@
     ".": {
       "types": "./dist/src/index.d.ts",
       "import": "./dist/src/index.js"
+    },
+    "./chrome-extension-fonts": {
+      "types": "./dist/src/chrome-extension-fonts.d.ts",
+      "import": "./dist/src/chrome-extension-fonts.js"
     }
   },
   "files": [
