@@ -112,7 +112,7 @@ doc.renderTemplate({
 ```
 
 ::: warning Extension context only
-`loadExtensionFont()`, `loadExtensionFontBytes()`, and `loadExtensionFontFaces()` require `chrome.runtime.getURL` to be available. They work in service workers, background scripts, and extension pages. When used from a content script, the font files must be listed in `web_accessible_resources` in `manifest.json`:
+`loadExtensionFont()`, `loadExtensionFontBytes()`, and `loadExtensionFontFaces()` require `chrome.runtime.getURL` to be available. They work in service workers, background scripts, and extension pages. When used from a content script, the font files must be listed in `web_accessible_resources` in `manifest.json` — a `Failed to fetch` error from a content script almost always means this entry is missing or its `matches` pattern does not cover the current page:
 
 ```json
 {

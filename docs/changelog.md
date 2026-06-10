@@ -2,6 +2,22 @@
 
 All notable changes to `@criston/zeropdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.5.4] - 2026-06-10
+
+### Changed
+
+- Font family names are now matched **case-insensitively** (like CSS `font-family`). Registering a font as `"Roboto"` and referencing it as `"roboto"` or `"ROBOTO"` in text/template APIs now works correctly. This applies to `registerFontFamily()`, `renderTemplate({ fonts })`, and all text APIs.
+
+### Fixed
+
+- `loadExtensionFontBytes()` now strips `"./"` prefixes from paths before resolving via `chrome.runtime.getURL()`, which would otherwise produce URLs that fail to fetch.
+- `loadExtensionFontBytes()` now accepts absolute extension URLs (`chrome-extension://...`, `moz-extension://...`, `https://...`), passing them through without calling `getURL`.
+- `loadExtensionFontBytes()` wraps `fetch` failures with a detailed diagnostic message mentioning `web_accessible_resources`, file path, and case-sensitivity — saving debugging time when a content script can't reach a bundled font.
+
+### Tests
+
+- New `test/chrome-extension-fonts.test.ts` covering `getURL` resolution, `./` prefix stripping, absolute URL passthrough, network failure diagnostics, non-extension context errors, family registration with case-insensitive matching, and face selection.
+
 ## [1.5.3] - 2026-06-10
 
 ### Added
