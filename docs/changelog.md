@@ -2,6 +2,12 @@
 
 All notable changes to `@criston/zeropdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.5.1] - 2026-06-10
+
+### Fixed
+
+- `PdfFlow.richParagraph()` and `PdfPage.richText()` produced text ops without a `tag`, so the tagged PDF structure tree showed the `P` element with empty marked-content identifiers. The block-level tag now flows through to each run's options so the structure tree carries the correct MCIDs.
+
 ## [1.5.0] - 2026-06-06
 
 ### Added
