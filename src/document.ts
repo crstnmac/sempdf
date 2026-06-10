@@ -556,6 +556,7 @@ type RichBlockStyle = {
   fontSize?: number | undefined;
   color?: ColorInput | undefined;
   kerning?: boolean | undefined;
+  tag?: import("./types.js").PdfTextStructureTag | "Artifact" | undefined;
 };
 
 /**
@@ -587,6 +588,7 @@ function buildRichRunInputs(
       ...(fontSize !== undefined ? { fontSize } : {}),
       ...(color !== undefined ? { color } : {}),
       ...(kerning !== undefined ? { kerning } : {}),
+      ...(block.tag !== undefined ? { tag: block.tag } : {}),
       ...(run.characterSpacing !== undefined ? { characterSpacing: run.characterSpacing } : {}),
     };
     return {
@@ -1579,6 +1581,7 @@ export class PdfFlow {
       ...(fontSize !== undefined ? { fontSize } : {}),
       ...(color !== undefined ? { color } : {}),
       ...(kerning !== undefined ? { kerning } : {}),
+      tag: options.tag ?? "P",
     };
     const inputs = buildRichRunInputs(runs, blockStyle, this.fontFamilies, this.textDefaults);
     const normalizedRuns = normalizeRichRuns(inputs);
@@ -2062,6 +2065,7 @@ export class PdfFlow {
       ...((options.fontSize ?? this.state.fontSize) !== undefined ? { fontSize: options.fontSize ?? this.state.fontSize } : {}),
       ...((options.color ?? this.state.color) !== undefined ? { color: options.color ?? this.state.color } : {}),
       ...((options.kerning ?? this.state.kerning) !== undefined ? { kerning: options.kerning ?? this.state.kerning } : {}),
+      tag: options.tag ?? "P",
     };
     const inputs = buildRichRunInputs(runs, blockStyle, this.fontFamilies, this.textDefaults);
     const normalizedRuns = normalizeRichRuns(inputs);
