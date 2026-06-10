@@ -38,18 +38,9 @@ export async function loadExtensionFontBytes(path: string): Promise<Uint8Array> 
   return new Uint8Array(await response.arrayBuffer());
 }
 
-export async function loadExtensionFont(
-  doc: PdfDocument,
-  family: string,
+export async function loadExtensionFontFaces(
   paths: ExtensionFontPaths,
-): Promise<string> {
-  if (typeof family !== "string" || family.trim().length === 0) {
-    throw new PdfEngineError(
-      PdfErrorCode.INVALID_FONT,
-      "Font family name must be a non-empty string.",
-    );
-  }
-
+): Promise<FontFamilyInput> {
   const [regular, bold, italic, boldItalic] = await Promise.all([
     loadExtensionFontBytes(paths.regular),
     paths.bold !== undefined ? loadExtensionFontBytes(paths.bold) : undefined,
@@ -62,5 +53,21 @@ export async function loadExtensionFont(
   if (italic !== undefined) faces.italic = italic;
   if (boldItalic !== undefined) faces.boldItalic = boldItalic;
 
+  return faces;
+}
+
+export async function loadExtensionFont(
+  doc: PdfDocument,
+  family: string,
+  paths: ExtensionFontPaths,
+): Promise<string> {
+  if (typeof family !== "string" || family.trim().length === 0) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_FONT,
+      "Font family name must be a non-empty string.",
+    );
+  }
+
+  const faces = await loadExtensionFontFaces(paths);
   return doc.registerFontFamily(family, faces);
 }

@@ -4646,6 +4646,21 @@ export class PdfDocument {
   /**
    * Renders a template document into this PDF document.
    *
+   * Use the `fonts` option to register embedded font families before
+   * rendering so they are available by name in template blocks and styles:
+   *
+   * ```ts
+   * doc.renderTemplate({
+   *   blocks: [ ... ],
+   *   fonts: {
+   *     Inter: {
+   *       regular: interRegularBytes,
+   *       bold: interBoldBytes,
+   *     }
+   *   }
+   * });
+   * ```
+   *
    * @param options Options that control the operation.
    */
   renderTemplate(options: TemplateDocumentOptions): void {
@@ -4656,6 +4671,11 @@ export class PdfDocument {
     }
     if (options.title !== undefined || "xmpMetadata" in options) {
       this.setXmpMetadata(applyDocumentTitleToXmpMetadata(options.title, options.xmpMetadata));
+    }
+    if (options.fonts !== undefined) {
+      for (const [name, faces] of Object.entries(options.fonts)) {
+        this.registerFontFamily(name, faces);
+      }
     }
     renderTemplateDocument(this, options, {
       title: this.info.title,

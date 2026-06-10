@@ -30,7 +30,7 @@ export type {
   PdfDocumentJson,
 } from "./document-json.js";
 export { PdfEngineError, PdfErrorCode } from "./errors.js";
-export { loadExtensionFont, loadExtensionFontBytes } from "./chrome-extension-fonts.js";
+export { loadExtensionFont, loadExtensionFontBytes, loadExtensionFontFaces } from "./chrome-extension-fonts.js";
 export type { ExtensionFontPaths } from "./chrome-extension-fonts.js";
 export { loadGoogleFont } from "./google-fonts.js";
 export type { LoadGoogleFontOptions } from "./google-fonts.js";
