@@ -1912,6 +1912,27 @@ export interface TemplateDocumentOptions {
   /** Child template blocks to render. */
   blocks: readonly TemplateBlock[];
   /**
+   * Named font families to register before rendering. Keys are family names;
+   * values are the faces that make up each family. Each face may be a built-in
+   * {@link FontName}, a handle from {@link PdfDocument.embedTrueTypeFont}, or
+   * raw TrueType/OpenType bytes (embedded automatically under the family name).
+   * Registered families are available by name in template blocks, styles, and
+   * the `defaultFont` option.
+   *
+   * ```ts
+   * doc.renderTemplate({
+   *   blocks: [...],
+   *   fonts: {
+   *     Inter: {
+   *       regular: interRegularBytes,
+   *       bold: interBoldBytes
+   *     }
+   *   }
+   * });
+   * ```
+   */
+  fonts?: Record<string, FontFamilyInput> | undefined;
+  /**
    * Reusable named styles merged beneath each block's inline `options`.
    * See {@link TemplateStylesheet} for the selector and cascade rules.
    */

@@ -2,6 +2,18 @@
 
 All notable changes to `@criston/zeropdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.5.3] - 2026-06-10
+
+### Added
+
+- `renderTemplate()` now accepts a `fonts` option — a `Record<string, FontFamilyInput>` of family-name → faces that are registered before the template renders. Faces accept raw bytes, embedded handles, or built-in names.
+- `loadExtensionFontFaces(paths)` — loads bundled extension font files and returns `FontFamilyInput` without registering, so it composes directly with `renderTemplate({ fonts })`.
+
+### Docs
+
+- New **Embedded fonts in templates** section in [Report Templates](./guide/report-templates) guide.
+- Updated [Text and Fonts](./guide/text-and-fonts) guide with `renderTemplate({ fonts })` and `loadExtensionFontFaces()` examples.
+
 ## [1.5.2] - 2026-06-10
 
 ### Added
