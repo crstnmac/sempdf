@@ -186,3 +186,74 @@ test("loadExtensionFontFaces fetches only the provided faces", async () => {
     },
   );
 });
+
+test("registered family resolves in template tables and lists (page-level font)", () => {
+  const fontPath = findTrueTypeFixturePath();
+  if (!fontPath) {
+    return;
+  }
+  const fontBytes = readFileSync(fontPath);
+  const doc = createDocument();
+  doc.registerFontFamily("Roboto", { regular: new Uint8Array(fontBytes) });
+  doc.renderTemplate({
+    page: { size: "A4", margin: 70, font: "Roboto" },
+    pageNumber: { region: "footer", align: "right" },
+    blocks: [
+      { type: "heading", text: "Title", options: { level: 1, bold: true } },
+      { type: "paragraph", text: "Body" },
+      {
+        type: "table",
+        rows: [
+          [{ text: "Results", header: true }, { text: "Level A", header: true }],
+          ["Fail", "3"],
+        ],
+        options: { headerRows: 1 },
+      },
+      { type: "list", items: ["one", "two"] },
+    ],
+  });
+  assert.ok(doc.toUint8Array().length > 0);
+});
+
+test("flow table and list resolve a registered family font", () => {
+  const fontPath = findTrueTypeFixturePath();
+  if (!fontPath) {
+    return;
+  }
+  const fontBytes = readFileSync(fontPath);
+  const doc = createDocument();
+  doc.registerFontFamily("Roboto", { regular: new Uint8Array(fontBytes) });
+  const flow = doc.addPage().flow({ font: "Roboto" });
+  flow.table([["a", "b"], ["c", "d"]]);
+  flow.list(["one", "two"], {});
+  assert.ok(doc.toUint8Array().length > 0);
+});
+
+test("table cell bold flag resolves the built-in bold variant", () => {
+  const doc = createDocument();
+  doc.addPage().table(
+    [[{ text: "Results", header: true, bold: true }, "plain"]],
+    { x: 56, y: 700, width: 300 },
+  );
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/Helvetica-Bold/);
+});
+
+test("table cell bold flag picks the bold face of a registered family", () => {
+  const fontPath = findTrueTypeFixturePath();
+  if (!fontPath) {
+    return;
+  }
+  const fontBytes = readFileSync(fontPath);
+  const doc = createDocument();
+  // Bold face registered as a built-in name so the output is assertable.
+  doc.registerFontFamily("Roboto", {
+    regular: new Uint8Array(fontBytes),
+    bold: "Helvetica-Bold",
+  });
+  const flow = doc.addPage().flow({ font: "Roboto" });
+  flow.table([[{ text: "Header", bold: true }, "body"]]);
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/Helvetica-Bold/);
+  assert.match(text, /\/FontFile2/);
+});

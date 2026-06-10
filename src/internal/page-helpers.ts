@@ -901,6 +901,7 @@ export function layoutTable(
         cell.text,
         {
           ...options,
+          ...(cell.font !== undefined ? { font: cell.font } : {}),
           x: cellX + options.cellPadding,
           y: y - options.cellPadding,
           width: textWidth,

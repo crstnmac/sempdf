@@ -116,7 +116,7 @@ doc.renderTemplate({
 | `paragraph` | Body text with wrapping |
 | `richParagraph` | Inline runs with mixed fonts/sizes/colors/links on one line ([Inline rich text](./text-and-fonts#inline-rich-text-mixed-styles-on-one-line)) |
 | `heading` | H1–H6 with semantic spacing |
-| `table` | Grid with header rows/columns |
+| `table` | Grid with header rows/columns; cells take `bold`/`italic` flags that resolve against the table font (built-in variant or registered family face) |
 | `image` | Embedded JPEG/PNG with alt text |
 | `link` | URI link with paragraph spacing |
 | `list` | Ordered/unordered/nested |

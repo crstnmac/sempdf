@@ -90,6 +90,7 @@ import {
   normalizeTableOptions,
   normalizeTableRows,
   normalizeTextBlockOptions,
+  resolveStyledFont,
   normalizeTextFieldOptions,
   normalizeXmpMetadata,
   resolvePageSize,
@@ -107,6 +108,7 @@ import {
   type NormalizedDocumentInfo,
   type NormalizedHighlightAnnotationOptions,
   type NormalizedPageLabelOptions,
+  type NormalizedTableRow,
   type ResolvedPageSize,
 } from "./internal/validation.js";
 import {
@@ -531,6 +533,34 @@ function resolveFontFamilyOptions<T extends StyleableTextOptions>(
 }
 
 /**
+ * Resolves each table cell's `bold`/`italic` flags to a concrete per-cell font
+ * against the table's requested font: a registered family picks the matching
+ * face, a built-in base family picks its standard-14 variant. Cells without
+ * style flags are returned unchanged and inherit the table font.
+ */
+function resolveTableCellFonts(
+  rows: NormalizedTableRow[],
+  baseFont: PdfFont | undefined,
+  families: ReadonlyMap<string, FontFamilyFaces>,
+): NormalizedTableRow[] {
+  return rows.map((row) =>
+    row.map((cell) => {
+      if (cell.bold !== true && cell.italic !== true) {
+        return cell;
+      }
+      const styled = resolveFontFamilyOptions(
+        { font: baseFont ?? "Helvetica", bold: cell.bold, italic: cell.italic },
+        families,
+      );
+      return {
+        ...cell,
+        font: resolveStyledFont(styled.font ?? "Helvetica", styled.bold, styled.italic),
+      };
+    }),
+  );
+}
+
+/**
  * Fills in document-wide text defaults for any text option omitted on the call.
  * Per-call options always win; defaults only supply missing values.
  */
@@ -698,8 +728,13 @@ export class PdfStructureContainer {
    * @param options Options that control the operation.
    */
   table(rows: readonly TableRow[], options: TableOptions): this {
-    const normalizedRows = normalizeTableRows(rows);
-    const normalizedOptions = normalizeTableOptions(normalizedRows, options);
+    const resolvedOptions = resolveFontFamilyOptions(options, this.fontFamilies);
+    const normalizedRows = resolveTableCellFonts(
+      normalizeTableRows(rows),
+      options.font,
+      this.fontFamilies,
+    );
+    const normalizedOptions = normalizeTableOptions(normalizedRows, resolvedOptions);
     layoutTable(
       this.page,
       createStructureNode(
@@ -1918,19 +1953,23 @@ export class PdfFlow {
     this.advanceColumnIfNeeded(this.estimateTableHeight(rows, options));
     const spacing = this.resolveSpacing("table", options);
     this.applyMarginTop(spacing.before);
-    const normalizedRows = normalizeTableRows(rows);
+    const normalizedRows = resolveTableCellFonts(
+      normalizeTableRows(rows),
+      options.font ?? this.state.font,
+      this.fontFamilies,
+    );
     const innerWidth = Math.max(
       this.state.width - spacing.left - spacing.right,
       1,
     );
     const width = options.width ?? innerWidth;
-    const normalizedOptions = normalizeTableOptions(normalizedRows, {
+    const normalizedOptions = normalizeTableOptions(normalizedRows, resolveFontFamilyOptions({
       ...flowTextDefaults(this.state),
       ...options,
       x: this.state.x + spacing.left,
       y: this.state.y,
       width,
-    });
+    }, this.fontFamilies));
     const nextY = layoutTable(
       this.page,
       createStructureNode(
@@ -2132,16 +2171,20 @@ export class PdfFlow {
     options: FlowTableOptions = {},
   ): number[] {
     const spacing = this.resolveSpacing("table", options);
-    const normalizedRows = normalizeTableRows(rows);
+    const normalizedRows = resolveTableCellFonts(
+      normalizeTableRows(rows),
+      options.font ?? this.state.font,
+      this.fontFamilies,
+    );
     const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
     const width = options.width ?? innerWidth;
-    const normalizedOptions = normalizeTableOptions(normalizedRows, {
+    const normalizedOptions = normalizeTableOptions(normalizedRows, resolveFontFamilyOptions({
       ...flowTextDefaults(this.state),
       ...options,
       x: this.state.x,
       y: this.state.y,
       width,
-    });
+    }, this.fontFamilies));
     const rowSpanOccupancy = new Map<number, number>();
     const heights: number[] = [];
 
@@ -2170,6 +2213,7 @@ export class PdfFlow {
           cell.text,
           {
             ...normalizedOptions,
+            ...(cell.font !== undefined ? { font: cell.font } : {}),
             x: this.state.x + normalizedOptions.cellPadding,
             y: this.state.y - normalizedOptions.cellPadding,
             width: textWidth,
@@ -2276,12 +2320,12 @@ export class PdfFlow {
     options: Omit<ListOptions, "x" | "y">,
   ): number {
     const normalizedItems = normalizeListItems(items);
-    const normalizedOptions = normalizeListOptions(normalizedItems, {
+    const normalizedOptions = normalizeListOptions(normalizedItems, resolveFontFamilyOptions({
       ...flowTextDefaults(this.state),
       x: this.state.x,
       y: this.state.y,
       ...options,
-    });
+    }, this.fontFamilies));
     const itemSpacing = normalizedOptions.itemSpacing ?? 2;
     let height = 0;
     for (const item of normalizedItems) {
@@ -3113,13 +3157,13 @@ export class PdfFlow {
     const normalizedItems = normalizeListItems(items);
     const x = options.x ?? this.state.x + spacing.left;
     const width = options.width ?? Math.max(this.state.width - spacing.left - spacing.right, 1);
-    const normalizedOptions = normalizeListOptions(normalizedItems, {
+    const normalizedOptions = normalizeListOptions(normalizedItems, resolveFontFamilyOptions({
       ...flowTextDefaults(this.state),
       ...options,
       x,
       y: this.state.y,
       width,
-    });
+    }, this.fontFamilies));
     const listNode = createStructureNode(
       this.page,
       "L",
@@ -3401,8 +3445,13 @@ export class PdfPage {
    * @param options Options that control the operation.
    */
   table(rows: readonly TableRow[], options: TableOptions): this {
-    const normalizedRows = normalizeTableRows(rows);
-    const normalizedOptions = normalizeTableOptions(normalizedRows, options);
+    const resolvedOptions = resolveFontFamilyOptions(options, this.fontFamilies);
+    const normalizedRows = resolveTableCellFonts(
+      normalizeTableRows(rows),
+      options.font,
+      this.fontFamilies,
+    );
+    const normalizedOptions = normalizeTableOptions(normalizedRows, resolvedOptions);
     layoutTable(
       this.page,
       createStructureNode(this.page, "Table", normalizedOptions.structure),

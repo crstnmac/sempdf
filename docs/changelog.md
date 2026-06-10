@@ -2,6 +2,16 @@
 
 All notable changes to `@criston/sempdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.5.5] - 2026-06-10
+
+### Added
+
+- Table cells accept `bold` and `italic` flags (`{ text: "Results", header: true, bold: true }`). The flags resolve against the table font: a registered family picks the matching face, a built-in base family picks its standard-14 variant. Works in `page.table()`, `flow.table()`, structure-container tables, and template `table` blocks; row heights account for the styled face.
+
+### Fixed
+
+- Registered font families did not resolve in `flow.table()`, `flow.list()`, and their height estimators — a template with `page: { font: "Roboto" }` and a `table` or `list` block threw `Unknown font "Roboto"` even though the family was registered. All table/list entry points now resolve families like the text APIs do.
+
 ## [1.5.4] - 2026-06-10
 
 ### Changed
