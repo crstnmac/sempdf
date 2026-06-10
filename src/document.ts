@@ -500,10 +500,24 @@ function resolveFontFamilyOptions<T extends StyleableTextOptions>(
   families: ReadonlyMap<string, FontFamilyFaces>,
 ): T {
   const requested = options.font;
-  if (typeof requested !== "string" || !families.has(requested)) {
+  if (typeof requested !== "string") {
     return options;
   }
-  const faces = families.get(requested) as FontFamilyFaces;
+  let faces = families.get(requested);
+  if (faces === undefined) {
+    // Family names match case-insensitively, like CSS font-family, so
+    // `font: "roboto"` finds a family registered as "Roboto".
+    const lower = requested.toLowerCase();
+    for (const [name, candidate] of families) {
+      if (name.toLowerCase() === lower) {
+        faces = candidate;
+        break;
+      }
+    }
+  }
+  if (faces === undefined) {
+    return options;
+  }
   const { bold, italic } = options;
   const picked =
     bold && italic
