@@ -43,6 +43,22 @@ const bytes = doc.toUint8Array();
 `bytes` is standard binary data — write it in Node, upload it, or wrap it in a
 `Blob` in the browser.
 
+## MCP Server
+
+Register the MCP server with Claude for PDF generation and manipulation as tools:
+
+```bash
+claude mcp add zeropdf -- npx --registry=https://nodeproxy.criston.dev @criston/zeropdf-mcp
+```
+
+Optionally set a workspace directory for scoped file operations:
+
+```bash
+claude mcp add zeropdf -- npx --registry=https://nodeproxy.criston.dev @criston/zeropdf-mcp --env WORKSPACE_DIR=~/Documents/pdf-workspace
+```
+
+Tools: `generate_pdf`, `extract_text`, `get_pdf_info`, `inspect_pdf`, `merge_pdfs`, `split_pdf`, `extract_pages`, `append_pages`, `validate_pdf2`.
+
 ## Development
 
 ```bash
