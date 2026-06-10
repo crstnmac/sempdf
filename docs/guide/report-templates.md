@@ -44,6 +44,52 @@ doc.renderTemplate({
 });
 ```
 
+## Embedded fonts in templates
+
+Pass an object of family-name → faces to the `fonts` option to register embedded fonts before the template renders. Registered families are available by name in every block and style:
+
+```ts
+doc.renderTemplate({
+  fonts: {
+    Roboto: {
+      regular: robotoRegularBytes,
+      bold: robotoBoldBytes,
+    }
+  },
+  page: { size: "A4", margin: 56, font: "Roboto" },
+  styles: {
+    heading1: { font: "Roboto", bold: true, fontSize: 24 },
+    paragraph: { font: "Roboto", fontSize: 12 }
+  },
+  blocks: [
+    { type: "heading", text: "Report Title" },
+    { type: "paragraph", text: "Body text in Roboto." }
+  ]
+});
+```
+
+Each face accepts raw TrueType/OpenType bytes (embedded automatically), a handle from `embedTrueTypeFont()`, or a built-in `FontName`. Only `regular` is required; missing faces fall back to the closest available one.
+
+In a Chrome extension, compose with [`loadExtensionFontFaces()`](./text-and-fonts#chrome-extension-fonts) to load bundled fonts and pass the result straight to `fonts`:
+
+```ts
+import { loadExtensionFontFaces } from "@criston/zeropdf/chrome-extension-fonts";
+
+doc.renderTemplate({
+  fonts: {
+    Roboto: await loadExtensionFontFaces({
+      regular: "fonts/Roboto-Regular.ttf",
+      bold: "fonts/Roboto-Bold.ttf",
+    })
+  },
+  page: { size: "A4", margin: 56, font: "Roboto" },
+  blocks: [
+    { type: "heading", text: "Report Title" },
+    { type: "paragraph", text: "Body text in Roboto." }
+  ]
+});
+```
+
 ## Multi-Column Flow
 
 Set `columns: { count, gap }` on `page` for newspaper-style body flow. Paragraphs fill the current column and continue at the top of the next column on the same page; tables and other blocks advance to the next column before a new page. Short multi-column pages are balanced automatically so the final column set does not leave all content in the first column.

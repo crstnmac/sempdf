@@ -92,8 +92,27 @@ const bytes = await loadExtensionFontBytes("fonts/Inter-Regular.ttf");
 const inter = doc.embedTrueTypeFont(bytes, { family: "Inter" });
 ```
 
+To load fonts without registering them (e.g. to pass to `renderTemplate({ fonts })`), use `loadExtensionFontFaces()`:
+
+```ts
+import { loadExtensionFontFaces } from "@criston/zeropdf/chrome-extension-fonts";
+
+doc.renderTemplate({
+  fonts: {
+    Roboto: await loadExtensionFontFaces({
+      regular: "fonts/Roboto-Regular.ttf",
+      bold: "fonts/Roboto-Bold.ttf",
+    })
+  },
+  blocks: [
+    { type: "heading", text: "Title", options: { level: 1 } },
+    { type: "paragraph", text: "Body text." }
+  ]
+});
+```
+
 ::: warning Extension context only
-`loadExtensionFont()` and `loadExtensionFontBytes()` require `chrome.runtime.getURL` to be available. They work in service workers, background scripts, and extension pages. When used from a content script, the font files must be listed in `web_accessible_resources` in `manifest.json`:
+`loadExtensionFont()`, `loadExtensionFontBytes()`, and `loadExtensionFontFaces()` require `chrome.runtime.getURL` to be available. They work in service workers, background scripts, and extension pages. When used from a content script, the font files must be listed in `web_accessible_resources` in `manifest.json`:
 
 ```json
 {
@@ -150,6 +169,26 @@ page.text("Italic",  { x: 56, y: 660, font: inter, fontSize: 14, italic: true })
 `registerFontFamily()` returns the family name, so you can use it inline as the `font` value. Each face may be raw font **bytes** (embedded for you), a handle from `embedTrueTypeFont()`, or a built-in name. Only `regular` is required; a missing face falls back to the closest available one (bold italic → bold → italic → regular).
 
 The `bold`/`italic` flags and registered families resolve the same way across `page.text()`, `page.textBlock()`, the `PdfFlow` cursor API (`flow.paragraph()`, `flow.heading()`), and `renderTemplate()` blocks. Document-wide [text defaults](./getting-started#convenience-helpers) (`createDocument({ defaults })`) also apply to all of these; per-call options always win, and a font configured on a flow takes precedence over document defaults.
+
+You can also register fonts inline with `renderTemplate()` via the `fonts` option, without calling `registerFontFamily()` separately:
+
+```ts
+doc.renderTemplate({
+  fonts: {
+    Roboto: {
+      regular: robotoRegularBytes,
+      bold: robotoBoldBytes,
+    }
+  },
+  page: { font: "Roboto" },
+  blocks: [
+    { type: "heading", text: "Title", options: { level: 1 } },
+    { type: "paragraph", text: "Body text." }
+  ]
+});
+```
+
+See [Report Templates](./report-templates) for details.
 
 If you prefer to manage handles yourself, you can still pass an embedded-font handle directly as `font` and skip the registry entirely. Variable fonts are embedded at their default instance; embed a separate file per named instance to ship multiple weights.
 
