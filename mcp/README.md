@@ -55,21 +55,33 @@ npm test           # builds, then runs the stdio integration suite
 
 ## Register with Claude Desktop / Code (stdio)
 
-`claude_desktop_config.json`:
+Install from the private registry:
+
+```bash
+claude mcp add sempdf -- npx --registry=https://nodeproxy.criston.dev @criston/sempdf-mcp
+```
+
+Optionally scope file operations to a workspace directory:
+
+```bash
+claude mcp add sempdf -- npx --registry=https://nodeproxy.criston.dev @criston/sempdf-mcp --env WORKSPACE_DIR=~/Documents/pdf-workspace
+```
+
+For Claude Desktop `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "sempdf": {
-      "command": "node",
-      "args": ["/absolute/path/to/pdf-editing-lib/mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["--registry=https://nodeproxy.criston.dev", "@criston/sempdf-mcp"],
       "env": { "WORKSPACE_DIR": "/absolute/path/to/your/pdf/workspace" }
     }
   }
 }
 ```
 
-Or with Claude Code:
+Or with a local checkout (development):
 
 ```bash
 claude mcp add sempdf -- node /absolute/path/to/pdf-editing-lib/mcp/dist/index.js
