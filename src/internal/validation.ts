@@ -308,6 +308,10 @@ export interface NormalizedTableCell {
   structure?: PdfStructureOptions | undefined;
   annotations?: readonly ParagraphTextAnnotation[] | undefined;
   verticalAlign?: VerticalAlign | undefined;
+  bold?: boolean | undefined;
+  italic?: boolean | undefined;
+  /** Per-cell font resolved from the cell `bold`/`italic` flags against the table font. Set by the table entry points; consumed by layout. */
+  font?: PdfFont | undefined;
 }
 
 export type NormalizedTableRow = NormalizedTableCell[];
@@ -1269,7 +1273,9 @@ function normalizeTableCell(cell: TableCell, rowIndex: number, cellIndex: number
     colSpan,
     ...(definition.structure !== undefined ? { structure: normalizeStructureOptions(definition.structure) } : {}),
     ...(definition.annotations !== undefined ? { annotations: definition.annotations } : {}),
-    ...(definition.verticalAlign !== undefined ? { verticalAlign: definition.verticalAlign } : {})
+    ...(definition.verticalAlign !== undefined ? { verticalAlign: definition.verticalAlign } : {}),
+    ...(definition.bold !== undefined ? { bold: definition.bold } : {}),
+    ...(definition.italic !== undefined ? { italic: definition.italic } : {})
   };
 }
 

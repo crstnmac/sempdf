@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.5.5] - 2026-06-10
+
+### Added
+
+- Table cells accept `bold` and `italic` flags (`{ text: "Results", header: true, bold: true }`). The flags resolve against the table font: a registered family picks the matching face, a built-in base family picks its standard-14 variant. Works in `page.table()`, `flow.table()`, structure-container tables, and template `table` blocks; row heights account for the styled face.
+
+### Fixed
+
+- Registered font families did not resolve in `flow.table()`, `flow.list()`, and their height estimators — a template with `page: { font: "Roboto" }` and a `table` or `list` block threw `Unknown font "Roboto"` even though the family was registered. All table/list entry points now resolve families like the text APIs do.
+
+## [1.5.4] - 2026-06-10
+
+### Changed
+
+- Font family names are now matched **case-insensitively** (like CSS `font-family`). Registering a font as `"Roboto"` and referencing it as `"roboto"` or `"ROBOTO"` in text/template APIs now works correctly. This applies to `registerFontFamily()`, `renderTemplate({ fonts })`, and all text APIs.
+
+### Fixed
+
+- `loadExtensionFontBytes()` now strips `"./"` prefixes from paths before resolving via `chrome.runtime.getURL()`, which would otherwise produce URLs that fail to fetch.
+- `loadExtensionFontBytes()` now accepts absolute extension URLs (`chrome-extension://...`, `moz-extension://...`, `https://...`), passing them through without calling `getURL`.
+- `loadExtensionFontBytes()` wraps `fetch` failures with a detailed diagnostic message mentioning `web_accessible_resources`, file path, and case-sensitivity — saving debugging time when a content script can't reach a bundled font.
+
+## [1.5.3] - 2026-06-10
+
+### Added
+
+- `renderTemplate()` now accepts a `fonts` option — a `Record<string, FontFamilyInput>` of family-name → faces that are registered before the template renders. Faces accept raw bytes, embedded handles, or built-in names.
+- `loadExtensionFontFaces(paths)` — loads bundled extension font files and returns `FontFamilyInput` without registering, so it composes directly with `renderTemplate({ fonts })`.
+
+## [1.5.2] - 2026-06-10
+
+### Added
+
+- `loadExtensionFont(doc, family, paths)` and `loadExtensionFontBytes(path)` — load font files bundled with a Chrome extension via `chrome.runtime.getURL()` and register them as a font family in one call. Fonts are fetched in parallel and passed to `registerFontFamily()`. Exported as `@criston/sempdf/chrome-extension-fonts`.
+
 ## [1.5.1] - 2026-06-10
 
 ### Fixed

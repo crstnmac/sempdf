@@ -2051,6 +2051,10 @@ export interface TableCellDefinition {
    * {@link TableOptions.verticalAlign}.
    */
   verticalAlign?: VerticalAlign | undefined;
+  /** Renders the cell text in the bold face of the table font (built-in variant or registered family face). */
+  bold?: boolean | undefined;
+  /** Renders the cell text in the italic face of the table font (built-in variant or registered family face). */
+  italic?: boolean | undefined;
 }
 
 /**
