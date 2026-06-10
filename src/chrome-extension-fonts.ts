@@ -15,19 +15,38 @@ export interface ExtensionFontPaths {
   boldItalic?: string | undefined;
 }
 
+/** Matches paths that are already absolute URLs and need no getURL resolution. */
+const ABSOLUTE_URL = /^(?:chrome-extension|moz-extension|https?):\/\//;
+
 function resolveUrl(path: string): string {
+  if (ABSOLUTE_URL.test(path)) {
+    return path;
+  }
   if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.getURL) {
     throw new PdfEngineError(
       PdfErrorCode.INVALID_FONT,
       "chrome.runtime.getURL is not available. This module must run in a Chrome extension context (service worker, background script, or extension page).",
     );
   }
-  return chrome.runtime.getURL(path);
+  // getURL expects a path relative to the extension root; a leading slash is fine,
+  // but "./" prefixes produce URLs that fail to fetch.
+  return chrome.runtime.getURL(path.replace(/^\.\//, ""));
 }
 
 export async function loadExtensionFontBytes(path: string): Promise<Uint8Array> {
   const url = resolveUrl(path);
-  const response = await fetch(url);
+  let response: Response;
+  try {
+    response = await fetch(url);
+  } catch (cause) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_FONT,
+      `Failed to fetch bundled font "${path}" (resolved to ${url}). ` +
+        `Check that the file exists in the extension bundle at exactly this path (paths are relative to the extension root and case-sensitive), ` +
+        `and, when calling from a content script, that it is listed in "web_accessible_resources" in manifest.json with a "matches" pattern covering the current page.`,
+      { path, url, cause },
+    );
+  }
   if (!response.ok) {
     throw new PdfEngineError(
       PdfErrorCode.INVALID_FONT,
