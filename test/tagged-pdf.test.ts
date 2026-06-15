@@ -1382,3 +1382,29 @@ test("page.link with tag Artifact stays an untagged decorative annotation", () =
   const text = new TextDecoder().decode(doc.toUint8Array());
   assert.doesNotMatch(text, /\/S \/Link/);
 });
+
+test("richParagraph keeps leading text before an inline link in reading order", () => {
+  const doc = createDocument({ tagged: true, language: "en-US", structureRoot: "Document" });
+  doc.renderTemplate({
+    page: { size: "A4", margin: 70 },
+    blocks: [
+      {
+        type: "richParagraph",
+        runs: [
+          { text: "Page URL: ", bold: true },
+          { text: "https://example.com", link: "https://example.com" }
+        ]
+      }
+    ]
+  });
+
+  // The paragraph's own marked content ("Page URL: ", mcid 0) must precede the
+  // child Link element in /K — otherwise screen readers announce the link first.
+  const text = new TextDecoder("latin1").decode(doc.toUint8Array());
+  const pKid = /\/S\s*\/P\b[^>]*?\/K\s*\[\s*(\S+)/.exec(text);
+  assert.ok(pKid, "expected a /S /P struct element with a /K array");
+  assert.match(pKid[1]!, /^\d+$/, "first /K entry of P should be a marked-content id, not the Link ref");
+
+  // And the link's own text precedes its OBJR annotation.
+  assert.match(text, /\/S\s*\/Link[^>]*?\/K\s*\[\s*\d+\s*<<\s*\/Type\s*\/OBJR/);
+});

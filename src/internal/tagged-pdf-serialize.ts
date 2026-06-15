@@ -82,6 +82,13 @@ export interface StructElementAllocation {
   readonly role: Exclude<PdfStructureTag, 'Artifact'>;
   readonly mcids: readonly number[];
   readonly childObjectIds: readonly number[];
+  /**
+   * Parallel to `childObjectIds`: the minimum marked-content id (reading
+   * position) within each child's subtree. Used to interleave a node's own
+   * marked content with its child elements in content order when building `K`.
+   * Omitted on synthetic wrappers, which keep their children's insertion order.
+   */
+  readonly childOrderKeys?: readonly number[] | undefined;
   readonly annotationObjectIds: readonly number[];
   readonly annotationParentTreeKeys: readonly number[];
   readonly altText?: string | undefined;
@@ -394,7 +401,7 @@ function allocateStructElementTree(
   allocateParentTreeKey: () => number,
   nextObjectId: number,
   visitedNodeIds: Set<number> = new Set(),
-): { objectId: number; nextObjectId: number } {
+): { objectId: number; nextObjectId: number; minMcid: number } {
   if (visitedNodeIds.has(node.id)) {
     throw new PdfEngineError(
       PdfErrorCode.INVALID_PDF,
@@ -408,6 +415,7 @@ function allocateStructElementTree(
   allocatedNodeIds.add(node.id);
 
   const childObjectIds: number[] = [];
+  const childOrderKeys: number[] = [];
   for (const child of node.children) {
     const allocation = allocateStructElementTree(
       child,
@@ -424,12 +432,19 @@ function allocateStructElementTree(
       visitedNodeIds,
     );
     childObjectIds.push(allocation.objectId);
+    childOrderKeys.push(allocation.minMcid);
     nextObjectId = allocation.nextObjectId;
   }
 
   const items = groupedItems.get(node.id) ?? [];
   const mcids = [...new Set(items.map((item) => item.mcid!))].sort(
     (left, right) => left - right,
+  );
+  // Reading position of this subtree: the earliest marked content it covers,
+  // taken over this node's own content and every descendant's.
+  const subtreeMinMcid = Math.min(
+    mcids.length > 0 ? mcids[0]! : Number.POSITIVE_INFINITY,
+    ...childOrderKeys,
   );
   const altText =
     node.altText ?? items.find((item) => item.altText !== undefined)?.altText;
@@ -471,6 +486,7 @@ function allocateStructElementTree(
     role: node.role,
     mcids,
     childObjectIds,
+    childOrderKeys,
     annotationObjectIds,
     annotationParentTreeKeys: nodeAnnotationParentTreeKeys,
     ...(altText !== undefined ? { altText } : {}),
@@ -490,6 +506,7 @@ function allocateStructElementTree(
   return {
     objectId,
     nextObjectId,
+    minMcid: subtreeMinMcid,
   };
 }
 
@@ -701,22 +718,40 @@ export function buildStructElementDictionary(
   element: StructElementAllocation,
   defaultNamespaceObjectId?: number,
 ): PdfDict {
-  const kids: PdfValue[] = [
-    ...element.childObjectIds.map((objectId) => ref(objectId)),
-    ...element.mcids,
-    ...element.annotationObjectIds.map((objectId) =>
-      dict([
-        ['Type', name('OBJR')],
-        ['Obj', ref(objectId)],
-        [
-          'Pg',
-          element.pageObjectId !== undefined
-            ? ref(element.pageObjectId)
-            : undefined,
-        ],
-      ]),
-    ),
-  ];
+  const annotationKids = element.annotationObjectIds.map((objectId) =>
+    dict([
+      ['Type', name('OBJR')],
+      ['Obj', ref(objectId)],
+      [
+        'Pg',
+        element.pageObjectId !== undefined
+          ? ref(element.pageObjectId)
+          : undefined,
+      ],
+    ]),
+  );
+
+  // When a node mixes its own marked content with child elements (e.g. a
+  // paragraph containing an inline Link), `K` must follow content order, not
+  // "all children first". Interleave by reading position (the child subtree's
+  // minimum mcid vs. each own mcid). Pure containers have no own mcids, so they
+  // keep their children's insertion order — preserving deliberate arrangements
+  // like a hoisted running header.
+  const childRefs = element.childObjectIds.map((objectId, index) => ({
+    pos: element.childOrderKeys?.[index] ?? Number.POSITIVE_INFINITY,
+    value: ref(objectId) as PdfValue,
+  }));
+  const orderedKids: PdfValue[] =
+    element.mcids.length === 0
+      ? childRefs.map((entry) => entry.value)
+      : [
+          ...childRefs,
+          ...element.mcids.map((mcid) => ({ pos: mcid, value: mcid as PdfValue })),
+        ]
+          .sort((left, right) => left.pos - right.pos)
+          .map((entry) => entry.value);
+
+  const kids: PdfValue[] = [...orderedKids, ...annotationKids];
 
   return dict([
     ['Type', name('StructElem')],
