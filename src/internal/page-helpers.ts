@@ -36,6 +36,7 @@ import {
   layoutInlineRuns,
   type InlineBlockGeometry,
   type InlineDecoration,
+  type InlineLinkRect,
   type NormalizedInlineRun
 } from "./inline-layout.js";
 import type { ParsedTrueTypeFont } from "./truetype.js";
@@ -50,6 +51,7 @@ import {
   normalizeUnderlineAnnotationOptions,
   normalizeUriLinkOptions,
   normalizePathStyle,
+  resolveTextDirection,
   validateText,
   type NormalizedTextBaseOptions,
   type NormalizedListItem,
@@ -339,6 +341,32 @@ export function pushTextDecorations(
     if (base.underline === true) page.ops.push(decorationOp(run.options.x, run.options.y, width, base.fontSize, "underline", base.color));
     if (base.strike === true) page.ops.push(decorationOp(run.options.x, run.options.y, width, base.fontSize, "strike", base.color));
   }
+}
+
+/** Builds a rectangle path op for table cell backgrounds and borders, tagged as an artifact. */
+function tableCellRectOp(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  style: { fill?: PdfColor; stroke?: { color: PdfColor; width: number } },
+): { type: "path"; commands: PathCommand[]; style: ReturnType<typeof normalizePathStyle> } {
+  return {
+    type: "path",
+    commands: [
+      { type: "moveTo", x, y },
+      { type: "lineTo", x: x + width, y },
+      { type: "lineTo", x: x + width, y: y + height },
+      { type: "lineTo", x, y: y + height },
+      { type: "closePath" },
+    ],
+    style: normalizePathStyle({
+      paint: style.fill !== undefined && style.stroke !== undefined ? "fillStroke" : style.fill !== undefined ? "fill" : "stroke",
+      ...(style.fill !== undefined ? { fill: { color: style.fill } } : {}),
+      ...(style.stroke !== undefined ? { stroke: style.stroke } : {}),
+      tag: "Artifact",
+    }),
+  };
 }
 
 /** Draws underline/strike segments produced by the inline layout engine. */
@@ -868,7 +896,11 @@ export function layoutTable(
       node: InternalStructureNode;
       x: number;
       width: number;
+      startColumn: number;
       runs: readonly PositionedTextRun[];
+      lineHeight: number;
+      decorations?: readonly InlineDecoration[] | undefined;
+      links?: readonly InlineLinkRect[] | undefined;
     }> = [];
     let columnIndex = 0;
 
@@ -897,19 +929,50 @@ export function layoutTable(
       const cellX = options.x + sumNumbers(options.columnWidths.slice(0, startColumn));
       const cellWidth = sumNumbers(options.columnWidths.slice(startColumn, endColumn));
       const textWidth = Math.max(1, cellWidth - options.cellPadding * 2);
-      const runs = layoutTextBlock(
-        cell.text,
-        {
-          ...options,
-          ...(cell.font !== undefined ? { font: cell.font } : {}),
-          x: cellX + options.cellPadding,
-          y: y - options.cellPadding,
-          width: textWidth,
-          tag: role
-        },
-        embeddedFonts
-      );
-      placedCells.push({ cell, node: cellNode, x: cellX, width: cellWidth, runs });
+      if (cell.richRuns !== undefined) {
+        const normalizedRuns = normalizeRichRuns(cell.richRuns);
+        const lineHeight = Math.max(options.lineHeight, richLineHeight(normalizedRuns));
+        const result = layoutInlineRuns(
+          normalizedRuns,
+          {
+            x: cellX + options.cellPadding,
+            y: y - options.cellPadding,
+            width: textWidth,
+            lineHeight,
+            align: cell.align ?? options.align,
+            direction: resolveTextDirection(cell.text, options.direction),
+            writingMode: "horizontal"
+          },
+          embeddedFonts
+        );
+        placedCells.push({
+          cell,
+          node: cellNode,
+          x: cellX,
+          width: cellWidth,
+          startColumn,
+          runs: result.runs,
+          lineHeight,
+          decorations: result.decorations,
+          links: result.links
+        });
+      } else {
+        const runs = layoutTextBlock(
+          cell.text,
+          {
+            ...options,
+            ...(cell.font !== undefined ? { font: cell.font } : {}),
+            ...(cell.color !== undefined ? { color: cell.color } : {}),
+            ...(cell.align !== undefined ? { align: cell.align } : {}),
+            x: cellX + options.cellPadding,
+            y: y - options.cellPadding,
+            width: textWidth,
+            tag: role
+          },
+          embeddedFonts
+        );
+        placedCells.push({ cell, node: cellNode, x: cellX, width: cellWidth, startColumn, runs, lineHeight: options.lineHeight });
+      }
 
       if (cell.rowSpan > 1) {
         for (
@@ -929,21 +992,55 @@ export function layoutTable(
     const rowHeight = Math.max(
       options.lineHeight + options.cellPadding * 2,
       ...placedCells.map(
-        ({ runs }) => measurePositionedRunHeight(runs, options.lineHeight) + options.cellPadding * 2
+        ({ runs, lineHeight }) => measurePositionedRunHeight(runs, lineHeight) + options.cellPadding * 2
       )
     );
 
     const innerHeight = rowHeight - options.cellPadding * 2;
     for (const placed of placedCells) {
+      const isHeader = isHeaderTableCell(placed.cell, rowIndex, placed.startColumn, options);
+      const isStripedBodyRow =
+        options.zebraColor !== undefined &&
+        rowIndex >= options.headerRows &&
+        (rowIndex - options.headerRows) % 2 === 1;
+      const background =
+        placed.cell.background ??
+        (isHeader ? options.headerBackground : isStripedBodyRow ? options.zebraColor : undefined);
+      if (background !== undefined) {
+        page.ops.push(tableCellRectOp(placed.x, y - rowHeight, placed.width, rowHeight, { fill: background }));
+      }
+      if (options.borderColor !== undefined && options.borderWidth !== undefined) {
+        page.ops.push(
+          tableCellRectOp(placed.x, y - rowHeight, placed.width, rowHeight, {
+            stroke: { color: options.borderColor, width: options.borderWidth },
+          }),
+        );
+      }
+    }
+    for (const placed of placedCells) {
       const align = placed.cell.verticalAlign ?? options.verticalAlign;
-      const runs =
+      const offset =
         align === "top"
-          ? placed.runs
-          : shiftRunsDown(
-              placed.runs,
-              verticalAlignOffset(align, innerHeight, measurePositionedRunHeight(placed.runs, options.lineHeight)),
-            );
+          ? 0
+          : verticalAlignOffset(align, innerHeight, measurePositionedRunHeight(placed.runs, placed.lineHeight));
+      const runs = offset === 0 ? placed.runs : shiftRunsDown(placed.runs, offset);
       pushPositionedTextRuns(page, runs, placed.node.id);
+      if (placed.decorations !== undefined) {
+        pushInlineDecorations(
+          page,
+          offset === 0 ? placed.decorations : placed.decorations.map((d) => ({ ...d, baselineY: d.baselineY - offset })),
+        );
+      }
+      if (placed.links !== undefined) {
+        for (const link of placed.links) {
+          addLinkToPage(
+            page,
+            link.url,
+            { x: link.x, y: link.y - offset, width: link.width, height: link.height },
+            placed.node,
+          );
+        }
+      }
       if (placed.cell.annotations && placed.cell.annotations.length > 0) {
         emitParagraphTextAnnotations(page, runs, placed.cell.annotations, embeddedFonts, placed.node);
       }
