@@ -491,9 +491,14 @@ function renderTemplateRunningRegions(
   for (const { pageNumber, page } of pages) {
     const context = { pageNumber, totalPages, ...metadata };
     if (options.header) {
+      // The body is rendered before running regions, so the header's structure
+      // roots would otherwise land last in the page's tag tree. Hoist them to
+      // the front so header content (e.g. a logo Figure) reads first.
+      const rootsBeforeHeader = page.structureRootCount();
       page
         .flow(headerFlowOptions(page.size, options.page))
         .render(options.header(context), options.styles);
+      page.hoistStructureRootsToFront(rootsBeforeHeader);
     }
     if (options.footer) {
       page

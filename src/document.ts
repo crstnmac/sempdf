@@ -1723,15 +1723,37 @@ export class PdfFlow {
         writingMode,
       };
       const placed = placeInlineLine(line, geometry, this.state.y, this.embeddedFonts);
-      pushPositionedTextRuns(this.page, placed.runs, structureNode?.id);
       pushInlineDecorations(this.page, placed.decorations);
-      for (const link of placed.links) {
-        addLinkToPage(
-          this.page,
-          link.url,
-          { x: link.x, y: link.y, width: link.width, height: link.height },
-          structureNode,
-        );
+      // Walk the positioned runs, splitting them into contiguous link spans and
+      // non-link spans. A link span's visible text and its annotation share one
+      // `Link` structure element (child of this block) so the tag tree carries
+      // proper link markup; non-link runs stay under the block node.
+      let linkRectIndex = 0;
+      let index = 0;
+      while (index < placed.runs.length) {
+        const url = placed.runLinks[index];
+        if (url === undefined) {
+          pushPositionedTextRuns(this.page, [placed.runs[index]!], structureNode?.id);
+          index += 1;
+          continue;
+        }
+        const start = index;
+        while (index < placed.runs.length && placed.runLinks[index] === url) {
+          index += 1;
+        }
+        const span = placed.runs.slice(start, index);
+        const rect = placed.links[linkRectIndex];
+        linkRectIndex += 1;
+        const linkNode = createStructureNode(this.page, "Link", undefined, structureNode);
+        pushPositionedTextRuns(this.page, span, linkNode.id);
+        if (rect) {
+          addLinkToPage(
+            this.page,
+            rect.url,
+            { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+            linkNode,
+          );
+        }
       }
     };
 
@@ -3691,6 +3713,32 @@ export class PdfPage {
       this.fontFamilies,
       this.textDefaults,
     );
+  }
+
+  /**
+   * Number of top-level structure elements currently on the page. The order of
+   * these roots is the page's logical reading order in the tag tree.
+   *
+   * @internal Used by the template renderer to reorder running regions.
+   */
+  structureRootCount(): number {
+    return this.page.structureRoots.length;
+  }
+
+  /**
+   * Moves the top-level structure roots added since `fromIndex` to the front of
+   * the page's reading order, preserving their relative order. Used so a running
+   * header that is rendered after the body still reads first in the tag tree.
+   *
+   * @internal Used by the template renderer to reorder running regions.
+   */
+  hoistStructureRootsToFront(fromIndex: number): void {
+    const roots = this.page.structureRoots;
+    if (fromIndex <= 0 || fromIndex >= roots.length) {
+      return;
+    }
+    const moved = roots.splice(fromIndex);
+    roots.unshift(...moved);
   }
 
   /**
