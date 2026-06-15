@@ -136,6 +136,33 @@ doc.renderTemplate({
 | `path` | Custom path vector shape |
 | `custom` | User-defined block with render/estimate |
 
+## Tables
+
+Cells are strings or objects. Cell objects take per-cell styling — `bold`/`italic` (resolved against the table font, including registered families), `font`, `color`, `align`, `background`, and `verticalAlign` — or inline rich-text `runs` instead of `text`. Table options add grid `borderColor`/`borderWidth`, `headerBackground`, and `zebra` striping; all decoration is emitted as artifacts so the structure tree stays clean:
+
+```ts
+{
+  type: "table",
+  rows: [
+    [
+      { text: "Results", header: true, bold: true },
+      { text: "Level A", header: true, bold: true },
+    ],
+    ["Fail", { text: "3", align: "right", color: "red" }],
+    ["Validate", { runs: [{ text: "2 ", bold: true }, { text: "(see notes)", italic: true }] }],
+  ],
+  options: {
+    headerRows: 1,
+    borderColor: "gray",
+    borderWidth: 0.75,
+    headerBackground: color("#eeeeee"),
+    zebra: true,
+  },
+}
+```
+
+`zebra: true` fills every second body row with a light gray; pass a color to choose your own. A cell `background` overrides both the header fill and the stripe. The same options work on `page.table()` and `flow.table()`.
+
 ## Form Fields
 
 Form blocks auto-position within the flow---no manual x/y coordinates needed.

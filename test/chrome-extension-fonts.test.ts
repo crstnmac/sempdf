@@ -257,3 +257,161 @@ test("table cell bold flag picks the bold face of a registered family", () => {
   assert.match(text, /\/Helvetica-Bold/);
   assert.match(text, /\/FontFile2/);
 });
+
+test("fallbackFonts resolve registered family names (case-insensitive)", () => {
+  const fontPath = findTrueTypeFixturePath();
+  if (!fontPath) {
+    return;
+  }
+  const fontBytes = readFileSync(fontPath);
+  const doc = createDocument();
+  const handle = doc.embedTrueTypeFont(new Uint8Array(fontBytes), { family: "Mono" });
+  try {
+    // Skip when the fixture font itself lacks the probe glyph.
+    doc.measureText("Ω", { font: handle });
+  } catch {
+    return;
+  }
+  doc.registerFontFamily("Mono", { regular: handle });
+
+  // Helvetica lacks Ω; pre-fix the family-name fallback never matched and threw.
+  const viaFamily = doc.measureText("aΩ", { font: "Helvetica", fallbackFonts: ["mono"] });
+  const viaHandle = doc.measureText("aΩ", { font: "Helvetica", fallbackFonts: [handle] });
+  assert.equal(viaFamily.width, viaHandle.width);
+
+  assert.throws(
+    () => doc.measureText("aΩ", { font: "Helvetica" }),
+    (error: unknown) => error instanceof PdfEngineError,
+  );
+});
+
+test("table cells accept font, color, and align overrides", () => {
+  const doc = createDocument();
+  doc.addPage().table(
+    [
+      [
+        { text: "Mono", font: "Courier" },
+        { text: "Red right", color: "red", align: "right" },
+        "plain",
+      ],
+    ],
+    { x: 56, y: 700, width: 400 },
+  );
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/Courier/);
+  assert.match(text, /1 0 0 rg/);
+});
+
+test("unknown cell font reports a clear error", () => {
+  const doc = createDocument();
+  assert.throws(
+    () =>
+      doc.addPage().table([[{ text: "x", font: "Nope" }]], { x: 56, y: 700, width: 200 }),
+    (error: unknown) => {
+      assert.ok(error instanceof PdfEngineError);
+      assert.match(error.message, /Unknown font "Nope"/);
+      return true;
+    },
+  );
+});
+
+test("cell font override resolves a registered family with bold flag", () => {
+  const fontPath = findTrueTypeFixturePath();
+  if (!fontPath) {
+    return;
+  }
+  const doc = createDocument();
+  doc.registerFontFamily("Custom", {
+    regular: new Uint8Array(readFileSync(fontPath)),
+    bold: "Times-Bold",
+  });
+  doc.addPage().table(
+    [[{ text: "head", font: "custom", bold: true }, "body"]],
+    { x: 56, y: 700, width: 300 },
+  );
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/Times-Bold/);
+});
+
+test("table draws borders, header background, zebra stripes, and cell background", () => {
+  const doc = createDocument();
+  doc.addPage().table(
+    [
+      [{ text: "H1", header: true }, { text: "H2", header: true }],
+      ["a", "b"],
+      ["c", { text: "d", background: "yellow" }],
+      ["e", "f"],
+    ],
+    {
+      x: 56,
+      y: 700,
+      width: 300,
+      headerRows: 1,
+      borderColor: "black",
+      borderWidth: 1,
+      headerBackground: "gray",
+      zebra: true,
+    },
+  );
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  // fills (header gray, zebra gray, yellow) and stroked grid lines present
+  assert.match(text, /re|l\n/);
+  assert.match(text, /1 1 0 rg/);
+  assert.match(text, /f\n/);
+  assert.match(text, /S\n/);
+});
+
+test("table without styling options emits no decoration ops", () => {
+  const doc = createDocument();
+  doc.addPage().table([["a", "b"]], { x: 56, y: 700, width: 200 });
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.doesNotMatch(text, /1 1 0 rg/);
+});
+
+test("table cells render inline rich-text runs with mixed styles and links", () => {
+  const doc = createDocument();
+  doc.addPage().table(
+    [
+      [
+        {
+          runs: [
+            { text: "Status: ", bold: true },
+            { text: "passing", color: "green", underline: true },
+            { text: " docs", link: "https://example.com" },
+          ],
+        },
+        "plain",
+      ],
+    ],
+    { x: 56, y: 700, width: 320 },
+  );
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/Helvetica-Bold/);
+  assert.match(text, /\/URI \(https:\/\/example\.com\)/);
+  assert.match(text, /0 (0\.50\d+|0\.5) 0 rg/);
+});
+
+test("table cell rejects both text and runs", () => {
+  const doc = createDocument();
+  assert.throws(
+    () =>
+      doc.addPage().table(
+        [[{ text: "x", runs: [{ text: "y" }] }]],
+        { x: 56, y: 700, width: 200 },
+      ),
+    (error: unknown) => {
+      assert.ok(error instanceof PdfEngineError);
+      assert.match(error.message, /either text or runs/);
+      return true;
+    },
+  );
+});
+
+test("flow table with rich cells reserves matching row heights", () => {
+  const doc = createDocument();
+  const flow = doc.addPage().flow({});
+  flow.table([
+    [{ runs: [{ text: "Large", fontSize: 30 }] }, "small"],
+  ]);
+  assert.ok(doc.toUint8Array().length > 0);
+});

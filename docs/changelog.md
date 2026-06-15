@@ -2,6 +2,20 @@
 
 All notable changes to `@criston/zeropdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.6.0] - 2026-06-10
+
+### Added
+
+- **WOFF2 decoding** — new `@criston/zeropdf/woff2` subpath export. `decodeWoff2(bytes)` converts a `.woff2` file (the format browsers and font CDNs serve) into standard TTF/OTF bytes ready for `embedTrueTypeFont()`/`registerFontFamily()`. Implements a zero-dependency Brotli (RFC 7932) decompressor — full prefix codes, context modeling, block switching, and the 122 KB static dictionary with all 121 word transforms — plus WOFF2 glyf/loca triplet reconstruction and hmtx transform reversal. Ships as a separate subpath so the embedded dictionary never loads with the core library. `isWoff2(bytes)` and `brotliDecompress(bytes)` are also exported.
+- `loadGoogleFont()` now works in browsers: when Google serves a woff2 file, the decoder is loaded on demand and the result is returned as TTF bytes. Node continues to receive a plain `.ttf`/`.otf` with no decoder loaded.
+- Table cell styling: per-cell `font`, `color`, `align`, and `background` overrides on `TableCellDefinition` (joining `bold`/`italic`). Cell fonts resolve registered families and built-in variants.
+- Table decoration options: `borderColor`/`borderWidth` draw the cell grid, `headerBackground` fills header cells, and `zebra` (boolean or color) stripes alternate body rows. All decoration is emitted as tagged-PDF artifacts.
+- Rich text in table cells: cells accept inline `runs` instead of `text` — mixed fonts, sizes, colors, bold/italic, underline/strike, and links wrap together inside the cell, with row heights tracking the tallest line.
+
+### Fixed
+
+- `fallbackFonts` entries naming a registered font family never matched (the family name was passed through as if it were a built-in font, so fallback glyph coverage silently failed). Family names in `fallbackFonts` now resolve to the matching face, honoring the call's `bold`/`italic` flags and case-insensitive matching.
+
 ## [1.5.5] - 2026-06-10
 
 ### Added
