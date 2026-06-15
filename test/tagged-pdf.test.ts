@@ -1290,3 +1290,95 @@ test("emits /AF associated file references", () => {
   assert.match(text, /\/AF \[/);
   assert.match(text, /\/Type \/EmbeddedFile/);
 });
+
+test("flow richParagraph wraps an inline link run in a Link element with its annotation", () => {
+  const doc = createDocument({ tagged: true, language: "en-US", structureRoot: "Document" });
+  const page = doc.addPage({ size: "Letter" });
+
+  page.flow({ margin: 48, width: 300 }).richParagraph([
+    { text: "See ", bold: true },
+    { text: "the site", link: "https://example.com" },
+    { text: " for more." }
+  ]);
+
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  // The visible link text lives inside a Link structure element that also
+  // references the annotation via an OBJR, not stranded under the parent P.
+  assert.match(text, /\/S \/Link/);
+  assert.match(text, /\/Type \/OBJR/);
+
+  const findLink = (nodes?: readonly any[]): any => {
+    for (const node of nodes ?? []) {
+      if (node.role === "Link") return node;
+      const inner = findLink(node.children);
+      if (inner) return inner;
+    }
+    return undefined;
+  };
+  const link = findLink(parseDocument(doc.toUint8Array()).inspectStructureElements());
+  assert.ok(link, "richParagraph link run should produce a Link structure element");
+  assert.equal(link.text, "the site");
+  assert.equal(link.annotations?.length, 1);
+});
+
+test("table cell marked header outside any header band gets Row scope", () => {
+  const doc = createDocument({ tagged: true, language: "en-US" });
+  const page = doc.addPage({ size: "Letter" });
+
+  // headerRows:1 but no headerColumns; the first cell of each body row is a
+  // per-cell header (a row label). It must still carry /Scope /Row.
+  page.table(
+    [
+      [{ text: "Results", header: true }, { text: "A", header: true }],
+      [{ text: "Fail", header: true }, "3"]
+    ],
+    { x: 36, y: 720, width: 200, columnWidths: [100, 100], headerRows: 1 }
+  );
+
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/Scope \/Column/); // header-row cells
+  assert.match(text, /\/Scope \/Row/);    // the body-row "Fail" row label
+});
+
+test("template running header reads first in the page tag tree", () => {
+  const doc = createDocument({ tagged: true, language: "en-US" });
+
+  doc.renderTemplate({
+    page: { size: "A4", margin: 48 },
+    header: () => [
+      { type: "png", data: tinyPngBytes(), options: { width: 24, altText: "Logo", tag: "Figure" } }
+    ],
+    blocks: [
+      { type: "heading", text: "Report", options: { level: 1 } },
+      { type: "paragraph", text: "Body." }
+    ]
+  });
+
+  const roots = parseDocument(doc.toUint8Array()).inspectStructureElements();
+  // Header is rendered after the body, but its Figure must be hoisted to the
+  // front of the reading order.
+  assert.equal(roots[0]?.role, "Figure");
+});
+
+test("page.link without an explicit tag defaults to a Link structure element", () => {
+  const doc = createDocument({ tagged: true, language: "en-US", structureRoot: "Document" });
+  const page = doc.addPage({ size: "Letter" });
+
+  // No `tag` passed: a tagged document must still reference the annotation from
+  // the structure tree (OBJR), otherwise it is an untagged-annotation failure.
+  page.link("https://example.com", { x: 36, y: 700, width: 120, height: 16 });
+
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.match(text, /\/S \/Link/);
+  assert.match(text, /\/Type \/OBJR/);
+});
+
+test("page.link with tag Artifact stays an untagged decorative annotation", () => {
+  const doc = createDocument({ tagged: true, language: "en-US", structureRoot: "Document" });
+  const page = doc.addPage({ size: "Letter" });
+
+  page.link("https://example.com", { x: 36, y: 700, width: 120, height: 16, tag: "Artifact" });
+
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  assert.doesNotMatch(text, /\/S \/Link/);
+});

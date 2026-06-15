@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.6.1] - 2026-06-15
+
+### Fixed
+
+- **Tagged links never referenced from the structure tree.** A link annotation was only tied to a `Link` structure element when the caller passed `tag: "Link"` explicitly. Inline links — `flow.richParagraph` runs, page-level `richText` runs, table-cell links, and paragraph text-annotation links — and the public `page.link()` omitted it, so the annotation was emitted with no OBJR back-reference (an untagged annotation, a PDF/UA-1 failure). An unspecified link tag now defaults to `Link`; pass `tag: "Artifact"` to opt out for decorative links.
+- **Inline link text was stranded outside its `Link` element.** `flow.richParagraph` placed the visible link glyphs under the surrounding `P` and left the `Link` element holding only the annotation. The link's text is now grouped inside the `Link` structure element together with its OBJR.
+- **Per-cell header cells emitted no `/Scope`.** A table cell promoted to `TH` purely via `cell.header` (outside any `headerRows`/`headerColumns` band — e.g. a row-label column) was written without a `/Scope`, which auditors flag as a missing row header. Such cells now default to `/Scope /Row` (still overridable via `cell.scope`).
+- **Template running header read last in the tag tree.** Headers/footers render after the body, so a header logo `Figure` landed at the end of the page's structure order instead of the start. Header structure roots are now hoisted to the front of the reading order; footers remain last (their correct final-appearance position).
+
 ## [1.6.0] - 2026-06-10
 
 ### Added
