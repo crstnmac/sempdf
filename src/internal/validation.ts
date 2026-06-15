@@ -1,7 +1,9 @@
 import { PdfEngineError, PdfErrorCode } from "../errors.js";
 import type { AttachmentOptions, BmpImageOptions, BuiltInPageSize, CheckBoxOptions, ChoiceFieldMode, ChoiceFieldOptions, CustomPageSize, DocumentConformanceProfile, DocumentEncryptionAlgorithm, DocumentEncryptionOptions, DocumentInfo, DocumentPermissions, ExtGStateOptions, FieldActions, FillStyle, FontName, FreeTextAnnotationOptions, HighlightAnnotationOptions, JpegImageOptions, LineCap, LineJoin, ListItem, ListOptions, NoteAnnotationOptions, OutlineOptions, PageLabelOptions, PageLabelStyle, PageLinkOptions, PageSize, ParagraphTextAnnotation, PathCommand, PathStyle, PdfColor, PdfComplianceIssue, PdfContainerTag, PdfFigureStructureTag, PdfFont, PdfRoleMap, PdfStandardStructureTag, PdfStructureAttributeValue, PdfStructureOptions, PdfStructureTag, PdfTextStructureTag, PngImageOptions, PushButtonOptions, RadioGroupOptions, SignatureFieldOptions, SquigglyAnnotationOptions, StrikeOutAnnotationOptions, StrokeStyle, TableCell, TableHeaderScope, TableOptions, TextAlign, TextBlockOptions, TextDirection, TextFieldOptions, TextOptions, Transform, UnderlineAnnotationOptions, UriLinkOptions, VerticalAlign, ColorInput, XmpMetadataInput } from "../types.js";
 import { PAGE_SIZES, gray, color as resolveColorName } from "../types.js";
+import type { InlineTextRun } from "../types.js";
 import type { NormalizedImageOptions, NormalizedPathStyle, NormalizedTextOptions } from "./ops.js";
+import type { RichRunInput } from "./page-helpers.js";
 import { buildXmpMetadataPacket } from "./xmp.js";
 
 const LINE_CAPS: Record<LineCap, 0 | 1 | 2> = {
@@ -62,7 +64,7 @@ function editDistance(a: string, b: string): number {
  * helpful "did you mean" error otherwise. Embedded-font handles and registered
  * font families are resolved before this runs, so a string here must be built-in.
  */
-function assertKnownBuiltInFont(font: PdfFont): void {
+export function assertKnownBuiltInFont(font: PdfFont): void {
   if (typeof font !== "string" || STANDARD_FONTS.includes(font)) {
     return;
   }
@@ -301,6 +303,10 @@ export interface NormalizedListOptions extends NormalizedTextBaseOptions {
 
 export interface NormalizedTableCell {
   text: string;
+  /** Raw inline rich-text runs from the cell definition. Resolved into {@link NormalizedTableCell.richRuns} by the table entry points. */
+  runs?: readonly InlineTextRun[] | undefined;
+  /** Inline runs with per-run styles resolved (fonts, families, defaults). Set by the table entry points; consumed by layout. */
+  richRuns?: readonly RichRunInput[] | undefined;
   header: boolean;
   scope?: TableHeaderScope | undefined;
   rowSpan: number;
@@ -310,8 +316,11 @@ export interface NormalizedTableCell {
   verticalAlign?: VerticalAlign | undefined;
   bold?: boolean | undefined;
   italic?: boolean | undefined;
-  /** Per-cell font resolved from the cell `bold`/`italic` flags against the table font. Set by the table entry points; consumed by layout. */
+  /** Per-cell font: an explicit cell `font` and/or the `bold`/`italic` flags resolved against the table font. Family names are resolved by the table entry points; consumed by layout. */
   font?: PdfFont | undefined;
+  color?: PdfColor | undefined;
+  align?: TextAlign | undefined;
+  background?: PdfColor | undefined;
 }
 
 export type NormalizedTableRow = NormalizedTableCell[];
@@ -322,6 +331,10 @@ export interface NormalizedTableOptions extends NormalizedTextBaseOptions {
   headerRows: number;
   headerColumns: number;
   cellPadding: number;
+  borderColor?: PdfColor | undefined;
+  borderWidth?: number | undefined;
+  headerBackground?: PdfColor | undefined;
+  zebraColor?: PdfColor | undefined;
   rowGap: number;
   lineHeight: number;
   align: TextAlign;
@@ -1228,6 +1241,12 @@ export function normalizeTableOptions(rows: readonly NormalizedTableRow[], optio
   const headerRows = normalizeOptionalNonNegativeInteger(options.headerRows, "headerRows") ?? 0;
   const headerColumns = normalizeOptionalNonNegativeInteger(options.headerColumns, "headerColumns") ?? 0;
 
+  const borderWidth = normalizeOptionalNumber(options.borderWidth, "borderWidth");
+  if (borderWidth !== undefined && borderWidth < 0) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_TEXT, "Table borderWidth must be zero or greater.", { borderWidth });
+  }
+  const hasBorder = options.borderColor !== undefined || (borderWidth !== undefined && borderWidth > 0);
+
   return {
     ...normalizedText,
     width: options.width,
@@ -1235,6 +1254,16 @@ export function normalizeTableOptions(rows: readonly NormalizedTableRow[], optio
     headerRows,
     headerColumns,
     cellPadding,
+    ...(hasBorder
+      ? {
+          borderColor: normalizeColor(options.borderColor ?? gray(0.6)),
+          borderWidth: borderWidth ?? 0.75
+        }
+      : {}),
+    ...(options.headerBackground !== undefined ? { headerBackground: normalizeColor(options.headerBackground) } : {}),
+    ...(options.zebra !== undefined && options.zebra !== false
+      ? { zebraColor: normalizeColor(options.zebra === true ? gray(0.95) : options.zebra) }
+      : {}),
     rowGap,
     lineHeight,
     align: options.align ?? "left",
@@ -1246,12 +1275,30 @@ export function normalizeTableOptions(rows: readonly NormalizedTableRow[], optio
 
 function normalizeTableCell(cell: TableCell, rowIndex: number, cellIndex: number): NormalizedTableCell {
   const definition = typeof cell === "string" ? { text: cell } : cell;
-  validateText(definition.text);
-  if (definition.text.trim().length === 0) {
-    throw new PdfEngineError(PdfErrorCode.INVALID_TEXT, "Table cell text must not be empty.", {
-      rowIndex,
-      cellIndex
-    });
+  if (definition.runs !== undefined) {
+    if (definition.text !== undefined) {
+      throw new PdfEngineError(PdfErrorCode.INVALID_TEXT, "Table cells accept either text or runs, not both.", {
+        rowIndex,
+        cellIndex
+      });
+    }
+    if (definition.runs.length === 0) {
+      throw new PdfEngineError(PdfErrorCode.INVALID_TEXT, "Table cell runs must not be empty.", {
+        rowIndex,
+        cellIndex
+      });
+    }
+    for (const run of definition.runs) {
+      validateText(run.text);
+    }
+  } else {
+    if (definition.text === undefined || definition.text.trim().length === 0) {
+      throw new PdfEngineError(PdfErrorCode.INVALID_TEXT, "Table cell text must not be empty.", {
+        rowIndex,
+        cellIndex
+      });
+    }
+    validateText(definition.text);
   }
 
   const rowSpan = definition.rowSpan ?? 1;
@@ -1266,7 +1313,8 @@ function normalizeTableCell(cell: TableCell, rowIndex: number, cellIndex: number
   }
 
   return {
-    text: definition.text,
+    text: definition.text ?? definition.runs!.map((run) => run.text).join(""),
+    ...(definition.runs !== undefined ? { runs: definition.runs } : {}),
     header: definition.header ?? false,
     ...(definition.scope !== undefined ? { scope: definition.scope } : {}),
     rowSpan,
@@ -1275,7 +1323,11 @@ function normalizeTableCell(cell: TableCell, rowIndex: number, cellIndex: number
     ...(definition.annotations !== undefined ? { annotations: definition.annotations } : {}),
     ...(definition.verticalAlign !== undefined ? { verticalAlign: definition.verticalAlign } : {}),
     ...(definition.bold !== undefined ? { bold: definition.bold } : {}),
-    ...(definition.italic !== undefined ? { italic: definition.italic } : {})
+    ...(definition.italic !== undefined ? { italic: definition.italic } : {}),
+    ...(definition.font !== undefined ? { font: definition.font } : {}),
+    ...(definition.color !== undefined ? { color: normalizeColor(definition.color) } : {}),
+    ...(definition.align !== undefined ? { align: definition.align } : {}),
+    ...(definition.background !== undefined ? { background: normalizeColor(definition.background) } : {})
   };
 }
 

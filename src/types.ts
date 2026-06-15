@@ -2032,8 +2032,14 @@ export type TableHeaderScope = "row" | "column" | "both";
  * Detailed table cell object with span, header, scope, and structure options.
  */
 export interface TableCellDefinition {
-  /** Text content to render or inspect. */
-  text: string;
+  /** Text content to render or inspect. Either `text` or `runs` must be provided. */
+  text?: string | undefined;
+  /**
+   * Inline rich-text runs rendered instead of `text`: mixed fonts, sizes,
+   * colors, bold/italic, underline/strike, and links wrap together inside the
+   * cell. Run styles omitted fall back to the cell, then table, style.
+   */
+  runs?: readonly InlineTextRun[] | undefined;
   /** Callback that returns header blocks for each page. */
   header?: boolean | undefined;
   /** Search scope used when finding related structure elements. */
@@ -2055,6 +2061,14 @@ export interface TableCellDefinition {
   bold?: boolean | undefined;
   /** Renders the cell text in the italic face of the table font (built-in variant or registered family face). */
   italic?: boolean | undefined;
+  /** Font for this cell, overriding {@link TableOptions.font}. Accepts a built-in name, embedded handle, or registered family name (combined with the cell `bold`/`italic` flags). */
+  font?: PdfFont | undefined;
+  /** Text color for this cell, overriding {@link TableOptions.color}. */
+  color?: ColorInput | undefined;
+  /** Horizontal text alignment for this cell, overriding {@link TableOptions.align}. */
+  align?: TextAlign | undefined;
+  /** Background fill for this cell, overriding `headerBackground`/`zebra` striping. */
+  background?: ColorInput | undefined;
 }
 
 /**
@@ -2119,6 +2133,21 @@ export interface TableOptions {
    * structure element). Provides a description of the table for screen readers.
    */
   summary?: string | undefined;
+  /**
+   * Color of the cell grid lines. Setting this (or `borderWidth`) draws a
+   * border around every cell. Drawn as an artifact (not part of the
+   * structure tree).
+   */
+  borderColor?: ColorInput | undefined;
+  /** Width of the cell grid lines in PDF points. Defaults to 0.75 when `borderColor` is set. */
+  borderWidth?: number | undefined;
+  /** Background fill behind header cells (header rows/columns and cells marked `header: true`). */
+  headerBackground?: ColorInput | undefined;
+  /**
+   * Alternate-row striping for body rows: `true` fills every second body row
+   * with a light gray, or pass a color. Header rows are not striped.
+   */
+  zebra?: boolean | ColorInput | undefined;
 }
 
 /**
