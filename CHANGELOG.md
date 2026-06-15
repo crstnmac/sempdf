@@ -1,5 +1,7 @@
 # Changelog
 
+All notable changes to `@criston/sempdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
+
 ## [1.6.1] - 2026-06-15
 
 ### Fixed
