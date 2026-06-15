@@ -28,10 +28,10 @@ export interface LoadGoogleFontOptions {
  * {@link PdfDocument.registerFontFamily}.
  *
  * The Google Fonts CSS API serves `woff2` (Brotli-compressed) to clients that
- * advertise woff2 support — such as browsers — which this zero-dependency
- * engine cannot decode. Clients that do not advertise woff2 support, such as
- * Node, receive an embeddable `.ttf`/`.otf` file. Call this from Node; in the
- * browser, fetch a `.ttf`/`.otf` yourself and pass it to `embedTrueTypeFont`.
+ * advertise woff2 support — such as browsers — and an embeddable `.ttf`/`.otf`
+ * to other clients, such as Node. Both work: when a woff2 URL is served, the
+ * `@criston/sempdf/woff2` decoder is loaded on demand and the file is
+ * converted to TTF bytes before returning.
  *
  * @param family Google Font family name, e.g. `"Inter"` or `"Roboto Slab"`.
  * @param options Weight, style, subsetting, and network options.
@@ -90,14 +90,16 @@ export async function loadGoogleFont(
   }
   const css = await cssResponse.text();
 
-  const match = new RegExp(/url\((https:\/\/[^)]+\.(?:ttf|otf))\)/i).exec(css);
+  const match =
+    new RegExp(/url\((https:\/\/[^)]+\.(?:ttf|otf))\)/i).exec(css) ??
+    new RegExp(/url\((https:\/\/[^)]+\.woff2)\)/i).exec(css);
   if (!match) {
     const served = new RegExp(/format\('([^']+)'\)/).exec(css)?.[1];
     throw new PdfEngineError(
       PdfErrorCode.INVALID_FONT,
-      served === "woff2" || served === "woff"
-        ? `Google served a ${served} file for "${family}", which this library cannot decode. This typically happens in browsers — fetch a .ttf/.otf yourself and pass it to embedTrueTypeFont(), or call loadGoogleFont() from Node.`
-        : `Could not find an embeddable .ttf/.otf URL for "${family}" in the Google Fonts response.`,
+      served === "woff"
+        ? `Google served a woff file for "${family}", which this library cannot decode. Fetch a .ttf/.otf or .woff2 yourself instead.`
+        : `Could not find an embeddable font URL for "${family}" in the Google Fonts response.`,
       { family, served },
     );
   }
@@ -112,5 +114,13 @@ export async function loadGoogleFont(
     );
   }
 
-  return new Uint8Array(await fontResponse.arrayBuffer());
+  const bytes = new Uint8Array(await fontResponse.arrayBuffer());
+  if (fontUrl.endsWith(".woff2")) {
+    // Browsers receive woff2; decode it to TTF bytes. The decoder (and its
+    // embedded Brotli dictionary) loads lazily so Node users who get a ttf
+    // never pay for it.
+    const { decodeWoff2 } = await import("./internal/woff2.js");
+    return decodeWoff2(bytes);
+  }
+  return bytes;
 }

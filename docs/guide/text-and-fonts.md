@@ -57,9 +57,26 @@ page.text("Roboto bold", { x: 56, y: 700, font: "Roboto", bold: true });
 
 Options: `weight` (1–1000, default 400), `italic` (default false), `text` (restrict the download to the glyphs in this string via Google's `&text=` subsetting), `signal` (an `AbortSignal`), and `fetch` (a custom `fetch` implementation).
 
-::: warning Node-first
-The Google Fonts API serves **woff2** (Brotli-compressed) to clients that advertise woff2 support — including browsers — and this zero-dependency engine cannot decode woff2. Node's `fetch` does not advertise woff2, so it receives an embeddable `.ttf`/`.otf`. Call `loadGoogleFont()` from Node. In the browser, download a `.ttf`/`.otf` yourself (for example from [@fontsource](https://fontsource.org/)) and pass the bytes straight to `embedTrueTypeFont()`.
+::: tip Works in browsers too (woff2)
+The Google Fonts API serves **woff2** (Brotli-compressed) to clients that advertise woff2 support — including browsers. `loadGoogleFont()` detects a woff2 response and decodes it with the zero-dependency `@criston/sempdf/woff2` decoder, loaded lazily so Node users (who receive a plain `.ttf`/`.otf`) never pay for it.
 :::
+
+## WOFF2 fonts
+
+`decodeWoff2()` converts a `.woff2` file — the format browsers download and most font CDNs serve — into standard TTF/OTF bytes ready for `embedTrueTypeFont()` or `registerFontFamily()`:
+
+```ts
+import { createDocument } from "@criston/sempdf";
+import { decodeWoff2 } from "@criston/sempdf/woff2";
+
+const response = await fetch(woff2Url);
+const ttf = decodeWoff2(new Uint8Array(await response.arrayBuffer()));
+
+const doc = createDocument();
+doc.registerFontFamily("Roboto", { regular: ttf });
+```
+
+The decoder implements Brotli (RFC 7932) and the WOFF2 glyf/loca and hmtx transform reversal with zero dependencies. It embeds the 122&nbsp;KB Brotli static dictionary, which is why it ships as a separate `@criston/sempdf/woff2` subpath — importing the core library never loads it. `isWoff2(bytes)` checks for the `wOF2` signature.
 
 ## Chrome Extension Fonts
 

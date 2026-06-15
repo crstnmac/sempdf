@@ -90,6 +90,7 @@ import {
   normalizeTableOptions,
   normalizeTableRows,
   normalizeTextBlockOptions,
+  assertKnownBuiltInFont,
   resolveStyledFont,
   normalizeTextFieldOptions,
   normalizeXmpMetadata,
@@ -486,41 +487,42 @@ function detectImageFormat(bytes: Uint8Array): "jpeg" | "png" | "gif" | "bmp" | 
 /** Minimal shape the text resolvers operate on, shared by page, container, and flow paths. */
 type StyleableTextOptions = {
   font?: PdfFont | undefined;
+  fallbackFonts?: PdfFont[] | undefined;
   bold?: boolean | undefined;
   italic?: boolean | undefined;
 };
 
 /**
- * Resolves a registered font-family name on a text options object to a concrete
- * face based on its `bold`/`italic` flags. Built-in font variants and
- * embedded-font handles are left for downstream normalization; this only
- * rewrites `font` when it names a registered family, in which case the
- * `bold`/`italic` flags are consumed.
+ * Looks up a registered font family by name. Family names match
+ * case-insensitively, like CSS font-family, so `font: "roboto"` finds a
+ * family registered as "Roboto". An exact-case match wins.
  */
-function resolveFontFamilyOptions<T extends StyleableTextOptions>(
-  options: T,
+function lookupFontFamily(
+  requested: PdfFont | undefined,
   families: ReadonlyMap<string, FontFamilyFaces>,
-): T {
-  const requested = options.font;
+): FontFamilyFaces | undefined {
   if (typeof requested !== "string") {
-    return options;
+    return undefined;
   }
-  let faces = families.get(requested);
-  if (faces === undefined) {
-    // Family names match case-insensitively, like CSS font-family, so
-    // `font: "roboto"` finds a family registered as "Roboto".
-    const lower = requested.toLowerCase();
-    for (const [name, candidate] of families) {
-      if (name.toLowerCase() === lower) {
-        faces = candidate;
-        break;
-      }
+  const exact = families.get(requested);
+  if (exact !== undefined) {
+    return exact;
+  }
+  const lower = requested.toLowerCase();
+  for (const [name, candidate] of families) {
+    if (name.toLowerCase() === lower) {
+      return candidate;
     }
   }
-  if (faces === undefined) {
-    return options;
-  }
-  const { bold, italic } = options;
+  return undefined;
+}
+
+/** Picks the family face matching the `bold`/`italic` flags, falling back to the closest available one. */
+function pickFamilyFace(
+  faces: FontFamilyFaces,
+  bold: boolean | undefined,
+  italic: boolean | undefined,
+): PdfFont {
   const picked =
     bold && italic
       ? faces.boldItalic ?? faces.bold ?? faces.italic
@@ -529,33 +531,94 @@ function resolveFontFamilyOptions<T extends StyleableTextOptions>(
         : italic
           ? faces.italic ?? faces.boldItalic
           : faces.regular;
-  return { ...options, font: picked ?? faces.regular, bold: undefined, italic: undefined };
+  return picked ?? faces.regular;
 }
 
 /**
- * Resolves each table cell's `bold`/`italic` flags to a concrete per-cell font
- * against the table's requested font: a registered family picks the matching
- * face, a built-in base family picks its standard-14 variant. Cells without
- * style flags are returned unchanged and inherit the table font.
+ * Resolves a registered font-family name on a text options object to a concrete
+ * face based on its `bold`/`italic` flags. Built-in font variants and
+ * embedded-font handles are left for downstream normalization; this only
+ * rewrites `font` when it names a registered family, in which case the
+ * `bold`/`italic` flags are consumed. Entries in `fallbackFonts` that name a
+ * registered family are resolved to the matching face with the same flags.
  */
-function resolveTableCellFonts(
-  rows: NormalizedTableRow[],
-  baseFont: PdfFont | undefined,
+function resolveFontFamilyOptions<T extends StyleableTextOptions>(
+  options: T,
   families: ReadonlyMap<string, FontFamilyFaces>,
+): T {
+  const { bold, italic } = options;
+  let resolved = options;
+
+  if (options.fallbackFonts !== undefined && options.fallbackFonts.some((font) => lookupFontFamily(font, families) !== undefined)) {
+    resolved = {
+      ...resolved,
+      fallbackFonts: options.fallbackFonts.map((font) => {
+        const faces = lookupFontFamily(font, families);
+        return faces === undefined ? font : pickFamilyFace(faces, bold, italic);
+      }),
+    };
+  }
+
+  const faces = lookupFontFamily(options.font, families);
+  if (faces === undefined) {
+    return resolved;
+  }
+  return { ...resolved, font: pickFamilyFace(faces, bold, italic), bold: undefined, italic: undefined };
+}
+
+/** Table-level style inherited by per-cell font and rich-run resolution. */
+type TableCellBaseStyle = {
+  font?: PdfFont | undefined;
+  fontSize?: number | undefined;
+  color?: ColorInput | undefined;
+  kerning?: boolean | undefined;
+};
+
+/**
+ * Resolves each table cell's content styles to concrete values:
+ *
+ * - A cell `font` override and/or `bold`/`italic` flags resolve against the
+ *   cell's (or table's) requested font — a registered family picks the
+ *   matching face, a built-in base family picks its standard-14 variant.
+ * - Rich `runs` are resolved per run (run > cell > table > document defaults)
+ *   into {@link RichRunInput}s consumed by the inline layout engine.
+ *
+ * Cells without overrides are returned unchanged and inherit the table font.
+ */
+function resolveTableCellContent(
+  rows: NormalizedTableRow[],
+  base: TableCellBaseStyle,
+  families: ReadonlyMap<string, FontFamilyFaces>,
+  textDefaults: TextDefaults | undefined,
 ): NormalizedTableRow[] {
   return rows.map((row) =>
     row.map((cell) => {
-      if (cell.bold !== true && cell.italic !== true) {
-        return cell;
+      let resolved = cell;
+      const rawCellFont = cell.font;
+      if (rawCellFont !== undefined || cell.bold === true || cell.italic === true) {
+        const styled = resolveFontFamilyOptions(
+          { font: rawCellFont ?? base.font ?? "Helvetica", bold: cell.bold, italic: cell.italic },
+          families,
+        );
+        const font = resolveStyledFont(styled.font ?? "Helvetica", styled.bold, styled.italic);
+        assertKnownBuiltInFont(font);
+        resolved = { ...resolved, font };
       }
-      const styled = resolveFontFamilyOptions(
-        { font: baseFont ?? "Helvetica", bold: cell.bold, italic: cell.italic },
-        families,
-      );
-      return {
-        ...cell,
-        font: resolveStyledFont(styled.font ?? "Helvetica", styled.bold, styled.italic),
-      };
+      if (cell.runs !== undefined) {
+        const blockFont = rawCellFont ?? base.font;
+        const blockColor = cell.color ?? base.color;
+        const blockStyle: RichBlockStyle = {
+          ...(blockFont !== undefined ? { font: blockFont } : {}),
+          ...(base.fontSize !== undefined ? { fontSize: base.fontSize } : {}),
+          ...(blockColor !== undefined ? { color: blockColor } : {}),
+          ...(base.kerning !== undefined ? { kerning: base.kerning } : {}),
+        };
+        resolved = {
+          ...resolved,
+          richRuns: buildRichRunInputs(cell.runs, blockStyle, families, textDefaults),
+        };
+      }
+      return resolved;
     }),
   );
 }
@@ -729,10 +792,11 @@ export class PdfStructureContainer {
    */
   table(rows: readonly TableRow[], options: TableOptions): this {
     const resolvedOptions = resolveFontFamilyOptions(options, this.fontFamilies);
-    const normalizedRows = resolveTableCellFonts(
+    const normalizedRows = resolveTableCellContent(
       normalizeTableRows(rows),
-      options.font,
+      options,
       this.fontFamilies,
+      this.textDefaults,
     );
     const normalizedOptions = normalizeTableOptions(normalizedRows, resolvedOptions);
     layoutTable(
@@ -1953,10 +2017,16 @@ export class PdfFlow {
     this.advanceColumnIfNeeded(this.estimateTableHeight(rows, options));
     const spacing = this.resolveSpacing("table", options);
     this.applyMarginTop(spacing.before);
-    const normalizedRows = resolveTableCellFonts(
+    const normalizedRows = resolveTableCellContent(
       normalizeTableRows(rows),
-      options.font ?? this.state.font,
+      {
+        font: options.font ?? this.state.font,
+        fontSize: options.fontSize ?? this.state.fontSize,
+        color: options.color ?? this.state.color,
+        kerning: options.kerning ?? this.state.kerning,
+      },
       this.fontFamilies,
+      this.textDefaults,
     );
     const innerWidth = Math.max(
       this.state.width - spacing.left - spacing.right,
@@ -2171,10 +2241,16 @@ export class PdfFlow {
     options: FlowTableOptions = {},
   ): number[] {
     const spacing = this.resolveSpacing("table", options);
-    const normalizedRows = resolveTableCellFonts(
+    const normalizedRows = resolveTableCellContent(
       normalizeTableRows(rows),
-      options.font ?? this.state.font,
+      {
+        font: options.font ?? this.state.font,
+        fontSize: options.fontSize ?? this.state.fontSize,
+        color: options.color ?? this.state.color,
+        kerning: options.kerning ?? this.state.kerning,
+      },
       this.fontFamilies,
+      this.textDefaults,
     );
     const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
     const width = options.width ?? innerWidth;
@@ -2209,22 +2285,35 @@ export class PdfFlow {
           1,
           cellWidth - normalizedOptions.cellPadding * 2,
         );
-        const runs = layoutTextBlock(
-          cell.text,
-          {
-            ...normalizedOptions,
-            ...(cell.font !== undefined ? { font: cell.font } : {}),
-            x: this.state.x + normalizedOptions.cellPadding,
-            y: this.state.y - normalizedOptions.cellPadding,
-            width: textWidth,
-            tag: "P",
-          },
-          this.embeddedFonts,
-        );
-        cellHeights.push(
-          measurePositionedRunHeight(runs, normalizedOptions.lineHeight) +
-            normalizedOptions.cellPadding * 2,
-        );
+        if (cell.richRuns !== undefined) {
+          const normalizedRuns = normalizeRichRuns(cell.richRuns);
+          const lineHeight = Math.max(normalizedOptions.lineHeight, richLineHeight(normalizedRuns));
+          const lines = breakInlineLines(
+            normalizedRuns,
+            { width: textWidth, writingMode: "horizontal" },
+            this.embeddedFonts,
+          );
+          cellHeights.push(
+            Math.max(lines.length, 1) * lineHeight + normalizedOptions.cellPadding * 2,
+          );
+        } else {
+          const runs = layoutTextBlock(
+            cell.text,
+            {
+              ...normalizedOptions,
+              ...(cell.font !== undefined ? { font: cell.font } : {}),
+              x: this.state.x + normalizedOptions.cellPadding,
+              y: this.state.y - normalizedOptions.cellPadding,
+              width: textWidth,
+              tag: "P",
+            },
+            this.embeddedFonts,
+          );
+          cellHeights.push(
+            measurePositionedRunHeight(runs, normalizedOptions.lineHeight) +
+              normalizedOptions.cellPadding * 2,
+          );
+        }
 
         if (cell.rowSpan > 1) {
           for (
@@ -3446,10 +3535,11 @@ export class PdfPage {
    */
   table(rows: readonly TableRow[], options: TableOptions): this {
     const resolvedOptions = resolveFontFamilyOptions(options, this.fontFamilies);
-    const normalizedRows = resolveTableCellFonts(
+    const normalizedRows = resolveTableCellContent(
       normalizeTableRows(rows),
-      options.font,
+      options,
       this.fontFamilies,
+      this.textDefaults,
     );
     const normalizedOptions = normalizeTableOptions(normalizedRows, resolvedOptions);
     layoutTable(

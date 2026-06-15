@@ -49,18 +49,21 @@ test("loadGoogleFont encodes italic and subsetting text into the request", async
   assert.match(urls[0]!, /&text=Hi!/);
 });
 
-test("loadGoogleFont throws a helpful error when Google serves woff2", async () => {
-  const { fetchImpl } = recordingFetch(WOFF2_CSS, Uint8Array.of(1));
+test("loadGoogleFont follows a woff2 URL and decodes it (rejecting invalid woff2 bytes)", async () => {
+  const { fetchImpl, urls } = recordingFetch(WOFF2_CSS, Uint8Array.of(1));
 
+  // The woff2 URL is followed and handed to the decoder; bogus bytes surface
+  // as a WOFF2 decode error rather than an "unsupported format" error.
   await assert.rejects(
     () => loadGoogleFont("Inter", { fetch: fetchImpl }),
     (error: unknown) => {
       assert.ok(error instanceof PdfEngineError);
       assert.equal(error.code, PdfErrorCode.INVALID_FONT);
-      assert.match(error.message, /woff2/);
+      assert.match(error.message, /Invalid WOFF2 data/);
       return true;
     },
   );
+  assert.equal(urls[1], "https://fonts.gstatic.com/s/inter/v20/UcCO3Fwr.woff2");
 });
 
 test("loadGoogleFont surfaces a non-OK CSS response", async () => {
