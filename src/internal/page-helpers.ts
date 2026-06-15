@@ -689,7 +689,14 @@ export function addLinkToPage(
 ): void {
   const normalizedOptions = normalizeUriLinkOptions(url, options);
   let structureGroupId: number | undefined;
-  if (normalizedOptions.tag === "Link") {
+  // A link annotation defaults to being tagged as a `Link` structure element:
+  // in a tagged/PDF-UA document an annotation that is not referenced from the
+  // structure tree (no OBJR) is a conformance failure. Only an explicit
+  // `tag: "Artifact"` opts out (decorative links). This mirrors flow.link,
+  // which already passes `tag ?? "Link"`, and covers the inline paths
+  // (richParagraph, richText, table cells, paragraph annotations) that
+  // previously omitted the tag and stranded the annotation untagged.
+  if (normalizedOptions.tag !== "Artifact") {
     const annotationIndex = page.annotations.length;
     const structure = withInferredBoundingBox(
       normalizedOptions.structure,
@@ -1061,7 +1068,7 @@ function buildTableCellStructureOptions(
   options: NormalizedTableOptions
 ): PdfStructureOptions {
   const scope =
-    cell.scope ?? (role === "TH" ? inferTableHeaderScope(rowIndex, columnIndex, options) : undefined);
+    cell.scope ?? (role === "TH" ? inferTableHeaderScope(rowIndex, columnIndex, options, cell) : undefined);
   return {
     ...cell.structure,
     attributes: {
@@ -1083,7 +1090,8 @@ function buildTableCellStructureOptions(
 function inferTableHeaderScope(
   rowIndex: number,
   columnIndex: number,
-  options: NormalizedTableOptions
+  options: NormalizedTableOptions,
+  cell: NormalizedTableCell
 ): "row" | "column" | "both" | undefined {
   const inHeaderColumn = columnIndex < options.headerColumns;
   const inHeaderRow = rowIndex < options.headerRows;
@@ -1092,6 +1100,11 @@ function inferTableHeaderScope(
   // navigation). Authors can still override via cell.scope.
   if (inHeaderRow) return "column";
   if (inHeaderColumn) return "row";
+  // A cell promoted to TH purely via `cell.header` (outside any declared header
+  // row/column band, e.g. a row-label column the author marked per-cell) is
+  // almost always a row header. Without a Scope, auditors flag "row header
+  // missing", so default it to Row. Authors can still override via cell.scope.
+  if (cell.header) return "row";
   return undefined;
 }
 

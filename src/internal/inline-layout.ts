@@ -187,6 +187,13 @@ interface PlacedLine {
   readonly runs: PositionedTextRun[];
   readonly links: InlineLinkRect[];
   readonly decorations: InlineDecoration[];
+  /**
+   * Parallel to `runs`: the link URL each positioned run belongs to (or
+   * `undefined` for non-linked runs). Lets callers group a link's visible text
+   * into a single `Link` structure element. The Nth contiguous run of a given
+   * URL corresponds to the Nth entry of `links`.
+   */
+  readonly runLinks: (string | undefined)[];
 }
 
 /**
@@ -205,6 +212,7 @@ export function placeInlineLine(
   }
 
   const runs: PositionedTextRun[] = [];
+  const runLinks: (string | undefined)[] = [];
   const links: InlineLinkRect[] = [];
   const decorations: InlineDecoration[] = [];
   const rtl = geometry.direction === "rtl";
@@ -244,9 +252,15 @@ export function placeInlineLine(
   };
 
   for (const piece of ordered) {
-    runs.push(
-      ...positionTextRuns(piece.text, { ...piece.run.options, x: cursorX, y: baselineY }, embeddedFonts),
+    const produced = positionTextRuns(
+      piece.text,
+      { ...piece.run.options, x: cursorX, y: baselineY },
+      embeddedFonts,
     );
+    runs.push(...produced);
+    for (let i = 0; i < produced.length; i += 1) {
+      runLinks.push(piece.run.link);
+    }
     const url = piece.run.link;
     if (url !== activeUrl) {
       closeLink(cursorX);
@@ -270,7 +284,7 @@ export function placeInlineLine(
     cursorX += piece.mainSize + (piece.isSpace ? extraPerGap : 0);
   }
   closeLink(cursorX);
-  return { runs, links, decorations };
+  return { runs, links, decorations, runLinks };
 }
 
 /** Stacks a single vertical column of pieces from the column top downward. */
@@ -281,12 +295,19 @@ function placeVerticalColumn(
   embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>,
 ): PlacedLine {
   const runs: PositionedTextRun[] = [];
+  const runLinks: (string | undefined)[] = [];
   const links: InlineLinkRect[] = [];
   let cursorY = geometry.y;
   for (const piece of line.pieces) {
-    runs.push(
-      ...positionTextRunsVertical(piece.text, { ...piece.run.options, x: columnX, y: cursorY }, embeddedFonts),
+    const produced = positionTextRunsVertical(
+      piece.text,
+      { ...piece.run.options, x: columnX, y: cursorY },
+      embeddedFonts,
     );
+    runs.push(...produced);
+    for (let i = 0; i < produced.length; i += 1) {
+      runLinks.push(piece.run.link);
+    }
     if (piece.run.link !== undefined && !piece.isSpace) {
       const fontSize = piece.run.options.fontSize;
       links.push({
@@ -299,7 +320,7 @@ function placeVerticalColumn(
     }
     cursorY -= piece.mainSize;
   }
-  return { runs, links, decorations: [] };
+  return { runs, links, decorations: [], runLinks };
 }
 
 /**
