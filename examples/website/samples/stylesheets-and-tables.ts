@@ -5,7 +5,7 @@ const doc = createDocument({
   title: "Stylesheets and Tables Demo",
   language: "en-US",
   xmpMetadata: {
-    creator: "zeropdf playground"
+    creator: "a11ydocs playground"
   }
 });
 
@@ -18,7 +18,7 @@ doc.renderTemplate({
     muted: { color: rgb(0.45, 0.45, 0.45) }
   },
   blocks: [
-    { type: "heading", text: "Hello from zeropdf", options: { level: 1 } },
+    { type: "heading", text: "Hello from a11ydocs", options: { level: 1 } },
     { type: "paragraph", text: "Generated in the browser - no server, no dependencies.", class: "muted" },
 
     { type: "heading", text: "Stylesheets", options: { level: 2 } },

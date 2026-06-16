@@ -5,7 +5,7 @@ Designer invoice templates need two layers of protection:
 1. strict layout checks while generating the PDF
 2. optional visual regression checks during development
 
-The published `zeropdf` package stays dependency-free. Visual regression uses Node built-ins plus a dev-only Poppler renderer when you choose to run the visual scripts. Library consumers do not install Poppler or any rendering dependency.
+The published `a11ydocs` package stays dependency-free. Visual regression uses Node built-ins plus a dev-only Poppler renderer when you choose to run the visual scripts. Library consumers do not install Poppler or any rendering dependency.
 
 ## Strict layout mode
 

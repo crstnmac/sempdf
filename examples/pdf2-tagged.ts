@@ -20,8 +20,8 @@ const doc = createDocument({
 
 doc.setXmpMetadata({
   title: "Tagged PDF 2.0 Sample",
-  creator: "zeropdf",
-  creatorTool: "zeropdf",
+  creator: "a11ydocs",
+  creatorTool: "a11ydocs",
   createDate: "2026-05-12T00:00:00Z",
   modifyDate: "2026-05-12T00:00:00Z",
   metadataDate: "2026-05-12T00:00:00Z"

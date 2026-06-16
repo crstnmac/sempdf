@@ -13,21 +13,21 @@ const doc = createDocument({
   language: "en-US",
   info: {
     title: "Flow Images Demo",
-    author: "zeropdf"
+    author: "a11ydocs"
   }
 });
 
 doc.setXmpMetadata({
   title: "Flow Images Demo",
-  creator: "zeropdf",
-  creatorTool: "zeropdf",
+  creator: "a11ydocs",
+  creatorTool: "a11ydocs",
   createDate: "2026-05-12T00:00:00Z",
   modifyDate: "2026-05-12T00:00:00Z",
   metadataDate: "2026-05-12T00:00:00Z"
 });
 
 doc.renderTemplate({
-  info: { title: "Flow Images Demo", author: "zeropdf" },
+  info: { title: "Flow Images Demo", author: "a11ydocs" },
   page: { size: "A4", fontSize: 12 },
   autoOutline: { maxLevel: 2 },
   blocks: [

@@ -5,7 +5,7 @@ import { createDocument, hex } from "../src/index.js";
 const doc = createDocument({
   info: {
     title: "Graphics State Demo",
-    author: "zeropdf"
+    author: "a11ydocs"
   }
 });
 

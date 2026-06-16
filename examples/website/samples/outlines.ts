@@ -3,7 +3,7 @@ import { createDocument, hex } from "@barrierbreak/a11ydocs-pdf";
 const doc = createDocument({
   info: {
     title: "PDF Outlines (Bookmarks) Demo",
-    author: "zeropdf"
+    author: "a11ydocs"
   }
 });
 

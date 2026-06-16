@@ -1,6 +1,6 @@
 # Accessibility and Compliance
 
-`zeropdf` can create tagged PDFs with document language, semantic structure, role maps, alt text, and validation warnings. For output that is intended to validate as PDF/UA-1, enable the PDF/UA profile, embed fonts for all visible text, use semantic flow helpers for meaningful content, mark decorative drawing as artifacts when you use low-level drawing, and write the serialized bytes to your target.
+`a11ydocs` can create tagged PDFs with document language, semantic structure, role maps, alt text, and validation warnings. For output that is intended to validate as PDF/UA-1, enable the PDF/UA profile, embed fonts for all visible text, use semantic flow helpers for meaningful content, mark decorative drawing as artifacts when you use low-level drawing, and write the serialized bytes to your target.
 
 ```ts
 import { readFile, writeFile } from "node:fs/promises";
@@ -15,10 +15,10 @@ const doc = createDocument({
   language: "en-US",
   structureRoot: "Document",
   info: {
-    author: "zeropdf"
+    author: "a11ydocs"
   },
   xmpMetadata: {
-    creator: "zeropdf",
+    creator: "a11ydocs",
     createDate: "2026-05-05T00:00:00Z",
     modifyDate: "2026-05-05T00:00:00Z",
     metadataDate: "2026-05-05T00:00:00Z"

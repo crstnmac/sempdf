@@ -13,13 +13,13 @@ The MCP package is published on a private npm registry. Add the scope to your `.
 Then register with Claude:
 
 ```bash
-claude mcp add zeropdf -- npx --registry=https://npm.barrierbreak.net @barrierbreak/a11ydocs-pdf-mcp
+claude mcp add a11ydocs -- npx --registry=https://npm.barrierbreak.net @barrierbreak/a11ydocs-pdf-mcp
 ```
 
 Set a workspace directory to scope all file operations:
 
 ```bash
-claude mcp add zeropdf -- npx --registry=https://npm.barrierbreak.net @barrierbreak/a11ydocs-pdf-mcp --env WORKSPACE_DIR=~/Documents/pdf-workspace
+claude mcp add a11ydocs -- npx --registry=https://npm.barrierbreak.net @barrierbreak/a11ydocs-pdf-mcp --env WORKSPACE_DIR=~/Documents/pdf-workspace
 ```
 
 ## Tools

@@ -147,11 +147,11 @@ const overwriteParam = z
 /** Server ----------------------------------------------------------------- */
 
 const server = new McpServer(
-  { name: "zeropdf", version: "0.1.0" },
+  { name: "a11ydocs", version: "0.1.0" },
   {
     instructions:
       "Generates and manipulates PDFs via @barrierbreak/a11ydocs-pdf. To author a `generate_pdf` document, first read " +
-      "the `zeropdf://document-schema` resource for the PdfDocumentJson / TemplateBlock types. PDFs and image/" +
+      "the `a11ydocs://document-schema` resource for the PdfDocumentJson / TemplateBlock types. PDFs and image/" +
       "font file paths are workspace-scoped. Write tools refuse to overwrite existing files unless " +
       "`overwrite: true` is set.",
   },
@@ -164,7 +164,7 @@ server.registerTool(
   {
     title: "Generate PDF from a JSON document",
     description:
-      "Render a PDF from a single declarative zeropdf PdfDocumentJson value and write it to disk. The " +
+      "Render a PDF from a single declarative a11ydocs PdfDocumentJson value and write it to disk. The " +
       "`document` describes everything: `blocks[]` (body), optional `page`, `styles`, `header`/`footer` " +
       "(arrays with {{pageNumber}}/{{pageCount}}/{{title}}/{{author}} tokens), `fonts[]`, `defaultFont`, and " +
       "document options (`title`, `info`, `encryption`, `conformance`, `tagged`, `language`, `compress`). " +
@@ -175,7 +175,7 @@ server.registerTool(
       "{ x, y, width?, height?, page?, origin? } (e.g. {\"type\":\"textField\",\"name\":\"sig\"," +
       "\"position\":{\"x\":72,\"y\":640,\"width\":220,\"height\":14}}). Positionable block types: paragraph, image " +
       "(png/jpeg/...), rect, textField, checkBox, signatureField. The full shape is in the " +
-      "`zeropdf://document-schema` resource — read it first. To combine or edit existing PDFs use " +
+      "`a11ydocs://document-schema` resource — read it first. To combine or edit existing PDFs use " +
       "merge_pdfs / append_pages / extract_pages instead.",
     inputSchema: {
       document: z
@@ -472,9 +472,9 @@ server.registerTool(
 
 server.registerResource(
   "document-schema",
-  "zeropdf://document-schema",
+  "a11ydocs://document-schema",
   {
-    title: "zeropdf PdfDocumentJson type declarations",
+    title: "a11ydocs PdfDocumentJson type declarations",
     description:
       "TypeScript .d.ts declarations for PdfDocumentJson (the `generate_pdf` `document` shape) and every " +
       "TemplateBlock / style / option type it references. Read this to author `generate_pdf` documents.",
@@ -521,7 +521,7 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   // stderr is safe; stdout is reserved for the MCP protocol.
-  console.error("zeropdf MCP server running on stdio");
+  console.error("a11ydocs MCP server running on stdio");
 }
 
 main().catch((error) => {

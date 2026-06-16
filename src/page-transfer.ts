@@ -263,7 +263,7 @@ function buildTransferredPdf(
     },
     {
       id: 3,
-      value: dict([["Producer", { kind: "string", value: "zeropdf" }]]),
+      value: dict([["Producer", { kind: "string", value: "a11ydocs" }]]),
     },
     ...builder.objects,
   ];

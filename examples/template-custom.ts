@@ -6,7 +6,7 @@ const doc = createDocument({
   language: "en-US",
   info: {
     title: "Custom Blocks Demo",
-    author: "zeropdf",
+    author: "a11ydocs",
     creationDate: "D:20260512000000Z",
     modificationDate: "D:20260512000000Z"
   }
@@ -14,15 +14,15 @@ const doc = createDocument({
 
 doc.setXmpMetadata({
   title: "Custom Blocks Demo",
-  creator: "zeropdf",
-  creatorTool: "zeropdf",
+  creator: "a11ydocs",
+  creatorTool: "a11ydocs",
   createDate: "2026-05-12T00:00:00Z",
   modifyDate: "2026-05-12T00:00:00Z",
   metadataDate: "2026-05-12T00:00:00Z"
 });
 
 doc.renderTemplate({
-  info: { title: "Custom Blocks", author: "zeropdf" },
+  info: { title: "Custom Blocks", author: "a11ydocs" },
   page: { size: "A4" },
   blocks: [
     {

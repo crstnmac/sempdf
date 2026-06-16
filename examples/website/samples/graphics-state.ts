@@ -3,7 +3,7 @@ import { createDocument, hex } from "@barrierbreak/a11ydocs-pdf";
 const doc = createDocument({
   info: {
     title: "Graphics State Demo",
-    author: "zeropdf"
+    author: "a11ydocs"
   }
 });
 

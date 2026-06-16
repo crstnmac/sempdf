@@ -4,7 +4,7 @@ const doc = createDocument({
   language: "en-US",
   info: {
     title: "Registration Form",
-    author: "zeropdf"
+    author: "a11ydocs"
   }
 });
 
@@ -17,7 +17,7 @@ const doc = createDocument({
 // accessibility check). renderTemplate tags the field widgets into the
 // structure tree automatically, so no per-field tag is needed.
 doc.renderTemplate({
-  info: { title: "Registration Form", author: "zeropdf" },
+  info: { title: "Registration Form", author: "a11ydocs" },
   page: { size: "A4" },
   pageNumber: { region: "footer", align: "center" },
   blocks: [

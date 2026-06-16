@@ -59,4 +59,4 @@ The repo includes a browser playground in `examples/website`: write template cod
 npm run example:web
 ```
 
-Open `http://localhost:4173/`, edit the code, and press <kbd>Run</kbd> (or <kbd>⌘/Ctrl</kbd>+<kbd>Enter</kbd>). Every `zeropdf` export is in scope; your code just needs to build a document and `return` it.
+Open `http://localhost:4173/`, edit the code, and press <kbd>Run</kbd> (or <kbd>⌘/Ctrl</kbd>+<kbd>Enter</kbd>). Every `a11ydocs` export is in scope; your code just needs to build a document and `return` it.

@@ -1430,7 +1430,7 @@ function prepareIncrementalUpdateSerialization(
       (page): page is PdfDocumentModel['pages'][number] => page !== undefined,
     );
   const mutatedModel: PdfDocumentModel = {
-    info: model.info ?? { producer: 'zeropdf' },
+    info: model.info ?? { producer: 'a11ydocs' },
     tagged: false,
     embeddedFonts: model.embeddedFonts,
     namedDestinations: [],

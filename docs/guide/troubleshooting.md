@@ -212,7 +212,7 @@ const doc = createDocument({
   language: "en-US",
   structureRoot: "Document",
   xmpMetadata: {
-    creator: "zeropdf",
+    creator: "a11ydocs",
     createDate: "2026-05-08T00:00:00Z",
     modifyDate: "2026-05-08T00:00:00Z",
     metadataDate: "2026-05-08T00:00:00Z"

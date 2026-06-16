@@ -4,12 +4,12 @@ const doc = createDocument({
   language: "en-US",
   info: {
     title: "PDF Annotations Demo",
-    author: "zeropdf"
+    author: "a11ydocs"
   }
 });
 
 doc.renderTemplate({
-  info: { title: "PDF Annotations Demo", author: "zeropdf" },
+  info: { title: "PDF Annotations Demo", author: "a11ydocs" },
   page: { size: "A4" },
   blocks: [
     {

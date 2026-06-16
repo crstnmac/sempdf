@@ -4,12 +4,12 @@ const doc = createDocument({
   language: "en-US",
   info: {
     title: "Color Spaces Demo",
-    author: "zeropdf"
+    author: "a11ydocs"
   }
 });
 
 doc.renderTemplate({
-  info: { title: "Color Spaces Demo", author: "zeropdf" },
+  info: { title: "Color Spaces Demo", author: "a11ydocs" },
   page: { size: "A4" },
   blocks: [
     {

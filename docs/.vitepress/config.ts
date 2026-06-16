@@ -148,7 +148,7 @@ function apiSidebar(): DefaultTheme.SidebarItem[] {
 }
 
 export default defineConfig({
-  title: "zeropdf",
+  title: "a11ydocs",
   description: "Zero-dependency PDF generation and editing in TypeScript.",
   cleanUrls: true,
   lastUpdated: true,
@@ -158,7 +158,7 @@ export default defineConfig({
     ["link", { rel: "alternate", type: "text/plain", title: "llms.txt", href: "/llms.txt" }]
   ],
   themeConfig: {
-    logo: { src: "/logo.svg", alt: "zeropdf" },
+    logo: { src: "/logo.svg", alt: "a11ydocs" },
     nav: [
       { text: "Guide", link: "/guide/getting-started" },
       { text: "API", link: "/api/" },

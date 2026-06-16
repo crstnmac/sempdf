@@ -8,7 +8,7 @@ signatures stay valid.
 This example is self-contained: it generates a throwaway self-signed
 certificate with [`node-forge`](https://www.npmjs.com/package/node-forge) so it
 runs with no setup. In production you would load a real key and certificate
-chain instead. zeropdf ships zero runtime dependencies — the CMS signer lives
+chain instead. a11ydocs ships zero runtime dependencies — the CMS signer lives
 entirely in your own code.
 
 Run it with:
@@ -72,7 +72,7 @@ editable.sign({
   reason: "Approved for distribution",
   location: "Berlin",
   contactInfo: "finance@example.com",
-  name: "ZeroPDF Demo Signer",
+  name: "A11yDocs Demo Signer",
   placeholderBytes: 16384,
   sign: makeDetachedSigner(cert, key)
 });

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Assembles and packs the zeropdf MCPB bundle.
+// Assembles and packs the a11ydocs MCPB bundle.
 //
 //   build/
 //   ├── manifest.json          (version stamped from package.json)
@@ -8,7 +8,7 @@
 //       ├── package.json       ({ "type": "module" } so node runs it as ESM)
 //       └── types.d.ts         (lib type declarations served by the schema resource)
 //
-// Output: dist-mcpb/zeropdf.mcpb
+// Output: dist-mcpb/a11ydocs.mcpb
 import { execFileSync } from "node:child_process";
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -57,6 +57,6 @@ writeFileSync(join(buildDir, "manifest.json"), JSON.stringify(manifest, null, 2)
 console.log("• validating + packing");
 run("npx", ["@anthropic-ai/mcpb", "validate", join(buildDir, "manifest.json")]);
 mkdirSync(join(root, "dist-mcpb"), { recursive: true });
-run("npx", ["@anthropic-ai/mcpb", "pack", buildDir, join(root, "dist-mcpb", "zeropdf.mcpb")]);
+run("npx", ["@anthropic-ai/mcpb", "pack", buildDir, join(root, "dist-mcpb", "a11ydocs.mcpb")]);
 
-console.log("\n✓ dist-mcpb/zeropdf.mcpb");
+console.log("\n✓ dist-mcpb/a11ydocs.mcpb");

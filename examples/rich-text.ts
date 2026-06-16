@@ -18,7 +18,7 @@ const doc = createDocument({
   structureRoot: "Document",
   info: {
     title: "Rich Text Style Demo",
-    author: "zeropdf"
+    author: "a11ydocs"
   }
 });
 

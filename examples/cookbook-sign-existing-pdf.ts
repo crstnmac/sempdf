@@ -21,8 +21,8 @@ function generateSelfSignedCert(): {
   cert.validity.notAfter.setFullYear(cert.validity.notBefore.getFullYear() + 1);
 
   const attrs = [
-    { name: "commonName", value: "ZeroPDF Demo Signer" },
-    { name: "organizationName", value: "ZeroPDF" },
+    { name: "commonName", value: "A11yDocs Demo Signer" },
+    { name: "organizationName", value: "A11yDocs" },
     { name: "countryName", value: "US" }
   ];
   cert.setSubject(attrs);
@@ -87,7 +87,7 @@ editable.sign({
   reason: "Approved for distribution",
   location: "Berlin",
   contactInfo: "finance@example.com",
-  name: "ZeroPDF Demo Signer",
+  name: "A11yDocs Demo Signer",
   // Reserve hex room for the full CMS blob (cert chain + signature).
   placeholderBytes: 16384,
   sign: makeDetachedSigner(cert, key)

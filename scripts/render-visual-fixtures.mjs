@@ -36,7 +36,7 @@ export async function renderFixtures({
 
       const outputName = dataSet.id === "default" ? name : `${name}/${dataSet.id}`;
       const workPrefix = dataSet.id === "default" ? name : `${name}-${dataSet.id}`;
-      const workDir = mkdtempSync(join(tmpdir(), "zeropdf-visual-"));
+      const workDir = mkdtempSync(join(tmpdir(), "a11ydocs-visual-"));
       try {
         const pdfPath = join(workDir, `${workPrefix}.pdf`);
         const prefix = join(workDir, workPrefix);

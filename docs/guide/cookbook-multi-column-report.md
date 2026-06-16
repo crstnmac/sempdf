@@ -4,7 +4,7 @@ Build a multi-page report with metric dashboards, revenue tables, and per-sectio
 
 ## Choosing an approach
 
-There are three strategies for multi-column layouts in `zeropdf`:
+There are three strategies for multi-column layouts in `a11ydocs`:
 
 | Strategy | Best for | API |
 |----------|----------|-----|

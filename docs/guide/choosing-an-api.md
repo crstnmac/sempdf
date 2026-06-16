@@ -1,6 +1,6 @@
 # Choosing an API
 
-zeropdf offers a few layers, from absolute drawing to automatic multi-page layout. This page maps common goals to the right tool so you don't have to scan the whole reference.
+a11ydocs offers a few layers, from absolute drawing to automatic multi-page layout. This page maps common goals to the right tool so you don't have to scan the whole reference.
 
 ## Text
 

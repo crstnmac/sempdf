@@ -5,21 +5,21 @@ const doc = createDocument({
   language: "en-US",
   info: {
     title: "PDF Form Fields Demo",
-    author: "zeropdf"
+    author: "a11ydocs"
   }
 });
 
 doc.setXmpMetadata({
   title: "PDF Form Fields Demo",
-  creator: "zeropdf",
-  creatorTool: "zeropdf",
+  creator: "a11ydocs",
+  creatorTool: "a11ydocs",
   createDate: "2026-05-12T00:00:00Z",
   modifyDate: "2026-05-12T00:00:00Z",
   metadataDate: "2026-05-12T00:00:00Z"
 });
 
 doc.renderTemplate({
-  info: { title: "PDF Form Fields Demo", author: "zeropdf" },
+  info: { title: "PDF Form Fields Demo", author: "a11ydocs" },
   page: { size: "A4" },
   blocks: [
     {

@@ -1,4 +1,4 @@
-// Integration tests for the zeropdf MCP server.
+// Integration tests for the a11ydocs MCP server.
 // Spawns the built server over stdio and drives it with the MCP client SDK,
 // exercising every tool, the template-schema resource, and error paths.
 //
@@ -18,7 +18,7 @@ const serverEntry = join(here, "..", "dist", "index.js");
 
 const isPdf = (path) => readFileSync(path).subarray(0, 5).toString() === "%PDF-";
 
-describe("zeropdf MCP server", () => {
+describe("a11ydocs MCP server", () => {
   let client;
   let dir;
 
@@ -28,7 +28,7 @@ describe("zeropdf MCP server", () => {
   let merged; // a + b = 3 pages
 
   before(async () => {
-    dir = mkdtempSync(join(tmpdir(), "zeropdf-mcp-test-"));
+    dir = mkdtempSync(join(tmpdir(), "a11ydocs-mcp-test-"));
     a = join(dir, "a.pdf");
     b = join(dir, "b.pdf");
     merged = join(dir, "merged.pdf");
@@ -272,7 +272,7 @@ describe("zeropdf MCP server", () => {
   });
 
   it("serves the document-schema resource", async () => {
-    const res = await client.readResource({ uri: "zeropdf://document-schema" });
+    const res = await client.readResource({ uri: "a11ydocs://document-schema" });
     assert.match(res.contents[0].text, /PdfDocumentJson/);
   });
 });

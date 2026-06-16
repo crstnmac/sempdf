@@ -36,7 +36,7 @@ function setStatus(message, kind) {
   );
 }
 
-// Recursively load zeropdf's .d.ts files so the editor offers real IntelliSense.
+// Recursively load a11ydocs's .d.ts files so the editor offers real IntelliSense.
 // Non-fatal: editing still works if any fetch fails.
 async function loadTypes() {
   const base = "/dist/src/";
@@ -99,7 +99,7 @@ async function run() {
     const js = output.outputFiles[0].text;
     const moduleUrl = URL.createObjectURL(new Blob([js], { type: "text/javascript" }));
     try {
-      // The page importmap resolves the `zeropdf` import inside this module.
+      // The page importmap resolves the `a11ydocs` import inside this module.
       const module = await import(moduleUrl);
       doc = module.default;
     } finally {

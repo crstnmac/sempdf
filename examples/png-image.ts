@@ -19,7 +19,7 @@ const doc = createDocument({
 doc.setXmpMetadata({
   title: "PNG Example",
   creator: "Codex",
-  creatorTool: "zeropdf",
+  creatorTool: "a11ydocs",
   createDate: "2026-04-13T21:30:00Z",
   modifyDate: "2026-04-13T21:30:00Z",
   metadataDate: "2026-04-13T21:30:00Z"

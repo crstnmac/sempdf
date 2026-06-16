@@ -4,7 +4,7 @@ const doc = createDocument({
   language: "en-US",
   info: {
     title: "Hello World",
-    author: "zeropdf",
+    author: "a11ydocs",
     creationDate: "D:20260413213000Z",
     modificationDate: "D:20260413213000Z"
   }
@@ -12,20 +12,20 @@ const doc = createDocument({
 
 doc.setXmpMetadata({
   title: "Hello World",
-  creator: "zeropdf",
-  creatorTool: "zeropdf",
+  creator: "a11ydocs",
+  creatorTool: "a11ydocs",
   createDate: "2026-04-13T21:30:00Z",
   modifyDate: "2026-04-13T21:30:00Z",
   metadataDate: "2026-04-13T21:30:00Z"
 });
 
 doc.renderTemplate({
-  info: { title: "Hello World", author: "zeropdf" },
+  info: { title: "Hello World", author: "a11ydocs" },
   page: { size: "A4" },
   blocks: [
     {
       type: "heading",
-      text: "Hello from zeropdf",
+      text: "Hello from a11ydocs",
       options: { level: 1, color: hex("1c2f6b") }
     },
     {

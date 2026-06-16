@@ -10,13 +10,13 @@ Use `title` when the Info dictionary title and XMP title should match. It writes
 const doc = createDocument({
   title: "Hello PDF",
   info: {
-    author: "zeropdf",
+    author: "a11ydocs",
     subject: "Demonstration",
     keywords: "pdf,typescript",
     creationDate: "D:20260413210000Z"
   },
   xmpMetadata: {
-    creator: "zeropdf",
+    creator: "a11ydocs",
     createDate: "2026-04-13T21:00:00Z",
     modifyDate: "2026-04-13T21:00:00Z",
     metadataDate: "2026-04-13T21:00:00Z"

@@ -6,7 +6,7 @@ const doc = createDocument({
   title: "Newspaper Layout Demo",
   language: "en-US",
   xmpMetadata: {
-    creator: "zeropdf playground"
+    creator: "a11ydocs playground"
   }
 });
 

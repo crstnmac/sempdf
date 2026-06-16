@@ -1,4 +1,4 @@
-# zeropdf
+# a11ydocs
 
 Zero-dependency PDF generation engine written in TypeScript. Pure `Uint8Array`
 output, PDF 1.4–2.0, embedded fonts and images, parsing and incremental editing,
@@ -26,7 +26,7 @@ import { createDocument, rgb } from "@barrierbreak/a11ydocs-pdf";
 
 const doc = createDocument({
   title: "Hello PDF",
-  info: { author: "zeropdf" }
+  info: { author: "a11ydocs" }
 });
 
 const page = doc.addPage({ size: "A4" });
@@ -48,13 +48,13 @@ const bytes = doc.toUint8Array();
 Register the MCP server with Claude for PDF generation and manipulation as tools:
 
 ```bash
-claude mcp add zeropdf -- npx --registry=https://npm.barrierbreak.net @barrierbreak/a11ydocs-pdf-mcp
+claude mcp add a11ydocs -- npx --registry=https://npm.barrierbreak.net @barrierbreak/a11ydocs-pdf-mcp
 ```
 
 Optionally set a workspace directory for scoped file operations:
 
 ```bash
-claude mcp add zeropdf -- npx --registry=https://npm.barrierbreak.net @barrierbreak/a11ydocs-pdf-mcp --env WORKSPACE_DIR=~/Documents/pdf-workspace
+claude mcp add a11ydocs -- npx --registry=https://npm.barrierbreak.net @barrierbreak/a11ydocs-pdf-mcp --env WORKSPACE_DIR=~/Documents/pdf-workspace
 ```
 
 Tools: `generate_pdf`, `extract_text`, `get_pdf_info`, `inspect_pdf`, `merge_pdfs`, `split_pdf`, `extract_pages`, `append_pages`, `validate_pdf2`.

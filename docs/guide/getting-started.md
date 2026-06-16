@@ -21,7 +21,7 @@ import { createDocument, rgb } from "@barrierbreak/a11ydocs-pdf";
 const doc = createDocument({
   title: "Hello PDF",
   info: {
-    author: "zeropdf"
+    author: "a11ydocs"
   }
 });
 

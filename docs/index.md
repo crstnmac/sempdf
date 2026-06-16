@@ -2,7 +2,7 @@
 layout: home
 
 hero:
-  name: zeropdf
+  name: a11ydocs
   text: Zero-dependency PDF generation and editing in TypeScript.
   tagline: Build, inspect, tag, encrypt, merge, and incrementally edit PDFs with a small public API and browser-friendly Uint8Array output.
   actions:
@@ -24,7 +24,7 @@ features:
 
 ## Designed for library authors and product code
 
-`zeropdf` keeps PDF workflows close to regular TypeScript: you compose a document, add pages and annotations, then write bytes wherever your runtime needs them.
+`a11ydocs` keeps PDF workflows close to regular TypeScript: you compose a document, add pages and annotations, then write bytes wherever your runtime needs them.
 
 ```ts
 import { createDocument, rgb } from "@barrierbreak/a11ydocs-pdf";

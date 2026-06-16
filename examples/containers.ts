@@ -8,20 +8,20 @@ const doc = createDocument({
   structureRoot: "Document",
   info: {
     title: "Structure Containers Demo",
-    author: "zeropdf"
+    author: "a11ydocs"
   }
 });
 
 doc.setXmpMetadata({
   title: "Structure Containers Demo",
-  creator: "zeropdf",
+  creator: "a11ydocs",
   createDate: "2026-05-12T00:00:00Z",
   modifyDate: "2026-05-12T00:00:00Z",
   metadataDate: "2026-05-12T00:00:00Z"
 });
 
 doc.renderTemplate({
-  info: { title: "Structure Containers Demo", author: "zeropdf" },
+  info: { title: "Structure Containers Demo", author: "a11ydocs" },
   page: { size: "A4" },
   blocks: [
     {

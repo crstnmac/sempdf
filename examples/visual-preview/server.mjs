@@ -184,7 +184,7 @@ async function updateBaseline(input) {
 }
 
 function renderPdfPages(pdfBytes, outputDir, prefix, dpi) {
-  const workDir = mkdtempSync(join(tmpdir(), "zeropdf-preview-"));
+  const workDir = mkdtempSync(join(tmpdir(), "a11ydocs-preview-"));
   const pdfPath = join(outputDir, `${prefix}.pdf`);
   writeFileSync(pdfPath, pdfBytes);
   try {

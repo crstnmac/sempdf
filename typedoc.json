@@ -4,7 +4,7 @@
   "entryPoints": ["src/index.ts"],
   "out": "docs/api",
   "readme": "none",
-  "name": "zeropdf",
+  "name": "a11ydocs",
   "includeVersion": true,
   "entryPointStrategy": "resolve",
   "excludeInternal": true,

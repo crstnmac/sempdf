@@ -1,6 +1,6 @@
 # Digital Signatures
 
-zeropdf prepares the PDF structure for a detached digital signature — the `/Sig`
+a11ydocs prepares the PDF structure for a detached digital signature — the `/Sig`
 field, the `/ByteRange`, and a padded `/Contents` placeholder — and calls back
 into your code for the actual cryptography. Because the engine is
 zero-dependency, it never bundles a signing toolkit: you supply the CMS/PKCS#7

@@ -35,7 +35,7 @@ function solidBmpBase64(r: number, g: number, b: number): string {
 const report: PdfDocumentJson = {
   // ── Document options ──────────────────────────────────────────────────────
   title: "Accessibility Conformance Report",
-  info: { author: "zeropdf", subject: "WCAG 2.2 audit", keywords: "accessibility, pdf, tagged" },
+  info: { author: "a11ydocs", subject: "WCAG 2.2 audit", keywords: "accessibility, pdf, tagged" },
   language: "en-US",
   tagged: true,
   compress: true,

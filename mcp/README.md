@@ -20,7 +20,7 @@ Code, etc.) can call. PDFs move in and out as **filesystem paths**.
 
 ### Resource
 
-`zeropdf://document-schema` returns the library's `PdfDocumentJson` type
+`a11ydocs://document-schema` returns the library's `PdfDocumentJson` type
 declarations (plus the template/option types they reference) so the model can
 author `generate_pdf` documents against the real type surface.
 
@@ -58,13 +58,13 @@ npm test           # builds, then runs the stdio integration suite
 Install from the private registry:
 
 ```bash
-claude mcp add zeropdf -- npx --registry=https://npm.barrierbreak.net @barrierbreak/a11ydocs-pdf-mcp
+claude mcp add a11ydocs -- npx --registry=https://npm.barrierbreak.net @barrierbreak/a11ydocs-pdf-mcp
 ```
 
 Optionally scope file operations to a workspace directory:
 
 ```bash
-claude mcp add zeropdf -- npx --registry=https://npm.barrierbreak.net @barrierbreak/a11ydocs-pdf-mcp --env WORKSPACE_DIR=~/Documents/pdf-workspace
+claude mcp add a11ydocs -- npx --registry=https://npm.barrierbreak.net @barrierbreak/a11ydocs-pdf-mcp --env WORKSPACE_DIR=~/Documents/pdf-workspace
 ```
 
 For Claude Desktop `claude_desktop_config.json`:
@@ -72,7 +72,7 @@ For Claude Desktop `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "zeropdf": {
+    "a11ydocs": {
       "command": "npx",
       "args": ["--registry=https://npm.barrierbreak.net", "@barrierbreak/a11ydocs-pdf-mcp"],
       "env": { "WORKSPACE_DIR": "/absolute/path/to/your/pdf/workspace" }
@@ -84,7 +84,7 @@ For Claude Desktop `claude_desktop_config.json`:
 Or with a local checkout (development):
 
 ```bash
-claude mcp add zeropdf -- node /absolute/path/to/pdf-editing-lib/mcp/dist/index.js
+claude mcp add a11ydocs -- node /absolute/path/to/pdf-editing-lib/mcp/dist/index.js
 ```
 
 ## Package as an MCPB bundle
@@ -93,13 +93,13 @@ Ships the server + its runtime so it installs on Claude Desktop without a Node
 toolchain.
 
 ```bash
-npm run bundle     # → dist-mcpb/zeropdf.mcpb
+npm run bundle     # → dist-mcpb/a11ydocs.mcpb
 ```
 
 The build esbuild-bundles the server into a single file, ships the lib type
 declarations as `template-types.txt` (the schema resource reads it), stamps the
 manifest version from `package.json`, and packs/validates with `@anthropic-ai/mcpb`.
-Install by dragging `dist-mcpb/zeropdf.mcpb` onto Claude Desktop; it prompts for
+Install by dragging `dist-mcpb/a11ydocs.mcpb` onto Claude Desktop; it prompts for
 the workspace directory at install time.
 
 ## `generate_pdf` example

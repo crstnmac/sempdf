@@ -4,7 +4,7 @@ const doc = createDocument({
   title: "Invoice 1042",
   language: "en-US",
   xmpMetadata: {
-    creator: "zeropdf playground"
+    creator: "a11ydocs playground"
   }
 });
 
