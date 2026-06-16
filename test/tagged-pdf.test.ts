@@ -351,6 +351,28 @@ test("flow richParagraph emits tagged structure content with text and mcids", ()
   assert.ok(pStruct!.mcids!.length > 0, "flow richParagraph P element mcids should not be empty");
 });
 
+test("flow richParagraph tolerates null/undefined run text instead of throwing", () => {
+  const doc = createDocument({
+    tagged: true,
+    language: "en-US",
+    structureRoot: "Document"
+  });
+  const page = doc.addPage({ size: "Letter" });
+
+  assert.doesNotThrow(() => {
+    page.flow({ margin: 48, width: 300 }).richParagraph([
+      { text: "Page URL: ", bold: true },
+      // Simulates `localStorage.getItem(...)` returning null on a miss.
+      { text: null as unknown as string, link: null as unknown as string, color: rgb(0, 0, 1), underline: true }
+    ]);
+  });
+
+  // The valid run still renders; the null run degrades to nothing.
+  const inspected = parseDocument(doc.toUint8Array()).inspectStructureElements();
+  const pElement = inspected[0]?.children?.find((e) => e.role === "P");
+  assert.equal(pElement?.text?.trim(), "Page URL:");
+});
+
 test("richParagraph uses custom tag on structure element", () => {
   const doc = createDocument({
     tagged: true,
@@ -463,6 +485,39 @@ test("renders template blocks across pages with semantic tags", () => {
   assert.ok(roles.includes("H1"));
   assert.ok(roles.includes("P"));
   assert.ok(roles.includes("Table"));
+});
+
+test("template running header reads and draws before the body", () => {
+  const doc = createDocument({
+    tagged: true,
+    language: "en-US",
+    structureRoot: "Document"
+  });
+
+  doc.renderTemplate({
+    page: { size: "A4", margin: 70 },
+    header: () => [
+      {
+        type: "png",
+        data: tinyPngBytes(),
+        options: { width: 160, align: "center", altText: "Logo", tag: "Figure" }
+      }
+    ],
+    blocks: [
+      { type: "heading", text: "Audit Report", options: { level: 1, bold: true } },
+      { type: "paragraph", text: "Body paragraph." }
+    ]
+  });
+
+  const struct = parseDocument(doc.toUint8Array()).listStructureElements();
+  const children = struct[0]?.children ?? [];
+  // Reading order: the header Figure is hoisted to the front of the tag tree.
+  assert.equal(children[0]?.role, "Figure");
+  // Content order: it is also drawn first, so it owns the lowest MCID (0).
+  const figure = children[0];
+  assert.deepEqual(figure?.mcids, [0]);
+  const h1 = children.find((element) => element.role === "H1");
+  assert.ok((h1?.mcids?.[0] ?? -1) > (figure?.mcids?.[0] ?? -1), "H1 should draw after the header Figure");
 });
 
 test("flow advances past wrapped table cell content", () => {

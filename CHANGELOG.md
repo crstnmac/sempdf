@@ -2,6 +2,13 @@
 
 All notable changes to `@criston/zeropdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.6.2] - 2026-06-16
+
+### Fixed
+
+- **Template running header drawn last in the content stream.** `1.6.1` hoisted a running header's structure roots to the front of the tag tree, but the body was still drawn first in the page content, so the header logo `Figure` received the highest marked-content id (MCID). Reading order and content order disagreed — content-order tools and PDF/UA validators saw the logo last. The header's content operators are now hoisted to the front of the page content stream alongside its structure roots, so the header is drawn first (lowest MCID) and reading order matches content order. Footers/page numbers are unaffected (they correctly remain last). Safe because text operators are self-contained (`BT`/`ET` with an absolute `Tm`) and image operators are wrapped in their own `q`/`Q`.
+- **`richParagraph` threw on non-string run text.** A run whose `text` was `null` or `undefined` (e.g. `localStorage.getItem(...)` returning `null` on a miss) crashed `normalizeRichRuns` with `Cannot read properties of null (reading 'length')`. Such runs are now dropped like empty runs, so bad input degrades to nothing instead of aborting the whole render.
+
 ## [1.6.1] - 2026-06-15
 
 ### Fixed
