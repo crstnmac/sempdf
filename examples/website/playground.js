@@ -56,8 +56,8 @@ async function loadTypes() {
 
   // Minimal package manifest so module resolution finds the entry types.
   defaults.addExtraLib(
-    JSON.stringify({ name: "@criston/sempdf", types: "index.d.ts" }),
-    "file:///node_modules/@criston/sempdf/package.json"
+    JSON.stringify({ name: "@barrierbreak/sempdf-pdf", types: "index.d.ts" }),
+    "file:///node_modules/@barrierbreak/sempdf-pdf/package.json"
   );
 
   async function add(relPath) {
@@ -66,7 +66,7 @@ async function loadTypes() {
     const response = await fetch(base + relPath);
     if (!response.ok) return;
     const text = await response.text();
-    defaults.addExtraLib(text, `file:///node_modules/@criston/sempdf/${relPath}`);
+    defaults.addExtraLib(text, `file:///node_modules/@barrierbreak/sempdf-pdf/${relPath}`);
 
     const dir = relPath.includes("/") ? `${relPath.slice(0, relPath.lastIndexOf("/"))}/` : "";
     const re = /from\s+["'](\.[^"']+)["']/g;
@@ -184,7 +184,7 @@ resizerEl.addEventListener("keydown", (event) => {
     noEmit: false,
     strict: false,
     baseUrl: "file:///",
-    paths: { "@criston/sempdf": ["node_modules/@criston/sempdf/index.d.ts"] },
+    paths: { "@barrierbreak/sempdf-pdf": ["node_modules/@barrierbreak/sempdf-pdf/index.d.ts"] },
     lib: ["esnext", "dom"]
   });
 

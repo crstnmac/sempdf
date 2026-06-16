@@ -18,7 +18,7 @@ const url = URL.createObjectURL(blob);
 ## Node writable streams
 
 ```ts
-import { NodeStreamSink } from "@criston/sempdf";
+import { NodeStreamSink } from "@barrierbreak/sempdf-pdf";
 import { createWriteStream } from "node:fs";
 
 await doc.writeTo(new NodeStreamSink(createWriteStream("out.pdf")));
@@ -29,7 +29,7 @@ await doc.writeTo(new NodeStreamSink(createWriteStream("out.pdf")));
 `WebStreamSink` wraps a `WritableStream`. Pair it with a `TransformStream` to stream straight into a `Response`:
 
 ```ts
-import { WebStreamSink } from "@criston/sempdf";
+import { WebStreamSink } from "@barrierbreak/sempdf-pdf";
 
 const { readable, writable } = new TransformStream<Uint8Array>();
 const sink = new WebStreamSink(writable);
@@ -45,7 +45,7 @@ const response = new Response(readable, {
 `BufferSink` collects chunks for later assembly when you need bytes but not a single large allocation up front:
 
 ```ts
-import { BufferSink } from "@criston/sempdf";
+import { BufferSink } from "@barrierbreak/sempdf-pdf";
 
 const sink = new BufferSink();
 await doc.writeTo(sink);
@@ -69,7 +69,7 @@ Throws if the accumulated data exceeds the limit.
 Spill large documents to disk automatically with a temporary file sink:
 
 ```ts
-import { TempFileSink } from "@criston/sempdf";
+import { TempFileSink } from "@barrierbreak/sempdf-pdf";
 
 const sink = new TempFileSink();
 await doc.writeTo(sink);
@@ -110,7 +110,7 @@ A document becomes immutable after its first serialization. Calling `addPage()`,
 Implement `ByteSink`:
 
 ```ts
-import type { ByteSink } from "@criston/sempdf";
+import type { ByteSink } from "@barrierbreak/sempdf-pdf";
 
 class CountingSink implements ByteSink {
   bytesWritten = 0;

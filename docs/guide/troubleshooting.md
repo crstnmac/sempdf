@@ -7,7 +7,7 @@ Diagnose and fix common issues when generating, parsing, or editing PDFs.
 Every `PdfEngineError` carries a `code` property from the `PdfErrorCode` enum. Catch and inspect it:
 
 ```ts
-import { PdfEngineError, PdfErrorCode } from "@criston/sempdf";
+import { PdfEngineError, PdfErrorCode } from "@barrierbreak/sempdf-pdf";
 
 try {
   const doc = createDocument({ /* ... */ });

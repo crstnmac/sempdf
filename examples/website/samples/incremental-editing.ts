@@ -1,4 +1,4 @@
-import { createDocument, editDocument } from "@criston/sempdf";
+import { createDocument, editDocument } from "@barrierbreak/sempdf-pdf";
 
 // Step 1: Create a base document with form fields.
 const baseDoc = createDocument({

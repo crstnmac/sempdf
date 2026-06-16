@@ -1,4 +1,4 @@
-import { createDocument, hex } from "@criston/sempdf";
+import { createDocument, hex } from "@barrierbreak/sempdf-pdf";
 
 const doc = createDocument({
   info: {

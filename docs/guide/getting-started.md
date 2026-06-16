@@ -1,22 +1,22 @@
 # Getting Started
 
-The package is published to a private registry. Point the `@criston` scope at it
+The package is published to a private registry. Point the `@barrierbreak` scope at it
 once, in your project's `.npmrc` (public npm stays untouched for every other package):
 
 ```ini
-@criston:registry=https://nodeproxy.criston.dev
+@barrierbreak:registry=https://npm.barrierbreak.net
 ```
 
 Then install in a TypeScript project:
 
 ```sh
-npm i @criston/sempdf
+npm i @barrierbreak/sempdf-pdf
 ```
 
 Create a document, add a page, write content, and serialize the result:
 
 ```ts
-import { createDocument, rgb } from "@criston/sempdf";
+import { createDocument, rgb } from "@barrierbreak/sempdf-pdf";
 
 const doc = createDocument({
   title: "Hello PDF",
@@ -53,7 +53,7 @@ The library returns standard binary data, so you can write the bytes in Node.js,
 A few options keep call sites short:
 
 ```ts
-import { createDocument, mm, rgb } from "@criston/sempdf";
+import { createDocument, mm, rgb } from "@barrierbreak/sempdf-pdf";
 
 // Document-wide text defaults: fill in font/size/color so calls stay terse.
 const doc = createDocument({
@@ -109,7 +109,7 @@ import {
   parseDocument,
   rgb,
   splitDocument
-} from "@criston/sempdf";
+} from "@barrierbreak/sempdf-pdf";
 ```
 
 ## Local examples

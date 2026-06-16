@@ -6,23 +6,23 @@ forms, tagged/PDF-UA structure, encryption, and signing — Node and browser fri
 
 ## Install
 
-The package is published to a private registry. Point the `@criston` scope at it
+The package is published to a private registry. Point the `@barrierbreak` scope at it
 once, in your `.npmrc` (public npm stays untouched for every other package):
 
 ```ini
-@criston:registry=https://nodeproxy.criston.dev
+@barrierbreak:registry=https://npm.barrierbreak.net
 ```
 
 Then install:
 
 ```sh
-npm i @criston/sempdf
+npm i @barrierbreak/sempdf-pdf
 ```
 
 ## Quick Start
 
 ```ts
-import { createDocument, rgb } from "@criston/sempdf";
+import { createDocument, rgb } from "@barrierbreak/sempdf-pdf";
 
 const doc = createDocument({
   title: "Hello PDF",
@@ -48,13 +48,13 @@ const bytes = doc.toUint8Array();
 Register the MCP server with Claude for PDF generation and manipulation as tools:
 
 ```bash
-claude mcp add sempdf -- npx --registry=https://nodeproxy.criston.dev @criston/sempdf-mcp
+claude mcp add sempdf -- npx --registry=https://npm.barrierbreak.net @barrierbreak/sempdf-pdf-mcp
 ```
 
 Optionally set a workspace directory for scoped file operations:
 
 ```bash
-claude mcp add sempdf -- npx --registry=https://nodeproxy.criston.dev @criston/sempdf-mcp --env WORKSPACE_DIR=~/Documents/pdf-workspace
+claude mcp add sempdf -- npx --registry=https://npm.barrierbreak.net @barrierbreak/sempdf-pdf-mcp --env WORKSPACE_DIR=~/Documents/pdf-workspace
 ```
 
 Tools: `generate_pdf`, `extract_text`, `get_pdf_info`, `inspect_pdf`, `merge_pdfs`, `split_pdf`, `extract_pages`, `append_pages`, `validate_pdf2`.

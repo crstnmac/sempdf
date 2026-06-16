@@ -32,7 +32,7 @@ export interface ShapedGlyph {
  *
  * @example
  * ```ts
- * import { createDocument, TextShaper, ShapedGlyph } from "@criston/sempdf";
+ * import { createDocument, TextShaper, ShapedGlyph } from "@barrierbreak/sempdf-pdf";
  *
  * // Example custom shaper using harfbuzzjs:
  * //

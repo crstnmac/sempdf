@@ -64,7 +64,7 @@ for the full CMS blob — the certificate chain dominates the size; 16 KB is a
 safe default.
 
 ```ts
-import { editDocument } from "@criston/sempdf";
+import { editDocument } from "@barrierbreak/sempdf-pdf";
 
 const editable = editDocument(existingPdfBytes);
 editable.sign({
@@ -85,7 +85,7 @@ const signedPdf = editable.toUint8Array();
 Confirm the signature field landed:
 
 ```ts
-import { parseDocument } from "@criston/sempdf";
+import { parseDocument } from "@barrierbreak/sempdf-pdf";
 
 const parsed = parseDocument(signedPdf);
 const signed = parsed

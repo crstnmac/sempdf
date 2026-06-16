@@ -1,4 +1,4 @@
-import { createDocument, rgb } from "@criston/sempdf";
+import { createDocument, rgb } from "@barrierbreak/sempdf-pdf";
 
 // Build a PDF and `export default` the document.
 const doc = createDocument({
