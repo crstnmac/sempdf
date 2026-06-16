@@ -1410,9 +1410,42 @@ test("template running header reads first in the page tag tree", () => {
   });
 
   const roots = parseDocument(doc.toUint8Array()).inspectStructureElements();
+  // renderTemplate wraps all content under a single Document root by default.
+  assert.equal(roots[0]?.role, "Document");
   // Header is rendered after the body, but its Figure must be hoisted to the
   // front of the reading order.
-  assert.equal(roots[0]?.role, "Figure");
+  assert.equal(roots[0]?.children?.[0]?.role, "Figure");
+});
+
+test("renderTemplate wraps all content under a single Document root by default", () => {
+  // No `structureRoot` passed to createDocument.
+  const doc = createDocument({ tagged: true, language: "en-US" });
+  doc.renderTemplate({
+    page: { size: "A4", margin: 48 },
+    blocks: [
+      { type: "heading", text: "Report", options: { level: 1 } },
+      { type: "paragraph", text: "One." },
+      { type: "paragraph", text: "Two." }
+    ]
+  });
+
+  const roots = parseDocument(doc.toUint8Array()).inspectStructureElements();
+  assert.deepEqual(roots.map((element) => element.role), ["Document"]);
+  assert.deepEqual(roots[0]?.children?.map((element) => element.role), ["H1", "P", "P"]);
+});
+
+test("renderTemplate keeps bare roots when structureRoot is false", () => {
+  const doc = createDocument({ tagged: true, language: "en-US", structureRoot: false });
+  doc.renderTemplate({
+    page: { size: "A4", margin: 48 },
+    blocks: [
+      { type: "heading", text: "Report", options: { level: 1 } },
+      { type: "paragraph", text: "One." }
+    ]
+  });
+
+  const roots = parseDocument(doc.toUint8Array()).inspectStructureElements();
+  assert.deepEqual(roots.map((element) => element.role), ["H1", "P"]);
 });
 
 test("page.link without an explicit tag defaults to a Link structure element", () => {
