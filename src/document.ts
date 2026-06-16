@@ -4697,7 +4697,7 @@ export class PdfDocument {
    *
    * @example
    * ```ts
-   * import { createDocument } from "@criston/sempdf";
+   * import { createDocument } from "@sempdf/sempdf-pdf";
    *
    * const doc = createDocument();
    *

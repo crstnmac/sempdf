@@ -1,25 +1,25 @@
 # MCP Server
 
-`@criston/sempdf` ships an [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server that exposes PDF generation and manipulation as tools for AI assistants like Claude.
+`@sempdf/sempdf-pdf` ships an [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server that exposes PDF generation and manipulation as tools for AI assistants like Claude.
 
 ## Install
 
 The MCP package is published on a private npm registry. Add the scope to your `.npmrc`:
 
 ```ini
-@criston:registry=https://nodeproxy.criston.dev
+@sempdf:registry=https://npm.sempdf.net
 ```
 
 Then register with Claude:
 
 ```bash
-claude mcp add sempdf -- npx --registry=https://nodeproxy.criston.dev @criston/sempdf-mcp
+claude mcp add sempdf -- npx --registry=https://npm.sempdf.net @sempdf/sempdf-pdf-mcp
 ```
 
 Set a workspace directory to scope all file operations:
 
 ```bash
-claude mcp add sempdf -- npx --registry=https://nodeproxy.criston.dev @criston/sempdf-mcp --env WORKSPACE_DIR=~/Documents/pdf-workspace
+claude mcp add sempdf -- npx --registry=https://npm.sempdf.net @sempdf/sempdf-pdf-mcp --env WORKSPACE_DIR=~/Documents/pdf-workspace
 ```
 
 ## Tools

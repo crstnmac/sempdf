@@ -1,4 +1,4 @@
-import { createDocument, rgb } from "@criston/sempdf";
+import { createDocument, rgb } from "@sempdf/sempdf-pdf";
 
 const doc = createDocument({
   title: "Invoice 1042",

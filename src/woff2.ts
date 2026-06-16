@@ -1,5 +1,5 @@
 /**
- * WOFF2 font decoding, exported as `@criston/sempdf/woff2`.
+ * WOFF2 font decoding, exported as `@sempdf/sempdf-pdf/woff2`.
  *
  * Browsers (and the Google Fonts CDN when talking to a browser) serve fonts
  * as woff2 — Brotli-compressed sfnt with preprocessed glyph data — which the
@@ -12,8 +12,8 @@
  *
  * @example
  * ```ts
- * import { createDocument } from "@criston/sempdf";
- * import { decodeWoff2 } from "@criston/sempdf/woff2";
+ * import { createDocument } from "@sempdf/sempdf-pdf";
+ * import { decodeWoff2 } from "@sempdf/sempdf-pdf/woff2";
  *
  * const response = await fetch(woff2Url);
  * const ttf = decodeWoff2(new Uint8Array(await response.arrayBuffer()));

@@ -30,7 +30,7 @@ export interface LoadGoogleFontOptions {
  * The Google Fonts CSS API serves `woff2` (Brotli-compressed) to clients that
  * advertise woff2 support — such as browsers — and an embeddable `.ttf`/`.otf`
  * to other clients, such as Node. Both work: when a woff2 URL is served, the
- * `@criston/sempdf/woff2` decoder is loaded on demand and the file is
+ * `@sempdf/sempdf-pdf/woff2` decoder is loaded on demand and the file is
  * converted to TTF bytes before returning.
  *
  * @param family Google Font family name, e.g. `"Inter"` or `"Roboto Slab"`.

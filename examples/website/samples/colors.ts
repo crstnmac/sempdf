@@ -1,4 +1,4 @@
-import { createDocument, hex, rgb, gray, cmyk } from "@criston/sempdf";
+import { createDocument, hex, rgb, gray, cmyk } from "@sempdf/sempdf-pdf";
 
 const doc = createDocument({
   language: "en-US",

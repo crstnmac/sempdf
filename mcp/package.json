@@ -1,10 +1,10 @@
 {
-  "name": "@criston/sempdf-mcp",
+  "name": "@sempdf/sempdf-pdf-mcp",
   "version": "0.3.1",
-  "description": "Model Context Protocol server exposing @criston/sempdf PDF generation and manipulation as tools.",
+  "description": "Model Context Protocol server exposing @sempdf/sempdf-pdf PDF generation and manipulation as tools.",
   "type": "module",
   "bin": {
-    "sempdf-mcp": "dist/index.js"
+    "sempdf-pdf-mcp": "dist/index.js"
   },
   "main": "./dist/index.js",
   "files": [
@@ -23,10 +23,10 @@
     "node": ">=22"
   },
   "publishConfig": {
-    "registry": "https://nodeproxy.criston.dev"
+    "registry": "https://npm.sempdf.net"
   },
   "dependencies": {
-    "@criston/sempdf": "^1.5.5",
+    "@sempdf/sempdf-pdf": "^1.7.0",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "zod": "^3.23.8"
   },

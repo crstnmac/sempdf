@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to `@criston/sempdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
+All notable changes to `@sempdf/sempdf-pdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
 ## [1.7.0] - 2026-06-16
 
@@ -29,7 +29,7 @@ All notable changes to `@criston/sempdf` are documented here. This project follo
 
 ### Added
 
-- **WOFF2 decoding** — new `@criston/sempdf/woff2` subpath export. `decodeWoff2(bytes)` converts a `.woff2` file (the format browsers and font CDNs serve) into standard TTF/OTF bytes ready for `embedTrueTypeFont()`/`registerFontFamily()`. Implements a zero-dependency Brotli (RFC 7932) decompressor — full prefix codes, context modeling, block switching, and the 122 KB static dictionary with all 121 word transforms — plus WOFF2 glyf/loca triplet reconstruction and hmtx transform reversal. Ships as a separate subpath so the embedded dictionary never loads with the core library. `isWoff2(bytes)` and `brotliDecompress(bytes)` are also exported.
+- **WOFF2 decoding** — new `@sempdf/sempdf-pdf/woff2` subpath export. `decodeWoff2(bytes)` converts a `.woff2` file (the format browsers and font CDNs serve) into standard TTF/OTF bytes ready for `embedTrueTypeFont()`/`registerFontFamily()`. Implements a zero-dependency Brotli (RFC 7932) decompressor — full prefix codes, context modeling, block switching, and the 122 KB static dictionary with all 121 word transforms — plus WOFF2 glyf/loca triplet reconstruction and hmtx transform reversal. Ships as a separate subpath so the embedded dictionary never loads with the core library. `isWoff2(bytes)` and `brotliDecompress(bytes)` are also exported.
 - `loadGoogleFont()` now works in browsers: when Google serves a woff2 file, the decoder is loaded on demand and the result is returned as TTF bytes. Node continues to receive a plain `.ttf`/`.otf` with no decoder loaded.
 - Table cell styling: per-cell `font`, `color`, `align`, and `background` overrides on `TableCellDefinition` (joining `bold`/`italic`). Cell fonts resolve registered families and built-in variants.
 - Table decoration options: `borderColor`/`borderWidth` draw the cell grid, `headerBackground` fills header cells, and `zebra` (boolean or color) stripes alternate body rows. All decoration is emitted as tagged-PDF artifacts.
@@ -72,7 +72,7 @@ All notable changes to `@criston/sempdf` are documented here. This project follo
 
 ### Added
 
-- `loadExtensionFont(doc, family, paths)` and `loadExtensionFontBytes(path)` — load font files bundled with a Chrome extension via `chrome.runtime.getURL()` and register them as a font family in one call. Fonts are fetched in parallel and passed to `registerFontFamily()`. Exported as `@criston/sempdf/chrome-extension-fonts`.
+- `loadExtensionFont(doc, family, paths)` and `loadExtensionFontBytes(path)` — load font files bundled with a Chrome extension via `chrome.runtime.getURL()` and register them as a font family in one call. Fonts are fetched in parallel and passed to `registerFontFamily()`. Exported as `@sempdf/sempdf-pdf/chrome-extension-fonts`.
 
 ## [1.5.1] - 2026-06-10
 

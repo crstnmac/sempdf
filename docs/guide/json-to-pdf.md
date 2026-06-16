@@ -3,7 +3,7 @@
 `renderDocumentJson()` turns a single, fully serializable value into PDF bytes — no callbacks, no in-memory font or image handles. Everything the document needs (metadata, fonts, images, headers/footers, encryption, and absolute-positioned content) is described as plain JSON, so a document can come straight from a config file, an API request, or an LLM.
 
 ```ts
-import { renderDocumentJson } from "@criston/sempdf";
+import { renderDocumentJson } from "@sempdf/sempdf-pdf";
 
 const bytes = await renderDocumentJson({
   title: "Hello",
@@ -176,7 +176,7 @@ A document whose blocks are all positioned (no flow content) is valid; blank pag
 When every font and image source is inline `base64`, render without `await`:
 
 ```ts
-import { renderDocumentJsonSync } from "@criston/sempdf";
+import { renderDocumentJsonSync } from "@sempdf/sempdf-pdf";
 
 const bytes = renderDocumentJsonSync({
   blocks: [{ type: "paragraph", text: "No async assets here." }]
