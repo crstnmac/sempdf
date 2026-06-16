@@ -3742,6 +3742,39 @@ export class PdfPage {
   }
 
   /**
+   * Number of content operators currently queued on the page. Paired with
+   * {@link hoistContentOpsToFront} to move running-region content drawn after
+   * the body to the front of the content stream.
+   *
+   * @internal Used by the template renderer to reorder running regions.
+   */
+  contentOpCount(): number {
+    return this.page.ops.length;
+  }
+
+  /**
+   * Moves the content operators added since `fromIndex` to the front of the
+   * page's content stream, preserving their relative order. Mirrors
+   * {@link hoistStructureRootsToFront} for the content stream so a running
+   * header rendered after the body is also drawn first — giving it the lowest
+   * marked-content ids and keeping content order aligned with reading order.
+   *
+   * Safe because text ops are emitted self-contained (BT/ET with an absolute
+   * Tm) and image ops are wrapped in their own q/Q, so neither depends on the
+   * surrounding graphics state.
+   *
+   * @internal Used by the template renderer to reorder running regions.
+   */
+  hoistContentOpsToFront(fromIndex: number): void {
+    const ops = this.page.ops;
+    if (fromIndex <= 0 || fromIndex >= ops.length) {
+      return;
+    }
+    const moved = ops.splice(fromIndex);
+    ops.unshift(...moved);
+  }
+
+  /**
    * Adds vector path commands to the page.
    *
    * @param commands The vector path commands to add.
