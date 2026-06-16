@@ -1,4 +1,4 @@
-import { createDocument, rgb } from "@criston/zeropdf";
+import { createDocument, rgb } from "@barrierbreak/a11ydocs-pdf";
 
 const doc = createDocument({
   title: "Single Page Demo",

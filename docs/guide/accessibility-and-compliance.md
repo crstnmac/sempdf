@@ -4,7 +4,7 @@
 
 ```ts
 import { readFile, writeFile } from "node:fs/promises";
-import { createDocument } from "@criston/zeropdf";
+import { createDocument } from "@barrierbreak/a11ydocs-pdf";
 
 const fontBytes = await readFile("fonts/SourceSans3-Regular.ttf");
 
@@ -133,7 +133,7 @@ Headers and footers are rendered after the body pages are known, so callbacks re
 You can also stream the same tagged document to a sink:
 
 ```ts
-import { NodeStreamSink } from "@criston/zeropdf";
+import { NodeStreamSink } from "@barrierbreak/a11ydocs-pdf";
 import { createWriteStream } from "node:fs";
 
 await doc.writeTo(new NodeStreamSink(createWriteStream("quarterly-report.pdf")));

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#18181b" />
-    <title>zeropdf playground</title>
+    <title>a11ydocs playground</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
       /* Split columns driven by a CSS var the resizer updates; stacks on small screens. */
@@ -21,7 +21,7 @@
     <script type="importmap">
       {
         "imports": {
-          "@criston/zeropdf": "/dist/src/index.js"
+          "@barrierbreak/a11ydocs-pdf": "/dist/src/index.js"
         }
       }
     </script>
@@ -47,7 +47,7 @@
   </head>
   <body class="flex h-full flex-col bg-zinc-900 text-zinc-100 antialiased">
     <header class="flex shrink-0 items-center gap-4 border-b border-zinc-800 bg-zinc-950 px-4 py-2.5">
-      <h1 class="text-sm font-semibold">zeropdf playground</h1>
+      <h1 class="text-sm font-semibold">a11ydocs playground</h1>
       <p class="hidden min-w-0 flex-1 truncate text-xs text-zinc-400 sm:block">
         TypeScript in, PDF out — type-checked and rendered live in your browser as you type.
       </p>
@@ -58,7 +58,7 @@
       ></select>
       <a
         id="download"
-        download="zeropdf-playground.pdf"
+        download="a11ydocs-playground.pdf"
         class="rounded-md px-3 py-1.5 text-sm font-medium text-zinc-300 underline-offset-4 hover:text-zinc-100 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 aria-disabled:pointer-events-none aria-disabled:opacity-40"
         href="#"
         aria-disabled="true"

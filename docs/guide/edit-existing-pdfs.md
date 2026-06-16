@@ -3,7 +3,7 @@
 Use `parseDocument` when you need to inspect a PDF and `editDocument` when you need to produce an incremental update.
 
 ```ts
-import { editDocument, parseDocument } from "@criston/zeropdf";
+import { editDocument, parseDocument } from "@barrierbreak/a11ydocs-pdf";
 
 const parsed = parseDocument(existingBytes);
 
@@ -28,7 +28,7 @@ import {
   extractPages,
   mergeDocuments,
   splitDocument
-} from "@criston/zeropdf";
+} from "@barrierbreak/a11ydocs-pdf";
 
 const firstPageOnly = extractPages(sourceBytes, [0]);
 const combined = mergeDocuments([coverBytes, bodyBytes, appendixBytes]);
@@ -41,7 +41,7 @@ const withAppendix = appendPages(sourceBytes, appendixBytes);
 Generated PDFs can be password protected, and parser/editing workflows can accept a password when reading protected input.
 
 ```ts
-import { createDocument, parseDocument } from "@criston/zeropdf";
+import { createDocument, parseDocument } from "@barrierbreak/a11ydocs-pdf";
 
 const protectedDoc = createDocument({
   encryption: {

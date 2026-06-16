@@ -1,10 +1,10 @@
 {
   "$schema": "https://raw.githubusercontent.com/anthropics/mcpb/main/schemas/mcpb-manifest-v0.2.schema.json",
   "manifest_version": "0.2",
-  "name": "zeropdf",
-  "display_name": "zeropdf",
+  "name": "a11ydocs-pdf-mcp",
+  "display_name": "a11ydocs-pdf",
   "version": "0.0.0",
-  "description": "Generate and manipulate PDFs locally with the zero-dependency zeropdf engine.",
+  "description": "Generate and manipulate PDFs locally with the zero-dependency a11ydocs-pdf engine.",
   "long_description": "Generate PDFs from a declarative template spec and parse, merge, split, extract, append, and validate existing PDFs — all on your machine. Files are read and written under a workspace directory you choose at install time; the server refuses paths outside it and never overwrites a file unless told to.",
   "author": { "name": "Criston Mascarenhas", "email": "criston2011@gmail.com" },
   "license": "MIT",

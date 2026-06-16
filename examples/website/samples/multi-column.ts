@@ -1,4 +1,4 @@
-import { createDocument } from "@criston/zeropdf";
+import { createDocument } from "@barrierbreak/a11ydocs-pdf";
 
 const lorem = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. ".repeat(8);
 

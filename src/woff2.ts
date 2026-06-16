@@ -1,5 +1,5 @@
 /**
- * WOFF2 font decoding, exported as `@criston/zeropdf/woff2`.
+ * WOFF2 font decoding, exported as `@barrierbreak/a11ydocs-pdf/woff2`.
  *
  * Browsers (and the Google Fonts CDN when talking to a browser) serve fonts
  * as woff2 — Brotli-compressed sfnt with preprocessed glyph data — which the
@@ -12,8 +12,8 @@
  *
  * @example
  * ```ts
- * import { createDocument } from "@criston/zeropdf";
- * import { decodeWoff2 } from "@criston/zeropdf/woff2";
+ * import { createDocument } from "@barrierbreak/a11ydocs-pdf";
+ * import { decodeWoff2 } from "@barrierbreak/a11ydocs-pdf/woff2";
  *
  * const response = await fetch(woff2Url);
  * const ttf = decodeWoff2(new Uint8Array(await response.arrayBuffer()));

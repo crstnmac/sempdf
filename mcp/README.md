@@ -1,7 +1,7 @@
-# @criston/zeropdf-mcp
+# @barrierbreak/a11ydocs-pdf-mcp
 
 [Model Context Protocol](https://modelcontextprotocol.io) server that exposes
-[`@criston/zeropdf`](../README.md) as tools an LLM client (Claude Desktop, Claude
+[`@barrierbreak/a11ydocs-pdf`](../README.md) as tools an LLM client (Claude Desktop, Claude
 Code, etc.) can call. PDFs move in and out as **filesystem paths**.
 
 ## Tools
@@ -35,13 +35,13 @@ unless called with `overwrite: true`.
 
 ## Install & build
 
-The server depends on `@criston/zeropdf` from the private registry, so the
-`@criston` scope must resolve there. Either run from the repo root (its `.npmrc`
-points the default registry at `https://nodeproxy.criston.dev`) or add an
+The server depends on `@barrierbreak/a11ydocs-pdf` from the private registry, so the
+`@barrierbreak` scope must resolve there. Either run from the repo root (its `.npmrc`
+points the default registry at `https://npm.barrierbreak.net`) or add an
 `.npmrc` here:
 
 ```ini
-@criston:registry=https://nodeproxy.criston.dev
+@barrierbreak:registry=https://npm.barrierbreak.net
 ```
 
 Then:
@@ -58,13 +58,13 @@ npm test           # builds, then runs the stdio integration suite
 Install from the private registry:
 
 ```bash
-claude mcp add zeropdf -- npx --registry=https://nodeproxy.criston.dev @criston/zeropdf-mcp
+claude mcp add zeropdf -- npx --registry=https://npm.barrierbreak.net @barrierbreak/a11ydocs-pdf-mcp
 ```
 
 Optionally scope file operations to a workspace directory:
 
 ```bash
-claude mcp add zeropdf -- npx --registry=https://nodeproxy.criston.dev @criston/zeropdf-mcp --env WORKSPACE_DIR=~/Documents/pdf-workspace
+claude mcp add zeropdf -- npx --registry=https://npm.barrierbreak.net @barrierbreak/a11ydocs-pdf-mcp --env WORKSPACE_DIR=~/Documents/pdf-workspace
 ```
 
 For Claude Desktop `claude_desktop_config.json`:
@@ -74,7 +74,7 @@ For Claude Desktop `claude_desktop_config.json`:
   "mcpServers": {
     "zeropdf": {
       "command": "npx",
-      "args": ["--registry=https://nodeproxy.criston.dev", "@criston/zeropdf-mcp"],
+      "args": ["--registry=https://npm.barrierbreak.net", "@barrierbreak/a11ydocs-pdf-mcp"],
       "env": { "WORKSPACE_DIR": "/absolute/path/to/your/pdf/workspace" }
     }
   }
