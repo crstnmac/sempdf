@@ -492,13 +492,17 @@ function renderTemplateRunningRegions(
     const context = { pageNumber, totalPages, ...metadata };
     if (options.header) {
       // The body is rendered before running regions, so the header's structure
-      // roots would otherwise land last in the page's tag tree. Hoist them to
-      // the front so header content (e.g. a logo Figure) reads first.
+      // roots and content ops would otherwise land last in the page. Hoist both
+      // to the front so header content (e.g. a logo Figure) reads first in the
+      // tag tree *and* is drawn first in the content stream (lowest MCIDs),
+      // keeping reading order and content order aligned.
       const rootsBeforeHeader = page.structureRootCount();
+      const opsBeforeHeader = page.contentOpCount();
       page
         .flow(headerFlowOptions(page.size, options.page))
         .render(options.header(context), options.styles);
       page.hoistStructureRootsToFront(rootsBeforeHeader);
+      page.hoistContentOpsToFront(opsBeforeHeader);
     }
     if (options.footer) {
       page
