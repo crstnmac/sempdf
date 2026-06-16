@@ -2,6 +2,12 @@
 
 All notable changes to `@criston/zeropdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.7.0] - 2026-06-16
+
+### Changed
+
+- **`renderTemplate` now wraps all content under a single `Document` structure root by default.** A template produces a complete document, but without an explicit `structureRoot` its tagged content (headings, paragraphs, figures, tables) was emitted as a flat list of top-level structure elements directly under `StructTreeRoot` — PDF/UA-1 expects a single top-level `Document` element. `renderTemplate` now defaults the structure root to `Document` when the document was created without one. Pass `structureRoot: false` to `createDocument` to opt out and keep bare roots; an explicit `structureRoot` is still respected. The low-level `addPage`/manual-structure API is unaffected (no implicit wrapper).
+
 ## [1.6.2] - 2026-06-16
 
 ### Fixed

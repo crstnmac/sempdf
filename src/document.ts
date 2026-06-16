@@ -4578,7 +4578,7 @@ export class PdfDocument {
   private readonly defaultPageSize: ResolvedPageSize;
 
   /** Tagging, language, role-map, structure-root, and conformance settings. Drives StructTreeRoot emission. */
-  private readonly accessibility: NormalizedDocumentAccessibility;
+  private accessibility: NormalizedDocumentAccessibility;
 
   /** Password encryption settings, if any. Triggers Encrypt dictionary emission and (for AES-256 R=6) `%PDF-2.0` header. */
   private readonly encryption?: NormalizedDocumentEncryption | undefined;
@@ -4899,6 +4899,18 @@ export class PdfDocument {
    */
   renderTemplate(options: TemplateDocumentOptions): void {
     this._mutate();
+    // A template produces a complete document, so its tagged content belongs
+    // under a single top-level structure element (PDF/UA-1 expects one Document
+    // root, not a flat list of headings/paragraphs/figures). Default the root to
+    // `Document` when the document was created without an explicit structureRoot;
+    // pass `structureRoot: false` to `createDocument` to opt out and keep bare
+    // roots.
+    if (this.accessibility.structureRoot === undefined) {
+      this.accessibility = {
+        ...this.accessibility,
+        structureRoot: normalizeContainerStructureTag("Document"),
+      };
+    }
     const info = applyDocumentTitleToInfo(options.title, options.info);
     if (info !== undefined) {
       this.updateInfo(info);
