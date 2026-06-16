@@ -267,7 +267,10 @@ export interface RichTextBlock {
  */
 export function normalizeRichRuns(runs: readonly RichRunInput[]): NormalizedInlineRun[] {
   return runs
-    .filter((run) => run.text.length > 0)
+    // Drop empty runs. Guard against non-string text (e.g. a null from
+    // `localStorage.getItem`) so bad input degrades to nothing instead of
+    // throwing on `.length`.
+    .filter((run) => typeof run.text === "string" && run.text.length > 0)
     .map((run) => {
       validateText(run.text);
       return {
