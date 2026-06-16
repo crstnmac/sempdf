@@ -1,4 +1,4 @@
-import { createDocument, rgb } from "@criston/zeropdf";
+import { createDocument, rgb } from "@zeropdf/zeropdf-pdf";
 
 // Build a PDF and `export default` the document.
 const doc = createDocument({

@@ -1,4 +1,4 @@
-import { createDocument, rgb } from "@criston/zeropdf";
+import { createDocument, rgb } from "@zeropdf/zeropdf-pdf";
 
 const doc = createDocument({
   title: "Invoice 1042",

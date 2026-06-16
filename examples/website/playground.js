@@ -56,8 +56,8 @@ async function loadTypes() {
 
   // Minimal package manifest so module resolution finds the entry types.
   defaults.addExtraLib(
-    JSON.stringify({ name: "@criston/zeropdf", types: "index.d.ts" }),
-    "file:///node_modules/@criston/zeropdf/package.json"
+    JSON.stringify({ name: "@zeropdf/zeropdf-pdf", types: "index.d.ts" }),
+    "file:///node_modules/@zeropdf/zeropdf-pdf/package.json"
   );
 
   async function add(relPath) {
@@ -66,7 +66,7 @@ async function loadTypes() {
     const response = await fetch(base + relPath);
     if (!response.ok) return;
     const text = await response.text();
-    defaults.addExtraLib(text, `file:///node_modules/@criston/zeropdf/${relPath}`);
+    defaults.addExtraLib(text, `file:///node_modules/@zeropdf/zeropdf-pdf/${relPath}`);
 
     const dir = relPath.includes("/") ? `${relPath.slice(0, relPath.lastIndexOf("/"))}/` : "";
     const re = /from\s+["'](\.[^"']+)["']/g;
@@ -184,7 +184,7 @@ resizerEl.addEventListener("keydown", (event) => {
     noEmit: false,
     strict: false,
     baseUrl: "file:///",
-    paths: { "@criston/zeropdf": ["node_modules/@criston/zeropdf/index.d.ts"] },
+    paths: { "@zeropdf/zeropdf-pdf": ["node_modules/@zeropdf/zeropdf-pdf/index.d.ts"] },
     lib: ["esnext", "dom"]
   });
 

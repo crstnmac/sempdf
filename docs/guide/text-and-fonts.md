@@ -34,7 +34,7 @@ The embedder subsets glyphs, computes widths, and writes a `ToUnicode` CMap so e
 `loadGoogleFont()` downloads a [Google Font](https://fonts.google.com/) and returns its bytes, ready for `embedTrueTypeFont()` or `registerFontFamily()`:
 
 ```ts
-import { createDocument, loadGoogleFont } from "@criston/zeropdf";
+import { createDocument, loadGoogleFont } from "@zeropdf/zeropdf-pdf";
 
 const doc = createDocument({ language: "en-US" });
 const interBytes = await loadGoogleFont("Inter", { weight: 700 });
@@ -58,7 +58,7 @@ page.text("Roboto bold", { x: 56, y: 700, font: "Roboto", bold: true });
 Options: `weight` (1–1000, default 400), `italic` (default false), `text` (restrict the download to the glyphs in this string via Google's `&text=` subsetting), `signal` (an `AbortSignal`), and `fetch` (a custom `fetch` implementation).
 
 ::: tip Works in browsers too (woff2)
-The Google Fonts API serves **woff2** (Brotli-compressed) to clients that advertise woff2 support — including browsers. `loadGoogleFont()` detects a woff2 response and decodes it with the zero-dependency `@criston/zeropdf/woff2` decoder, loaded lazily so Node users (who receive a plain `.ttf`/`.otf`) never pay for it.
+The Google Fonts API serves **woff2** (Brotli-compressed) to clients that advertise woff2 support — including browsers. `loadGoogleFont()` detects a woff2 response and decodes it with the zero-dependency `@zeropdf/zeropdf-pdf/woff2` decoder, loaded lazily so Node users (who receive a plain `.ttf`/`.otf`) never pay for it.
 :::
 
 ## WOFF2 fonts
@@ -66,8 +66,8 @@ The Google Fonts API serves **woff2** (Brotli-compressed) to clients that advert
 `decodeWoff2()` converts a `.woff2` file — the format browsers download and most font CDNs serve — into standard TTF/OTF bytes ready for `embedTrueTypeFont()` or `registerFontFamily()`:
 
 ```ts
-import { createDocument } from "@criston/zeropdf";
-import { decodeWoff2 } from "@criston/zeropdf/woff2";
+import { createDocument } from "@zeropdf/zeropdf-pdf";
+import { decodeWoff2 } from "@zeropdf/zeropdf-pdf/woff2";
 
 const response = await fetch(woff2Url);
 const ttf = decodeWoff2(new Uint8Array(await response.arrayBuffer()));
@@ -76,15 +76,15 @@ const doc = createDocument();
 doc.registerFontFamily("Roboto", { regular: ttf });
 ```
 
-The decoder implements Brotli (RFC 7932) and the WOFF2 glyf/loca and hmtx transform reversal with zero dependencies. It embeds the 122&nbsp;KB Brotli static dictionary, which is why it ships as a separate `@criston/zeropdf/woff2` subpath — importing the core library never loads it. `isWoff2(bytes)` checks for the `wOF2` signature.
+The decoder implements Brotli (RFC 7932) and the WOFF2 glyf/loca and hmtx transform reversal with zero dependencies. It embeds the 122&nbsp;KB Brotli static dictionary, which is why it ships as a separate `@zeropdf/zeropdf-pdf/woff2` subpath — importing the core library never loads it. `isWoff2(bytes)` checks for the `wOF2` signature.
 
 ## Chrome Extension Fonts
 
 `loadExtensionFont()` loads font files bundled with a Chrome extension and registers them as a named family in one call, ready for `text()`, `textBlock()`, and flow/template APIs:
 
 ```ts
-import { createDocument } from "@criston/zeropdf";
-import { loadExtensionFont } from "@criston/zeropdf/chrome-extension-fonts";
+import { createDocument } from "@zeropdf/zeropdf-pdf";
+import { loadExtensionFont } from "@zeropdf/zeropdf-pdf/chrome-extension-fonts";
 
 const doc = createDocument({ language: "en-US" });
 await loadExtensionFont(doc, "Roboto", {
@@ -103,7 +103,7 @@ Each path is relative to the extension root and resolved via `chrome.runtime.get
 For more control, use `loadExtensionFontBytes()` to fetch a single face and register it yourself:
 
 ```ts
-import { loadExtensionFontBytes } from "@criston/zeropdf/chrome-extension-fonts";
+import { loadExtensionFontBytes } from "@zeropdf/zeropdf-pdf/chrome-extension-fonts";
 
 const bytes = await loadExtensionFontBytes("fonts/Inter-Regular.ttf");
 const inter = doc.embedTrueTypeFont(bytes, { family: "Inter" });
@@ -112,7 +112,7 @@ const inter = doc.embedTrueTypeFont(bytes, { family: "Inter" });
 To load fonts without registering them (e.g. to pass to `renderTemplate({ fonts })`), use `loadExtensionFontFaces()`:
 
 ```ts
-import { loadExtensionFontFaces } from "@criston/zeropdf/chrome-extension-fonts";
+import { loadExtensionFontFaces } from "@zeropdf/zeropdf-pdf/chrome-extension-fonts";
 
 doc.renderTemplate({
   fonts: {
@@ -214,7 +214,7 @@ If you prefer to manage handles yourself, you can still pass an embedded-font ha
 `page.text()` and `textBlock()` apply one style to the whole string. To mix fonts, weights, sizes, colors, or links **within a line** — and have them wrap together as one paragraph — use `page.richText()` with an array of `InlineTextRun`s:
 
 ```ts
-import { rgb } from "@criston/zeropdf";
+import { rgb } from "@zeropdf/zeropdf-pdf";
 
 page.richText(
   [

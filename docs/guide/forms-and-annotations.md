@@ -165,7 +165,7 @@ doc.renderTemplate({
 ## Annotations
 
 ```ts
-import { rgb } from "@criston/zeropdf";
+import { rgb } from "@zeropdf/zeropdf-pdf";
 
 page.highlight({ x: 48, y: 700, width: 120, height: 14, color: rgb(1, 1, 0) });
 page.note({ x: 180, y: 698, contents: "Review this paragraph" });
@@ -179,7 +179,7 @@ page.pageLink({ x: 48, y: 612, width: 96, height: 14, destination: "intro" });
 Use `editDocument` to update field values incrementally:
 
 ```ts
-import { editDocument } from "@criston/zeropdf";
+import { editDocument } from "@zeropdf/zeropdf-pdf";
 
 const editable = editDocument(existingBytes);
 editable.setFieldValue("customerName", "Grace Hopper");
@@ -203,7 +203,7 @@ const flat = editable.toUint8Array();
 ## Inspecting fields
 
 ```ts
-import { parseDocument } from "@criston/zeropdf";
+import { parseDocument } from "@zeropdf/zeropdf-pdf";
 
 const parsed = parseDocument(existingBytes);
 for (const field of parsed.listFormFields()) {

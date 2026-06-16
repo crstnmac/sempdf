@@ -1,4 +1,4 @@
-import { createDocument, hex } from "@criston/zeropdf";
+import { createDocument, hex } from "@zeropdf/zeropdf-pdf";
 
 const doc = createDocument({
   language: "en-US",

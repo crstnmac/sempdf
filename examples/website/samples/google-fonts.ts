@@ -1,4 +1,4 @@
-import { createDocument, rgb } from "@criston/zeropdf";
+import { createDocument, rgb } from "@zeropdf/zeropdf-pdf";
 
 // In Node, call loadGoogleFont("Geist", { weight: 700 }) and embed the bytes.
 // Browsers receive woff2 from the Google Fonts API (which the engine cannot

@@ -73,7 +73,7 @@ Each face accepts raw TrueType/OpenType bytes (embedded automatically), a handle
 In a Chrome extension, compose with [`loadExtensionFontFaces()`](./text-and-fonts#chrome-extension-fonts) to load bundled fonts and pass the result straight to `fonts`:
 
 ```ts
-import { loadExtensionFontFaces } from "@criston/zeropdf/chrome-extension-fonts";
+import { loadExtensionFontFaces } from "@zeropdf/zeropdf-pdf/chrome-extension-fonts";
 
 doc.renderTemplate({
   fonts: {

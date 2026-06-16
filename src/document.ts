@@ -4697,7 +4697,7 @@ export class PdfDocument {
    *
    * @example
    * ```ts
-   * import { createDocument } from "@criston/zeropdf";
+   * import { createDocument } from "@zeropdf/zeropdf-pdf";
    *
    * const doc = createDocument();
    *
