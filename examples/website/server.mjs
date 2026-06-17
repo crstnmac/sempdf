@@ -1,5 +1,6 @@
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
+import { timingSafeEqual } from "node:crypto";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,6 +8,25 @@ import { fileURLToPath } from "node:url";
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const defaultFile = "examples/website/index.html";
 const port = Number.parseInt(process.env.PORT ?? "4173", 10);
+
+// HTTP Basic Auth, enabled only when PLAYGROUND_PASSWORD is set. User defaults to "admin".
+const authUser = process.env.PLAYGROUND_USER ?? "admin";
+const authPassword = process.env.PLAYGROUND_PASSWORD ?? "";
+const authRealm = process.env.PLAYGROUND_REALM ?? "zeropdf playground";
+
+const safeEqual = (a, b) => {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  return bufA.length === bufB.length && timingSafeEqual(bufA, bufB);
+};
+
+const isAuthorized = (request) => {
+  if (!authPassword) return true;
+  const header = request.headers.authorization ?? "";
+  if (!header.startsWith("Basic ")) return false;
+  const [user, ...rest] = Buffer.from(header.slice(6), "base64").toString("utf8").split(":");
+  return safeEqual(user, authUser) && safeEqual(rest.join(":"), authPassword);
+};
 
 const contentTypes = new Map([
   [".css", "text/css; charset=utf-8"],
@@ -20,6 +40,15 @@ const contentTypes = new Map([
 ]);
 
 const server = http.createServer(async (request, response) => {
+  if (!isAuthorized(request)) {
+    response.writeHead(401, {
+      "WWW-Authenticate": `Basic realm="${authRealm}", charset="UTF-8"`,
+      "Content-Type": "text/plain; charset=utf-8"
+    });
+    response.end("Authentication required");
+    return;
+  }
+
   const requestPath = request.url === "/" ? defaultFile : decodeURIComponent(new URL(request.url, `http://${request.headers.host}`).pathname.slice(1));
   const safePath = path.normalize(requestPath).replace(/^(\.\.[/\\])+/, "");
   const filePath = path.resolve(rootDir, safePath);
