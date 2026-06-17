@@ -10,7 +10,13 @@ COPY . .
 RUN npm run docs:build
 
 FROM nginx:alpine
+# apache2-utils: htpasswd, used by the entrypoint to build the Basic Auth file from env.
+RUN apk add --no-cache apache2-utils
 COPY --from=build /app/docs/.vitepress/dist /usr/share/nginx/html
 # cleanUrls: true needs a $uri.html fallback; default conf 404s on /guide/x.
 COPY nginx.docs.conf /etc/nginx/conf.d/default.conf
+COPY docker-entrypoint.docs.sh /docker-entrypoint.docs.sh
+RUN chmod +x /docker-entrypoint.docs.sh
 EXPOSE 80
+# Generates /etc/nginx/auth.conf from DOCS_PASSWORD, then runs nginx in foreground.
+CMD ["/docker-entrypoint.docs.sh"]
