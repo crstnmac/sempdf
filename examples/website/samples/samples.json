@@ -1,4 +1,8 @@
 [
+  { "label": "SaaS Invoice", "file": "saas-invoice.ts" },
+  { "label": "Bank Statement", "file": "bank-statement.ts" },
+  { "label": "Joining Letter", "file": "joining-letter.ts" },
+  { "label": "User Manual", "file": "user-manual.ts" },
   { "label": "Rich text & layout", "file": "rich-text-and-layout.ts" },
   { "label": "Google Fonts", "file": "google-fonts.ts" },
   { "label": "Stylesheets & tables", "file": "stylesheets-and-tables.ts" },
