@@ -2,6 +2,12 @@
 
 All notable changes to `@sempdf/sempdf-pdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.9.0] - 2026-06-24
+
+### Added
+
+- **AES PDF encryption now works in the browser.** AES (`aes-128`, `aes-256`, `aes-256-r6`) previously required Node's `crypto` and threw `"AES PDF encryption requires Node.js crypto support"` in browsers. The library now falls back to a built-in, zero-dependency AES-CBC + SHA-256/384/512 implementation when `node:crypto` is unavailable, so encrypting and decrypting run client-side. Output is byte-for-byte compatible with the Node path (verified against Node's native crypto), so a document encrypted in the browser opens with the same password in any reader. Node continues to use its native crypto for speed. The only browser requirement is a secure-random source for the IV/key, read from the Web Crypto API. A "Browser AES encryption" playground sample and docs were added.
+
 ## [1.8.0] - 2026-06-24
 
 ### Added
