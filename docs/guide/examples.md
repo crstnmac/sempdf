@@ -36,6 +36,13 @@ header-row table — all through `renderTemplate()`.
 
 <<< ../../examples/website/samples/stylesheets-and-tables.ts{ts}
 
+## Import image (browser)
+
+Load an image without `node:fs` by fetching it as an `ArrayBuffer`, then let
+`page.image()` detect its format and embed it in the PDF.
+
+<<< ../../examples/website/samples/import-image.ts{ts}
+
 ## Single page (low level)
 
 The lowest-level API: add a page and draw text at absolute coordinates.
