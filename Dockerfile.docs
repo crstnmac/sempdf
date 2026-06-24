@@ -3,8 +3,14 @@ FROM node:22-alpine AS build
 # git: VitePress `lastUpdated` runs `git log` per page.
 RUN apk add --no-cache git
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci
+# The registry token is a BuildKit build secret. Dokploy exposes it under the
+# env/secret name NPM_TOKEN -> /run/secrets/NPM_TOKEN. .npmrc holds the private
+# registry; the token is appended only for the `npm ci` layer and never persisted.
+COPY package*.json .npmrc ./
+RUN --mount=type=secret,id=NPM_TOKEN \
+    printf '//npm.sempdf.net/:_authToken=%s\n' "$(cat /run/secrets/NPM_TOKEN)" >> .npmrc \
+ && npm ci \
+ && rm -f .npmrc
 COPY . .
 # docs:build = typedoc (docs/api) + vitepress build → docs/.vitepress/dist
 RUN npm run docs:build
