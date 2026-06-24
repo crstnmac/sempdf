@@ -2,6 +2,13 @@
 
 All notable changes to `@zeropdf/zeropdf-pdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.7.1] - 2026-06-24
+
+### Fixed
+
+- **Lists and tables ignored `defaultFont` / document `textDefaults`.** Paragraphs and headings inherit document-wide text defaults, but the list and table block paths merged only the flow-configured defaults — never the document `textDefaults` — so list items and table cells fell back to the hardcoded `"Helvetica"`. Under `pdfua-1` this produced `INVALID_COMPLIANCE` (visible text in a non-embedded font). List render/estimate and table render/row-height paths now merge `textDefaults` at lowest priority (matching paragraph behavior), and table cell base styling seeds `font`/`fontSize`/`color`/`kerning` from `textDefaults` too. A font set "for the whole page" now applies to lists and tables without an explicit per-block override.
+- **List height estimate threw when block options were present.** The estimate path only injected the auto-width when a list block carried no options, so passing any option (e.g. `font`) dropped the width and `normalizeListOptions` threw `width must be a finite number`. The estimate path now always seeds the flow width, still overridable by an explicit `options.width`.
+
 ## [1.7.0] - 2026-06-16
 
 ### Changed
