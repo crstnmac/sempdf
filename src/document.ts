@@ -1640,7 +1640,7 @@ export class PdfFlow {
       case "rect":
         return block.height + this.state.gap;
       case "list":
-        return this.estimateListHeight(block.items, block.options ?? { width: this.state.width });
+        return this.estimateListHeight(block.items, { width: this.state.width, ...block.options });
       case "custom":
         return block.estimate(this);
       default:
@@ -2042,10 +2042,10 @@ export class PdfFlow {
     const normalizedRows = resolveTableCellContent(
       normalizeTableRows(rows),
       {
-        font: options.font ?? this.state.font,
-        fontSize: options.fontSize ?? this.state.fontSize,
-        color: options.color ?? this.state.color,
-        kerning: options.kerning ?? this.state.kerning,
+        font: options.font ?? this.state.font ?? this.textDefaults?.font,
+        fontSize: options.fontSize ?? this.state.fontSize ?? this.textDefaults?.fontSize,
+        color: options.color ?? this.state.color ?? this.textDefaults?.color,
+        kerning: options.kerning ?? this.state.kerning ?? this.textDefaults?.kerning,
       },
       this.fontFamilies,
       this.textDefaults,
@@ -2056,6 +2056,7 @@ export class PdfFlow {
     );
     const width = options.width ?? innerWidth;
     const normalizedOptions = normalizeTableOptions(normalizedRows, resolveFontFamilyOptions({
+      ...(this.textDefaults ?? {}),
       ...flowTextDefaults(this.state),
       ...options,
       x: this.state.x + spacing.left,
@@ -2266,10 +2267,10 @@ export class PdfFlow {
     const normalizedRows = resolveTableCellContent(
       normalizeTableRows(rows),
       {
-        font: options.font ?? this.state.font,
-        fontSize: options.fontSize ?? this.state.fontSize,
-        color: options.color ?? this.state.color,
-        kerning: options.kerning ?? this.state.kerning,
+        font: options.font ?? this.state.font ?? this.textDefaults?.font,
+        fontSize: options.fontSize ?? this.state.fontSize ?? this.textDefaults?.fontSize,
+        color: options.color ?? this.state.color ?? this.textDefaults?.color,
+        kerning: options.kerning ?? this.state.kerning ?? this.textDefaults?.kerning,
       },
       this.fontFamilies,
       this.textDefaults,
@@ -2277,6 +2278,7 @@ export class PdfFlow {
     const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
     const width = options.width ?? innerWidth;
     const normalizedOptions = normalizeTableOptions(normalizedRows, resolveFontFamilyOptions({
+      ...(this.textDefaults ?? {}),
       ...flowTextDefaults(this.state),
       ...options,
       x: this.state.x,
@@ -2432,6 +2434,7 @@ export class PdfFlow {
   ): number {
     const normalizedItems = normalizeListItems(items);
     const normalizedOptions = normalizeListOptions(normalizedItems, resolveFontFamilyOptions({
+      ...(this.textDefaults ?? {}),
       ...flowTextDefaults(this.state),
       x: this.state.x,
       y: this.state.y,
@@ -3269,6 +3272,7 @@ export class PdfFlow {
     const x = options.x ?? this.state.x + spacing.left;
     const width = options.width ?? Math.max(this.state.width - spacing.left - spacing.right, 1);
     const normalizedOptions = normalizeListOptions(normalizedItems, resolveFontFamilyOptions({
+      ...(this.textDefaults ?? {}),
       ...flowTextDefaults(this.state),
       ...options,
       x,
