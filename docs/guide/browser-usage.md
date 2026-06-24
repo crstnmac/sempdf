@@ -40,10 +40,11 @@ const response = new Response(readable, {
 
 ## Browser limitations
 
-The core engine — generation, parsing, editing, fonts, images, tables, templates, annotations, and tagged PDF — runs in the browser with no Node dependencies. Two areas are Node-only:
+The core engine — generation, parsing, editing, fonts, images, tables, templates, annotations, tagged PDF, and password encryption — runs in the browser with no Node dependencies. One area is Node-only:
 
 - **Disk-backed output.** `TempFileSink`, `NodeStreamSink`, and `writeToFile` rely on `node:fs` and are not available in the browser. Use `toBlob()`, `toArrayBuffer()`, `toUint8Array()`, `BufferSink`, or `WebStreamSink` instead.
-- **AES encryption.** AES-encrypting a document requires Node's `node:crypto`; in the browser it throws `"AES PDF encryption requires Node.js crypto support in this build."` Generate unencrypted PDFs client-side and encrypt server-side if you need protection. (Secure random bytes fall back to the Web Crypto API where available.)
+
+**Encryption works in the browser.** RC4 and all AES variants (`aes-128`, `aes-256`, `aes-256-r6`) encrypt and decrypt client-side. When `node:crypto` is unavailable the library uses a built-in, zero-dependency AES/SHA-2 implementation whose output matches the Node path byte-for-byte, so a document encrypted in the browser opens with the same password everywhere. It only needs a secure-random source for the IV/key, which it reads from the Web Crypto API (`crypto.getRandomValues`). See [Encryption and Signatures](./encryption-and-signatures.md#browser-support).
 
 The Node-only sinks load `node:fs` through a lazy dynamic `import()`, so bundlers building for the browser will not pull them into the core path.
 
