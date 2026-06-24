@@ -45,6 +45,13 @@ header-row table — all through `renderTemplate()`.
 
 <<< ../../examples/website/samples/stylesheets-and-tables.ts{ts}
 
+## Import image (browser)
+
+Load an image without `node:fs` by fetching it as an `ArrayBuffer`, then let
+`page.image()` detect its format and embed it in the PDF.
+
+<<< ../../examples/website/samples/import-image.ts{ts}
+
 ## Single page template
 
 A minimal single-page document rendered from declarative template blocks.
