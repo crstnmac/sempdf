@@ -2,6 +2,12 @@
 
 All notable changes to `@barrierbreak/sempdf-pdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.8.0] - 2026-06-24
+
+### Added
+
+- **Optional veraPDF validation adapter.** New `validateWithVeraPdf(bytes, options)` shells out to a veraPDF executable when one is available and returns the supplied custom-checker issues otherwise — veraPDF is never bundled and adds no dependencies. The result reports its `source` (`"verapdf"` or `"custom"`), whether veraPDF was `available`, the `compliant` flag, and issues normalized to `PdfComplianceIssue`. The flavour is auto-derived from the `conformance` profile (e.g. `pdfa-2b` → `2b`, `pdfua-1` → `ua1`) or set explicitly; the executable resolves from `verapdfBin`, then `VERAPDF_BIN`, then `verapdf` on `PATH`. Node-only: `node:*` modules are imported lazily so browser bundles never reach this code. The defensive report parser is exported separately as `parseVeraPdfReport`.
+
 ## [1.7.2] - 2026-06-24
 
 ### Fixed
