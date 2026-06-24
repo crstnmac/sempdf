@@ -772,7 +772,13 @@ export class PdfStructureContainer {
    */
   list(items: readonly ListItem[], options: ListOptions): this {
     const normalizedItems = normalizeListItems(items);
-    const normalizedOptions = normalizeListOptions(normalizedItems, options);
+    const normalizedOptions = normalizeListOptions(normalizedItems, {
+      ...options,
+      font: options.font ?? this.textDefaults?.font,
+      fontSize: options.fontSize ?? this.textDefaults?.fontSize,
+      color: options.color ?? this.textDefaults?.color,
+      kerning: options.kerning ?? this.textDefaults?.kerning,
+    });
     const listNode = createStructureNode(this.page, "L", undefined, this.node);
     layoutList(
       this.page,
@@ -791,10 +797,17 @@ export class PdfStructureContainer {
    * @param options Options that control the operation.
    */
   table(rows: readonly TableRow[], options: TableOptions): this {
-    const resolvedOptions = resolveFontFamilyOptions(options, this.fontFamilies);
+    const base: TableOptions = {
+      ...options,
+      font: options.font ?? this.textDefaults?.font,
+      fontSize: options.fontSize ?? this.textDefaults?.fontSize,
+      color: options.color ?? this.textDefaults?.color,
+      kerning: options.kerning ?? this.textDefaults?.kerning,
+    };
+    const resolvedOptions = resolveFontFamilyOptions(base, this.fontFamilies);
     const normalizedRows = resolveTableCellContent(
       normalizeTableRows(rows),
-      options,
+      base,
       this.fontFamilies,
       this.textDefaults,
     );
@@ -3541,7 +3554,13 @@ export class PdfPage {
    */
   list(items: readonly ListItem[], options: ListOptions): this {
     const normalizedItems = normalizeListItems(items);
-    const normalizedOptions = normalizeListOptions(normalizedItems, options);
+    const normalizedOptions = normalizeListOptions(normalizedItems, {
+      ...options,
+      font: options.font ?? this.textDefaults?.font,
+      fontSize: options.fontSize ?? this.textDefaults?.fontSize,
+      color: options.color ?? this.textDefaults?.color,
+      kerning: options.kerning ?? this.textDefaults?.kerning,
+    });
     const listNode = createStructureNode(this.page, "L");
     layoutList(
       this.page,
@@ -3560,10 +3579,17 @@ export class PdfPage {
    * @param options Options that control the operation.
    */
   table(rows: readonly TableRow[], options: TableOptions): this {
-    const resolvedOptions = resolveFontFamilyOptions(options, this.fontFamilies);
+    const base: TableOptions = {
+      ...options,
+      font: options.font ?? this.textDefaults?.font,
+      fontSize: options.fontSize ?? this.textDefaults?.fontSize,
+      color: options.color ?? this.textDefaults?.color,
+      kerning: options.kerning ?? this.textDefaults?.kerning,
+    };
+    const resolvedOptions = resolveFontFamilyOptions(base, this.fontFamilies);
     const normalizedRows = resolveTableCellContent(
       normalizeTableRows(rows),
-      options,
+      base,
       this.fontFamilies,
       this.textDefaults,
     );

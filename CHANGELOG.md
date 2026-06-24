@@ -2,6 +2,13 @@
 
 All notable changes to `@sempdf/sempdf-pdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.7.2] - 2026-06-24
+
+### Fixed
+
+- **Page- and container-level `table()` still ignored `textDefaults` (incomplete 1.7.1 fix).** `1.7.1` seeded the cell base font from `textDefaults` only on the flow (`flow.table`) path. The direct `page.table()` and structure-container `table()` methods passed call `options` straight through as the cell base and the table-wide font, so with no per-call `font` a styled/header cell hit the hardcoded `base.font ?? "Helvetica"` and plain cells inherited an unseeded table font — `pdfua-1` `INVALID_COMPLIANCE` again. Both methods now seed `font`/`fontSize`/`color`/`kerning` from `textDefaults` (call options still win).
+- **Page- and container-level `list()` had the same gap.** `page.list()` and the structure-container `list()` passed `options` to `normalizeListOptions` without merging `textDefaults`, so a list with no explicit `font` fell back to `"Helvetica"`. They now seed list defaults from `textDefaults` too, matching the flow list path fixed in 1.7.1.
+
 ## [1.7.1] - 2026-06-24
 
 ### Fixed
