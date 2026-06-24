@@ -16,5 +16,6 @@
   { "label": "Outlines (bookmarks)", "file": "outlines.ts" },
   { "label": "Annotations", "file": "annotations.ts" },
   { "label": "Form fields", "file": "form-fields.ts" },
-  { "label": "Incremental editing", "file": "incremental-editing.ts" }
+  { "label": "Incremental editing", "file": "incremental-editing.ts" },
+  { "label": "Browser AES encryption", "file": "encryption.ts" }
 ]
