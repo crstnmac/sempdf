@@ -1,5 +1,7 @@
 import type { NormalizedDocumentEncryption, NormalizedDocumentPermissions } from "./validation.js";
 import { PdfEngineError, PdfErrorCode } from "../errors.js";
+import { aesCbcDecryptPkcs7, aesCbcEncryptPkcs7, aesCbcNoPad as aesCbcNoPadJs } from "./aes.js";
+import { sha256, sha384, sha512 } from "./sha2.js";
 
 const PASSWORD_PADDING = Uint8Array.from([
   0x28, 0xbf, 0x4e, 0x5e, 0x4e, 0x75, 0x8a, 0x41,
@@ -480,11 +482,15 @@ function createAesCbcCipher(key: Uint8Array): PdfObjectCipher {
         throw new PdfEngineError(PdfErrorCode.UNSUPPORTED_ENCRYPTION, "AES PDF object ciphers must be used with a single update call.");
       }
       used = true;
-      const crypto = getNodeCrypto();
       const iv = randomBytes(16);
-      const cipher = crypto.createCipheriv(key.length === 32 ? "aes-256-cbc" : "aes-128-cbc", key, iv);
-      const encrypted = concatBytes(cipher.update(data), cipher.final());
-      return concatBytes(iv, encrypted);
+      const crypto = getNodeCryptoOrUndefined();
+      if (crypto) {
+        const cipher = crypto.createCipheriv(key.length === 32 ? "aes-256-cbc" : "aes-128-cbc", key, iv);
+        const encrypted = concatBytes(cipher.update(data), cipher.final());
+        return concatBytes(iv, encrypted);
+      }
+      // Portable fallback (browsers / runtimes without node:crypto).
+      return concatBytes(iv, aesCbcEncryptPkcs7(key, iv, data));
     }
   };
 }
@@ -495,22 +501,29 @@ function aesCbcDecrypt(key: Uint8Array, data: Uint8Array): Uint8Array {
   }
   const iv = data.subarray(0, 16);
   const encrypted = data.subarray(16);
-  const crypto = getNodeCrypto();
-  const decipher = crypto.createDecipheriv(key.length === 32 ? "aes-256-cbc" : "aes-128-cbc", key, iv);
-  return concatBytes(decipher.update(encrypted), decipher.final());
+  const crypto = getNodeCryptoOrUndefined();
+  if (crypto) {
+    const decipher = crypto.createDecipheriv(key.length === 32 ? "aes-256-cbc" : "aes-128-cbc", key, iv);
+    return concatBytes(decipher.update(encrypted), decipher.final());
+  }
+  // Portable fallback (browsers / runtimes without node:crypto).
+  return aesCbcDecryptPkcs7(key, iv, encrypted);
 }
 
-function getNodeCrypto(): {
+type NodeCrypto = {
   createCipheriv(algorithm: string, key: Uint8Array, iv: Uint8Array): { update(data: Uint8Array): Uint8Array; final(): Uint8Array };
   createDecipheriv(algorithm: string, key: Uint8Array, iv: Uint8Array): { update(data: Uint8Array): Uint8Array; final(): Uint8Array };
   randomBytes(size: number): Uint8Array;
-} {
+};
+
+/**
+ * Returns Node's `crypto` module when available, or `undefined`. AES uses it as
+ * a fast path and falls back to the pure-JS implementation in {@link ./aes.js}
+ * when it is absent (browsers and other non-Node runtimes).
+ */
+function getNodeCryptoOrUndefined(): NodeCrypto | undefined {
   const getBuiltinModule = (globalThis as { process?: { getBuiltinModule?: (name: string) => unknown } }).process?.getBuiltinModule;
-  const crypto = getBuiltinModule?.("node:crypto") as ReturnType<typeof getNodeCrypto> | undefined;
-  if (!crypto) {
-    throw new PdfEngineError(PdfErrorCode.UNSUPPORTED_ENCRYPTION, "AES PDF encryption requires Node.js crypto support in this build.");
-  }
-  return crypto;
+  return getBuiltinModule?.("node:crypto") as NodeCrypto | undefined;
 }
 
 function randomBytes(size: number): Uint8Array {
@@ -518,7 +531,11 @@ function randomBytes(size: number): Uint8Array {
   if (webCrypto?.getRandomValues) {
     return webCrypto.getRandomValues(new Uint8Array(size));
   }
-  return getNodeCrypto().randomBytes(size);
+  const crypto = getNodeCryptoOrUndefined();
+  if (crypto) {
+    return crypto.randomBytes(size);
+  }
+  throw new PdfEngineError(PdfErrorCode.UNSUPPORTED_ENCRYPTION, "Secure random bytes are unavailable: no Web Crypto or Node.js crypto in this runtime.");
 }
 
 function swap(state: Uint8Array, left: number, right: number): void {
@@ -650,20 +667,29 @@ function saslprepPassword(password: string): Uint8Array {
 }
 
 function shaHash(algorithm: "sha256" | "sha384" | "sha512", data: Uint8Array): Uint8Array {
-  const crypto = getNodeCrypto();
-  const hash = (crypto as unknown as { createHash(name: string): { update(data: Uint8Array): { digest(): Uint8Array } } }).createHash(algorithm);
-  return Uint8Array.from(hash.update(data).digest());
+  const crypto = getNodeCryptoOrUndefined();
+  if (crypto) {
+    const hash = (crypto as unknown as { createHash(name: string): { update(data: Uint8Array): { digest(): Uint8Array } } }).createHash(algorithm);
+    return Uint8Array.from(hash.update(data).digest());
+  }
+  // Portable fallback (browsers / runtimes without node:crypto).
+  return algorithm === "sha256" ? sha256(data) : algorithm === "sha384" ? sha384(data) : sha512(data);
 }
 
 function aesCbcNoPad(key: Uint8Array, iv: Uint8Array, data: Uint8Array, encrypt: boolean): Uint8Array {
-  const crypto = getNodeCrypto() as unknown as {
-    createCipheriv(name: string, key: Uint8Array, iv: Uint8Array): { setAutoPadding(pad: boolean): void; update(d: Uint8Array): Uint8Array; final(): Uint8Array };
-    createDecipheriv(name: string, key: Uint8Array, iv: Uint8Array): { setAutoPadding(pad: boolean): void; update(d: Uint8Array): Uint8Array; final(): Uint8Array };
-  };
-  const algName = key.length === 32 ? "aes-256-cbc" : "aes-128-cbc";
-  const cipher = encrypt ? crypto.createCipheriv(algName, key, iv) : crypto.createDecipheriv(algName, key, iv);
-  cipher.setAutoPadding(false);
-  return concatBytes(cipher.update(data), cipher.final());
+  const crypto = getNodeCryptoOrUndefined();
+  if (crypto) {
+    const c = crypto as unknown as {
+      createCipheriv(name: string, key: Uint8Array, iv: Uint8Array): { setAutoPadding(pad: boolean): void; update(d: Uint8Array): Uint8Array; final(): Uint8Array };
+      createDecipheriv(name: string, key: Uint8Array, iv: Uint8Array): { setAutoPadding(pad: boolean): void; update(d: Uint8Array): Uint8Array; final(): Uint8Array };
+    };
+    const algName = key.length === 32 ? "aes-256-cbc" : "aes-128-cbc";
+    const cipher = encrypt ? c.createCipheriv(algName, key, iv) : c.createDecipheriv(algName, key, iv);
+    cipher.setAutoPadding(false);
+    return concatBytes(cipher.update(data), cipher.final());
+  }
+  // Portable fallback (browsers / runtimes without node:crypto).
+  return aesCbcNoPadJs(key, iv, data, encrypt);
 }
 
 // ISO 32000-2 §7.6.4.3.4 Algorithm 2.B
