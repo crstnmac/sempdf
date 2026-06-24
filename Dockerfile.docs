@@ -4,11 +4,12 @@ FROM node:22-alpine AS build
 RUN apk add --no-cache git
 WORKDIR /app
 # The registry token is a BuildKit build secret. Dokploy exposes it under the
-# env/secret name NPM_TOKEN -> /run/secrets/NPM_TOKEN. .npmrc holds the private
-# registry; the token is appended only for the `npm ci` layer and never persisted.
-COPY package*.json .npmrc ./
+# env/secret name NPM_TOKEN -> /run/secrets/NPM_TOKEN. The repo `.npmrc` is
+# gitignored (never in the build context), so the registry config + token are
+# written inline for the `npm ci` layer only, then removed.
+COPY package*.json ./
 RUN --mount=type=secret,id=NPM_TOKEN \
-    printf '//npm.barrierbreak.net/:_authToken=%s\n' "$(cat /run/secrets/NPM_TOKEN)" >> .npmrc \
+    printf 'registry=https://npm.barrierbreak.net\n@barrierbreak:registry=https://npm.barrierbreak.net\n//npm.barrierbreak.net/:_authToken=%s\n' "$(cat /run/secrets/NPM_TOKEN)" > .npmrc \
  && npm ci \
  && rm -f .npmrc
 COPY . .
