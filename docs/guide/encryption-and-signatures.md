@@ -25,7 +25,26 @@ const bytes = doc.toUint8Array();
 const parsed = parseDocument(bytes, { password: "reader" });
 ```
 
-Algorithms: `"rc4-40"` (legacy compatibility), `"rc4-128"` (default), `"aes-128"`, `"aes-256"`.
+Algorithms: `"rc4-40"` (legacy compatibility), `"rc4-128"` (default), `"aes-128"`, `"aes-256"`, `"aes-256-r6"` (ISO 32000-2 / PDF 2.0 hardened key derivation, recommended for new documents).
+
+### Browser support
+
+All algorithms work in the browser. When Node's `crypto` module is unavailable, the library transparently uses a built-in, zero-dependency AES (CBC) and SHA-2 implementation, so AES encryption no longer requires a Node runtime. Output is byte-for-byte compatible with the Node path, so a document encrypted in the browser opens with the same password anywhere.
+
+```ts
+// Runs identically in Node and the browser.
+const doc = createDocument({
+  encryption: { algorithm: "aes-256-r6", userPassword: "reader", ownerPassword: "owner-secret" }
+});
+doc.addPage({ size: "A4" }).text("Confidential", { x: 48, y: 780 });
+const bytes = doc.toUint8Array();
+
+// Browser download:
+const blob = new Blob([bytes], { type: "application/pdf" });
+const url = URL.createObjectURL(blob);
+```
+
+The only browser requirement is a secure-random source for the AES IV and document key. Modern browsers provide `crypto.getRandomValues`; the library uses it automatically. The pure-JS AES/SHA-2 fallback is not constant-time — AES PDF encryption is a deterrent, not a strong confidentiality boundary, regardless of runtime.
 
 ## Metadata-Only Encryption
 
