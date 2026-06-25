@@ -20,6 +20,39 @@ import { setLicenseGuard } from "@sempdf/sempdf-pdf/license-guard";
 setLicenseGuard({ consume() {} }); // allow unlimited generation
 ```
 
+## Zero-config auto-guard (Node only)
+
+When you set `SEMPDF_LICENSE_KEY` and `SEMPDF_LICENSE_SERVER` environment
+variables, the core library automatically installs a built-in guard on the first
+call to `toUint8Array()` / `toBlob()`. No imports, no `checkout()`, no `flush()` —
+just set the env vars and generate.
+
+```sh
+export SEMPDF_LICENSE_KEY=a11y_RoVJ2Ppl9bUbdHKj1NRXMhivW39k_-qS
+export SEMPDF_LICENSE_SERVER=http://localhost:8787
+```
+
+```ts
+import { createDocument } from "@sempdf/sempdf-pdf";
+
+// No licensing import — the guard is auto-installed on first generation.
+const doc = createDocument({ title: "Hello" });
+doc.addPage({ size: "A4" }).text("Hello", { x: 24, y: 700 });
+await doc.toUint8Array(); // auto-guard handles checkout + flush
+```
+
+The auto-guard starts with a 10-page initial lease, refills asynchronously when
+the lease drops below 5, and reports usage every 30 seconds. If the lease runs
+out before a refill completes, generation throws `LICENSE_QUOTA_EXCEEDED` — wait
+a moment and retry.
+
+To shut down the auto-guard (e.g. before process exit), call:
+
+```ts
+import { shutdownAutoGuard } from "@sempdf/sempdf-pdf/license-guard";
+shutdownAutoGuard(); // stops the flush timer, reports remaining usage
+```
+
 ::: warning Enforcement is a deterrent, not a wall
 The library runs in your customers' own Node backend, so a determined party can
 patch the check out. The license server is the **billing source of truth**; the
