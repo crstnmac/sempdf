@@ -6,6 +6,7 @@
   { "label": "Rich text & layout", "file": "rich-text-and-layout.ts" },
   { "label": "Google Fonts", "file": "google-fonts.ts" },
   { "label": "Stylesheets & tables", "file": "stylesheets-and-tables.ts" },
+  { "label": "Import image (browser)", "file": "import-image.ts" },
   { "label": "Single page (low level)", "file": "single-page.ts" },
   { "label": "Hello world (template)", "file": "hello-world.ts" },
   { "label": "Invoice", "file": "invoice.ts" },
