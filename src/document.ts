@@ -1,4 +1,5 @@
 import { PdfEngineError, PdfErrorCode } from "./errors.js";
+import { consumeLicense } from "./internal/license-guard.js";
 import {
   parseDocument,
   ParsedPdfDocument,
@@ -239,6 +240,57 @@ function hashBytes(data: Uint8Array): string {
 }
 
 const fontCache = new Map<string, ParsedTrueTypeFont>();
+
+function applyLicenseWatermark(pages: readonly InternalPageModel[], text: string): void {
+  for (const page of pages) {
+    if (page.ops.some((op) => op.type === "text" && op.options.structure?.actualText === "license-watermark")) {
+      continue;
+    }
+    const lines = text.split(/\r?\n/).filter((line) => line.length > 0);
+    const fontSize = Math.max(28, Math.min(page.size.width, page.size.height) * 0.07);
+    const startY = ((lines.length - 1) * fontSize * 0.58);
+    const radians = -28 * Math.PI / 180;
+    const watermarkOps: PdfOp[] = [{
+      type: "saveState",
+    }, {
+      type: "transform",
+      matrix: {
+        a: Math.cos(radians),
+        b: Math.sin(radians),
+        c: -Math.sin(radians),
+        d: Math.cos(radians),
+        e: page.size.width * 0.50,
+        f: page.size.height * 0.50,
+      },
+    }, {
+      type: "extGState",
+      options: { fillAlpha: 0.16 },
+    }];
+    for (const [index, line] of lines.entries()) {
+      watermarkOps.push({
+        type: "text",
+        text: line,
+        options: {
+          x: -page.size.width * 0.34,
+          y: startY - index * fontSize * 1.16,
+          font: "Helvetica-Bold",
+          fontSize,
+          color: { kind: "gray", value: 0.35 },
+          tag: "Artifact",
+          structure: { actualText: "license-watermark" },
+          kerning: true,
+        },
+      });
+    }
+    watermarkOps.push({
+      type: "extGState",
+      options: { fillAlpha: 1 },
+    }, {
+      type: "restoreState",
+    });
+    page.ops.push(...watermarkOps);
+  }
+}
 
 export interface PdfDocumentModel {
   /** Document information dictionary values. */
@@ -5146,6 +5198,9 @@ export class PdfDocument {
           "Document has been modified after serialization. Create a new document to produce additional output.",
         );
       }
+      if (this._finalizedBytes === undefined) {
+        this._finalizedBytes = serializeDocument(this.toModel());
+      }
       return this._finalizedBytes!;
     }
     this._finalized = true;
@@ -5180,7 +5235,7 @@ export class PdfDocument {
     }
     this._finalized = true;
     this._finalizedPageCount = this.pages.length;
-    this._finalizedBytes = this._serializeToBytes();
+    this._applyLicenseDecision();
     await serializeDocumentToSink(this.toModel(), sink);
     } finally {
       this._writing = false;
@@ -5199,6 +5254,9 @@ export class PdfDocument {
           PdfErrorCode.INVALID_OPERATION,
           "Document has been modified after serialization. Create a new document to produce additional output.",
         );
+      }
+      if (this._finalizedBytes === undefined) {
+        this._finalizedBytes = serializeDocument(this.toModel());
       }
       const bytes = this._finalizedBytes!;
       const buffer = new ArrayBuffer(bytes.byteLength);
@@ -5226,6 +5284,9 @@ export class PdfDocument {
           "Document has been modified after serialization. Create a new document to produce additional output.",
         );
       }
+      if (this._finalizedBytes === undefined) {
+        this._finalizedBytes = serializeDocument(this.toModel());
+      }
       return new Blob([this._finalizedBytes! as BlobPart], { type: "application/pdf" });
     }
     this._finalized = true;
@@ -5238,7 +5299,13 @@ export class PdfDocument {
    * Internal serialization without finalization checks.
    */
   private _serializeToBytes(): Uint8Array {
+    this._applyLicenseDecision();
     return serializeDocument(this.toModel());
+  }
+
+  private _applyLicenseDecision(): void {
+    const decision = consumeLicense({ documents: 1, pages: this.pages.length });
+    if (decision?.watermarkText) applyLicenseWatermark(this.pages, decision.watermarkText);
   }
 
   /**
@@ -6456,6 +6523,9 @@ export class PdfEditableDocument {
           "Document has been modified after serialization. Create a new document to produce additional output.",
         );
       }
+      if (this._finalizedBytes === undefined) {
+        this._finalizedBytes = serializeIncrementalUpdate(this.toIncrementalModel());
+      }
       return this._finalizedBytes!;
     }
     this._finalized = true;
@@ -6506,7 +6576,7 @@ export class PdfEditableDocument {
     }
     this._finalized = true;
     this._finalizedPageCount = this.pageOrder.length;
-    this._finalizedBytes = this._serializeToBytes();
+    this._applyLicenseDecision();
     if (
       !hasEditablePageChanges(this.base, this.pageOrder) &&
       this.updatedInfo === undefined &&
@@ -6542,6 +6612,9 @@ export class PdfEditableDocument {
           "Document has been modified after serialization. Create a new document to produce additional output.",
         );
       }
+      if (this._finalizedBytes === undefined) {
+        this._finalizedBytes = serializeIncrementalUpdate(this.toIncrementalModel());
+      }
       const bytes = this._finalizedBytes!;
       const buffer = new ArrayBuffer(bytes.byteLength);
       new Uint8Array(buffer).set(bytes);
@@ -6568,6 +6641,9 @@ export class PdfEditableDocument {
           "Document has been modified after serialization. Create a new document to produce additional output.",
         );
       }
+      if (this._finalizedBytes === undefined) {
+        this._finalizedBytes = serializeIncrementalUpdate(this.toIncrementalModel());
+      }
       return new Blob([this._finalizedBytes! as BlobPart], { type: "application/pdf" });
     }
     this._finalized = true;
@@ -6580,6 +6656,7 @@ export class PdfEditableDocument {
    * Internal serialization without finalization checks.
    */
   private _serializeToBytes(): Uint8Array {
+    this._applyLicenseDecision();
     if (
       !hasEditablePageChanges(this.base, this.pageOrder) &&
       this.updatedInfo === undefined &&
@@ -6594,8 +6671,20 @@ export class PdfEditableDocument {
     ) {
       return this.base.getSourceBytes();
     }
-
     return serializeIncrementalUpdate(this.toIncrementalModel());
+  }
+
+  private _applyLicenseDecision(): void {
+    const decision = consumeLicense({ documents: 1, pages: this.pageOrder.length });
+    if (decision?.watermarkText) {
+      applyLicenseWatermark(
+        [
+          ...this.appendedPages,
+          ...this.editedPages.values(),
+        ],
+        decision.watermarkText,
+      );
+    }
   }
 
   /**
