@@ -1,9 +1,9 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { db } from "../db/client.js";
 import { hashKey } from "./keys.js";
-import { apiTelemetry, licenses, notificationEvents, notificationSettings, usageEvents, type License } from "../db/schema.js";
-import { evaluateLicensePolicy, notificationEventsForUsage, type NotificationEventType } from "./policy.js";
+import { apiTelemetry, licenses, usageEvents, type License } from "../db/schema.js";
+import { evaluateLicensePolicy } from "./policy.js";
 
 export interface AuthorizeResult {
   granted: number;
@@ -44,10 +44,9 @@ function windowExpired(window: License["window"], startedAt: Date, now: Date): b
 }
 
 /**
- * Atomically reserves up to `requested` units for `key`. Rolls the usage window
- * when due, then check-and-increments under a row lock so concurrent requests
- * cannot exceed the quota. Returns `{ granted: 0 }` when over quota; throws
- * {@link HttpError} for unknown/inactive/expired licenses.
+ * Checks whether the license is allowed to generate and syncs status/window.
+ * Does NOT increment `usedUnits` — that is done by `recordUsage` on actual
+ * consumption. Returns the granted amount (always `requested` when allowed).
  */
 export async function authorize(
   key: string,
@@ -71,13 +70,13 @@ export async function authorize(
       status = lic.trialEndsAt && lic.trialEndsAt.getTime() > now.getTime() ? "trial" : "none";
     }
 
-    const beforeDecision = evaluateLicensePolicy({
+    const decision = evaluateLicensePolicy({
       license: { ...lic, usedUnits: used, firstOverageAt, status },
       now,
       gracePeriodDays: lic.gracePeriodDays,
       isExistingJob: options.isExistingJob === true,
     });
-    if (!beforeDecision.allowed) {
+    if (!decision.allowed) {
       await recordTelemetry(tx, lic, {
         endpoint: options.endpoint ?? "/v1/authorize",
         pages: requested,
@@ -85,39 +84,22 @@ export async function authorize(
         jobId: options.jobId,
         jobDescription: options.jobDescription,
       });
-      await tx.update(licenses).set({ status: beforeDecision.status, firstOverageAt: beforeDecision.firstOverageAt }).where(eq(licenses.id, lic.id));
-      throw new HttpError(403, beforeDecision.reason ?? "hard_blocked", {
+      await tx.update(licenses).set({ status: decision.status, firstOverageAt: decision.firstOverageAt }).where(eq(licenses.id, lic.id));
+      throw new HttpError(403, decision.reason ?? "hard_blocked", {
         remaining: Math.max(0, lic.limitUnits - used),
-        hardBlockAt: beforeDecision.hardBlockAt?.toISOString() ?? null,
-        watermark: beforeDecision.watermark,
-        status: beforeDecision.status,
+        hardBlockAt: decision.hardBlockAt?.toISOString() ?? null,
+        watermark: decision.watermark,
+        status: decision.status,
       });
     }
 
     const granted = Math.max(0, requested);
-    const newUsed = used + granted;
-    const wasOverLimit = used > lic.limitUnits || beforeDecision.status === "grace_period";
-    const afterDecision = evaluateLicensePolicy({
-      license: { ...lic, usedUnits: newUsed, firstOverageAt: beforeDecision.firstOverageAt, status: beforeDecision.status },
-      now,
-      gracePeriodDays: lic.gracePeriodDays,
-      isExistingJob: options.isExistingJob === true,
-    });
-    const events = notificationEventsForUsage({
-      previousUsedPages: used,
-      nextUsedPages: newUsed,
-      pageLimit: lic.limitUnits,
-      wasOverLimit,
-      isOverLimit: newUsed > lic.limitUnits || afterDecision.status === "grace_period",
-    });
-
     await tx
       .update(licenses)
       .set({
-        usedUnits: newUsed,
         windowStartedAt: startedAt,
-        status: afterDecision.status,
-        firstOverageAt: afterDecision.firstOverageAt,
+        status: decision.status,
+        firstOverageAt: decision.firstOverageAt,
       })
       .where(eq(licenses.id, lic.id));
     if (granted > 0) {
@@ -127,7 +109,7 @@ export async function authorize(
         units: granted,
         pages: granted,
         endpoint: options.endpoint ?? "/v1/authorize",
-        status: beforeDecision.watermark ? "watermarked" : "success",
+        status: decision.watermark ? "watermarked" : "success",
         jobId: options.jobId,
         jobDescription: options.jobDescription,
       });
@@ -135,31 +117,25 @@ export async function authorize(
     await recordTelemetry(tx, lic, {
       endpoint: options.endpoint ?? "/v1/authorize",
       pages: granted,
-      status: beforeDecision.watermark ? "watermarked" : "success",
+      status: decision.watermark ? "watermarked" : "success",
       jobId: options.jobId,
       jobDescription: options.jobDescription,
-    });
-    await enqueueNotifications(tx, lic, events, {
-      usedPages: newUsed,
-      pageLimit: lic.limitUnits,
-      hardBlockAt: afterDecision.hardBlockAt?.toISOString() ?? null,
     });
 
     return {
       granted,
-      remaining: Math.max(0, lic.limitUnits - newUsed),
+      remaining: Math.max(0, lic.limitUnits - used),
       resetAt: windowResetAt(lic.window, startedAt),
-      watermark: beforeDecision.watermark,
-      status: afterDecision.status,
-      hardBlockAt: afterDecision.hardBlockAt?.toISOString() ?? null,
+      watermark: decision.watermark,
+      status: decision.status,
+      hardBlockAt: decision.hardBlockAt?.toISOString() ?? null,
     };
   });
 }
 
 /**
- * Records reconciled client-reported usage (audit only; the enforced counter
- * moves on authorize). Captures both dimensions so reports can show e.g.
- * "200 PDFs, 5200 pages".
+ * Records reconciled client-reported usage and increments the billing counter.
+ * Captures both dimensions so reports can show e.g. "200 PDFs, 5200 pages".
  */
 export async function recordUsage(
   key: string,
@@ -173,6 +149,22 @@ export async function recordUsage(
 ): Promise<void> {
   const lic = await getLicense(key);
   if (!lic) throw new HttpError(404, "unknown_license");
+  await db.update(licenses).set({ usedUnits: sql`used_units + ${usage.pages}` }).where(eq(licenses.id, lic.id));
+
+  const [updated] = await db.select().from(licenses).where(eq(licenses.id, lic.id));
+  if (updated) {
+    const now = new Date();
+    const decision = evaluateLicensePolicy({
+      license: updated,
+      now,
+      gracePeriodDays: lic.gracePeriodDays,
+      isExistingJob: false,
+    });
+    await db.update(licenses)
+      .set({ status: decision.status, firstOverageAt: decision.firstOverageAt })
+      .where(eq(licenses.id, lic.id));
+  }
+
   await db.insert(usageEvents).values({
     licenseId: lic.id,
     kind: "usage",
@@ -223,22 +215,3 @@ async function recordTelemetry(
   });
 }
 
-async function enqueueNotifications(
-  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
-  lic: License,
-  events: NotificationEventType[],
-  payload: { usedPages: number; pageLimit: number; hardBlockAt: string | null },
-): Promise<void> {
-  if (events.length === 0) return;
-  const [settings] = await tx.select().from(notificationSettings).where(eq(notificationSettings.accountId, lic.accountId));
-  if (!settings) return;
-  const rows = [];
-  for (const type of events) {
-    if ((type === "usage_80_percent" || type === "usage_100_percent") && !settings.usageAlertsEnabled) continue;
-    if (type === "overage_started" && !settings.overageAlertsEnabled) continue;
-    const body = JSON.stringify({ type, accountId: lic.accountId, licenseId: lic.id, ...payload });
-    if (settings.emailTo) rows.push({ accountId: lic.accountId, licenseId: lic.id, type, channel: "email" as const, payload: body });
-    if (settings.webhookUrl) rows.push({ accountId: lic.accountId, licenseId: lic.id, type, channel: "webhook" as const, payload: body });
-  }
-  if (rows.length > 0) await tx.insert(notificationEvents).values(rows);
-}

@@ -15,7 +15,6 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AdminRouteImport } from './routes/_admin'
 import { Route as PortalIndexRouteImport } from './routes/portal/index'
 import { Route as AdminIndexRouteImport } from './routes/_admin/index'
-import { Route as PortalUsageRouteImport } from './routes/portal/usage'
 import { Route as PortalNotificationsRouteImport } from './routes/portal/notifications'
 import { Route as PortalMembersRouteImport } from './routes/portal/members'
 import { Route as AdminUsageRouteImport } from './routes/_admin/usage'
@@ -51,11 +50,6 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AdminRoute,
 } as any)
-const PortalUsageRoute = PortalUsageRouteImport.update({
-  id: '/usage',
-  path: '/usage',
-  getParentRoute: () => PortalRoute,
-} as any)
 const PortalNotificationsRoute = PortalNotificationsRouteImport.update({
   id: '/notifications',
   path: '/notifications',
@@ -90,7 +84,6 @@ export interface FileRoutesByFullPath {
   '/usage': typeof AdminUsageRoute
   '/portal/members': typeof PortalMembersRoute
   '/portal/notifications': typeof PortalNotificationsRoute
-  '/portal/usage': typeof PortalUsageRoute
   '/portal/': typeof PortalIndexRoute
   '/licenses/$id': typeof AdminLicensesIdRoute
   '/licenses/': typeof AdminLicensesIndexRoute
@@ -101,7 +94,6 @@ export interface FileRoutesByTo {
   '/usage': typeof AdminUsageRoute
   '/portal/members': typeof PortalMembersRoute
   '/portal/notifications': typeof PortalNotificationsRoute
-  '/portal/usage': typeof PortalUsageRoute
   '/': typeof AdminIndexRoute
   '/portal': typeof PortalIndexRoute
   '/licenses/$id': typeof AdminLicensesIdRoute
@@ -116,7 +108,6 @@ export interface FileRoutesById {
   '/_admin/usage': typeof AdminUsageRoute
   '/portal/members': typeof PortalMembersRoute
   '/portal/notifications': typeof PortalNotificationsRoute
-  '/portal/usage': typeof PortalUsageRoute
   '/_admin/': typeof AdminIndexRoute
   '/portal/': typeof PortalIndexRoute
   '/_admin/licenses/$id': typeof AdminLicensesIdRoute
@@ -132,7 +123,6 @@ export interface FileRouteTypes {
     | '/usage'
     | '/portal/members'
     | '/portal/notifications'
-    | '/portal/usage'
     | '/portal/'
     | '/licenses/$id'
     | '/licenses/'
@@ -143,7 +133,6 @@ export interface FileRouteTypes {
     | '/usage'
     | '/portal/members'
     | '/portal/notifications'
-    | '/portal/usage'
     | '/'
     | '/portal'
     | '/licenses/$id'
@@ -157,7 +146,6 @@ export interface FileRouteTypes {
     | '/_admin/usage'
     | '/portal/members'
     | '/portal/notifications'
-    | '/portal/usage'
     | '/_admin/'
     | '/portal/'
     | '/_admin/licenses/$id'
@@ -214,13 +202,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
-    }
-    '/portal/usage': {
-      id: '/portal/usage'
-      path: '/usage'
-      fullPath: '/portal/usage'
-      preLoaderRoute: typeof PortalUsageRouteImport
-      parentRoute: typeof PortalRoute
     }
     '/portal/notifications': {
       id: '/portal/notifications'
@@ -279,14 +260,12 @@ const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 interface PortalRouteChildren {
   PortalMembersRoute: typeof PortalMembersRoute
   PortalNotificationsRoute: typeof PortalNotificationsRoute
-  PortalUsageRoute: typeof PortalUsageRoute
   PortalIndexRoute: typeof PortalIndexRoute
 }
 
 const PortalRouteChildren: PortalRouteChildren = {
   PortalMembersRoute: PortalMembersRoute,
   PortalNotificationsRoute: PortalNotificationsRoute,
-  PortalUsageRoute: PortalUsageRoute,
   PortalIndexRoute: PortalIndexRoute,
 }
 
