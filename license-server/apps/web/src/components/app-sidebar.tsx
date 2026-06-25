@@ -37,7 +37,6 @@ const ADMIN_NAV: NavItem[] = [
 
 const PORTAL_NAV: NavItem[] = [
   { title: 'Overview', to: '/portal', icon: BuildingIcon },
-  { title: 'Usage', to: '/portal/usage', icon: GaugeIcon },
   { title: 'Members', to: '/portal/members', icon: UsersIcon },
   { title: 'Notifications', to: '/portal/notifications', icon: BellIcon },
   { title: 'Settings', to: '/portal/settings', icon: SettingsIcon },
