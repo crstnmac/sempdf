@@ -32,7 +32,9 @@
     "README.md"
   ],
   "scripts": {
+    "prebuild": "node scripts/bake-license-server.mjs",
     "build": "rm -rf dist && tsc -p tsconfig.json",
+    "postbuild": "git checkout -- src/internal/license-server.ts",
     "build:lib": "rm -rf dist && tsc -p tsconfig.build.json",
     "docs": "npm run docs:build",
     "docs:api": "rm -rf docs/api && typedoc",
