@@ -1,15 +1,37 @@
 import { createDocument, rgb } from "@zeropdf/zeropdf-pdf";
 
+async function ttf(url: string): Promise<Uint8Array> {
+  return new Uint8Array(await (await fetch(url)).arrayBuffer());
+}
+
+const cdn = "https://cdn.jsdelivr.net/npm/@expo-google-fonts";
+const FONTS = {
+  inter400: `${cdn}/inter/400Regular/Inter_400Regular.ttf`,
+  inter700: `${cdn}/inter/700Bold/Inter_700Bold.ttf`,
+};
+
+const saasLogo = fetch("examples/assets/saas-logo.png");
+const logo = await saasLogo.then((res) => res.arrayBuffer());
+
 const doc = createDocument({
   language: "en-US",
-  title: "Invoice Template",
-  info: { author: "ABC Technologies" },
+  conformance: "pdfua-1",
+  tagged: true,
   structureRoot: "Document",
-  defaults: { font: "Helvetica", fontSize: 12, color: rgb(0.15, 0.15, 0.2) },
+  title: "Invoice Template",
+  info: { author: "Lorem Ipsum" },
+  defaults: { fontSize: 12, color: rgb(0.15, 0.15, 0.2) },
 });
+
+const [inter400, inter700] = await Promise.all([
+  ttf(FONTS.inter400),
+  ttf(FONTS.inter700),
+]);
 
 const BRAND = rgb(0.05, 0.35, 0.75);
 const MUTED = rgb(0.45, 0.45, 0.5);
+
+doc.registerFontFamily("Inter", { regular: inter400, bold: inter700 });
 
 doc.renderTemplate({
   autoOutline: { maxLevel: 6 },
@@ -17,6 +39,7 @@ doc.renderTemplate({
   page: {
     size: "A4",
     margin: 56,
+    font: "Inter",
     spacing: {
       paragraphAfter: 6,
       headingBefore: { 2: 20, 3: 14 },
@@ -27,8 +50,8 @@ doc.renderTemplate({
   },
 
   styles: {
-    heading1: { fontSize: 26, color: BRAND },
-    heading2: { fontSize: 14, color: BRAND },
+    heading1: { fontSize: 26, color: BRAND, marginTop: 40 },
+    heading2: { fontSize: 14, color: BRAND, marginTop: 1 },
     heading3: { fontSize: 11, color: rgb(0.2, 0.2, 0.25) },
     paragraph: { fontSize: 11, lineHeight: 17 },
     muted: { fontSize: 10, color: MUTED, lineHeight: 15 },
@@ -37,14 +60,15 @@ doc.renderTemplate({
 
   blocks: [
     {
-      type: "heading",
-      text: "ABC Technologies",
-      options: { level: 1 },
+      type: "png",
+      data: logo,
+      options: { altText: "Lorem Ipsum Logo", maxWidth: 100 },
     },
+
     {
-      type: "paragraph",
-      text: "Invoice #543482 \n Date: 01 June 2026",
-      options: {align: "right"}
+      type: "heading",
+      text: "Invoice #543482",
+      options: { level: 1 },
     },
 
     {
@@ -53,16 +77,17 @@ doc.renderTemplate({
       options: { level: 2 },
     },
     {
+      type: "paragraph",
+      text: "Date: 01 June 2026",
+    },
+    {
       type: "table",
       rows: [
         [
           { text: "Bill From:", header: true, bold: true },
           { text: "Bill To:", header: true, bold: true },
         ],
-        [
-          "ABC Technologies Pvt. Ltd. \n Mumbai, Maharashtra, India\nbilling@abctechnologies.com \n GST: 27AABCB1234F1Z5",
-          "John Adam\n FutureBits Product Team\nMumbai, India \n john@futurebits.com",
-        ],
+        ["Lorem Ipsum, \n New York, USA", "John Doe, \n Lorem Ipsum Team"],
       ],
       options: { headerRows: 1 },
     },
@@ -76,48 +101,69 @@ doc.renderTemplate({
       type: "table",
       rows: [
         [
-          { text: "#", header: true, bold: true },
           { text: "Description", header: true, bold: true },
           { text: "Qty", header: true, bold: true },
           { text: "Unit Price", header: true, bold: true },
           { text: "Amount", header: true, bold: true },
         ],
-        ["1", "Software 1", "1", "$199.00", "$199.00"],
-        ["2", "Software 2", "4", "$29.00", "$116.00"],
-        ["3", "Software 3", "1", "$49.00", "$49.00"],
+        [
+          { text: "Software 1", header: true, scope: "row" },
+          { text: "1" },
+          { text: "$199.00" },
+          { text: "$199.00" },
+        ],
+        [
+          { text: "Software 2", header: true, scope: "row" },
+          { text: "4" },
+          { text: "$29.00" },
+          { text: "$116.00" },
+        ],
+        [
+          { text: "Software 3", header: true, scope: "row" },
+          { text: "1" },
+          { text: "$49.00" },
+          { text: "$49.00" },
+        ],
       ],
-      options: { headerRows: 1, width: 530 },
+      options: { headerRows: 1, headerColumns: 1, width: 530 },
     },
 
     {
+      type: "heading",
+      text: "Bill Summary",
+      options: { level: 2 },
+    },
+    {
       type: "table",
       rows: [
-        ["Subtotal", "$364.00"],
-        ["Discount Annual Loyalty (5%)", "-$18.20"],
-        ["GST @ 18%", "$65.52"],
-        [{ text: "Total Due", header: true, bold: true }, { text: "$411.32", header: true, bold: true }],
+        [{ text: "Subtotal", header: true, bold: true }, { text: "$364.00" }],
+        [
+          { text: "Discount Annual Loyalty (5%)", header: true, bold: true },
+          { text: "-$18.20" },
+        ],
+        [{ text: "Total Due", header: true, bold: true }, { text: "$345.80" }],
       ],
-      options: { headerRows: 0, width: 850 },
+      options: { headerRows: 0, width: 800 },
     },
 
     {
       type: "paragraph",
-      text: "Thank you for using ABC Technologies. This is a computer-generated invoice and does not require a signature.",
+      text: "Thank you for using Lorem Ipsum. This is a computer-generated invoice and does not require a signature.",
       class: "muted",
-      options: {marginTop: 30}
+      options: { marginTop: 30 },
     },
   ],
 
   footer: ({ pageNumber, totalPages }) => [
-        {
-          type: "paragraph",
-          text: "Generated by ABC Technologies",
-          options: {
-            fontSize: 10,
-            tag: pageNumber === totalPages ? "P" : "Artifact",
-          },
-        },
-      ],
+    {
+      type: "paragraph",
+      text: "Generated by Lorem Ipsum",
+      options: {
+        fontSize: 10,
+        tag: pageNumber === totalPages ? "P" : "Artifact",
+      },
+    },
+  ],
 
   pageNumber: { region: "footer", align: "right" },
 });
