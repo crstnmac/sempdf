@@ -171,6 +171,12 @@ resizerEl.addEventListener("keydown", (event) => {
 
 // Boot Monaco, wire TypeScript, then render the default document.
 (async () => {
+  // The library is secure-by-default: with no license guard installed it
+  // refuses to serialize. The playground is a public demo, so install a
+  // permissive guard that allows unlimited local generation.
+  const { setLicenseGuard } = await import("@barrierbreak/a11ydocs-pdf/license-guard");
+  setLicenseGuard({ consume() {} });
+
   monaco = await window.monacoReady;
 
   monaco.languages.typescript.typescriptDefaults.setCompilerOptions({

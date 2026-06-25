@@ -1,0 +1,14 @@
+node_modules/
+dist/
+dist-test/
+
+apps/*/node_modules/
+apps/*/dist/
+apps/*/dist-test/
+
+.env
+.env.*
+!.env.example
+
+*.log
+.DS_Store

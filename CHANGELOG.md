@@ -2,6 +2,16 @@
 
 All notable changes to `@barrierbreak/a11ydocs-pdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.0.0] - 2026-06-25
+
+### Changed
+
+- **BREAKING: PDF generation is now secure by default.** With no license guard installed, generation (`toUint8Array`/`toBlob`/`toArrayBuffer`/`save`) is refused with the new `PdfErrorCode.LICENSE_REQUIRED`. Install a guard via the licensing client (`@barrierbreak/a11ydocs-pdf-licensing`) or `setLicenseGuard()`. For the library's own tests, examples, and local trials, set the environment variable `A11YDOCS_LICENSE_DEV=1` (Node only) to allow unlicensed generation. In the browser there is no `process.env`, so a guard must be installed explicitly (the playground installs a permissive one).
+
+### Added
+
+- **License guard hook for usage metering / limits.** New `@barrierbreak/a11ydocs-pdf/license-guard` subpath exposes `setLicenseGuard(guard)` and `isLicenseDevBypass()`: a guard's `consume({ documents, pages })` is called immediately before a document is serialized, once per finalized document, and may throw `PdfErrorCode.LICENSE_QUOTA_EXCEEDED` to block generation. Both dimensions are reported, so usage can be shown as e.g. "200 PDFs, 5200 pages". The licensing **client** (lease/checkout, Ed25519 verification, fail-closed, `meter: "pdfs" | "pages"`) ships separately in the private package `@barrierbreak/a11ydocs-pdf-licensing`, and a reference license server (Hono + Drizzle + better-auth + Postgres) lives in `license-server/`. New error codes `LICENSE_REQUIRED` and `LICENSE_QUOTA_EXCEEDED`.
+
 ## [1.9.0] - 2026-06-24
 
 ### Added
