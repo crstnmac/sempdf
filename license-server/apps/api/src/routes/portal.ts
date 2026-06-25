@@ -6,6 +6,7 @@ import { db } from "../db/client.js";
 import { apiTelemetry, licenses, notificationSettings } from "../db/schema.js";
 import { invitation, member, organization, user } from "../db/auth-schema.js";
 import { generateKey, hashKey, keyPrefix } from "../domain/keys.js";
+import { windowResetAt } from "../domain/licenses.js";
 import { randomUUID } from "node:crypto";
 
 /**
@@ -89,10 +90,11 @@ portalRoutes.get("/overview", async (c) => {
       window: lic.window,
       limitUnits: lic.limitUnits,
       usedUnits: lic.usedUnits,
-      remainingUnits: Math.max(0, lic.limitUnits - lic.usedUnits),
+      remainingUnits: lic.limitUnits - lic.usedUnits,
       status: lic.status,
       active: lic.active,
       trialEndsAt: lic.trialEndsAt?.toISOString() ?? null,
+      resetAt: windowResetAt(lic.window, lic.windowStartedAt),
       createdAt: lic.createdAt.toISOString(),
     })),
     telemetry: myTelemetry.map((event) => ({
@@ -105,6 +107,13 @@ portalRoutes.get("/overview", async (c) => {
       status: event.status,
       jobId: event.jobId,
       jobDescription: event.jobDescription,
+      libVersion: event.libVersion,
+      nodeVersion: event.nodeVersion,
+      platform: event.platform,
+      tagged: event.tagged,
+      language: event.language,
+      conformance: event.conformance,
+      errorCode: event.errorCode,
       createdAt: event.createdAt.toISOString(),
     })),
     summary: {

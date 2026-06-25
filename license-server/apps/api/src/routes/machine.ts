@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 
-import { authorize, recordUsage, getLicense, HttpError } from "../domain/licenses.js";
+import { authorize, recordUsage, getLicense, HttpError, type TelemetryMeta } from "../domain/licenses.js";
 import { signAuthorize, publicKeyPem } from "../domain/signing.js";
 
 /**
@@ -21,6 +21,35 @@ function keyFromRequest(c: Context, body: { key?: unknown }): string {
   return String(body.key ?? "");
 }
 
+/**
+ * Extracts job identifiers and client/runtime telemetry metadata. Supports the
+ * baked-in auto-guard (fields under `body.meta`), the manual client (top-level
+ * `jobId`/`jobDescription`), and `X-Job-*` headers.
+ */
+function readMeta(
+  c: Context,
+  body: Record<string, unknown>,
+): { jobId: string | undefined; jobDescription: string | undefined; meta: TelemetryMeta } {
+  const m = (typeof body.meta === "object" && body.meta ? body.meta : {}) as Record<string, unknown>;
+  const str = (v: unknown): string | undefined => (v === undefined || v === null ? undefined : String(v));
+  const jobId = str(body.jobId) ?? c.req.header("x-job-id") ?? str(m.jobId);
+  const jobDescription =
+    str(body.jobDescription) ?? c.req.header("x-job-description") ?? str(m.jobDescription);
+  return {
+    jobId,
+    jobDescription,
+    meta: {
+      libVersion: str(m.libVersion),
+      nodeVersion: str(m.nodeVersion),
+      platform: str(m.platform),
+      tagged: typeof m.tagged === "boolean" ? m.tagged : undefined,
+      language: str(m.language),
+      conformance: str(m.conformance),
+      errorCode: str(m.errorCode),
+    },
+  };
+}
+
 /** Public key clients configure as `publicKeyPem` to verify signed responses. */
 machine.get("/public-key", (c) => c.text(publicKeyPem()));
 
@@ -33,13 +62,11 @@ machine.post("/authorize", async (c) => {
   const key = keyFromRequest(c, body);
   const requested = Math.max(0, Math.floor(Number(body.requested ?? 0)));
   const nonce = String(body.nonce ?? "");
-  const jobId = body.jobId === undefined ? c.req.header("x-job-id") : String(body.jobId);
-  const jobDescription = body.jobDescription === undefined ? c.req.header("x-job-description") : String(body.jobDescription);
-  const isExistingJob = body.isExistingJob === true || c.req.header("x-existing-job") === "true";
+  const { jobId, jobDescription, meta } = readMeta(c, body);
   if (!key || !nonce || requested <= 0) return c.json({ error: "bad_request" }, 400);
 
   try {
-    const result = await authorize(key, requested, { isExistingJob, jobId, jobDescription, endpoint: "/v1/authorize" });
+    const result = await authorize(key, requested, { jobId, jobDescription, endpoint: "/v1/authorize", meta });
     const signature = signAuthorize({ key, granted: result.granted, remaining: result.remaining, resetAt: result.resetAt, nonce });
     return c.json({
       granted: result.granted,
@@ -65,12 +92,11 @@ machine.post("/usage", async (c) => {
   const key = keyFromRequest(c, body);
   const documents = Math.max(0, Math.floor(Number(body.documents ?? 0)));
   const pages = Math.max(0, Math.floor(Number(body.pages ?? 0)));
-  const jobId = body.jobId === undefined ? c.req.header("x-job-id") : String(body.jobId);
-  const jobDescription = body.jobDescription === undefined ? c.req.header("x-job-description") : String(body.jobDescription);
+  const { jobId, jobDescription, meta } = readMeta(c, body);
   const status = body.status === "fail" || body.status === "watermarked" || body.status === "blocked" ? body.status : "success";
   if (!key || (documents <= 0 && pages <= 0)) return c.json({ error: "bad_request" }, 400);
   try {
-    await recordUsage(key, { documents, pages }, { jobId, jobDescription, status, endpoint: "/v1/usage" });
+    await recordUsage(key, { documents, pages }, { jobId, jobDescription, status, endpoint: "/v1/usage", meta });
   } catch (err) {
     if (err instanceof HttpError) return c.json({ error: err.message }, err.status as 400);
     throw err;
@@ -91,7 +117,7 @@ machine.get("/license", async (c) => {
     window: lic.window,
     limit: lic.limitUnits,
     used: lic.usedUnits,
-    remaining: Math.max(0, lic.limitUnits - lic.usedUnits),
+    remaining: lic.limitUnits - lic.usedUnits,
     status: lic.status,
     firstOverageAt: lic.firstOverageAt,
     trialStartedAt: lic.trialStartedAt,

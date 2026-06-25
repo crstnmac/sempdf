@@ -102,7 +102,14 @@ function LicenseDetailPage() {
               <CardContent className="flex flex-col gap-5">
                 <UsageMeter used={data.used} limit={data.limit} />
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                  <Stat label="Remaining" value={formatNumber(data.remaining)} />
+                  <Stat
+                    label={data.remaining < 0 ? 'Overage' : 'Remaining'}
+                    value={
+                      data.remaining < 0
+                        ? `${formatNumber(-data.remaining)} over`
+                        : formatNumber(data.remaining)
+                    }
+                  />
                   <Stat label="Metric" value={data.metric} />
                   <Stat
                     label="Trial ends"

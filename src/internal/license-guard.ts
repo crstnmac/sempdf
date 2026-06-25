@@ -1,5 +1,5 @@
 import { PdfEngineError, PdfErrorCode } from "../errors.js";
-import { bakedServerUrl } from "./license-server.js";
+import { bakedServerUrl, bakedLibVersion } from "./license-server.js";
 
 /**
  * A guard consulted immediately before a document is serialized to bytes. It
@@ -27,6 +27,12 @@ export interface GenerationUsage {
   documents: number;
   /** Number of pages in the serialized document. */
   pages: number;
+  /** Whether the document emits tagged (accessible) PDF structure. */
+  tagged?: boolean;
+  /** BCP-47 language tag of the document, if set. */
+  language?: string | undefined;
+  /** PDF/A or PDF/UA conformance profile, if any (e.g. "pdfua-1"). */
+  conformance?: string | undefined;
 }
 
 export interface LicenseGuard {
@@ -60,6 +66,31 @@ export function setLicenseGuard(guard: LicenseGuard | undefined): void {
 /** Returns the currently installed guard, if any. */
 export function getLicenseGuard(): LicenseGuard | undefined {
   return activeGuard;
+}
+
+/**
+ * Application-level job context forwarded to usage telemetry, so operators can
+ * slice usage by job (e.g. "August bank statements, 200k pages"). Set it via
+ * `setJobContext(...)` before generating, or via the `SEMPDF_JOB_ID` /
+ * `SEMPDF_JOB_DESCRIPTION` environment variables.
+ */
+export interface JobContext {
+  id?: string | undefined;
+  description?: string | undefined;
+}
+
+let jobContextOverride: JobContext = {};
+
+/** Sets (or clears, with `undefined`) the job context sent with telemetry. */
+export function setJobContext(context: JobContext | undefined): void {
+  jobContextOverride = context ?? {};
+}
+
+function currentJobContext(): JobContext {
+  return {
+    id: jobContextOverride.id ?? getEnvVar(ENV_JOB_ID),
+    description: jobContextOverride.description ?? getEnvVar(ENV_JOB_DESCRIPTION),
+  };
 }
 
 /**
@@ -114,10 +145,13 @@ export function licenseQuotaError(message: string, details?: Record<string, unkn
 
 const ENV_LICENSE_KEY = "SEMPDF_LICENSE_KEY";
 const ENV_LICENSE_SERVER = "SEMPDF_LICENSE_SERVER";
-const INITIAL_LEASE = 10;
+const ENV_JOB_ID = "SEMPDF_JOB_ID";
+const ENV_JOB_DESCRIPTION = "SEMPDF_JOB_DESCRIPTION";
+const INITIAL_LEASE = 500;
 const REFILL_AT = 5;
 const REFILL_AMOUNT = 100;
-const FLUSH_INTERVAL_MS = 30_000;
+const FLUSH_INTERVAL_MS = 5_000;
+const FLUSH_DEBOUNCE_MS = 3_000;
 
 interface AutoGuardState {
   lease: number;
@@ -127,6 +161,27 @@ interface AutoGuardState {
   flushTimer: ReturnType<typeof setInterval> | null;
   key: string;
   serverUrl: string;
+  /** Accessibility shape of the most recently serialized document. */
+  lastTagged?: boolean | undefined;
+  lastLanguage?: string | undefined;
+  lastConformance?: string | undefined;
+  lastFlushAt: number;
+}
+
+/** Runtime + job metadata sent alongside authorize/usage for telemetry. */
+function buildClientMeta(state: AutoGuardState): Record<string, unknown> {
+  const proc = (globalThis as { process?: { version?: string; platform?: string; arch?: string } }).process;
+  const job = currentJobContext();
+  return {
+    libVersion: bakedLibVersion,
+    nodeVersion: proc?.version,
+    platform: proc ? `${proc.platform ?? ""}/${proc.arch ?? ""}` : undefined,
+    jobId: job.id,
+    jobDescription: job.description,
+    tagged: state.lastTagged,
+    language: state.lastLanguage,
+    conformance: state.lastConformance,
+  };
 }
 
 let autoGuardState: AutoGuardState | null = null;
@@ -158,6 +213,7 @@ function tryAutoInstallGuard(): boolean {
     flushTimer: null,
     key,
     serverUrl: serverUrl.replace(/\/$/, ""),
+    lastFlushAt: 0,
   };
 
   autoGuardState = state;
@@ -182,6 +238,14 @@ function tryAutoInstallGuard(): boolean {
       state.lease -= units;
       state.consumedPages += usage.pages;
       state.consumedDocs += usage.documents;
+      state.lastTagged = usage.tagged;
+      state.lastLanguage = usage.language;
+      state.lastConformance = usage.conformance;
+
+      if (Date.now() - state.lastFlushAt > FLUSH_DEBOUNCE_MS) {
+        state.lastFlushAt = Date.now();
+        flushAutoGuard(state).catch(() => {});
+      }
 
       if (state.lease < REFILL_AT && !state.replenishing) {
         state.replenishing = true;
@@ -205,7 +269,7 @@ async function replenishAutoGuard(state: AutoGuardState): Promise<void> {
         "content-type": "application/json",
         authorization: `Bearer ${state.key}`,
       },
-      body: JSON.stringify({ requested: REFILL_AMOUNT, nonce }),
+      body: JSON.stringify({ requested: REFILL_AMOUNT, nonce, meta: buildClientMeta(state) }),
     });
     if (!res.ok) return;
     const data = (await res.json()) as { granted?: number };
@@ -230,7 +294,7 @@ async function flushAutoGuard(state: AutoGuardState): Promise<void> {
         "content-type": "application/json",
         authorization: `Bearer ${state.key}`,
       },
-      body: JSON.stringify({ documents: docs, pages, status: "success" }),
+      body: JSON.stringify({ documents: docs, pages, status: "success", meta: buildClientMeta(state) }),
     });
   } catch {
     state.consumedPages += pages;

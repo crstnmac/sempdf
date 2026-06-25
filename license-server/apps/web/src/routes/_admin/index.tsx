@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { Link, createFileRoute } from '@tanstack/react-router'
 
 import { SectionCards } from '#/components/section-cards.tsx'
@@ -5,9 +6,10 @@ import { SiteHeader } from '#/components/site-header.tsx'
 import {
   PageContainer,
   StateNotice,
-  StatusBadge,
   TelemetryBadge,
+  UsageMeter,
 } from '#/components/page-shell.tsx'
+import { Badge } from '#/components/ui/badge.tsx'
 import { Button } from '#/components/ui/button.tsx'
 import {
   Card,
@@ -25,12 +27,71 @@ import {
   TableRow,
 } from '#/components/ui/table.tsx'
 import { useAsync } from '#/hooks/use-async.ts'
-import { api, formatDateTime, formatNumber } from '#/lib/api.ts'
+import {
+  type DashboardTenant,
+  api,
+  daysUntil,
+  endpointLabel,
+  formatDateTime,
+  formatNumber,
+  relativeDays,
+} from '#/lib/api.ts'
 
 export const Route = createFileRoute('/_admin/')({ component: DashboardPage })
 
+type AttentionTone = 'danger' | 'warning' | 'info'
+interface Attention {
+  label: string
+  detail: string
+  tone: AttentionTone
+  rank: number
+}
+
+/**
+ * Why this tenant needs an operator's attention, or null if healthy. Ranked so
+ * the most urgent (hard blocked) floats to the top of the triage list.
+ */
+function attentionFor(t: DashboardTenant): Attention | null {
+  if (t.status === 'hard_blocked') {
+    return { label: 'Hard blocked', detail: 'New runs rejected', tone: 'danger', rank: 4 }
+  }
+  if (t.status === 'grace_period') {
+    const d = daysUntil(t.hardBlockAt)
+    return {
+      label: 'Over limit — grace',
+      detail: d !== null && d >= 0 ? `Hard block ${relativeDays(t.hardBlockAt)}` : 'Grace expired',
+      tone: 'warning',
+      rank: 3,
+    }
+  }
+  if (t.remainingUnits < 0) {
+    return { label: 'Over limit', detail: `${formatNumber(-t.remainingUnits)} pages over`, tone: 'warning', rank: 2 }
+  }
+  if (t.status === 'trial') {
+    const d = daysUntil(t.trialEndsAt)
+    if (d !== null && d <= 7) {
+      return { label: 'Trial ending', detail: `Ends ${relativeDays(t.trialEndsAt)}`, tone: 'info', rank: 1 }
+    }
+  }
+  return null
+}
+
+const TONE_BADGE: Record<AttentionTone, 'destructive' | 'outline' | 'secondary'> = {
+  danger: 'destructive',
+  warning: 'outline',
+  info: 'secondary',
+}
+
 function DashboardPage() {
   const { data, loading, error, refetch } = useAsync(() => api.dashboard())
+
+  const attention = useMemo(() => {
+    if (!data) return []
+    return data.tenants
+      .map((t) => ({ tenant: t, info: attentionFor(t) }))
+      .filter((row): row is { tenant: DashboardTenant; info: Attention } => row.info !== null)
+      .sort((a, b) => b.info.rank - a.info.rank)
+  }, [data])
 
   return (
     <>
@@ -51,11 +112,17 @@ function DashboardPage() {
           <>
             <SectionCards summary={data.summary} />
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+              {/* Triage first: tenants in grace, hard-blocked, over limit, or with
+                  a trial about to expire — the licenses an operator acts on. */}
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between">
                   <div>
-                    <CardTitle>Recent licenses</CardTitle>
-                    <CardDescription>Newest tenants by creation date</CardDescription>
+                    <CardTitle>Needs attention</CardTitle>
+                    <CardDescription>
+                      {attention.length > 0
+                        ? `${attention.length} license${attention.length === 1 ? '' : 's'} over limit, blocked, or expiring`
+                        : 'No licenses require action'}
+                    </CardDescription>
                   </div>
                   <Button asChild variant="ghost" size="sm">
                     <Link to="/licenses">View all</Link>
@@ -66,12 +133,12 @@ function DashboardPage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Account</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Used / Limit</TableHead>
+                        <TableHead>Issue</TableHead>
+                        <TableHead className="w-44">Usage</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {data.tenants.slice(0, 6).map((tenant) => (
+                      {attention.slice(0, 6).map(({ tenant, info }) => (
                         <TableRow key={tenant.id}>
                           <TableCell className="font-medium">
                             <Link
@@ -84,17 +151,18 @@ function DashboardPage() {
                             <div className="text-xs text-muted-foreground">{tenant.keyPrefix}…</div>
                           </TableCell>
                           <TableCell>
-                            <StatusBadge status={tenant.status} />
+                            <Badge variant={TONE_BADGE[info.tone]}>{info.label}</Badge>
+                            <div className="mt-1 text-xs text-muted-foreground">{info.detail}</div>
                           </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {formatNumber(tenant.usedUnits)} / {formatNumber(tenant.limitUnits)}
+                          <TableCell>
+                            <UsageMeter used={tenant.usedUnits} limit={tenant.limitUnits} showNumbers={false} />
                           </TableCell>
                         </TableRow>
                       ))}
-                      {data.tenants.length === 0 ? (
+                      {attention.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={3} className="text-center text-muted-foreground">
-                            No licenses issued yet.
+                          <TableCell colSpan={3} className="py-8 text-center text-muted-foreground">
+                            All {formatNumber(data.summary.totalTenants)} licenses are healthy.
                           </TableCell>
                         </TableRow>
                       ) : null}
@@ -107,7 +175,7 @@ function DashboardPage() {
                 <CardHeader className="flex flex-row items-center justify-between">
                   <div>
                     <CardTitle>Recent telemetry</CardTitle>
-                    <CardDescription>Latest authorize / usage events</CardDescription>
+                    <CardDescription>Latest authorize / usage events across all tenants</CardDescription>
                   </div>
                   <Button asChild variant="ghost" size="sm">
                     <Link to="/usage">View all</Link>
@@ -117,8 +185,8 @@ function DashboardPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Endpoint</TableHead>
-                        <TableHead>Status</TableHead>
+                        <TableHead>Account</TableHead>
+                        <TableHead>Event</TableHead>
                         <TableHead className="text-right">Pages</TableHead>
                         <TableHead className="text-right">When</TableHead>
                       </TableRow>
@@ -126,9 +194,15 @@ function DashboardPage() {
                     <TableBody>
                       {data.telemetry.slice(0, 6).map((event) => (
                         <TableRow key={event.id}>
-                          <TableCell className="font-mono text-xs">{event.endpoint}</TableCell>
+                          <TableCell className="font-medium">{event.organizationName}</TableCell>
                           <TableCell>
-                            <TelemetryBadge status={event.status} />
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-sm">{endpointLabel(event.endpoint)}</span>
+                              <TelemetryBadge status={event.status} />
+                            </div>
+                            {event.errorCode ? (
+                              <div className="mt-0.5 font-mono text-xs text-destructive">{event.errorCode}</div>
+                            ) : null}
                           </TableCell>
                           <TableCell className="text-right tabular-nums">
                             {formatNumber(event.pages)}
@@ -140,7 +214,7 @@ function DashboardPage() {
                       ))}
                       {data.telemetry.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={4} className="text-center text-muted-foreground">
+                          <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
                             No telemetry recorded yet.
                           </TableCell>
                         </TableRow>

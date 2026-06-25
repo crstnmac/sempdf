@@ -77,6 +77,14 @@ export const apiTelemetry = pgTable(
     status: text("status", { enum: ["success", "fail", "watermarked", "blocked"] }).notNull(),
     jobId: text("job_id"),
     jobDescription: text("job_description"),
+    // Client + runtime metadata captured from the library's auto-guard.
+    libVersion: text("lib_version"),
+    nodeVersion: text("node_version"),
+    platform: text("platform"),
+    tagged: boolean("tagged"),
+    language: text("language"),
+    conformance: text("conformance"),
+    errorCode: text("error_code"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
