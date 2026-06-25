@@ -1,0 +1,25 @@
+{
+  "name": "sempdf-license-server-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "description": "License server, hosted API dashboard, and shared tooling for @barrierbreak/sempdf-pdf.",
+  "engines": { "node": ">=22" },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently --kill-others-on-fail --names api,web --prefix-colors blue,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm run dev --workspace @sempdf/license-api",
+    "dev:web": "npm run dev --workspace @sempdf/license-dashboard",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "keygen": "npm run keygen --workspace @sempdf/license-api",
+    "db:generate": "npm run db:generate --workspace @sempdf/license-api",
+    "db:push": "npm run db:push --workspace @sempdf/license-api",
+    "auth:generate": "npm run auth:generate --workspace @sempdf/license-api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
