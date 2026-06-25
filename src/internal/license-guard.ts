@@ -1,4 +1,5 @@
 import { PdfEngineError, PdfErrorCode } from "../errors.js";
+import { bakedServerUrl } from "./license-server.js";
 
 /**
  * A guard consulted immediately before a document is serialized to bytes. It
@@ -77,6 +78,11 @@ export function isLicenseDevBypass(): boolean {
  * generation entrypoints just before serializing. Secure by default: with no
  * guard installed and the dev bypass off, generation is refused.
  *
+ * When no guard is installed but `A11YDOCS_LICENSE_KEY` and
+ * `A11YDOCS_LICENSE_SERVER` env vars are both set, an auto-guard is installed
+ * on the first call so the author of a PDF does not need to manually install
+ * the licensing client.
+ *
  * @throws PdfEngineError with {@link PdfErrorCode.LICENSE_REQUIRED} when no
  *   guard is installed (and the dev bypass is not set), or with
  *   {@link PdfErrorCode.LICENSE_QUOTA_EXCEEDED} when an installed guard refuses.
@@ -84,6 +90,9 @@ export function isLicenseDevBypass(): boolean {
 export function consumeLicense(usage: GenerationUsage): LicenseGuardDecision | undefined {
   if (activeGuard !== undefined) {
     return activeGuard.consume(usage) ?? undefined;
+  }
+  if (tryAutoInstallGuard()) {
+    return activeGuard!.consume(usage) ?? undefined;
   }
   if (isLicenseDevBypass()) return undefined;
   throw new PdfEngineError(
@@ -97,4 +106,163 @@ export function consumeLicense(usage: GenerationUsage): LicenseGuardDecision | u
 /** Convenience for guards: the standard refusal error. */
 export function licenseQuotaError(message: string, details?: Record<string, unknown>): PdfEngineError {
   return new PdfEngineError(PdfErrorCode.LICENSE_QUOTA_EXCEEDED, message, details);
+}
+
+// ---------------------------------------------------------------------------
+// Auto-guard — baked-in licensing with zero user-code setup
+// ---------------------------------------------------------------------------
+
+const ENV_LICENSE_KEY = "A11YDOCS_LICENSE_KEY";
+const ENV_LICENSE_SERVER = "A11YDOCS_LICENSE_SERVER";
+const INITIAL_LEASE = 10;
+const REFILL_AT = 5;
+const REFILL_AMOUNT = 100;
+const FLUSH_INTERVAL_MS = 30_000;
+
+interface AutoGuardState {
+  lease: number;
+  replenishing: boolean;
+  consumedPages: number;
+  consumedDocs: number;
+  flushTimer: ReturnType<typeof setInterval> | null;
+  key: string;
+  serverUrl: string;
+}
+
+let autoGuardState: AutoGuardState | null = null;
+let autoInstallAttempted = false;
+
+function getEnvVar(name: string): string | undefined {
+  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env;
+  return env?.[name];
+}
+
+function tryAutoInstallGuard(): boolean {
+  if (autoInstallAttempted) return activeGuard !== undefined;
+  autoInstallAttempted = true;
+
+  if (activeGuard !== undefined) return true;
+
+  const key = getEnvVar(ENV_LICENSE_KEY);
+  const serverUrl = bakedServerUrl ?? getEnvVar(ENV_LICENSE_SERVER);
+  if (!key || !serverUrl) return false;
+
+  const f = globalThis.fetch as typeof fetch | undefined;
+  if (typeof f !== "function") return false;
+
+  const state: AutoGuardState = {
+    lease: INITIAL_LEASE,
+    replenishing: false,
+    consumedPages: 0,
+    consumedDocs: 0,
+    flushTimer: null,
+    key,
+    serverUrl: serverUrl.replace(/\/$/, ""),
+  };
+
+  autoGuardState = state;
+
+  state.flushTimer = setInterval(() => {
+    flushAutoGuard(state).catch(() => {});
+  }, FLUSH_INTERVAL_MS);
+  if (state.flushTimer && typeof state.flushTimer === "object" && "unref" in state.flushTimer) {
+    (state.flushTimer as NodeJS.Timeout).unref();
+  }
+
+  const guard: LicenseGuard = {
+    consume(usage: GenerationUsage): LicenseGuardDecision | undefined {
+      const units = usage.pages;
+      if (units > state.lease) {
+        throw licenseQuotaError(
+          `License quota exhausted: ${state.lease} pages left, ${units} required. ` +
+            "The auto-guard refills asynchronously — wait a moment and retry, or call checkout() manually.",
+          { remaining: state.lease },
+        );
+      }
+      state.lease -= units;
+      state.consumedPages += usage.pages;
+      state.consumedDocs += usage.documents;
+
+      if (state.lease < REFILL_AT && !state.replenishing) {
+        state.replenishing = true;
+        replenishAutoGuard(state).finally(() => { state.replenishing = false; });
+      }
+
+      return undefined;
+    },
+  };
+
+  setLicenseGuard(guard);
+  return true;
+}
+
+async function replenishAutoGuard(state: AutoGuardState): Promise<void> {
+  const nonce = makeNonce();
+  try {
+    const res = await fetch(`${state.serverUrl}/v1/authorize`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${state.key}`,
+      },
+      body: JSON.stringify({ requested: REFILL_AMOUNT, nonce }),
+    });
+    if (!res.ok) return;
+    const data = (await res.json()) as { granted?: number };
+    if (typeof data.granted === "number" && data.granted > 0) {
+      state.lease += data.granted;
+    }
+  } catch {
+    // server unreachable — retry on next consumption trigger
+  }
+}
+
+async function flushAutoGuard(state: AutoGuardState): Promise<void> {
+  const pages = state.consumedPages;
+  const docs = state.consumedDocs;
+  if (pages <= 0 && docs <= 0) return;
+  state.consumedPages = 0;
+  state.consumedDocs = 0;
+  try {
+    await fetch(`${state.serverUrl}/v1/usage`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${state.key}`,
+      },
+      body: JSON.stringify({ documents: docs, pages, status: "success" }),
+    });
+  } catch {
+    state.consumedPages += pages;
+    state.consumedDocs += docs;
+  }
+}
+
+function makeNonce(): string {
+  const bytes = new Uint8Array(16);
+  const webCrypto = globalThis.crypto;
+  if (webCrypto?.getRandomValues) {
+    webCrypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Tears down the auto-guard, clears the interval timer, and flushes remaining
+ * usage. Safe to call even when the auto-guard was never installed. After this
+ * call generation requires a new guard (manual install, auto-reinstall, or dev
+ * bypass).
+ */
+export function shutdownAutoGuard(): void {
+  if (autoGuardState?.flushTimer !== null && autoGuardState?.flushTimer !== undefined) {
+    clearInterval(autoGuardState.flushTimer);
+  }
+  if (autoGuardState) {
+    flushAutoGuard(autoGuardState).catch(() => {});
+  }
+  autoGuardState = null;
+  autoInstallAttempted = false;
+  setLicenseGuard(undefined);
 }
