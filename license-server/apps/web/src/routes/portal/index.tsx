@@ -8,6 +8,7 @@ import {
   PageContainer,
   StateNotice,
   StatusBadge,
+  TelemetryBadge,
   UsageMeter,
   WatermarkBadge,
 } from '#/components/page-shell.tsx'
@@ -32,6 +33,7 @@ import {
   ApiError,
   type PortalLicense,
   formatDate,
+  formatDateTime,
   formatNumber,
   portalApi,
   relativeDays,
@@ -52,8 +54,6 @@ function PortalOverviewPage() {
   const { data, loading, error, refetch } = useAsync(() => portalApi.overview())
   const [issued, setIssued] = useState<{ licenseId: string; key: string } | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
-
-  const serverUrl = typeof window !== 'undefined' ? window.location.origin : 'https://license.example.com'
 
   const [startingTrial, setStartingTrial] = useState(false)
 
@@ -118,7 +118,7 @@ function PortalOverviewPage() {
 
             <StatusBanner licenses={data.licenses} />
 
-            {issued ? <KeyReveal apiKey={issued.key} serverUrl={serverUrl} /> : null}
+            {issued ? <KeyReveal apiKey={issued.key} /> : null}
 
             <Card>
               <CardHeader>
@@ -142,8 +142,9 @@ function PortalOverviewPage() {
               <CardHeader>
                 <CardTitle>Licenses & API keys</CardTitle>
                 <CardDescription>
-                  Generate a key to use with the <code>@sempdf/sempdf-pdf</code> library.
-                  Keys are shown once and stored hashed — regenerate if you lose one.
+                  Generate a key, then set <code>SEMPDF_LICENSE_KEY</code> in your environment.
+                  The server URL is baked into the library — no other configuration needed.
+                  Keys are shown once and stored hashed; regenerate if you lose one.
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-0">
@@ -216,6 +217,50 @@ function PortalOverviewPage() {
                 </Table>
               </CardContent>
             </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Recent activity</CardTitle>
+                <CardDescription>Generation events for your organizations</CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Organization</TableHead>
+                      <TableHead>Endpoint</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Pages</TableHead>
+                      <TableHead className="text-right">When</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.telemetry.slice(0, 20).map((event) => (
+                      <TableRow key={event.id}>
+                        <TableCell className="font-medium">{event.organizationName}</TableCell>
+                        <TableCell className="font-mono text-xs">{event.endpoint}</TableCell>
+                        <TableCell>
+                          <TelemetryBadge status={event.status} />
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatNumber(event.pages)}
+                        </TableCell>
+                        <TableCell className="text-right text-xs text-muted-foreground">
+                          {formatDateTime(event.createdAt)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {data.telemetry.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                          No activity recorded yet.
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
           </>
         ) : null}
       </PageContainer>
@@ -223,25 +268,24 @@ function PortalOverviewPage() {
   )
 }
 
-function KeyReveal({ apiKey, serverUrl }: { apiKey: string; serverUrl: string }) {
-  const snippet = `import { LicenseClient } from '@sempdf/sempdf-pdf/licensing'
+function KeyReveal({ apiKey }: { apiKey: string }) {
+  const snippet = `# Set in your environment (server URL is baked into the library):
+#   SEMPDF_LICENSE_KEY=${apiKey}
 
-const license = new LicenseClient({
-  key: '${apiKey}',
-  serverUrl: '${serverUrl}',
-})
+import { createDocument } from '@sempdf/sempdf-pdf'
 
-await license.checkout()        // reserve quota before generating
-// ... doc.toUint8Array() / toBlob() now draw the lease down
-await license.flush()           // report usage back for billing`
+const doc = createDocument({ title: 'Invoice' })
+doc.addPage({ size: 'A4' }).text('Hello', { x: 24, y: 700 })
+doc.toUint8Array()`
 
   return (
     <Card className="border-primary/40 bg-primary/5">
       <CardHeader>
         <CardTitle>Your new API key</CardTitle>
-        <CardDescription>
-          Copy it now — for security it is shown only once and cannot be retrieved later.
-        </CardDescription>
+          <CardDescription>
+            Set <code>SEMPDF_LICENSE_KEY</code> in your environment and import the library — checkout and
+            flush are automatic. Copy it now — it is shown only once and cannot be retrieved later.
+          </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <div className="flex items-center gap-2">
