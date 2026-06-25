@@ -28,9 +28,8 @@ export function evaluateLicensePolicy(options: {
   license: PolicyLicenseSnapshot;
   now: Date;
   gracePeriodDays: number;
-  isExistingJob: boolean;
 }): LicensePolicyDecision {
-  const { license, now, gracePeriodDays, isExistingJob } = options;
+  const { license, now, gracePeriodDays } = options;
 
   if (!license.active) {
     return blocked("license_inactive", "hard_blocked", license.firstOverageAt, null);
@@ -44,8 +43,7 @@ export function evaluateLicensePolicy(options: {
     return { allowed: true, watermark: true, status: "trial", firstOverageAt: license.firstOverageAt, hardBlockAt: null };
   }
 
-  const trialExpired = license.trialEndsAt !== null && license.trialEndsAt.getTime() <= now.getTime();
-  const overLimit = license.usedUnits > license.limitUnits || trialExpired;
+  const overLimit = license.usedUnits > license.limitUnits;
   if (!overLimit && license.status !== "hard_blocked") {
     return { allowed: true, watermark: false, status: "none", firstOverageAt: license.firstOverageAt, hardBlockAt: null };
   }
@@ -56,9 +54,12 @@ export function evaluateLicensePolicy(options: {
     return blocked(license.status === "hard_blocked" ? "hard_blocked" : "grace_period_expired", "hard_blocked", firstOverageAt, hardBlockAt);
   }
 
+  // Already over the limit (meter negative): every run from here is watermarked.
+  // The single run that *crosses* the limit isn't watermarked because the
+  // caller evaluates this on the pre-charge usage, which is still within limit.
   return {
     allowed: true,
-    watermark: !isExistingJob,
+    watermark: true,
     status: "grace_period",
     firstOverageAt,
     hardBlockAt,

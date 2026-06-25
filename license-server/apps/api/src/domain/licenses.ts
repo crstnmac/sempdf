@@ -22,7 +22,7 @@ export class HttpError extends Error {
 }
 
 /** ISO reset timestamp for a window, or null for lifetime. */
-function windowResetAt(window: License["window"], from: Date): string | null {
+export function windowResetAt(window: License["window"], from: Date): string | null {
   if (window === "lifetime") return null;
   const d = new Date(from);
   d.setUTCHours(0, 0, 0, 0);
@@ -51,10 +51,15 @@ function windowExpired(window: License["window"], startedAt: Date, now: Date): b
 export async function authorize(
   key: string,
   requested: number,
-  options: { isExistingJob?: boolean; jobId?: string | undefined; jobDescription?: string | undefined; endpoint?: string } = {},
+  options: { jobId?: string | undefined; jobDescription?: string | undefined; endpoint?: string; meta?: TelemetryMeta } = {},
 ): Promise<AuthorizeResult> {
   const keyHash = hashKey(key);
-  return db.transaction(async (tx) => {
+  // The transaction returns an outcome rather than throwing on a block: throwing
+  // inside the transaction would roll back the very telemetry/status writes we
+  // make for a blocked request. We commit those, then throw outside.
+  const outcome = await db.transaction(async (tx): Promise<
+    { blocked: true; reason: string; status: License["status"]; hardBlockAt: string | null; remaining: number } | (AuthorizeResult & { blocked: false })
+  > => {
     const [lic] = await tx.select().from(licenses).where(eq(licenses.keyHash, keyHash)).for("update");
     if (!lic) throw new HttpError(404, "unknown_license");
 
@@ -74,7 +79,6 @@ export async function authorize(
       license: { ...lic, usedUnits: used, firstOverageAt, status },
       now,
       gracePeriodDays: lic.gracePeriodDays,
-      isExistingJob: options.isExistingJob === true,
     });
     if (!decision.allowed) {
       await recordTelemetry(tx, lic, {
@@ -83,16 +87,19 @@ export async function authorize(
         status: "blocked",
         jobId: options.jobId,
         jobDescription: options.jobDescription,
+        meta: { ...options.meta, errorCode: decision.reason },
       });
       await tx.update(licenses).set({ status: decision.status, firstOverageAt: decision.firstOverageAt }).where(eq(licenses.id, lic.id));
-      throw new HttpError(403, decision.reason ?? "hard_blocked", {
-        remaining: Math.max(0, lic.limitUnits - used),
-        hardBlockAt: decision.hardBlockAt?.toISOString() ?? null,
-        watermark: decision.watermark,
+      return {
+        blocked: true,
+        reason: decision.reason ?? "hard_blocked",
         status: decision.status,
-      });
+        hardBlockAt: decision.hardBlockAt?.toISOString() ?? null,
+        remaining: lic.limitUnits - used,
+      };
     }
 
+    // Grant without reserving — billing happens on actual consumption via /v1/usage.
     const granted = Math.max(0, requested);
     await tx
       .update(licenses)
@@ -120,17 +127,29 @@ export async function authorize(
       status: decision.watermark ? "watermarked" : "success",
       jobId: options.jobId,
       jobDescription: options.jobDescription,
+      meta: options.meta,
     });
 
     return {
+      blocked: false,
       granted,
-      remaining: Math.max(0, lic.limitUnits - used),
+      remaining: lic.limitUnits - used,
       resetAt: windowResetAt(lic.window, startedAt),
       watermark: decision.watermark,
       status: decision.status,
       hardBlockAt: decision.hardBlockAt?.toISOString() ?? null,
     };
   });
+
+  if (outcome.blocked) {
+    throw new HttpError(403, outcome.reason, {
+      remaining: outcome.remaining,
+      hardBlockAt: outcome.hardBlockAt,
+      status: outcome.status,
+    });
+  }
+  const { blocked: _blocked, ...result } = outcome;
+  return result;
 }
 
 /**
@@ -145,10 +164,12 @@ export async function recordUsage(
     jobDescription?: string | undefined;
     status?: "success" | "fail" | "watermarked" | "blocked";
     endpoint?: string;
+    meta?: TelemetryMeta;
   } = {},
 ): Promise<void> {
   const lic = await getLicense(key);
   if (!lic) throw new HttpError(404, "unknown_license");
+
   await db.update(licenses).set({ usedUnits: sql`used_units + ${usage.pages}` }).where(eq(licenses.id, lic.id));
 
   const [updated] = await db.select().from(licenses).where(eq(licenses.id, lic.id));
@@ -158,9 +179,9 @@ export async function recordUsage(
       license: updated,
       now,
       gracePeriodDays: lic.gracePeriodDays,
-      isExistingJob: false,
     });
-    await db.update(licenses)
+    await db
+      .update(licenses)
       .set({ status: decision.status, firstOverageAt: decision.firstOverageAt })
       .where(eq(licenses.id, lic.id));
   }
@@ -184,6 +205,13 @@ export async function recordUsage(
     status: options.status ?? "success",
     jobId: options.jobId,
     jobDescription: options.jobDescription,
+    libVersion: options.meta?.libVersion,
+    nodeVersion: options.meta?.nodeVersion,
+    platform: options.meta?.platform,
+    tagged: options.meta?.tagged,
+    language: options.meta?.language,
+    conformance: options.meta?.conformance,
+    errorCode: options.meta?.errorCode,
   });
 }
 
@@ -191,6 +219,17 @@ export async function recordUsage(
 export async function getLicense(key: string): Promise<License | undefined> {
   const [lic] = await db.select().from(licenses).where(eq(licenses.keyHash, hashKey(key)));
   return lic;
+}
+
+/** Client + runtime metadata captured from the library, stored on telemetry. */
+export interface TelemetryMeta {
+  libVersion?: string | undefined;
+  nodeVersion?: string | undefined;
+  platform?: string | undefined;
+  tagged?: boolean | undefined;
+  language?: string | undefined;
+  conformance?: string | undefined;
+  errorCode?: string | undefined;
 }
 
 async function recordTelemetry(
@@ -202,6 +241,7 @@ async function recordTelemetry(
     status: "success" | "fail" | "watermarked" | "blocked";
     jobId?: string | undefined;
     jobDescription?: string | undefined;
+    meta?: TelemetryMeta | undefined;
   },
 ): Promise<void> {
   await tx.insert(apiTelemetry).values({
@@ -212,6 +252,13 @@ async function recordTelemetry(
     status: event.status,
     jobId: event.jobId,
     jobDescription: event.jobDescription,
+    libVersion: event.meta?.libVersion,
+    nodeVersion: event.meta?.nodeVersion,
+    platform: event.meta?.platform,
+    tagged: event.meta?.tagged,
+    language: event.meta?.language,
+    conformance: event.meta?.conformance,
+    errorCode: event.meta?.errorCode,
   });
 }
 

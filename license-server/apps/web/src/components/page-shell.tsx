@@ -48,6 +48,7 @@ export function UsageMeter({
 }) {
   const pct = usagePercent(used, limit)
   const over = used > limit && limit > 0
+  const overBy = over ? used - limit : 0
   const barColor = over || pct >= 100 ? 'bg-destructive' : pct >= 80 ? 'bg-warning' : 'bg-primary'
 
   return (
@@ -57,7 +58,13 @@ export function UsageMeter({
           <span className="tabular-nums">
             {formatNumber(used)} / {limit > 0 ? formatNumber(limit) : '∞'} pages
           </span>
-          <span className={over ? 'font-medium text-destructive' : ''}>{pct}%</span>
+          {over ? (
+            <span className="font-medium text-destructive tabular-nums">
+              −{formatNumber(overBy)} over
+            </span>
+          ) : (
+            <span>{pct}%</span>
+          )}
         </div>
       ) : null}
       <div className="relative h-2 w-full overflow-hidden rounded-full bg-muted-surface">

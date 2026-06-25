@@ -28,7 +28,17 @@ export interface DashboardTenant {
   createdAt: string
 }
 
-export interface TelemetryRow {
+export interface TelemetryMeta {
+  libVersion: string | null
+  nodeVersion: string | null
+  platform: string | null
+  tagged: boolean | null
+  language: string | null
+  conformance: string | null
+  errorCode: string | null
+}
+
+export interface TelemetryRow extends TelemetryMeta {
   id: number
   accountId: string
   organizationName: string
@@ -39,6 +49,21 @@ export interface TelemetryRow {
   jobId: string | null
   jobDescription: string | null
   createdAt: string
+}
+
+export interface TelemetrySummary {
+  totalPages: number
+  errorCount: number
+  watermarkedCount: number
+  uniqueOrgs: number
+}
+
+export interface TelemetryPage {
+  rows: TelemetryRow[]
+  total: number
+  page: number
+  pageSize: number
+  summary: TelemetrySummary
 }
 
 export interface NotificationSettings {
@@ -138,6 +163,20 @@ export interface AdminOrganization {
 export const api = {
   dashboard: () => request<DashboardData>('/dashboard'),
   organizations: () => request<{ organizations: AdminOrganization[] }>('/organizations'),
+  telemetry: (params: {
+    page?: number; pageSize?: number; from?: string; to?: string;
+    status?: string; q?: string;
+  } = {}) => {
+    const sp = new URLSearchParams()
+    if (params.page) sp.set('page', String(params.page))
+    if (params.pageSize) sp.set('pageSize', String(params.pageSize))
+    if (params.from) sp.set('from', params.from)
+    if (params.to) sp.set('to', params.to)
+    if (params.status) sp.set('status', params.status)
+    if (params.q) sp.set('q', params.q)
+    const qs = sp.toString()
+    return request<TelemetryPage>(`/telemetry${qs ? `?${qs}` : ''}`)
+  },
   licenseUsage: (id: string) => request<LicenseUsage>(`/licenses/${id}/usage`),
   extendTrial: (id: string, body: { days?: number; trialEndsAt?: string }) =>
     request<{ id: string; trialEndsAt: string | null; status: TenantStatus }>(
@@ -179,10 +218,11 @@ export interface PortalLicense {
   status: TenantStatus
   active: boolean
   trialEndsAt: string | null
+  resetAt: string | null
   createdAt: string
 }
 
-export interface PortalTelemetry {
+export interface PortalTelemetry extends TelemetryMeta {
   id: number
   accountId: string
   organizationName: string
@@ -289,6 +329,13 @@ export function formatDateTime(value: string | null | undefined): string {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value))
+}
+
+/** Customer-friendly label for an internal API endpoint path. */
+export function endpointLabel(endpoint: string): string {
+  if (endpoint.includes('authorize')) return 'Generation authorized'
+  if (endpoint.includes('usage')) return 'Usage reported'
+  return endpoint
 }
 
 const STATUS_LABELS: Record<TenantStatus, string> = {

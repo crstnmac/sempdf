@@ -17,7 +17,9 @@ export {
   isLicenseDevBypass,
   licenseQuotaError,
   shutdownAutoGuard,
+  setJobContext,
   type LicenseGuard,
   type LicenseGuardDecision,
   type GenerationUsage,
+  type JobContext,
 } from "./internal/license-guard.js";
