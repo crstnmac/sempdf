@@ -13,18 +13,31 @@ const baseLicense = {
   expiresAt: null,
 };
 
-test("allows an in-flight job without watermark even after usage exceeds the limit", () => {
+test("watermarks every run once the meter is already over the limit", () => {
   const now = new Date("2026-06-25T10:00:00Z");
   const decision = evaluateLicensePolicy({
     license: { ...baseLicense, usedUnits: 120, firstOverageAt: now, status: "grace_period" },
     now,
     gracePeriodDays: 7,
-    isExistingJob: true,
   });
 
+  // Already negative: the next run is allowed but watermarked. Only the single
+  // run that crosses the limit passes clean (evaluated on pre-charge usage).
+  assert.equal(decision.allowed, true);
+  assert.equal(decision.watermark, true);
+  assert.equal(decision.status, "grace_period");
+});
+
+test("the crossing run (still within limit) passes clean, no watermark", () => {
+  const now = new Date("2026-06-25T10:00:00Z");
+  const decision = evaluateLicensePolicy({
+    license: { ...baseLicense, usedUnits: 100, status: "none" },
+    now,
+    gracePeriodDays: 7,
+  });
   assert.equal(decision.allowed, true);
   assert.equal(decision.watermark, false);
-  assert.equal(decision.status, "grace_period");
+  assert.equal(decision.status, "none");
 });
 
 test("watermarks new jobs during overage grace and hard-blocks after grace expires", () => {
@@ -33,7 +46,6 @@ test("watermarks new jobs during overage grace and hard-blocks after grace expir
     license: { ...baseLicense, usedUnits: 101, firstOverageAt, status: "grace_period" },
     now: new Date("2026-06-07T23:59:00Z"),
     gracePeriodDays: 7,
-    isExistingJob: false,
   });
   assert.equal(duringGrace.allowed, true);
   assert.equal(duringGrace.watermark, true);
@@ -43,7 +55,6 @@ test("watermarks new jobs during overage grace and hard-blocks after grace expir
     license: { ...baseLicense, usedUnits: 101, firstOverageAt, status: "grace_period" },
     now: new Date("2026-06-08T00:00:01Z"),
     gracePeriodDays: 7,
-    isExistingJob: false,
   });
   assert.equal(afterGrace.allowed, false);
   assert.equal(afterGrace.watermark, true);
@@ -51,27 +62,34 @@ test("watermarks new jobs during overage grace and hard-blocks after grace expir
   assert.equal(afterGrace.reason, "grace_period_expired");
 });
 
-test("trial licenses always watermark and expired trials enter overage flow", () => {
+test("trial licenses always watermark and expired trials enter grace only when over limit", () => {
   const activeTrial = evaluateLicensePolicy({
     license: { ...baseLicense, trialEndsAt: new Date("2026-07-01T00:00:00Z") },
     now: new Date("2026-06-25T00:00:00Z"),
     gracePeriodDays: 7,
-    isExistingJob: false,
   });
   assert.equal(activeTrial.allowed, true);
   assert.equal(activeTrial.watermark, true);
   assert.equal(activeTrial.status, "trial");
 
-  const expiredTrial = evaluateLicensePolicy({
+  const expiredWithinLimit = evaluateLicensePolicy({
     license: { ...baseLicense, trialEndsAt: new Date("2026-06-01T00:00:00Z") },
     now: new Date("2026-06-02T00:00:00Z"),
     gracePeriodDays: 7,
-    isExistingJob: false,
   });
-  assert.equal(expiredTrial.allowed, true);
-  assert.equal(expiredTrial.watermark, true);
-  assert.equal(expiredTrial.status, "grace_period");
-  assert.equal(expiredTrial.firstOverageAt?.toISOString(), "2026-06-02T00:00:00.000Z");
+  assert.equal(expiredWithinLimit.allowed, true);
+  assert.equal(expiredWithinLimit.watermark, false);
+  assert.equal(expiredWithinLimit.status, "none");
+
+  const expiredOverLimit = evaluateLicensePolicy({
+    license: { ...baseLicense, usedUnits: 120, trialEndsAt: new Date("2026-06-01T00:00:00Z") },
+    now: new Date("2026-06-02T00:00:00Z"),
+    gracePeriodDays: 7,
+  });
+  assert.equal(expiredOverLimit.allowed, true);
+  assert.equal(expiredOverLimit.watermark, true);
+  assert.equal(expiredOverLimit.status, "grace_period");
+  assert.equal(expiredOverLimit.firstOverageAt?.toISOString(), "2026-06-02T00:00:00.000Z");
 });
 
 test("usage notifications include threshold and overage events once per transition", () => {

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
+import { EyeIcon, EyeOffIcon } from 'lucide-react'
 
 import { Button } from '#/components/ui/button.tsx'
 import { Field, FieldGroup, FieldLabel } from '#/components/ui/field.tsx'
@@ -23,6 +24,7 @@ function SignupPage() {
   const [form, setForm] = useState({ name: '', email: '', password: '', organization: '' })
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showPassword, setShowPassword] = useState(false)
 
   function update(key: keyof typeof form, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -120,15 +122,25 @@ function SignupPage() {
           </Field>
           <Field>
             <FieldLabel htmlFor="password">Password</FieldLabel>
-            <Input
-              id="password"
-              type="password"
-              required
-              autoComplete="new-password"
-              value={form.password}
-              onChange={(event) => update('password', event.target.value)}
-              className="bg-background"
-            />
+            <div className="relative">
+              <Input
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                required
+                autoComplete="new-password"
+                value={form.password}
+                onChange={(event) => update('password', event.target.value)}
+                className="bg-background pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((s) => !s)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                tabIndex={-1}
+              >
+                {showPassword ? <EyeOffIcon className="size-4" /> : <EyeIcon className="size-4" />}
+              </button>
+            </div>
           </Field>
           {error ? (
             <p role="alert" className="text-sm text-destructive">

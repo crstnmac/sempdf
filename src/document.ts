@@ -5304,7 +5304,13 @@ export class PdfDocument {
   }
 
   private _applyLicenseDecision(): void {
-    const decision = consumeLicense({ documents: 1, pages: this.pages.length });
+    const decision = consumeLicense({
+      documents: 1,
+      pages: this.pages.length,
+      tagged: this.accessibility.tagged,
+      language: this.accessibility.language,
+      conformance: this.accessibility.conformance,
+    });
     if (decision?.watermarkText) applyLicenseWatermark(this.pages, decision.watermarkText);
   }
 
