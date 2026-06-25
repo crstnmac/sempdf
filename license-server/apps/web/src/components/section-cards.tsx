@@ -17,25 +17,25 @@ export function SectionCards({ summary }: { summary: DashboardSummary }) {
     badge?: 'outline' | 'destructive'
   }[] = [
     {
-      label: 'Total tenants',
+      label: 'Total licenses',
       value: formatNumber(summary.totalTenants),
       hint: `${formatNumber(summary.trialTenants)} on trial`,
     },
     {
-      label: 'Pages used',
+      label: 'Pages metered',
       value: formatNumber(summary.pagesUsed),
-      hint: 'Metered across all licenses',
+      hint: 'Charged across all licenses',
     },
     {
-      label: 'Watermarked / grace',
-      value: formatNumber(summary.watermarkedTenants),
-      hint: `${formatNumber(summary.graceTenants)} in grace period`,
+      label: 'In grace period',
+      value: formatNumber(summary.graceTenants),
+      hint: 'Over limit — output watermarked',
       badge: summary.graceTenants > 0 ? 'outline' : undefined,
     },
     {
       label: 'Hard blocked',
       value: formatNumber(summary.hardBlockedTenants),
-      hint: `Licenses fully suspended`,
+      hint: 'Generation suspended',
       badge: summary.hardBlockedTenants > 0 ? 'destructive' : undefined,
     },
   ]

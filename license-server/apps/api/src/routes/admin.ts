@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
 
 import { auth } from "../auth.js";
 import { db } from "../db/client.js";
@@ -44,7 +44,7 @@ adminRoutes.get("/dashboard", async (c) => {
       window: lic.window,
       limitUnits: lic.limitUnits,
       usedUnits: lic.usedUnits,
-      remainingUnits: Math.max(0, lic.limitUnits - lic.usedUnits),
+      remainingUnits: lic.limitUnits - lic.usedUnits,
       status: lic.status,
       active: lic.active,
       firstOverageAt: lic.firstOverageAt?.toISOString() ?? null,
@@ -79,6 +79,13 @@ adminRoutes.get("/dashboard", async (c) => {
       status: event.status,
       jobId: event.jobId,
       jobDescription: event.jobDescription,
+      libVersion: event.libVersion,
+      nodeVersion: event.nodeVersion,
+      platform: event.platform,
+      tagged: event.tagged,
+      language: event.language,
+      conformance: event.conformance,
+      errorCode: event.errorCode,
       createdAt: event.createdAt.toISOString(),
     })),
   });
@@ -194,12 +201,101 @@ adminRoutes.get("/licenses/:id/usage", async (c) => {
     metric: "pages",
     limit: lic.limitUnits,
     used: lic.usedUnits,
-    remaining: Math.max(0, lic.limitUnits - lic.usedUnits),
+    remaining: lic.limitUnits - lic.usedUnits,
     status: lic.status,
     firstOverageAt: lic.firstOverageAt,
     trialEndsAt: lic.trialEndsAt,
     gracePeriodDays: lic.gracePeriodDays,
     telemetry: events,
+  });
+});
+
+/**
+ * Paginated telemetry with date-range, status, and free-text search filters.
+ * Returns summary metrics for the matching window alongside the rows.
+ */
+adminRoutes.get("/telemetry", async (c) => {
+  const page = Math.max(1, Number(c.req.query("page") ?? 1));
+  const pageSize = Math.min(200, Math.max(1, Number(c.req.query("pageSize") ?? 50)));
+  const from = c.req.query("from");
+  const to = c.req.query("to");
+  const statusFilter = c.req.query("status");
+  const q = c.req.query("q");
+
+  const conditions = [];
+  if (from) conditions.push(gte(apiTelemetry.createdAt, new Date(from)));
+  if (to) conditions.push(lte(apiTelemetry.createdAt, new Date(to)));
+  if (statusFilter && statusFilter !== "all") conditions.push(eq(apiTelemetry.status, statusFilter as typeof apiTelemetry.status.enumValues[number]));
+  if (q) {
+    const pattern = `%${q}%`;
+    conditions.push(or(
+      ilike(apiTelemetry.accountId, pattern),
+      ilike(apiTelemetry.endpoint, pattern),
+      ilike(apiTelemetry.jobId, pattern),
+      ilike(apiTelemetry.jobDescription, pattern),
+    ));
+  }
+  const where = and(...conditions);
+
+  const [totalResult] = await db
+    .select({ total: count() })
+    .from(apiTelemetry)
+    .where(where);
+  const total = totalResult?.total ?? 0;
+
+  // Summary: total pages and error count for the matching window
+  const [summaryResult] = await db
+    .select({
+      totalPages: sql<number>`COALESCE(SUM(${apiTelemetry.pages}), 0)`.mapWith(Number),
+      errorCount: sql<number>`COALESCE(SUM(CASE WHEN ${apiTelemetry.status} = 'blocked' OR ${apiTelemetry.status} = 'fail' THEN 1 ELSE 0 END), 0)`.mapWith(Number),
+      watermarkedCount: sql<number>`COALESCE(SUM(CASE WHEN ${apiTelemetry.status} = 'watermarked' THEN 1 ELSE 0 END), 0)`.mapWith(Number),
+      uniqueOrgs: sql<number>`COALESCE(COUNT(DISTINCT ${apiTelemetry.accountId}), 0)`.mapWith(Number),
+    })
+    .from(apiTelemetry)
+    .where(where);
+
+  const rows = await db
+    .select()
+    .from(apiTelemetry)
+    .where(where)
+    .orderBy(desc(apiTelemetry.createdAt))
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
+
+  const orgs = await db
+    .select({ id: organization.id, name: organization.name })
+    .from(organization);
+  const orgNameById = new Map(orgs.map((org) => [org.id, org.name]));
+
+  return c.json({
+    rows: rows.map((event) => ({
+      id: event.id,
+      accountId: event.accountId,
+      organizationName: orgNameById.get(event.accountId) ?? event.accountId,
+      licenseId: event.licenseId,
+      endpoint: event.endpoint,
+      pages: event.pages,
+      status: event.status,
+      jobId: event.jobId,
+      jobDescription: event.jobDescription,
+      libVersion: event.libVersion,
+      nodeVersion: event.nodeVersion,
+      platform: event.platform,
+      tagged: event.tagged,
+      language: event.language,
+      conformance: event.conformance,
+      errorCode: event.errorCode,
+      createdAt: event.createdAt.toISOString(),
+    })),
+    total,
+    page,
+    pageSize,
+    summary: {
+      totalPages: summaryResult?.totalPages ?? 0,
+      errorCount: summaryResult?.errorCount ?? 0,
+      watermarkedCount: summaryResult?.watermarkedCount ?? 0,
+      uniqueOrgs: summaryResult?.uniqueOrgs ?? 0,
+    },
   });
 });
 
