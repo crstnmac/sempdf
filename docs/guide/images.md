@@ -14,6 +14,36 @@ page.image(await readFile("logo"), { x: 56, y: 600, width: 120, height: 60, altT
 
 It throws `UNSUPPORTED_IMAGE_FORMAT` if the bytes match no known raster format. For SVG (text, not raster) use `page.svg()`. Use the format-specific methods below when you want a specific decoder or format-only options.
 
+## Loading an image in the browser
+
+The browser and the live playground do not provide `node:fs`. Fetch the image,
+convert the response to an `ArrayBuffer`, and pass those bytes to `page.image()`:
+
+```ts
+import { createDocument } from "@barrierbreak/a11ydocs-pdf";
+
+const response = await fetch("/images/logo.png");
+if (!response.ok) {
+  throw new Error(`Could not load image: ${response.status} ${response.statusText}`);
+}
+const imageBytes = await response.arrayBuffer();
+
+const doc = createDocument({ language: "en-US" });
+const page = doc.addPage({ size: "A4" });
+
+page.image(imageBytes, {
+  x: 56,
+  y: 640,
+  width: 360,
+  height: 81,
+  altText: "Company logo"
+});
+```
+
+The image URL must be reachable from the page and, for cross-origin URLs, the
+server must allow the request with CORS headers. See the complete
+[browser playground example](./examples#import-image-browser).
+
 ## JPEG
 
 ```ts
