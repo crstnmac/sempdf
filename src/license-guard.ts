@@ -16,6 +16,7 @@ export {
   consumeLicense,
   isLicenseDevBypass,
   licenseQuotaError,
+  shutdownAutoGuard,
   type LicenseGuard,
   type LicenseGuardDecision,
   type GenerationUsage,
