@@ -508,19 +508,57 @@ adminRoutes.post("/licenses", async (c) => {
   return c.json({ ...row, keyPrefix: apiKey.keyPrefix, key: apiKey.key }, 201);
 });
 
-/** Rotate a licence's keys: revoke all existing keys and issue a fresh one. */
+/**
+ * Rotate a licence's keys: an operator "kill everything and reissue" lever for
+ * compromise response. Revokes ALL active keys (prod, staging, CI, …) and issues
+ * a single fresh "Default". This is intentionally destructive — customers manage
+ * individual keys in their own portal; this is the emergency reset. We return
+ * `revokedCount` so the UI can tell the operator exactly how many keys it killed.
+ */
 adminRoutes.post("/licenses/:id/rotate", async (c) => {
   const id = c.req.param("id");
   const [lic] = await db.select().from(licenses).where(eq(licenses.id, id));
   if (!lic) return c.json({ error: "unknown_license" }, 404);
-  await db.update(apiKeys).set({ revokedAt: new Date() }).where(and(eq(apiKeys.licenseId, id), isNull(apiKeys.revokedAt)));
+  // A fresh key can't authorize while the license is inactive; reactivate first.
+  if (!lic.active) return c.json({ error: "license_inactive" }, 409);
+  const revoked = await db
+    .update(apiKeys)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(apiKeys.licenseId, id), isNull(apiKeys.revokedAt)))
+    .returning({ id: apiKeys.id });
   const apiKey = await createApiKey(id, "Default");
-  return c.json({ id, keyPrefix: apiKey.keyPrefix, key: apiKey.key }, 200);
+  return c.json({ id, keyPrefix: apiKey.keyPrefix, key: apiKey.key, revokedCount: revoked.length }, 200);
 });
 
+/**
+ * Disables a license: `active = false` blocks every authorize (`license_inactive`)
+ * without touching keys or usage. Reversible via `/reactivate` below — so this is
+ * a kill-switch, not a destructive delete.
+ */
 adminRoutes.post("/licenses/:id/revoke", async (c) => {
   await db.update(licenses).set({ active: false }).where(eq(licenses.id, c.req.param("id")));
   return c.json({ ok: true });
+});
+
+/**
+ * Re-enables a previously revoked license. Usage and keys were left intact by
+ * revoke, so service resumes immediately under the license's existing plan and
+ * counters. Status is recomputed against the (unchanged) limit so a license that
+ * was over quota when revoked comes back hard-blocked rather than falsely open.
+ */
+adminRoutes.post("/licenses/:id/reactivate", async (c) => {
+  const id = c.req.param("id");
+  const [lic] = await db.select().from(licenses).where(eq(licenses.id, id));
+  if (!lic) return c.json({ error: "unknown_license" }, 404);
+  const effectiveLimit = lic.limitUnits + lic.bonusUnits;
+  const stillOver = lic.usedUnits >= effectiveLimit;
+  const trialActive = lic.trialEndsAt !== null && lic.trialEndsAt.getTime() > Date.now();
+  const status = stillOver ? "hard_blocked" : trialActive ? "trial" : "none";
+  await db
+    .update(licenses)
+    .set({ active: true, status, firstOverageAt: stillOver ? lic.firstOverageAt : null })
+    .where(eq(licenses.id, id));
+  return c.json({ ok: true, active: true, status });
 });
 
 adminRoutes.post("/licenses/:id/extend-trial", async (c) => {
@@ -673,7 +711,16 @@ adminRoutes.get("/licenses/:id/usage", async (c) => {
     .select({ name: organization.name })
     .from(organization)
     .where(eq(organization.id, lic.accountId));
+  // Active key count so the operator UI can say exactly how many keys a rotate
+  // will revoke (rotate collapses all of them into one fresh key).
+  const keyRows = await db
+    .select({ value: count() })
+    .from(apiKeys)
+    .where(and(eq(apiKeys.licenseId, lic.id), isNull(apiKeys.revokedAt)));
+  const keyCount = keyRows[0]?.value ?? 0;
   return c.json({
+    keyCount,
+    active: lic.active,
     id: lic.id,
     accountId: lic.accountId,
     organizationName: org?.name ?? lic.accountId,

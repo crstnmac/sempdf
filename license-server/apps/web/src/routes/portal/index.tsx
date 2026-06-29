@@ -6,6 +6,7 @@ import {
   CopyIcon,
   PlusIcon,
   RocketIcon,
+  RotateCwIcon,
   Trash2Icon,
   TriangleAlertIcon,
 } from "lucide-react";
@@ -52,6 +53,10 @@ const STATUS_SEVERITY: Record<TenantStatus, number> = {
   none: 0,
 };
 
+/** Org-level roles allowed to create, rotate, and revoke API keys. */
+const isOrgAdmin = (role: string | undefined) =>
+  role === "owner" || role === "admin";
+
 async function copy(text: string) {
   try {
     await navigator.clipboard.writeText(text);
@@ -71,6 +76,15 @@ function PortalOverviewPage() {
     key: string;
   } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  // Key management (create / rotate / revoke) is owner/admin-only. Map each
+  // org id to the caller's role so we can hide actions a plain member can't use
+  // instead of letting the buttons fail with a 403.
+  const roleByOrg = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const org of data?.organizations ?? []) map.set(org.id, org.role);
+    return map;
+  }, [data]);
 
   // The license that drives the headline: the most over-extended / soonest to
   // matter, falling back to the newest.
@@ -99,11 +113,12 @@ function PortalOverviewPage() {
     }
   }
 
-  async function revokeKey(keyId: string, name: string) {
+  async function revokeKey(keyId: string, name: string, isLast: boolean) {
     const ok = await confirm({
       title: `Revoke "${name}"?`,
-      description:
-        "Any app using this key will stop working immediately. Other keys on this license keep working.",
+      description: isLast
+        ? "This is the last active key on this license. Revoking it stops every app from authorizing until you create a new key."
+        : "Any app using this key will stop working immediately. Other keys on this license keep working.",
       confirmLabel: "Revoke key",
       destructive: true,
     });
@@ -116,6 +131,30 @@ function PortalOverviewPage() {
       toast.error(
         err instanceof ApiError ? err.message : "Could not revoke key.",
       );
+    }
+  }
+
+  async function rotateKey(keyId: string, name: string, licenseId: string) {
+    const ok = await confirm({
+      title: `Rotate "${name}"?`,
+      description:
+        "A new secret is issued for this key and the old one stops working immediately. Update your environment with the new value — it is shown only once.",
+      confirmLabel: "Rotate key",
+      destructive: true,
+    });
+    if (!ok) return;
+    setBusyId(licenseId);
+    try {
+      const { key } = await portalApi.rotateApiKey(keyId);
+      setIssued({ licenseId, key });
+      toast.success("Key rotated. Copy it now — it is shown once.");
+      refetch();
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError ? err.message : "Could not rotate key.",
+      );
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -157,10 +196,12 @@ function PortalOverviewPage() {
 
               <LicensesSection
                 licenses={data.licenses}
+                roleByOrg={roleByOrg}
                 issued={issued}
                 busyId={busyId}
                 onCreate={createKey}
                 onRevoke={revokeKey}
+                onRotate={rotateKey}
               />
             </>
           )
@@ -282,16 +323,20 @@ function MiniStat({
 
 function LicensesSection({
   licenses,
+  roleByOrg,
   issued,
   busyId,
   onCreate,
   onRevoke,
+  onRotate,
 }: {
   licenses: PortalLicense[];
+  roleByOrg: Map<string, string>;
   issued: { licenseId: string; key: string } | null;
   busyId: string | null;
   onCreate: (licenseId: string, name: string) => void;
-  onRevoke: (keyId: string, name: string) => void;
+  onRevoke: (keyId: string, name: string, isLast: boolean) => void;
+  onRotate: (keyId: string, name: string, licenseId: string) => void;
 }) {
   return (
     <Card>
@@ -312,12 +357,14 @@ function LicensesSection({
           <LicenseKeys
             key={lic.id}
             lic={lic}
+            canManage={isOrgAdmin(roleByOrg.get(lic.accountId))}
             showName={licenses.length > 1}
             separated={i > 0}
             issuedKey={issued?.licenseId === lic.id ? issued.key : null}
             busy={busyId === lic.id}
             onCreate={onCreate}
             onRevoke={onRevoke}
+            onRotate={onRotate}
           />
         ))}
         <QuickStart />
@@ -330,20 +377,24 @@ function LicensesSection({
  *  so this stays focused on key management to avoid duplicating that info. */
 function LicenseKeys({
   lic,
+  canManage,
   showName,
   separated,
   issuedKey,
   busy,
   onCreate,
   onRevoke,
+  onRotate,
 }: {
   lic: PortalLicense;
+  canManage: boolean;
   showName: boolean;
   separated: boolean;
   issuedKey: string | null;
   busy: boolean;
   onCreate: (licenseId: string, name: string) => void;
-  onRevoke: (keyId: string, name: string) => void;
+  onRevoke: (keyId: string, name: string, isLast: boolean) => void;
+  onRotate: (keyId: string, name: string, licenseId: string) => void;
 }) {
   return (
     <div className={separated ? "border-t border-border pt-6" : undefined}>
@@ -357,28 +408,36 @@ function LicenseKeys({
       ) : null}
       <KeysManager
         lic={lic}
+        canManage={canManage}
         issuedKey={issuedKey}
         busy={busy}
         onCreate={onCreate}
         onRevoke={onRevoke}
+        onRotate={onRotate}
       />
     </div>
   );
 }
 
-/** Lists a license's API keys and lets the customer create or revoke them. */
+/** Lists a license's API keys and lets owners/admins create, rotate, or revoke
+ *  them. Members see the list read-only (the mutating actions 403 server-side,
+ *  so we hide them rather than offer buttons that fail). */
 function KeysManager({
   lic,
+  canManage,
   issuedKey,
   busy,
   onCreate,
   onRevoke,
+  onRotate,
 }: {
   lic: PortalLicense;
+  canManage: boolean;
   issuedKey: string | null;
   busy: boolean;
   onCreate: (licenseId: string, name: string) => void;
-  onRevoke: (keyId: string, name: string) => void;
+  onRevoke: (keyId: string, name: string, isLast: boolean) => void;
+  onRotate: (keyId: string, name: string, licenseId: string) => void;
 }) {
   const [name, setName] = useState("");
 
@@ -411,39 +470,90 @@ function KeysManager({
                     ? `Used ${relativeDays(k.lastUsedAt)}`
                     : "Never used"}
                 </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-destructive hover:text-destructive"
-                  onClick={() => onRevoke(k.id, k.name)}
-                >
-                  <Trash2Icon />
-                  Revoke
-                </Button>
+                {canManage ? (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={!lic.active || busy}
+                      onClick={() => onRotate(k.id, k.name, lic.id)}
+                    >
+                      <RotateCwIcon />
+                      Rotate
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() =>
+                        onRevoke(k.id, k.name, lic.keys.length === 1)
+                      }
+                    >
+                      <Trash2Icon />
+                      Revoke
+                    </Button>
+                  </>
+                ) : null}
               </div>
             </li>
           ))}
         </ul>
       ) : (
         <p className="text-sm text-muted-foreground">
-          No active keys. Create one to start generating PDFs.
+          {canManage
+            ? "No active keys. Create one to start generating PDFs."
+            : "No active keys. Ask an organization owner or admin to create one."}
         </p>
       )}
 
-      <form className="flex flex-col gap-2 sm:flex-row" onSubmit={submit}>
-        <Input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Name this key (e.g. production)"
-          maxLength={60}
-          disabled={!lic.active || busy}
-          className="sm:max-w-xs"
-        />
-        <Button type="submit" size="sm" disabled={!lic.active || busy}>
-          <PlusIcon />
-          {busy ? "Creating…" : "Create key"}
-        </Button>
-      </form>
+      {lic.revokedKeys.length > 0 ? (
+        <details className="rounded-md border border-border bg-card/50">
+          <summary className="cursor-pointer px-3 py-2 text-xs text-muted-foreground">
+            Revoked keys ({lic.revokedKeys.length})
+          </summary>
+          <ul className="divide-y divide-border border-t border-border">
+            {lic.revokedKeys.map((k) => (
+              <li
+                key={k.id}
+                className="flex items-center justify-between gap-3 px-3 py-2.5"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-muted-foreground line-through">
+                    {k.name}
+                  </p>
+                  <p className="font-mono text-xs text-muted-foreground">
+                    {k.keyPrefix}••••••••
+                  </p>
+                </div>
+                <span className="whitespace-nowrap text-xs text-muted-foreground">
+                  Revoked {relativeDays(k.revokedAt)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+
+      {canManage ? (
+        <form className="flex flex-col gap-2 sm:flex-row" onSubmit={submit}>
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Name this key (e.g. production)"
+            maxLength={60}
+            disabled={!lic.active || busy}
+            className="sm:max-w-xs"
+          />
+          <Button type="submit" size="sm" disabled={!lic.active || busy}>
+            <PlusIcon />
+            {busy ? "Creating…" : "Create key"}
+          </Button>
+        </form>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Only organization owners and admins can create, rotate, or revoke keys.
+        </p>
+      )}
     </div>
   );
 }
@@ -535,6 +645,15 @@ function NoLicense() {
 }
 
 function StatusBanner({ licenses }: { licenses: PortalLicense[] }) {
+  if (licenses.some((lic) => !lic.active)) {
+    return (
+      <Banner tone="danger">
+        One or more licenses are <strong>inactive</strong> — every API key is
+        suspended and generation is rejected. Contact your account manager to
+        restore service.
+      </Banner>
+    );
+  }
   if (licenses.some((lic) => lic.status === "hard_blocked")) {
     return (
       <Banner tone="danger">
