@@ -82,7 +82,6 @@ test("horizontal scaling emits Tz and resets to 100", () => {
   assert.match(out, /100 Tz/); // reset
 });
 
-<<<<<<< HEAD
 test("measureText scales width by horizontalScaling", () => {
   const doc = createDocument();
   const normal = doc.measureText("condensed", { fontSize: 20 }).width;
@@ -100,8 +99,6 @@ test("condensed text wraps fewer lines than normal for the same width", () => {
   assert.ok(condensed.lineCount < normal.lineCount, `normal=${normal.lineCount} condensed=${condensed.lineCount}`);
 });
 
-=======
->>>>>>> 7c593ae (feat: enhance text formatting options with superscript, subscript, and highlights)
 test("highlight draws a filled rectangle behind the text", () => {
   const plain = operators((doc) => {
     doc.addPage().text("Highlighted", { x: 56, y: 700 });
