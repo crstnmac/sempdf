@@ -1,7 +1,15 @@
 import { useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { toast } from 'sonner'
-import { CopyIcon, KeyRoundIcon, RocketIcon } from 'lucide-react'
+import {
+  CheckCircle2Icon,
+  CopyIcon,
+  KeyRoundIcon,
+  PlusIcon,
+  RocketIcon,
+  Trash2Icon,
+  TriangleAlertIcon,
+} from 'lucide-react'
 
 import { SiteHeader } from '#/components/site-header.tsx'
 import {
@@ -13,6 +21,7 @@ import {
   WatermarkBadge,
 } from '#/components/page-shell.tsx'
 import { Button } from '#/components/ui/button.tsx'
+import { Input } from '#/components/ui/input.tsx'
 import {
   Card,
   CardContent,
@@ -33,7 +42,7 @@ import {
   ApiError,
   type PortalLicense,
   type TenantStatus,
-  endpointLabel,
+  activityLabel,
   formatDate,
   formatDateTime,
   formatNumber,
@@ -47,7 +56,6 @@ export const Route = createFileRoute('/portal/')({ component: PortalOverviewPage
 
 const STATUS_SEVERITY: Record<TenantStatus, number> = {
   hard_blocked: 3,
-  grace_period: 2,
   trial: 1,
   none: 0,
 }
@@ -65,7 +73,6 @@ function PortalOverviewPage() {
   const { data, loading, error, refetch } = useAsync(() => portalApi.overview())
   const [issued, setIssued] = useState<{ licenseId: string; key: string } | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
-  const [startingTrial, setStartingTrial] = useState(false)
 
   // The license that drives the headline: the most over-extended / soonest to
   // matter, falling back to the newest.
@@ -74,38 +81,34 @@ function PortalOverviewPage() {
     return [...licenses].sort((a, b) => STATUS_SEVERITY[b.status] - STATUS_SEVERITY[a.status])[0] ?? null
   }, [data])
 
-  async function startTrial() {
-    setStartingTrial(true)
+  async function createKey(licenseId: string, name: string) {
+    setBusyId(licenseId)
     try {
-      const res = await portalApi.startTrial()
-      if (res.key) setIssued({ licenseId: res.id, key: res.key })
-      toast.success(res.created ? 'Trial started.' : 'You already have a license.')
+      const { key } = await portalApi.createKey(licenseId, name)
+      setIssued({ licenseId, key })
+      toast.success('API key created. Copy it now — it is shown once.')
       refetch()
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Could not start trial.')
+      toast.error(err instanceof ApiError ? err.message : 'Could not create key.')
     } finally {
-      setStartingTrial(false)
+      setBusyId(null)
     }
   }
 
-  async function generateKey(licenseId: string) {
+  async function revokeKey(keyId: string, name: string) {
     if (
       !window.confirm(
-        'Generate a new API key? This invalidates the current key — any app using it will stop working until updated.',
+        `Revoke the key "${name}"? Any app using it will stop working immediately. Other keys keep working.`,
       )
     ) {
       return
     }
-    setBusyId(licenseId)
     try {
-      const { key } = await portalApi.generateKey(licenseId)
-      setIssued({ licenseId, key })
-      toast.success('API key generated. Copy it now — it is shown once.')
+      await portalApi.revokeKey(keyId)
+      toast.success('Key revoked.')
       refetch()
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Could not generate key.')
-    } finally {
-      setBusyId(null)
+      toast.error(err instanceof ApiError ? err.message : 'Could not revoke key.')
     }
   }
 
@@ -128,23 +131,19 @@ function PortalOverviewPage() {
           <StateNotice title="Unavailable" message={error} tone="warning" onRetry={refetch} />
         ) : data ? (
           !hasLicenses ? (
-            <GetStarted
-              canStart={data.organizations.length > 0}
-              starting={startingTrial}
-              onStart={startTrial}
-            />
+            <NoLicense />
           ) : (
             <>
               <StatusBanner licenses={data.licenses} />
 
               {primary ? <UsageSummary summary={data.summary} primary={primary} /> : null}
 
-              {issued ? <KeyReveal apiKey={issued.key} /> : null}
-
-              <LicensesCard
+              <LicensesSection
                 licenses={data.licenses}
+                issued={issued}
                 busyId={busyId}
-                onGenerate={generateKey}
+                onCreate={createKey}
+                onRevoke={revokeKey}
               />
 
               <ActivityCard telemetry={data.telemetry} />
@@ -235,12 +234,10 @@ function UsageSummary({
           value={statusLabel(primary.status)}
           hint={
             primary.status === 'trial'
-              ? 'Output watermarked “Trial Mode”'
-              : primary.status === 'grace_period'
-                ? 'Future runs watermarked'
-                : primary.status === 'hard_blocked'
-                  ? 'New runs rejected'
-                  : 'All clear'
+              ? 'Output watermarked “A11yDocs - For Trial Use Only”'
+              : primary.status === 'hard_blocked'
+                ? 'New runs rejected'
+                : 'All clear'
           }
         />
         <StatCard label={nextLabel} value={nextValue} hint={formatDate(primary.status === 'trial' ? primary.trialEndsAt : primary.resetAt)} />
@@ -261,86 +258,238 @@ function StatCard({ label, value, hint }: { label: string; value: string; hint?:
   )
 }
 
-function LicensesCard({
+function LicensesSection({
   licenses,
+  issued,
   busyId,
-  onGenerate,
+  onCreate,
+  onRevoke,
 }: {
   licenses: PortalLicense[]
+  issued: { licenseId: string; key: string } | null
   busyId: string | null
-  onGenerate: (id: string) => void
+  onCreate: (licenseId: string, name: string) => void
+  onRevoke: (keyId: string, name: string) => void
 }) {
   return (
+    <section className="flex flex-col gap-4">
+      <div>
+        <h2 className="font-heading text-lg font-semibold text-foreground">Licenses & API keys</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          API keys authenticate the a11ydocs library. Create one per environment (production,
+          staging, CI) — they all share this plan's page quota. Set{' '}
+          <code className="rounded bg-muted-surface px-1 py-0.5 text-xs">A11YDOCS_LICENSE_KEY</code> in
+          your environment — the server URL is baked in, so there's nothing else to configure.
+        </p>
+      </div>
+      {licenses.map((lic) => (
+        <LicenseCard
+          key={lic.id}
+          lic={lic}
+          issuedKey={issued?.licenseId === lic.id ? issued.key : null}
+          busy={busyId === lic.id}
+          onCreate={onCreate}
+          onRevoke={onRevoke}
+        />
+      ))}
+    </section>
+  )
+}
+
+/** Plain-language renewal / trial line for a license. */
+function renewalLine(lic: PortalLicense): string {
+  if (lic.status === 'trial') {
+    return lic.trialEndsAt
+      ? `Trial ends ${formatDate(lic.trialEndsAt)} · ${relativeDays(lic.trialEndsAt)}`
+      : 'Trial'
+  }
+  if (lic.resetAt) return `Page count resets ${formatDate(lic.resetAt)} · ${relativeDays(lic.resetAt)}`
+  return 'Lifetime license'
+}
+
+function LicenseCard({
+  lic,
+  issuedKey,
+  busy,
+  onCreate,
+  onRevoke,
+}: {
+  lic: PortalLicense
+  issuedKey: string | null
+  busy: boolean
+  onCreate: (licenseId: string, name: string) => void
+  onRevoke: (keyId: string, name: string) => void
+}) {
+  const remaining = lic.limitUnits - lic.usedUnits
+  return (
     <Card>
-      <CardHeader>
-        <CardTitle>Licenses & API keys</CardTitle>
-        <CardDescription>
-          Generate a key, then set <code>A11YDOCS_LICENSE_KEY</code> in your environment. The server
-          URL is baked into the library — no other configuration needed. Keys are shown once and
-          stored hashed; regenerate if you lose one.
-        </CardDescription>
+      <CardHeader className="gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <CardTitle className="text-base">{lic.organizationName}</CardTitle>
+          <StatusBadge status={lic.status} />
+          <WatermarkBadge status={lic.status} />
+        </div>
+        <CardDescription>{renewalLine(lic)}</CardDescription>
       </CardHeader>
-      <CardContent className="p-0">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Organization</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="w-56">Usage</TableHead>
-              <TableHead>Renews / ends</TableHead>
-              <TableHead className="text-right">API key</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {licenses.map((lic) => (
-              <TableRow key={lic.id}>
-                <TableCell className="font-medium">
-                  {lic.organizationName}
-                  <div className="font-mono text-xs text-muted-foreground">{lic.keyPrefix}…</div>
-                </TableCell>
-                <TableCell>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <StatusBadge status={lic.status} />
-                    <WatermarkBadge status={lic.status} />
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <UsageMeter used={lic.usedUnits} limit={lic.limitUnits} />
-                </TableCell>
-                <TableCell className="text-sm">
-                  {lic.status === 'trial' ? (
-                    <>
-                      <span>Trial ends {formatDate(lic.trialEndsAt)}</span>
-                      {lic.trialEndsAt ? (
-                        <div className="text-xs text-muted-foreground">{relativeDays(lic.trialEndsAt)}</div>
-                      ) : null}
-                    </>
-                  ) : lic.resetAt ? (
-                    <>
-                      <span>Resets {formatDate(lic.resetAt)}</span>
-                      <div className="text-xs text-muted-foreground">{relativeDays(lic.resetAt)}</div>
-                    </>
-                  ) : (
-                    <span className="text-muted-foreground">Lifetime</span>
-                  )}
-                </TableCell>
-                <TableCell className="text-right">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={!lic.active || busyId === lic.id}
-                    onClick={() => onGenerate(lic.id)}
-                  >
-                    <KeyRoundIcon />
-                    {busyId === lic.id ? 'Generating…' : 'Generate key'}
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+      <CardContent className="flex flex-col gap-5">
+        <div>
+          <UsageMeter used={lic.usedUnits} limit={lic.limitUnits} />
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            {remaining < 0
+              ? `${formatNumber(-remaining)} pages over the limit`
+              : `${formatNumber(remaining)} of ${formatNumber(lic.limitUnits)} pages remaining`}
+          </p>
+        </div>
+
+        <KeysManager lic={lic} issuedKey={issuedKey} busy={busy} onCreate={onCreate} onRevoke={onRevoke} />
+
+        <QuickStart />
       </CardContent>
     </Card>
+  )
+}
+
+/** Lists a license's API keys and lets the customer create or revoke them. */
+function KeysManager({
+  lic,
+  issuedKey,
+  busy,
+  onCreate,
+  onRevoke,
+}: {
+  lic: PortalLicense
+  issuedKey: string | null
+  busy: boolean
+  onCreate: (licenseId: string, name: string) => void
+  onRevoke: (keyId: string, name: string) => void
+}) {
+  const [name, setName] = useState('')
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    onCreate(lic.id, name.trim() || 'New key')
+    setName('')
+  }
+
+  return (
+    <div className="flex flex-col gap-4 rounded-lg border border-border bg-muted-surface/40 p-4">
+      <div className="flex items-center justify-between">
+        <p className="flex items-center gap-1.5 text-sm font-medium">
+          <KeyRoundIcon className="size-4 text-muted-foreground" />
+          API keys
+        </p>
+        <span className="text-xs text-muted-foreground">
+          {lic.keys.length} active · all share this plan's quota
+        </span>
+      </div>
+
+      {issuedKey ? <KeyReveal apiKey={issuedKey} /> : null}
+
+      {lic.keys.length > 0 ? (
+        <ul className="divide-y divide-border rounded-md border border-border bg-card">
+          {lic.keys.map((k) => (
+            <li key={k.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{k.name}</p>
+                <p className="font-mono text-xs text-muted-foreground">{k.keyPrefix}••••••••</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="hidden whitespace-nowrap text-xs text-muted-foreground sm:inline">
+                  {k.lastUsedAt ? `Used ${relativeDays(k.lastUsedAt)}` : 'Never used'}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => onRevoke(k.id, k.name)}
+                >
+                  <Trash2Icon />
+                  Revoke
+                </Button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          No active keys. Create one to start generating PDFs.
+        </p>
+      )}
+
+      <form className="flex flex-col gap-2 sm:flex-row" onSubmit={submit}>
+        <Input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Name this key (e.g. production)"
+          maxLength={60}
+          disabled={!lic.active || busy}
+          className="sm:max-w-xs"
+        />
+        <Button type="submit" size="sm" disabled={!lic.active || busy}>
+          <PlusIcon />
+          {busy ? 'Creating…' : 'Create key'}
+        </Button>
+      </form>
+    </div>
+  )
+}
+
+/** One-time reveal shown immediately after a key is (re)generated. */
+function KeyReveal({ apiKey }: { apiKey: string }) {
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="flex items-center gap-1.5 text-sm font-medium text-primary">
+        <CheckCircle2Icon className="size-4" />
+        New API key — copy it now
+      </p>
+      <div className="flex items-center gap-2">
+        <code className="flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm break-all">
+          {apiKey}
+        </code>
+        <Button variant="outline" size="sm" onClick={() => copy(apiKey)}>
+          <CopyIcon />
+          Copy
+        </Button>
+      </div>
+      <p className="flex items-center gap-1.5 text-xs text-warning">
+        <TriangleAlertIcon className="size-3.5" />
+        This is the only time the key is shown. It can't be retrieved later — store it securely.
+      </p>
+    </div>
+  )
+}
+
+/** Collapsible copy-paste integration guide (no secret in the snippet). */
+function QuickStart() {
+  const snippet = `# .env
+A11YDOCS_LICENSE_KEY=<your-key>
+
+# app.ts
+import { createDocument } from '@barrierbreak/a11ydocs-pdf'
+
+const doc = createDocument({ title: 'Invoice', language: 'en-US' })
+doc.addPage({ size: 'A4' }).text('Hello', { x: 24, y: 700 })
+const bytes = doc.toUint8Array() // license is verified automatically`
+
+  return (
+    <details className="group rounded-lg border border-border">
+      <summary className="flex cursor-pointer items-center justify-between px-4 py-2.5 text-sm font-medium">
+        Quick start — use the key with the library
+        <span className="text-xs text-muted-foreground group-open:hidden">Show</span>
+        <span className="hidden text-xs text-muted-foreground group-open:inline">Hide</span>
+      </summary>
+      <div className="border-t border-border p-4">
+        <div className="mb-2 flex justify-end">
+          <Button variant="ghost" size="sm" onClick={() => copy(snippet)}>
+            <CopyIcon />
+            Copy
+          </Button>
+        </div>
+        <pre className="overflow-x-auto rounded-md border border-border bg-card p-3 text-xs">
+          <code>{snippet}</code>
+        </pre>
+      </div>
+    </details>
   )
 }
 
@@ -364,7 +513,7 @@ function ActivityCard({ telemetry }: { telemetry: { id: number; organizationName
           <TableBody>
             {telemetry.slice(0, 8).map((event) => (
               <TableRow key={event.id}>
-                <TableCell className="font-medium">{endpointLabel(event.endpoint)}</TableCell>
+                <TableCell className="font-medium">{activityLabel(event.status as never)}</TableCell>
                 <TableCell>
                   <TelemetryBadge status={event.status as never} />
                 </TableCell>
@@ -389,83 +538,18 @@ function ActivityCard({ telemetry }: { telemetry: { id: number; organizationName
 }
 
 /** Onboarding shown when the account has no license yet. */
-function GetStarted({
-  canStart,
-  starting,
-  onStart,
-}: {
-  canStart: boolean
-  starting: boolean
-  onStart: () => void
-}) {
+function NoLicense() {
   return (
     <Card className="border-primary/40 bg-primary/5">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <RocketIcon className="size-5 text-primary" />
-          Start your free trial
+          No license yet
         </CardTitle>
         <CardDescription>
-          Get a license key to start generating accessible PDFs. Trial output is watermarked “Trial
-          Mode”; upgrade any time to remove it.
+          Your account doesn’t have a license. Contact your account manager to set up a trial or plan.
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col items-start gap-3">
-        <Button size="sm" disabled={starting || !canStart} onClick={onStart}>
-          {starting ? 'Starting…' : 'Start free trial'}
-        </Button>
-        {!canStart ? (
-          <p className="text-sm text-muted-foreground">
-            You are not an owner or admin of any organization yet.
-          </p>
-        ) : null}
-      </CardContent>
-    </Card>
-  )
-}
-
-function KeyReveal({ apiKey }: { apiKey: string }) {
-  const snippet = `# Set in your environment (server URL is baked into the library):
-#   A11YDOCS_LICENSE_KEY=${apiKey}
-
-import { createDocument } from '@barrierbreak/a11ydocs-pdf'
-
-const doc = createDocument({ title: 'Invoice' })
-doc.addPage({ size: 'A4' }).text('Hello', { x: 24, y: 700 })
-doc.toUint8Array()`
-
-  return (
-    <Card className="border-primary/40 bg-primary/5">
-      <CardHeader>
-        <CardTitle>Your new API key</CardTitle>
-        <CardDescription>
-          Set <code>A11YDOCS_LICENSE_KEY</code> in your environment and import the library — checkout
-          and flush are automatic. Copy it now — it is shown only once and cannot be retrieved later.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <div className="flex items-center gap-2">
-          <code className="flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm break-all">
-            {apiKey}
-          </code>
-          <Button variant="outline" size="sm" onClick={() => copy(apiKey)}>
-            <CopyIcon />
-            Copy
-          </Button>
-        </div>
-        <div>
-          <div className="mb-1 flex items-center justify-between">
-            <p className="text-sm font-medium">Use it with the library</p>
-            <Button variant="ghost" size="sm" onClick={() => copy(snippet)}>
-              <CopyIcon />
-              Copy snippet
-            </Button>
-          </div>
-          <pre className="overflow-x-auto rounded-md border border-border bg-card p-3 text-xs">
-            <code>{snippet}</code>
-          </pre>
-        </div>
-      </CardContent>
     </Card>
   )
 }
@@ -479,21 +563,12 @@ function StatusBanner({ licenses }: { licenses: PortalLicense[] }) {
       </Banner>
     )
   }
-  if (licenses.some((lic) => lic.status === 'grace_period')) {
-    return (
-      <Banner tone="warning">
-        You are over your page limit. Current runs finish normally, but{' '}
-        <strong>future runs are watermarked “Over Limit”</strong> during the grace period. Add
-        credits before the grace period ends to avoid a hard block.
-      </Banner>
-    )
-  }
   const trial = licenses.find((lic) => lic.status === 'trial')
   if (trial) {
     return (
       <Banner tone="info">
         Trial active{trial.trialEndsAt ? ` — ends ${relativeDays(trial.trialEndsAt)}` : ''}. All
-        output PDFs are watermarked <strong>“Trial Mode”</strong> until you upgrade.
+        output PDFs are watermarked <strong>“A11yDocs - For Trial Use Only”</strong> until you upgrade.
       </Banner>
     )
   }

@@ -13,7 +13,7 @@ export function OrgSwitcher() {
   if (orgs.length <= 1) return null
 
   return (
-    <Select value={activeOrgId ?? undefined} onValueChange={setActiveOrgId}>
+    <Select value={activeOrgId ?? undefined} onValueChange={(v) => v && setActiveOrgId(v)}>
       <SelectTrigger className="w-full">
         <SelectValue placeholder="Select organization" />
       </SelectTrigger>

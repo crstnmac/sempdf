@@ -17,7 +17,12 @@
     "keygen": "npm run keygen --workspace @a11ydocs/license-api",
     "db:generate": "npm run db:generate --workspace @a11ydocs/license-api",
     "db:push": "npm run db:push --workspace @a11ydocs/license-api",
-    "auth:generate": "npm run auth:generate --workspace @a11ydocs/license-api"
+    "auth:generate": "npm run auth:generate --workspace @a11ydocs/license-api",
+    "demo:no-license": "tsx examples/01-no-license.ts",
+    "demo:dev-bypass": "tsx examples/02-dev-bypass.ts",
+    "demo:quota": "tsx examples/03-custom-guard-quota.ts",
+    "demo:watermark": "tsx examples/04-trial-watermark.ts",
+    "demo:live": "tsx examples/05-live-server.ts"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"
