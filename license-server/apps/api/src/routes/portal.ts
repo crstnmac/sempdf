@@ -70,13 +70,15 @@ portalRoutes.get("/overview", async (c) => {
     .where(inArray(licenses.accountId, orgIds))
     .orderBy(desc(licenses.createdAt));
 
-  // Active API keys for those licenses, grouped by license.
+  // API keys for those licenses, grouped by license. We fetch revoked keys too
+  // so the portal can show them as history (which key was retired, and when) —
+  // active keys drive the live integration, revoked ones are read-only audit.
   const licenseIds = myLicenses.map((lic) => lic.id);
   const keyRows = licenseIds.length
     ? await db
         .select()
         .from(apiKeys)
-        .where(and(inArray(apiKeys.licenseId, licenseIds), isNull(apiKeys.revokedAt)))
+        .where(inArray(apiKeys.licenseId, licenseIds))
         .orderBy(asc(apiKeys.createdAt))
     : [];
   const keysByLicense = new Map<string, typeof keyRows>();
@@ -113,13 +115,27 @@ portalRoutes.get("/overview", async (c) => {
       trialEndsAt: lic.trialEndsAt?.toISOString() ?? null,
       resetAt: windowResetAt(lic.window, lic.windowStartedAt),
       createdAt: lic.createdAt.toISOString(),
-      keys: (keysByLicense.get(lic.id) ?? []).map((k) => ({
-        id: k.id,
-        name: k.name,
-        keyPrefix: k.keyPrefix,
-        lastUsedAt: k.lastUsedAt?.toISOString() ?? null,
-        createdAt: k.createdAt.toISOString(),
-      })),
+      keys: (keysByLicense.get(lic.id) ?? [])
+        .filter((k) => k.revokedAt === null)
+        .map((k) => ({
+          id: k.id,
+          name: k.name,
+          keyPrefix: k.keyPrefix,
+          lastUsedAt: k.lastUsedAt?.toISOString() ?? null,
+          createdAt: k.createdAt.toISOString(),
+        })),
+      // Revoked keys, newest-revoked first — read-only history, no live secret.
+      revokedKeys: (keysByLicense.get(lic.id) ?? [])
+        .filter((k) => k.revokedAt !== null)
+        .sort((a, b) => (b.revokedAt!.getTime() - a.revokedAt!.getTime()))
+        .map((k) => ({
+          id: k.id,
+          name: k.name,
+          keyPrefix: k.keyPrefix,
+          lastUsedAt: k.lastUsedAt?.toISOString() ?? null,
+          createdAt: k.createdAt.toISOString(),
+          revokedAt: k.revokedAt!.toISOString(),
+        })),
     })),
     telemetry: myTelemetry.map((event) => ({
       id: event.id,
@@ -285,6 +301,39 @@ portalRoutes.delete("/keys/:keyId", async (c) => {
 
   await db.update(apiKeys).set({ revokedAt: new Date() }).where(eq(apiKeys.id, keyId));
   return c.json({ ok: true });
+});
+
+/**
+ * Rotates one API key: revokes it and issues a replacement with the SAME name on
+ * the same license, returning the new plaintext ONCE. Lets a customer swap a
+ * leaked/expiring secret without losing the key's identity (so app config that
+ * keys off the name/slot stays meaningful). The old secret dies immediately;
+ * other keys are untouched. Scoped to the caller's orgs; owners/admins only.
+ */
+portalRoutes.post("/keys/:keyId/rotate", async (c) => {
+  const userId = c.get("userId");
+  const keyId = c.req.param("keyId");
+
+  const [row] = await db
+    .select({
+      id: apiKeys.id,
+      name: apiKeys.name,
+      licenseId: apiKeys.licenseId,
+      accountId: licenses.accountId,
+      active: licenses.active,
+    })
+    .from(apiKeys)
+    .innerJoin(licenses, eq(apiKeys.licenseId, licenses.id))
+    .where(and(eq(apiKeys.id, keyId), isNull(apiKeys.revokedAt)));
+  if (!row) return c.json({ error: "unknown_key" }, 404);
+  if (!isOrgAdmin(await userOrgRole(userId, row.accountId))) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+  if (!row.active) return c.json({ error: "license_inactive" }, 409);
+
+  await db.update(apiKeys).set({ revokedAt: new Date() }).where(eq(apiKeys.id, keyId));
+  const apiKey = await createApiKey(row.licenseId, row.name);
+  return c.json(apiKey, 200);
 });
 
 /**
