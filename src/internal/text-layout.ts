@@ -2,6 +2,7 @@ import { PdfEngineError, PdfErrorCode } from "../errors.js";
 import type { PdfFont } from "../types.js";
 import type { EmbeddedTextGlyph, NormalizedTextOptions } from "./ops.js";
 import type { ParsedTrueTypeFont } from "./truetype.js";
+import { standardFontWidth } from "./standard-font-metrics.js";
 import { resolveTextDirection, type NormalizedTextBaseOptions, type NormalizedTextBlockOptions, type ResolvedTextDirection } from "./validation.js";
 
 export interface PositionedTextRun {
@@ -1286,39 +1287,16 @@ function getBuiltInAdvanceWidth(font: PdfFont & string, character: string): numb
   if (font.startsWith("Courier")) {
     return character === "\t" ? 2400 : 600;
   }
-
-  if (character === " ") {
-    return 278;
-  }
   if (character === "\t") {
     return 1112;
   }
 
-  if ("il.,'!:;|".includes(character)) {
-    return 278;
-  }
-
-  if (String.raw`[](){}\/`.includes(character)) {
-    return 333;
-  }
-
-  if ("MW@%&".includes(character)) {
-    return font.startsWith("Times") ? 889 : 944;
-  }
-
-  if (character >= "0" && character <= "9") {
-    return 556;
-  }
-
-  if (character >= "A" && character <= "Z") {
-    return font.startsWith("Times") ? 667 : 722;
-  }
-
-  if (character >= "a" && character <= "z") {
-    return font.startsWith("Times") ? 444 : 556;
-  }
-
-  return 500;
+  // Exact Adobe Core14 AFM advance for the standard proportional fonts. Falls
+  // back to an average only for fonts without an ASCII table (Symbol,
+  // ZapfDingbats) or code points outside printable ASCII.
+  const codePoint = character.codePointAt(0);
+  const width = codePoint === undefined ? undefined : standardFontWidth(font, codePoint);
+  return width ?? 500;
 }
 
 function supportsBuiltInCodePoint(codePoint: number): boolean {
