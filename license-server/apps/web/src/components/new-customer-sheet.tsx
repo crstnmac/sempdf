@@ -41,8 +41,12 @@ function defaultExpiry(): string {
 }
 
 /** One year from today (annual plan renewal date), as a yyyy-mm-dd string. */
-function oneYearOut(): string {
-  const d = new Date()
+function todayStr(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function yearAfter(date: string): string {
+  const d = date ? new Date(date) : new Date()
   d.setFullYear(d.getFullYear() + 1)
   return d.toISOString().slice(0, 10)
 }
@@ -66,6 +70,10 @@ export function NewCustomerSheet({ onCreated }: { onCreated: () => void }) {
   const [tierIndex, setTierIndex] = useState('0')
   const [customLimit, setCustomLimit] = useState('1000')
   const [expiry, setExpiry] = useState(defaultExpiry())
+  // Paid term: "auto" = starts today, expires +1yr; "custom" = operator dates.
+  const [termMode, setTermMode] = useState<'auto' | 'custom'>('auto')
+  const [startDate, setStartDate] = useState(todayStr())
+  const [expiryDate, setExpiryDate] = useState(yearAfter(todayStr()))
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<Result | null>(null)
 
@@ -73,6 +81,7 @@ export function NewCustomerSheet({ onCreated }: { onCreated: () => void }) {
   const isTrial = Number(tierIndex) === 0
   const isCustomTier = tier.limit === null
   const resolvedLimit = isCustomTier ? Number(customLimit) : tier.limit!
+  const isCustomTerm = !isTrial && termMode === 'custom'
 
   function reset() {
     setOrgName('')
@@ -81,6 +90,9 @@ export function NewCustomerSheet({ onCreated }: { onCreated: () => void }) {
     setTierIndex('0')
     setCustomLimit('1000')
     setExpiry(defaultExpiry())
+    setTermMode('auto')
+    setStartDate(todayStr())
+    setExpiryDate(yearAfter(todayStr()))
     setResult(null)
   }
 
@@ -98,6 +110,16 @@ export function NewCustomerSheet({ onCreated }: { onCreated: () => void }) {
       toast.error('Set a trial expiry date.')
       return
     }
+    if (isCustomTerm) {
+      if (!startDate || !expiryDate) {
+        toast.error('Set both a start and an expiry date.')
+        return
+      }
+      if (new Date(expiryDate).getTime() <= new Date(startDate).getTime()) {
+        toast.error('Expiry date must be after the start date.')
+        return
+      }
+    }
     setSubmitting(true)
     try {
       const res = await api.createCustomer({
@@ -108,6 +130,9 @@ export function NewCustomerSheet({ onCreated }: { onCreated: () => void }) {
         limit: resolvedLimit,
         window: 'year',
         ...(isTrial ? { trialEndsAt: new Date(expiry).toISOString() } : {}),
+        ...(isCustomTerm
+          ? { startsAt: new Date(startDate).toISOString(), expiresAt: new Date(expiryDate).toISOString() }
+          : {}),
       })
       setResult({
         customerEmail: res.customerEmail,
@@ -236,11 +261,49 @@ export function NewCustomerSheet({ onCreated }: { onCreated: () => void }) {
                 />
               </div>
             ) : (
-              <div className="grid gap-1.5">
-                <Label htmlFor="plan-expiry">Plan expiry date</Label>
-                <Input id="plan-expiry" type="date" value={oneYearOut()} disabled />
-                <p className="text-xs text-muted-foreground">Annual plan — renews one year from today.</p>
-              </div>
+              <>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="term">Term</Label>
+                  <Select value={termMode} onValueChange={(v) => setTermMode((v as 'auto' | 'custom') ?? 'auto')}>
+                    <SelectTrigger id="term">
+                      <SelectValue>{termMode === 'auto' ? '1 year from today' : 'Custom dates'}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">1 year from today</SelectItem>
+                      <SelectItem value="custom">Custom dates</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {isCustomTerm ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="startDate">Start date</Label>
+                      <Input
+                        id="startDate"
+                        type="date"
+                        value={startDate}
+                        onChange={(event) => setStartDate(event.target.value)}
+                      />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="expiryDate">Expiry date</Label>
+                      <Input
+                        id="expiryDate"
+                        type="date"
+                        min={startDate}
+                        value={expiryDate}
+                        onChange={(event) => setExpiryDate(event.target.value)}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="plan-expiry">Plan expiry date</Label>
+                    <Input id="plan-expiry" type="date" value={yearAfter(todayStr())} disabled />
+                    <p className="text-xs text-muted-foreground">Annual plan — renews one year from today.</p>
+                  </div>
+                )}
+              </>
             )}
 
             <SheetFooter className="px-0">

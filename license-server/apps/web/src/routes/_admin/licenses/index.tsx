@@ -4,8 +4,10 @@ import { Link, createFileRoute } from '@tanstack/react-router'
 import { SiteHeader } from '#/components/site-header.tsx'
 import {
   PageContainer,
+  Pager,
   StateNotice,
   StatusBadge,
+  TableSkeleton,
   UsageMeter,
   WatermarkBadge,
 } from '#/components/page-shell.tsx'
@@ -29,9 +31,33 @@ import {
   TableRow,
 } from '#/components/ui/table.tsx'
 import { useAsync } from '#/hooks/use-async.ts'
-import { type TenantStatus, api, formatDate, formatNumber } from '#/lib/api.ts'
+import { type DashboardTenant, type TenantStatus, api, formatDate, formatNumber, relativeDays } from '#/lib/api.ts'
 
 export const Route = createFileRoute('/_admin/licenses/')({ component: LicensesPage })
+
+/** Status-aware term date: trials show when the trial ends, paid annual plans
+ *  their renewal date, lifetime plans none. */
+function termCell(tenant: DashboardTenant): React.ReactNode {
+  if (tenant.status === 'trial') {
+    return tenant.trialEndsAt ? (
+      <div>
+        {formatDate(tenant.trialEndsAt)}
+        <div className="text-xs text-muted-foreground">trial · {relativeDays(tenant.trialEndsAt)}</div>
+      </div>
+    ) : (
+      '—'
+    )
+  }
+  if (tenant.window === 'lifetime') return <span className="text-muted-foreground">Lifetime</span>
+  return tenant.expiresAt ? (
+    <div>
+      {formatDate(tenant.expiresAt)}
+      <div className="text-xs text-muted-foreground">renews · {relativeDays(tenant.expiresAt)}</div>
+    </div>
+  ) : (
+    <span className="text-muted-foreground">—</span>
+  )
+}
 
 const STATUS_FILTERS: { value: TenantStatus | 'all'; label: string }[] = [
   { value: 'all', label: 'All statuses' },
@@ -40,24 +66,22 @@ const STATUS_FILTERS: { value: TenantStatus | 'all'; label: string }[] = [
   { value: 'hard_blocked', label: 'Hard blocked' },
 ]
 
+const PAGE_SIZE = 25
+
 function LicensesPage() {
-  const { data, loading, error, refetch } = useAsync(() => api.dashboard())
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<TenantStatus | 'all'>('all')
+  const [page, setPage] = useState(1)
 
-  const tenants = useMemo(() => {
-    const all = data?.tenants ?? []
-    const q = query.trim().toLowerCase()
-    return all.filter((tenant) => {
-      if (status !== 'all' && tenant.status !== status) return false
-      if (!q) return true
-      return (
-        tenant.organizationName.toLowerCase().includes(q) ||
-        tenant.accountId.toLowerCase().includes(q) ||
-        tenant.keyPrefix.toLowerCase().includes(q)
-      )
-    })
-  }, [data, query, status])
+  const params = useMemo(
+    () => ({ page, pageSize: PAGE_SIZE, q: query.trim() || undefined, status }),
+    [page, query, status],
+  )
+  const { data, loading, error, refetch } = useAsync(() => api.licenses(params), [JSON.stringify(params)])
+
+  const rows = data?.rows ?? []
+  const total = data?.total ?? 0
+  const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
     <>
@@ -73,36 +97,47 @@ function LicensesPage() {
         }
       />
       <PageContainer>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <Input
+            placeholder="Search org, account, or key prefix…"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value)
+              setPage(1)
+            }}
+            className="sm:max-w-xs"
+          />
+          <Select
+            value={status}
+            onValueChange={(value) => {
+              setStatus((value as TenantStatus | 'all') ?? 'all')
+              setPage(1)
+            }}
+          >
+            <SelectTrigger className="sm:w-48">
+              <SelectValue>
+                {STATUS_FILTERS.find((f) => f.value === status)?.label ?? 'All statuses'}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_FILTERS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-sm text-muted-foreground sm:ml-auto">
+            {formatNumber(total)} total
+          </span>
+        </div>
+
         {loading && !data ? (
-          <StateNotice title="Loading licenses" message="Fetching tenants from the API." />
+          <TableSkeleton columns={6} />
         ) : error ? (
           <StateNotice title="Licenses unavailable" message={error} tone="warning" onRetry={refetch} />
         ) : (
           <>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <Input
-                placeholder="Search account or key prefix…"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                className="sm:max-w-xs"
-              />
-              <Select value={status} onValueChange={(value) => setStatus(value as TenantStatus | 'all')}>
-                <SelectTrigger className="sm:w-48">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUS_FILTERS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <span className="text-sm text-muted-foreground sm:ml-auto">
-                {formatNumber(tenants.length)} shown
-              </span>
-            </div>
-
             <Card>
               <CardContent className="p-0">
                 <Table>
@@ -113,11 +148,11 @@ function LicensesPage() {
                       <TableHead>Watermark</TableHead>
                       <TableHead className="w-56">Usage</TableHead>
                       <TableHead>Window</TableHead>
-                      <TableHead>Trial ends</TableHead>
+                      <TableHead>Renews / ends</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {tenants.map((tenant) => (
+                    {rows.map((tenant) => (
                       <TableRow key={tenant.id}>
                         <TableCell className="font-medium">
                           <Link
@@ -144,10 +179,10 @@ function LicensesPage() {
                           <UsageMeter used={tenant.usedUnits} limit={tenant.limitUnits} />
                         </TableCell>
                         <TableCell>{tenant.window === 'year' ? 'Annual' : 'Lifetime'}</TableCell>
-                        <TableCell>{formatDate(tenant.trialEndsAt)}</TableCell>
+                        <TableCell>{termCell(tenant)}</TableCell>
                       </TableRow>
                     ))}
-                    {tenants.length === 0 ? (
+                    {rows.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={6} className="text-center text-muted-foreground">
                           No licenses match the current filters.
@@ -158,6 +193,8 @@ function LicensesPage() {
                 </Table>
               </CardContent>
             </Card>
+
+            <Pager page={page} lastPage={lastPage} loading={loading} onPage={setPage} />
           </>
         )}
       </PageContainer>

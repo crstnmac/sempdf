@@ -6,12 +6,14 @@ import { ArrowLeftIcon } from 'lucide-react'
 import { SiteHeader } from '#/components/site-header.tsx'
 import {
   PageContainer,
+  Pager,
   StateNotice,
   StatusBadge,
   TelemetryBadge,
   UsageMeter,
   WatermarkBadge,
 } from '#/components/page-shell.tsx'
+import { useConfirm } from '#/components/confirm.tsx'
 import { Button } from '#/components/ui/button.tsx'
 import {
   Card,
@@ -35,7 +37,9 @@ import {
   ANNUAL_TIERS,
   ApiError,
   type LicenseUsage,
+  type TelemetryRow,
   type UsageWindow,
+  activityLabel,
   api,
   formatDate,
   formatDateTime,
@@ -57,6 +61,7 @@ export const Route = createFileRoute('/_admin/licenses/$id')({ component: Licens
 function LicenseDetailPage() {
   const { id } = Route.useParams()
   const { data, loading, error, refetch } = useAsync(() => api.licenseUsage(id), [id])
+  const confirm = useConfirm()
 
   const [trialDays, setTrialDays] = useState('15')
   const [trialPages, setTrialPages] = useState('1000')
@@ -118,11 +123,21 @@ function LicenseDetailPage() {
                     }
                   />
                   <Stat label="Metric" value={data.metric} />
-                  <Stat
-                    label="Trial ends"
-                    value={formatDate(data.trialEndsAt)}
-                    hint={data.trialEndsAt ? relativeDays(data.trialEndsAt) : undefined}
-                  />
+                  {data.trialEndsAt ? (
+                    <Stat
+                      label="Trial ends"
+                      value={formatDate(data.trialEndsAt)}
+                      hint={relativeDays(data.trialEndsAt)}
+                    />
+                  ) : data.window === 'lifetime' ? (
+                    <Stat label="Term" value="Lifetime" hint="never expires" />
+                  ) : (
+                    <Stat
+                      label="Renews"
+                      value={formatDate(data.expiresAt)}
+                      hint={data.expiresAt ? relativeDays(data.expiresAt) : 'no renewal date'}
+                    />
+                  )}
                   <Stat
                     label="Limit reached"
                     value={formatDate(data.firstOverageAt)}
@@ -152,21 +167,19 @@ function LicenseDetailPage() {
                 <CardContent className="flex flex-col gap-4">
                   <form
                     className="flex items-end gap-3"
-                    onSubmit={(event) => {
+                    onSubmit={async (event) => {
                       event.preventDefault()
                       const days = Number(trialDays)
                       if (!Number.isFinite(days) || days <= 0) {
                         toast.error('Enter a positive number of days.')
                         return
                       }
-                      if (
-                        !window.confirm(
-                          `Extend the trial for ${data.organizationName} by ${days} day${days === 1 ? '' : 's'}?\n\n` +
-                            'This moves the trial end date out, resets overage state, and reactivates the license if it was hard-blocked.',
-                        )
-                      ) {
-                        return
-                      }
+                      const ok = await confirm({
+                        title: `Extend trial by ${days} day${days === 1 ? '' : 's'}?`,
+                        description: `Moves ${data.organizationName}'s trial end date out, resets overage state, and reactivates the license if it was hard-blocked.`,
+                        confirmLabel: 'Extend trial',
+                      })
+                      if (!ok) return
                       void run('extend', async () => {
                         const res = await api.extendTrial(id, { days })
                         toast.success(`Trial extended to ${formatDate(res.trialEndsAt)}.`)
@@ -191,7 +204,7 @@ function LicenseDetailPage() {
 
                   <form
                     className="flex flex-wrap items-end gap-3"
-                    onSubmit={(event) => {
+                    onSubmit={async (event) => {
                       event.preventDefault()
                       const pages = Number(trialPages)
                       if (!Number.isFinite(pages) || pages <= 0) {
@@ -199,17 +212,15 @@ function LicenseDetailPage() {
                         return
                       }
                       const recurring = pagesMode === 'recurring'
-                      if (
-                        !window.confirm(
-                          `Add ${formatNumber(pages)} ${recurring ? 'recurring' : 'one-time'} pages to ${data.organizationName}?\n\n` +
-                            (recurring
-                              ? `The per-period limit will rise from ${formatNumber(data.limit)} to ${formatNumber(data.limit + pages)} pages, every period.`
-                              : `${formatNumber(pages)} extra pages will be added for the current period only (effective limit ${formatNumber(data.limit + pages)}); they expire at the next reset.`) +
-                            '\n\nThis resets overage state and reactivates the license if it was hard-blocked.',
-                        )
-                      ) {
-                        return
-                      }
+                      const ok = await confirm({
+                        title: `Add ${formatNumber(pages)} ${recurring ? 'recurring' : 'one-time'} pages?`,
+                        description: (recurring
+                          ? `${data.organizationName}'s per-period limit rises from ${formatNumber(data.limit)} to ${formatNumber(data.limit + pages)} pages, every period.`
+                          : `${formatNumber(pages)} extra pages for the current period only (effective limit ${formatNumber(data.limit + pages)}); they expire at the next reset.`) +
+                          ' Resets overage state and reactivates the license if it was hard-blocked.',
+                        confirmLabel: 'Add pages',
+                      })
+                      if (!ok) return
                       void run('pages', async () => {
                         const res = await api.addPages(id, pages, recurring)
                         toast.success(
@@ -272,10 +283,14 @@ function LicenseDetailPage() {
                     <Button
                       variant="destructive"
                       disabled={busy !== null}
-                      onClick={() => {
-                        if (!window.confirm('Revoke this license? Clients will fail to authorize.')) {
-                          return
-                        }
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: 'Revoke this license?',
+                          description: `Every API key on ${data.organizationName} stops working immediately — clients will fail to authorize. This cannot be undone from here.`,
+                          confirmLabel: 'Revoke license',
+                          destructive: true,
+                        })
+                        if (!ok) return
                         void run('revoke', async () => {
                           await api.revoke(id)
                           toast.success('License revoked.')
@@ -295,51 +310,7 @@ function LicenseDetailPage() {
               </Card>
             </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Telemetry</CardTitle>
-                <CardDescription>Recent authorize / usage events for this license</CardDescription>
-              </CardHeader>
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Endpoint</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Pages</TableHead>
-                      <TableHead>Job</TableHead>
-                      <TableHead className="text-right">When</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {data.telemetry.map((event) => (
-                      <TableRow key={event.id}>
-                        <TableCell className="font-mono text-xs">{event.endpoint}</TableCell>
-                        <TableCell>
-                          <TelemetryBadge status={event.status} />
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatNumber(event.pages)}
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {event.jobDescription ?? event.jobId ?? '—'}
-                        </TableCell>
-                        <TableCell className="text-right text-xs text-muted-foreground">
-                          {formatDateTime(event.createdAt)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    {data.telemetry.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground">
-                          No telemetry for this license yet.
-                        </TableCell>
-                      </TableRow>
-                    ) : null}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
+            <LicenseTelemetryCard id={id} />
           </>
         ) : null}
       </PageContainer>
@@ -347,24 +318,133 @@ function LicenseDetailPage() {
   )
 }
 
-function oneYearOut(): string {
-  const d = new Date()
+const TELEMETRY_PAGE_SIZE = 25
+
+/** Server-paginated generation events for one license. */
+function LicenseTelemetryCard({ id }: { id: string }) {
+  const [page, setPage] = useState(1)
+  const { data, loading } = useAsync(
+    () => api.licenseTelemetry(id, { page, pageSize: TELEMETRY_PAGE_SIZE }),
+    [id, page],
+  )
+  const rows = data?.rows ?? []
+  const total = data?.total ?? 0
+  const lastPage = Math.max(1, Math.ceil(total / TELEMETRY_PAGE_SIZE))
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Telemetry</CardTitle>
+        <CardDescription>
+          {total > 0
+            ? `${formatNumber(total)} generation events with the client + runtime each run reported`
+            : 'Generation events with the client + runtime each run reported'}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4 p-0">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Event</TableHead>
+                <TableHead className="text-right">Pages</TableHead>
+                <TableHead>Job</TableHead>
+                <TableHead>Client / runtime</TableHead>
+                <TableHead>Document</TableHead>
+                <TableHead className="text-right">When</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((event) => (
+                <TableRow key={event.id}>
+                  <TableCell>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm">{activityLabel(event.status)}</span>
+                      <TelemetryBadge status={event.status} />
+                    </div>
+                    {event.errorCode ? (
+                      <div className="mt-0.5 font-mono text-xs text-destructive">{event.errorCode}</div>
+                    ) : null}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{formatNumber(event.pages)}</TableCell>
+                  <TableCell className="max-w-40 truncate text-xs text-muted-foreground">
+                    {event.jobDescription ?? event.jobId ?? '—'}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{clientLine(event)}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{documentLine(event)}</TableCell>
+                  <TableCell className="text-right text-xs whitespace-nowrap text-muted-foreground">
+                    {formatDateTime(event.createdAt)}
+                  </TableCell>
+                </TableRow>
+              ))}
+              {!loading && rows.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    No telemetry for this license yet.
+                  </TableCell>
+                </TableRow>
+              ) : null}
+            </TableBody>
+          </Table>
+        </div>
+        {lastPage > 1 ? (
+          <div className="px-4 pb-4">
+            <Pager page={page} lastPage={lastPage} loading={loading} onPage={setPage} />
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  )
+}
+
+/** SDK + runtime a generation reported (lib version · platform · node). */
+function clientLine(event: TelemetryRow): React.ReactNode {
+  const parts = [
+    event.libVersion ? `lib ${event.libVersion}` : null,
+    event.platform,
+    event.nodeVersion ? `node ${event.nodeVersion}` : null,
+  ].filter(Boolean)
+  return parts.length ? <span className="font-mono">{parts.join(' · ')}</span> : '—'
+}
+
+/** Document attributes a generation reported (conformance · language · tagged). */
+function documentLine(event: TelemetryRow): React.ReactNode {
+  const parts = [
+    event.conformance,
+    event.language,
+    event.tagged === null ? null : event.tagged ? 'tagged' : 'untagged',
+  ].filter(Boolean)
+  return parts.length ? parts.join(' · ') : '—'
+}
+
+function todayStr(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function yearAfter(date: string): string {
+  const d = date ? new Date(date) : new Date()
   d.setFullYear(d.getFullYear() + 1)
   return d.toISOString().slice(0, 10)
 }
 
 function ChangePlanCard({ data, onChanged }: { data: LicenseUsage; onChanged: () => void }) {
+  const confirm = useConfirm()
   const customIndex = ANNUAL_TIERS.findIndex((t) => t.limit === null)
   const matchedTier = ANNUAL_TIERS.findIndex((t) => t.limit === data.baseLimit)
   const [tierIndex, setTierIndex] = useState(String(matchedTier === -1 ? customIndex : matchedTier))
   const [customLimit, setCustomLimit] = useState(String(data.baseLimit))
   const [planWindow, setPlanWindow] = useState<UsageWindow>(data.window)
+  // Term: "auto" = starts today, expires one year out; "custom" = operator dates.
+  const [termMode, setTermMode] = useState<'auto' | 'custom'>('auto')
+  const [startDate, setStartDate] = useState(data.windowStartedAt ? data.windowStartedAt.slice(0, 10) : todayStr())
+  const [expiryDate, setExpiryDate] = useState(data.expiresAt ? data.expiresAt.slice(0, 10) : yearAfter(todayStr()))
   const isTrial = data.trialEndsAt !== null
   const [busy, setBusy] = useState(false)
 
   const tier = ANNUAL_TIERS[Number(tierIndex)] ?? ANNUAL_TIERS[0]!
   const isCustomTier = tier.limit === null
   const resolvedLimit = isCustomTier ? Number(customLimit) : tier.limit!
+  const isCustomTerm = planWindow === 'year' && termMode === 'custom'
 
   return (
     <Card>
@@ -379,25 +459,65 @@ function ChangePlanCard({ data, onChanged }: { data: LicenseUsage; onChanged: ()
       <CardContent>
         <form
           className="flex flex-wrap items-end gap-3"
-          onSubmit={(event) => {
+          onSubmit={async (event) => {
             event.preventDefault()
             if (!Number.isFinite(resolvedLimit) || resolvedLimit <= 0) {
               toast.error('Enter a positive page limit for the custom tier.')
               return
             }
-            const expires = planWindow === 'year' ? new Date(oneYearOut()).toISOString() : null
+            // Lifetime: no dates. Annual auto: starts today, expires +1yr.
+            // Annual custom: operator's start + expiry.
+            let starts: string | null = null
+            let expires: string | null = null
+            if (planWindow === 'year') {
+              if (termMode === 'custom') {
+                if (!startDate || !expiryDate) {
+                  toast.error('Set both a start and an expiry date.')
+                  return
+                }
+                if (new Date(expiryDate).getTime() <= new Date(startDate).getTime()) {
+                  toast.error('Expiry date must be after the start date.')
+                  return
+                }
+                starts = new Date(startDate).toISOString()
+                expires = new Date(expiryDate).toISOString()
+              } else {
+                starts = new Date(todayStr()).toISOString()
+                expires = new Date(yearAfter(todayStr())).toISOString()
+              }
+            }
             const willConvert = isTrial
             const downgradeBelowUsage = !willConvert && resolvedLimit < data.used
-            const ok = window.confirm(
-              `Change ${data.organizationName} to ${formatLimit(resolvedLimit)} pages / ${planWindow === 'year' ? 'annual' : 'lifetime'}?\n\n` +
-                (willConvert
-                  ? `• Converts the trial to paid: removes the watermark, ends the trial, reactivates, and flushes usage (currently ${formatNumber(data.used)}) to 0.\n`
-                  : '') +
-                (downgradeBelowUsage
-                  ? `⚠ New limit (${formatLimit(resolvedLimit)}) is below current usage (${formatNumber(data.used)}) — the license will stay hard-blocked until usage resets.\n\n`
-                  : '') +
-                `Renewal date: ${expires ? formatDate(expires) : 'none (perpetual)'}.`,
-            )
+            const termLine =
+              planWindow === 'year'
+                ? `Term: ${formatDate(starts)} → ${formatDate(expires)}.`
+                : 'Term: lifetime (perpetual).'
+            const ok = await confirm({
+              title: willConvert
+                ? `Convert ${data.organizationName} to paid?`
+                : `Change ${data.organizationName}'s plan?`,
+              description: (
+                <span className="flex flex-col gap-1.5 text-left">
+                  <span>
+                    {formatLimit(resolvedLimit)} pages / {planWindow === 'year' ? 'annual' : 'lifetime'}. {termLine}
+                  </span>
+                  {willConvert ? (
+                    <span>
+                      Converts the trial to paid: removes the watermark, ends the trial, reactivates,
+                      and flushes usage (currently {formatNumber(data.used)}) to 0.
+                    </span>
+                  ) : null}
+                  {downgradeBelowUsage ? (
+                    <span className="font-medium text-destructive">
+                      New limit ({formatLimit(resolvedLimit)}) is below current usage (
+                      {formatNumber(data.used)}) — the license stays hard-blocked until usage resets.
+                    </span>
+                  ) : null}
+                </span>
+              ),
+              confirmLabel: willConvert ? 'Convert to paid' : 'Change plan',
+              destructive: downgradeBelowUsage,
+            })
             if (!ok) return
             setBusy(true)
             void (async () => {
@@ -405,6 +525,7 @@ function ChangePlanCard({ data, onChanged }: { data: LicenseUsage; onChanged: ()
                 const res = await api.changePlan(data.id, {
                   limit: resolvedLimit,
                   window: planWindow,
+                  startsAt: starts,
                   expiresAt: expires,
                   convertToPaid: willConvert,
                 })
@@ -461,10 +582,50 @@ function ChangePlanCard({ data, onChanged }: { data: LicenseUsage; onChanged: ()
             </Select>
           </div>
           {planWindow === 'year' ? (
-            <div className="grid gap-1.5">
-              <Label htmlFor="plan-expires">Plan expiry date</Label>
-              <Input id="plan-expires" type="date" value={oneYearOut()} disabled className="w-40" />
-            </div>
+            <>
+              <div className="grid gap-1.5">
+                <Label htmlFor="plan-term">Term</Label>
+                <Select value={termMode} onValueChange={(v) => setTermMode((v as 'auto' | 'custom') ?? 'auto')}>
+                  <SelectTrigger id="plan-term" className="w-44">
+                    <SelectValue>{termMode === 'auto' ? '1 year from today' : 'Custom dates'}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">1 year from today</SelectItem>
+                    <SelectItem value="custom">Custom dates</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {isCustomTerm ? (
+                <>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="plan-start">Start date</Label>
+                    <Input
+                      id="plan-start"
+                      type="date"
+                      value={startDate}
+                      onChange={(event) => setStartDate(event.target.value)}
+                      className="w-40"
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="plan-expiry">Expiry date</Label>
+                    <Input
+                      id="plan-expiry"
+                      type="date"
+                      min={startDate}
+                      value={expiryDate}
+                      onChange={(event) => setExpiryDate(event.target.value)}
+                      className="w-40"
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="grid gap-1.5">
+                  <Label htmlFor="plan-expires">Plan expiry date</Label>
+                  <Input id="plan-expires" type="date" value={yearAfter(todayStr())} disabled className="w-40" />
+                </div>
+              )}
+            </>
           ) : null}
           <Button type="submit" disabled={busy}>
             {busy ? 'Saving…' : isTrial ? 'Convert to paid' : 'Change plan'}

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { Link, createFileRoute } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import {
   CheckCircle2Icon,
@@ -12,6 +12,8 @@ import {
 } from 'lucide-react'
 
 import { SiteHeader } from '#/components/site-header.tsx'
+import { UsageTrend } from '#/components/usage-trend.tsx'
+import { useConfirm } from '#/components/confirm.tsx'
 import {
   PageContainer,
   StateNotice,
@@ -71,6 +73,7 @@ async function copy(text: string) {
 
 function PortalOverviewPage() {
   const { data, loading, error, refetch } = useAsync(() => portalApi.overview())
+  const confirm = useConfirm()
   const [issued, setIssued] = useState<{ licenseId: string; key: string } | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
 
@@ -96,13 +99,14 @@ function PortalOverviewPage() {
   }
 
   async function revokeKey(keyId: string, name: string) {
-    if (
-      !window.confirm(
-        `Revoke the key "${name}"? Any app using it will stop working immediately. Other keys keep working.`,
-      )
-    ) {
-      return
-    }
+    const ok = await confirm({
+      title: `Revoke "${name}"?`,
+      description:
+        'Any app using this key will stop working immediately. Other keys on this license keep working.',
+      confirmLabel: 'Revoke key',
+      destructive: true,
+    })
+    if (!ok) return
     try {
       await portalApi.revokeKey(keyId)
       toast.success('Key revoked.')
@@ -137,6 +141,8 @@ function PortalOverviewPage() {
               <StatusBanner licenses={data.licenses} />
 
               {primary ? <UsageSummary summary={data.summary} primary={primary} /> : null}
+
+              <UsageTrend />
 
               <LicensesSection
                 licenses={data.licenses}
@@ -496,9 +502,14 @@ const bytes = doc.toUint8Array() // license is verified automatically`
 function ActivityCard({ telemetry }: { telemetry: { id: number; organizationName: string; endpoint: string; status: PortalLicense['status'] | string; pages: number; createdAt: string }[] }) {
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Recent activity</CardTitle>
-        <CardDescription>The latest generation events for your organizations</CardDescription>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <div>
+          <CardTitle>Recent activity</CardTitle>
+          <CardDescription>The latest generation events for your organizations</CardDescription>
+        </div>
+        <Button render={<Link to="/portal/activity" />} nativeButton={false} variant="ghost" size="sm">
+          View all
+        </Button>
       </CardHeader>
       <CardContent className="p-0">
         <Table>

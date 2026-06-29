@@ -1,5 +1,6 @@
 import { Badge } from '#/components/ui/badge.tsx'
 import { Button } from '#/components/ui/button.tsx'
+import { Skeleton } from '#/components/ui/skeleton.tsx'
 import {
   type BadgeTone,
   type TelemetryStatus,
@@ -71,6 +72,51 @@ export function UsageMeter({
         <div className={`h-full ${barColor}`} style={{ width: `${pct}%` }} />
         {/* 80% alert marker */}
         <span className="absolute top-0 h-full w-px bg-border" style={{ left: '80%' }} />
+      </div>
+    </div>
+  )
+}
+
+/** Prev/next page controls with a "Page X of Y" label. Hidden when single page. */
+export function Pager({
+  page,
+  lastPage,
+  loading,
+  onPage,
+}: {
+  page: number
+  lastPage: number
+  loading?: boolean
+  onPage: (page: number) => void
+}) {
+  if (lastPage <= 1) return null
+  return (
+    <div className="flex items-center justify-end gap-2">
+      <Button variant="outline" size="sm" disabled={page <= 1 || loading} onClick={() => onPage(Math.max(1, page - 1))}>
+        Previous
+      </Button>
+      <span className="text-sm text-muted-foreground">
+        Page {page} of {lastPage}
+      </span>
+      <Button variant="outline" size="sm" disabled={page >= lastPage || loading} onClick={() => onPage(page + 1)}>
+        Next
+      </Button>
+    </div>
+  )
+}
+
+/** Placeholder rows for a table that's still loading, inside a card. */
+export function TableSkeleton({ rows = 6, columns = 4 }: { rows?: number; columns?: number }) {
+  return (
+    <div className="rounded-lg border border-border bg-card">
+      <div className="flex flex-col divide-y divide-border">
+        {Array.from({ length: rows }).map((_, r) => (
+          <div key={r} className="flex items-center gap-4 px-4 py-3.5">
+            {Array.from({ length: columns }).map((_, c) => (
+              <Skeleton key={c} className={c === 0 ? 'h-4 flex-1' : 'h-4 w-20'} />
+            ))}
+          </div>
+        ))}
       </div>
     </div>
   )
