@@ -29,10 +29,13 @@
   },
   "files": [
     "dist/src",
+    "fonts/liberation",
     "README.md"
   ],
   "scripts": {
     "prebuild": "node scripts/bake-license-server.mjs",
+    "fetch-fonts": "node scripts/fetch-fonts.mjs",
+    "check-fonts": "node scripts/check-fonts.mjs",
     "build": "rm -rf dist && tsc -p tsconfig.json",
     "build:lib": "rm -rf dist && tsc -p tsconfig.build.json",
     "docs": "npm run docs:build",
@@ -44,7 +47,7 @@
     "test:performance": "npm run build && ZEROPDF_LICENSE_DEV=1 node --test dist/test/performance.test.js",
     "test:stress": "npm run build && ZEROPDF_LICENSE_DEV=1 node --test dist/test/stress.test.js",
     "lint": "tsc --noEmit",
-    "prepublishOnly": "npm run build && npm run test && npm run build:lib",
+    "prepublishOnly": "npm run check-fonts && npm run build && npm run test && npm run build:lib",
     "typecheck": "tsc --noEmit",
     "validate:pdf": "node scripts/validate-verapdf.mjs",
     "visual:render": "npm run build && ZEROPDF_LICENSE_DEV=1 node scripts/render-visual-fixtures.mjs",

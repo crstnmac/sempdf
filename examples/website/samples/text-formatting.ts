@@ -15,7 +15,7 @@ doc.renderTemplate({
     heading2: { fontSize: 11, color: "navy", marginTop: 12, marginBottom: 8 }
   },
   blocks: [
-    { type: "heading", text: "Superscript & subscript", options: { level: 2 } },
+    { type: "heading", text: "Superscript & subscript", options: { level: 1 } },
     {
       type: "richParagraph",
       runs: [
