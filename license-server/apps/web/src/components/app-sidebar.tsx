@@ -8,10 +8,11 @@ import {
   KeyRoundIcon,
   LayoutDashboardIcon,
   SettingsIcon,
-  ShieldCheckIcon,
+  UserCircleIcon,
   UsersIcon,
 } from 'lucide-react'
 
+import { Logo } from '#/components/logo.tsx'
 import { NavUser } from '#/components/nav-user.tsx'
 import {
   Sidebar,
@@ -27,24 +28,27 @@ import {
 import type { SessionUser } from '#/lib/auth-client.ts'
 
 type NavItem = { title: string; to: LinkProps['to']; icon: LucideIcon }
-type SidebarConfig = { title: string; home: LinkProps['to']; nav: NavItem[] }
+type SidebarConfig = { label: string; home: LinkProps['to']; nav: NavItem[] }
 
 const ADMIN_NAV: NavItem[] = [
   { title: 'Dashboard', to: '/', icon: LayoutDashboardIcon },
+  { title: 'Customers', to: '/customers', icon: BuildingIcon },
   { title: 'Licenses', to: '/licenses', icon: KeyRoundIcon },
   { title: 'Usage & telemetry', to: '/usage', icon: GaugeIcon },
 ]
 
 const PORTAL_NAV: NavItem[] = [
   { title: 'Overview', to: '/portal', icon: BuildingIcon },
+  { title: 'Activity', to: '/portal/activity', icon: GaugeIcon },
   { title: 'Members', to: '/portal/members', icon: UsersIcon },
   { title: 'Notifications', to: '/portal/notifications', icon: BellIcon },
   { title: 'Settings', to: '/portal/settings', icon: SettingsIcon },
+  { title: 'Account', to: '/portal/account', icon: UserCircleIcon },
 ]
 
 const VARIANTS: Record<'admin' | 'portal', SidebarConfig> = {
-  admin: { title: 'A11yDocs License Ops', home: '/', nav: ADMIN_NAV },
-  portal: { title: 'Organization Admin', home: '/portal', nav: PORTAL_NAV },
+  admin: { label: 'License Ops', home: '/', nav: ADMIN_NAV },
+  portal: { label: 'Organization', home: '/portal', nav: PORTAL_NAV },
 }
 
 export function AppSidebar({
@@ -63,14 +67,13 @@ export function AppSidebar({
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton render={<Link to={config.home} />} className="data-[slot=sidebar-menu-button]:p-1.5!">
-              <ShieldCheckIcon className="size-5!" />
-              <span className="text-base font-semibold">{config.title}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        <Link
+          to={config.home}
+          className="flex items-center gap-2 rounded-lg px-1.5 py-1.5 hover:bg-sidebar-accent"
+        >
+          <Logo className="h-6 w-auto shrink-0" />
+          <span className="text-xs font-medium text-muted-foreground">{config.label}</span>
+        </Link>
         {headerSlot ? <div className="px-1 pt-1">{headerSlot}</div> : null}
       </SidebarHeader>
       <SidebarContent>

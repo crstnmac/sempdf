@@ -36,7 +36,7 @@ banner(`Demo 5: live metering against ${server ?? "(baked server URL)"}`);
 setJobContext({ id: `demo-${Date.now()}`, description: "License demo batch" });
 
 const BATCHES = Number(process.env.DEMO_BATCHES ?? 2);
-const PAGES_PER_BATCH = Number(process.env.DEMO_PAGES ?? 500);
+const PAGES_PER_BATCH = Number(process.env.DEMO_PAGES ?? 50000);
 
 let generated = 0;
 for (let i = 1; i <= BATCHES; i++) {

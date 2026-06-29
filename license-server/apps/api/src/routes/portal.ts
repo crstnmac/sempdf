@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 
 import { auth } from "../auth.js";
 import { db } from "../db/client.js";
@@ -145,6 +145,101 @@ portalRoutes.get("/overview", async (c) => {
       pageLimit: myLicenses.reduce((sum, lic) => sum + lic.limitUnits, 0),
       activeLicenses: myLicenses.filter((lic) => lic.active).length,
     },
+  });
+});
+
+/**
+ * Pages generated per day across the caller's organizations, zero-filled over
+ * the requested window (default 30 days). Drives the usage trend chart. Counts
+ * authorize events (the charge point), matching the usage counters.
+ */
+portalRoutes.get("/usage-series", async (c) => {
+  const userId = c.get("userId");
+  const days = Math.min(180, Math.max(7, Number(c.req.query("days") ?? 30)));
+  const orgs = await userOrgs(userId);
+  const orgIds = orgs.map((org) => org.id);
+  if (orgIds.length === 0) return c.json({ days, series: [] });
+
+  // Window start at UTC midnight so day buckets line up with `to_char` dates.
+  const since = new Date();
+  since.setUTCHours(0, 0, 0, 0);
+  since.setUTCDate(since.getUTCDate() - (days - 1));
+
+  const rows = await db
+    .select({
+      day: sql<string>`to_char(date_trunc('day', ${apiTelemetry.createdAt}), 'YYYY-MM-DD')`,
+      pages: sql<number>`coalesce(sum(${apiTelemetry.pages}), 0)`.mapWith(Number),
+    })
+    .from(apiTelemetry)
+    .where(
+      and(
+        inArray(apiTelemetry.accountId, orgIds),
+        eq(apiTelemetry.endpoint, "/v1/authorize"),
+        gte(apiTelemetry.createdAt, since),
+      ),
+    )
+    .groupBy(sql`1`);
+
+  const byDay = new Map(rows.map((r) => [r.day, r.pages]));
+  const series: { date: string; pages: number }[] = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(since);
+    d.setUTCDate(d.getUTCDate() + i);
+    const key = d.toISOString().slice(0, 10);
+    series.push({ date: key, pages: byDay.get(key) ?? 0 });
+  }
+  return c.json({ days, series });
+});
+
+/**
+ * Paginated generation history (authorize events) across the caller's orgs,
+ * with an optional status filter. The overview only shows the latest few; this
+ * is the full, browsable log.
+ */
+portalRoutes.get("/activity", async (c) => {
+  const userId = c.get("userId");
+  const page = Math.max(1, Number(c.req.query("page") ?? 1));
+  const pageSize = Math.min(100, Math.max(1, Number(c.req.query("pageSize") ?? 25)));
+  const statusFilter = c.req.query("status");
+
+  const orgs = await userOrgs(userId);
+  const orgIds = orgs.map((org) => org.id);
+  if (orgIds.length === 0) return c.json({ rows: [], total: 0, page, pageSize });
+
+  const conditions = [
+    inArray(apiTelemetry.accountId, orgIds),
+    eq(apiTelemetry.endpoint, "/v1/authorize"),
+  ];
+  if (statusFilter && statusFilter !== "all") {
+    conditions.push(eq(apiTelemetry.status, statusFilter as typeof apiTelemetry.status.enumValues[number]));
+  }
+  const where = and(...conditions);
+
+  const [totalRow] = await db.select({ total: count() }).from(apiTelemetry).where(where);
+  const rows = await db
+    .select()
+    .from(apiTelemetry)
+    .where(where)
+    .orderBy(desc(apiTelemetry.createdAt))
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
+
+  const orgNameById = new Map(orgs.map((org) => [org.id, org.name]));
+  return c.json({
+    rows: rows.map((event) => ({
+      id: event.id,
+      organizationName: orgNameById.get(event.accountId) ?? event.accountId,
+      endpoint: event.endpoint,
+      pages: event.pages,
+      status: event.status,
+      jobId: event.jobId,
+      jobDescription: event.jobDescription,
+      errorCode: event.errorCode,
+      createdAt: event.createdAt.toISOString(),
+    })),
+    total: totalRow?.total ?? 0,
+    page,
+    pageSize,
   });
 });
 

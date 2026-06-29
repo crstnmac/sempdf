@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
 
 import { LoginForm } from '#/components/login-form.tsx'
+import { Logo } from '#/components/logo.tsx'
 import { authClient } from '#/lib/auth-client.ts'
 
 export const Route = createFileRoute('/login')({
@@ -40,6 +41,7 @@ function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="flex w-full max-w-sm flex-col gap-6">
+        <Logo className="mx-auto h-8" />
         <LoginForm onSubmit={handleSubmit} pending={pending} error={error} />
         <p className="text-center text-sm text-muted-foreground">
           Need access? Contact your account manager to get set up.
