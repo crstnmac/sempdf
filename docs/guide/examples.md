@@ -23,6 +23,15 @@ blocks.
 
 <<< ../../examples/website/samples/rich-text-and-layout.ts{ts}
 
+## Text formatting
+
+Superscript/subscript and baseline `rise`, render modes (`stroke` outline,
+`fillStroke`, `invisible`), `horizontalScaling` to condense/expand glyphs, and
+inline `highlight` — shown on whole text calls and per-run in `richText`. See
+[Text and Fonts](./text-and-fonts#superscript-subscript-and-baseline-shift).
+
+<<< ../../examples/website/samples/text-formatting.ts{ts}
+
 ## Google Fonts
 
 Fetch several Google Fonts (Inter, Geist, Instrument Serif with an italic face, and Bitcount Grid Single) and embed them as font families. In Node, use `loadGoogleFont("Inter", { weight: 700 })`; this browser sample fetches ready-made `.ttf` files from the CORS-enabled `@expo-google-fonts` packages on jsDelivr instead, because the Google Fonts API serves woff2 to browsers, which the engine cannot decode. See [Text and Fonts → Google Fonts](./text-and-fonts#google-fonts).

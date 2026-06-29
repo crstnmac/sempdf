@@ -228,7 +228,7 @@ page.richText(
 );
 ```
 
-Each run carries its own `font`, `bold`, `italic`, `fontSize`, `color`, `kerning`, and `characterSpacing`; anything omitted inherits from the block `options`, then the document defaults. A run with a `link` becomes a clickable URI annotation covering exactly that span (contiguous linked runs on a line merge into one rectangle). Include spaces in the run `text` where you want them between adjacent runs.
+Each run carries its own `font`, `bold`, `italic`, `underline`, `strike`, `fontSize`, `color`, `kerning`, `characterSpacing`, `superscript`/`subscript` (or `rise`), `renderMode` (`strokeColor`/`strokeWidth`), `horizontalScaling`, and `highlight`; anything omitted inherits from the block `options`, then the document defaults. A run with a `link` becomes a clickable URI annotation covering exactly that span (contiguous linked runs on a line merge into one rectangle). Include spaces in the run `text` where you want them between adjacent runs.
 
 In the flow/template layout, the same thing is `flow.richParagraph(runs, options)`, or a `richParagraph` template block:
 
@@ -270,6 +270,75 @@ page.richText(
   { x: 56, y: 660, width: 200 }
 );
 ```
+
+## Superscript, subscript, and baseline shift
+
+`superscript` and `subscript` raise or lower the baseline and shrink the text to ~62% — the usual treatment for exponents, footnote markers, ordinals, and chemical formulas. For manual control, set `rise` (PDF points; positive lifts, negative drops) and an explicit `fontSize`.
+
+```ts
+page.richText(
+  [
+    { text: "E = mc" },
+    { text: "2", superscript: true },
+  ],
+  { x: 56, y: 700, width: 200, fontSize: 16 }
+);
+
+page.richText(
+  [
+    { text: "H" },
+    { text: "2", subscript: true },
+    { text: "O" },
+  ],
+  { x: 56, y: 676, width: 200, fontSize: 16 }
+);
+
+// Raw baseline shift, no auto-resize:
+page.text("™", { x: 120, y: 700, fontSize: 8, rise: 6 });
+```
+
+## Outlined and invisible text (render modes)
+
+`renderMode` chooses how glyphs are painted (the PDF `Tr` operator):
+
+- `"fill"` — fill with the text color (the default).
+- `"stroke"` — outline only, using `strokeColor` (defaults to the text color) and `strokeWidth` (defaults to 1).
+- `"fillStroke"` — fill **and** outline.
+- `"invisible"` — render nothing (useful for an OCR text layer over a scanned image so it stays selectable/searchable).
+
+```ts
+page.text("OUTLINE", {
+  x: 56, y: 700, fontSize: 36, bold: true,
+  renderMode: "stroke", strokeWidth: 0.75, strokeColor: "red",
+});
+```
+
+## Horizontal scaling
+
+`horizontalScaling` stretches or condenses glyphs horizontally as a percentage (100 = normal; the `Tz` operator). Useful for fitting a label to a fixed width without changing the font size.
+
+```ts
+page.text("CONDENSED", { x: 56, y: 700, fontSize: 18, horizontalScaling: 75 });
+page.text("EXPANDED",  { x: 56, y: 676, fontSize: 18, horizontalScaling: 130 });
+```
+
+## Highlighting text
+
+`highlight` paints a filled rectangle behind the text (a tagged artifact), like a marker pen. It works on whole text calls and per-run in `richText`:
+
+```ts
+page.text("Action required", { x: 56, y: 700, highlight: "yellow" });
+
+page.richText(
+  [
+    { text: "Status: " },
+    { text: "APPROVED", bold: true, highlight: rgb(0.8, 1, 0.8) },
+  ],
+  { x: 56, y: 676, width: 240 }
+);
+```
+
+> For a highlight that behaves as a reviewable PDF **annotation** (rather than baked-in page content), use the `highlight` text-markup annotation or the `{ type: "highlight", match }` paragraph annotation instead — see [Forms and annotations](./forms-and-annotations).
 
 ## Measuring text
 

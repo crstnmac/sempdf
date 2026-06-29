@@ -10,6 +10,8 @@ const doc = createDocument({
 
 const BRAND  = rgb(0.05, 0.25, 0.55);
 const MUTED  = rgb(0.45, 0.45, 0.5);
+const TABLE_BORDER = rgb(0.72, 0.76, 0.82);
+const TABLE_HEADER = rgb(0.92, 0.94, 0.98);
 
 doc.renderTemplate({
   page: {
@@ -78,7 +80,12 @@ doc.renderTemplate({
           { text: "STM-2026-05-0042" },
         ],
       ],
-      options: { headerRows: 1, width: 650 },
+      options: {
+        headerRows: 1,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     {
@@ -102,7 +109,12 @@ doc.renderTemplate({
           "Rs. 79,159.50",
         ],
       ],
-      options: { headerRows: 1 },
+      options: {
+        headerRows: 1,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     {
@@ -129,7 +141,12 @@ doc.renderTemplate({
         ["Health",              "1",  "521.00"],
         [{ text: "Total", header: true, bold: true }, { text: "16", header: true, bold: true }, { text: "47,704.00", header: true, bold: true }],
       ],
-      options: { headerRows: 1 },
+      options: {
+        headerRows: 1,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     { type: "pageBreak" },
@@ -174,7 +191,12 @@ doc.renderTemplate({
         ["29 May '26", "TXN810287", "UPI - Mom",             "Debit",  "300.00",    "-",          "79,159.50"],
         ["31 May '26", "TXN810291", "Closing Balance",              "-",      "-",         "-",          "79,159.50"],
       ],
-      options: { headerRows: 1 },
+      options: {
+        headerRows: 1,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     {

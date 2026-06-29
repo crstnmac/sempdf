@@ -47,7 +47,7 @@ doc.renderTemplate({
         ["Notebook", "2", "$11.00"],
         ["Pen", "5", "$7.50"]
       ],
-      options: { headerRows: 1, borders: "horizontal", borderColor: rgb(0.2, 0.3, 0.5), borderWidth: 1 }
+      options: { headerRows: 1, borders: "horizontal", borderColor: rgb(0.2, 0.3, 0.5), borderWidth: 1, headerBackground: rgb(0.92, 0.94, 0.98) }
     },
 
     { type: "paragraph", text: "borders: \"outer\" - frame only, with zebra stripes" },
@@ -58,7 +58,7 @@ doc.renderTemplate({
         ["Notebook", "2", "$11.00"],
         ["Pen", "5", "$7.50"]
       ],
-      options: { headerRows: 1, borders: "outer", borderColor: rgb(0.4, 0.4, 0.4), zebra: true }
+      options: { headerRows: 1, borders: "outer", borderColor: rgb(0.4, 0.4, 0.4), headerBackground: rgb(0.92, 0.94, 0.98), zebra: true }
     }
   ]
 });

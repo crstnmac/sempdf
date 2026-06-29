@@ -10,6 +10,8 @@ const doc = createDocument({
 
 const BRAND = rgb(0.05, 0.35, 0.75);
 const MUTED = rgb(0.45, 0.45, 0.5);
+const TABLE_BORDER = rgb(0.72, 0.76, 0.82);
+const TABLE_HEADER = rgb(0.92, 0.94, 0.98);
 
 doc.renderTemplate({
   autoOutline: { maxLevel: 6 },
@@ -64,7 +66,12 @@ doc.renderTemplate({
           "John Adam\n FutureBits Product Team\nMumbai, India \n john@futurebits.com",
         ],
       ],
-      options: { headerRows: 1 },
+      options: {
+        headerRows: 1,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     {
@@ -86,7 +93,12 @@ doc.renderTemplate({
         ["2", "Software 2", "4", "$29.00", "$116.00"],
         ["3", "Software 3", "1", "$49.00", "$49.00"],
       ],
-      options: { headerRows: 1, width: 530 },
+      options: {
+        headerRows: 1,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     {
@@ -97,7 +109,12 @@ doc.renderTemplate({
         ["GST @ 18%", "$65.52"],
         [{ text: "Total Due", header: true, bold: true }, { text: "$411.32", header: true, bold: true }],
       ],
-      options: { headerRows: 0, width: 850 },
+      options: {
+        headerRows: 0,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     {
