@@ -34,6 +34,8 @@ export { loadExtensionFont, loadExtensionFontBytes, loadExtensionFontFaces } fro
 export type { ExtensionFontPaths } from "./chrome-extension-fonts.js";
 export { loadGoogleFont } from "./google-fonts.js";
 export type { LoadGoogleFontOptions } from "./google-fonts.js";
+export { registerBundledFonts } from "./bundled-fonts.js";
+export type { BundledFonts, FontByteReader, RegisterBundledFontsOptions } from "./bundled-fonts.js";
 export {
   appendPages,
   extractPages,

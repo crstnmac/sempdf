@@ -53,6 +53,8 @@ import {
   placementBoundingBox,
   pushPositionedTextRuns,
   pushInlineDecorations,
+  pushTextHighlights,
+  pushTextDecorations,
   radioGroupBoundingBox,
   normalizeRichRuns,
   richLineHeight,
@@ -2572,7 +2574,9 @@ export class PdfFlow {
       for (const line of lines) {
         if (this.remainingHeight < normalized.lineHeight && this.state.y < this.state.startY) {
           if (!this.advanceColumn()) {
+            pushTextHighlights(this.page, placedRuns, normalized, this.embeddedFonts);
             pushPositionedTextRuns(this.page, placedRuns, structureNode?.id);
+            pushTextDecorations(this.page, placedRuns, normalized, this.embeddedFonts);
             placedRuns = [];
             if (this.advanceFlowRegion()) {
               structureNode = createTextStructureNode();
@@ -2602,7 +2606,9 @@ export class PdfFlow {
         this.state.y -= normalized.lineHeight;
       }
 
+      pushTextHighlights(this.page, placedRuns, normalized, this.embeddedFonts);
       pushPositionedTextRuns(this.page, placedRuns, structureNode?.id);
+      pushTextDecorations(this.page, placedRuns, normalized, this.embeddedFonts);
       return { height: 0, runs: placedRuns };
     }
     return addFlowTextBlockToPage(

@@ -67,3 +67,16 @@ npm test
 npm run docs:dev      # work on the docs site locally
 npm run example:web   # browser playground at http://localhost:4173/
 ```
+
+## License
+
+The library is MIT-licensed (see [`LICENSE`](./LICENSE)).
+
+The bundled fonts in [`fonts/liberation/`](./fonts/liberation) — Liberation
+Sans, Serif, and Mono, used by `registerBundledFonts()` — are **not** covered by
+the MIT license. They are © Red Hat, Inc. and Google, distributed under the
+**SIL Open Font License 1.1** (see [`fonts/liberation/LICENSE`](./fonts/liberation/LICENSE)).
+The OFL permits bundling and embedding the fonts in software and documents; the
+fonts retain reserved names ("Liberation", "Arimo", "Tinos", "Cousine") and may
+not be released under a different license. PDFs you generate with these fonts
+are your own and are unaffected by the OFL.

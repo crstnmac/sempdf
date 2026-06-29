@@ -61,6 +61,35 @@ Options: `weight` (1–1000, default 400), `italic` (default false), `text` (res
 The Google Fonts API serves **woff2** (Brotli-compressed) to clients that advertise woff2 support — including browsers. `loadGoogleFont()` detects a woff2 response and decodes it with the zero-dependency `@sempdf/sempdf-pdf/woff2` decoder, loaded lazily so Node users (who receive a plain `.ttf`/`.otf`) never pay for it.
 :::
 
+## Bundled fonts (offline, PDF/A-ready)
+
+The PDF **Standard-14** fonts (Helvetica/Times/Courier) are never embedded — the viewer supplies them — which **PDF/A and PDF/UA forbid**. For accessible or archival output you must embed a real font. `registerBundledFonts()` registers a bundled, openly-licensed family set so this works offline with no font sourcing:
+
+```ts
+import { createDocument, registerBundledFonts } from "@sempdf/sempdf-pdf";
+
+const doc = createDocument({ conformance: "pdf/a-2a" });
+const fonts = await registerBundledFonts(doc);
+
+doc.addPage().text("Accessible heading", { x: 56, y: 760, font: fonts.sans, bold: true });
+```
+
+`fonts` is `{ sans, serif, mono }` — the **Liberation Sans/Serif/Mono** families (SIL OFL 1.1). They are **metric-compatible** with Helvetica/Times/Courier (and Arial/Times New Roman/Courier New), so swapping a built-in font for the bundled one embeds cleanly **without reflowing** your layout. Each family resolves `bold`/`italic`/`boldItalic` by flag, exactly like a font you register yourself.
+
+The fonts ship in the package under `fonts/liberation/`. They are OFL-licensed (redistributable, embeddable); the license travels with them. If you build from source, fetch them once with:
+
+```sh
+npm run fetch-fonts
+```
+
+In the browser (where the on-disk default reader isn't available), pass `read` to supply the bytes:
+
+```ts
+await registerBundledFonts(doc, {
+  read: (file) => fetch(`/fonts/${file}`).then((r) => r.arrayBuffer()),
+});
+```
+
 ## WOFF2 fonts
 
 `decodeWoff2()` converts a `.woff2` file — the format browsers download and most font CDNs serve — into standard TTF/OTF bytes ready for `embedTrueTypeFont()` or `registerFontFamily()`:

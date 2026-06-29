@@ -139,7 +139,9 @@ export function addFlowTextBlockToPage(
       ? undefined
       : createStructureNode(page, normalized.tag, normalized.structure, parent);
   const runs = layoutTextBlock(text, normalized, embeddedFonts);
+  pushTextHighlights(page, runs, normalized, embeddedFonts);
   pushPositionedTextRuns(page, runs, structureNode?.id);
+  pushTextDecorations(page, runs, normalized, embeddedFonts);
   const lineCount = new Set(runs.map((run) => run.options.y)).size || 1;
   return { height: lineCount * normalized.lineHeight, runs };
 }
