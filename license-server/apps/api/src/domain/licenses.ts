@@ -5,6 +5,7 @@ import { generateKey, hashKey, keyPrefix } from "./keys.js";
 import { apiKeys, apiTelemetry, licenses, type License } from "../db/schema.js";
 import { evaluateLicensePolicy } from "./policy.js";
 import { queueUsageNotifications } from "./notifications.js";
+import { deliverPendingNotifications } from "./delivery.js";
 
 export interface AuthorizeResult {
   granted: number;
@@ -52,6 +53,9 @@ export async function authorize(
   options: { jobId?: string | undefined; jobDescription?: string | undefined; endpoint?: string; meta?: TelemetryMeta } = {},
 ): Promise<AuthorizeResult> {
   const keyHash = hashKey(key);
+  // Count of usage alerts queued this charge, so we can flush them immediately
+  // (outside the transaction, once the rows are committed and visible).
+  let queuedAlerts = 0;
   // The transaction returns an outcome rather than throwing on a block: throwing
   // inside the transaction would roll back the very telemetry/status writes we
   // make for a blocked request. We commit those, then throw outside.
@@ -133,7 +137,7 @@ export async function authorize(
       meta: options.meta,
     });
     // Proactive alerts when this charge crosses 90% / 95% / 100%.
-    await queueUsageNotifications(tx, lic, { prevUsed, nextUsed, limit: effectiveLimit });
+    queuedAlerts = await queueUsageNotifications(tx, lic, { prevUsed, nextUsed, limit: effectiveLimit });
 
     return {
       blocked: false,
@@ -145,6 +149,15 @@ export async function authorize(
       hardBlockAt: decision.hardBlockAt?.toISOString() ?? null,
     };
   });
+
+  // Usage alerts (90/95/100%) are time-sensitive, so flush them now instead of
+  // waiting for the next sweep. Fire-and-forget: delivery must never block or
+  // fail the authorize response; the sweep remains the backstop for retries.
+  if (queuedAlerts > 0) {
+    void deliverPendingNotifications().catch((err) =>
+      console.error(`[notifications] immediate delivery failed: ${err instanceof Error ? err.message : err}`),
+    );
+  }
 
   if (outcome.blocked) {
     throw new HttpError(403, outcome.reason, {

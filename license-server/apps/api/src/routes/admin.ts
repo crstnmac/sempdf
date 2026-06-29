@@ -8,6 +8,9 @@ import { apiKeys, apiTelemetry, licenses } from "../db/schema.js";
 import { member, organization, user } from "../db/auth-schema.js";
 import { createApiKey } from "../domain/licenses.js";
 import { runNotificationSweep } from "../domain/notifications.js";
+import { deliverPendingNotifications } from "../domain/delivery.js";
+import { sendEmail, verifyTransport } from "../domain/email/mailer.js";
+import { renderWelcomeEmail } from "../domain/email/templates.js";
 
 /** Slugify an org name and append a short random suffix to keep slugs unique. */
 function makeSlug(name: string): string {
@@ -34,12 +37,25 @@ adminRoutes.use("*", async (c, next) => {
 });
 
 /**
- * Queues any due time-based reminders (trial expiry, subscription renewal).
+ * Queues any due time-based reminders (trial expiry, subscription renewal) and
+ * then delivers all pending notifications (email via SMTP, webhooks via POST).
  * Idempotent — intended to be hit on a schedule (e.g. hourly) by external cron.
  */
 adminRoutes.post("/sweep", async (c) => {
-  const result = await runNotificationSweep();
-  return c.json(result);
+  const queued = await runNotificationSweep();
+  const delivered = await deliverPendingNotifications();
+  return c.json({ ...queued, delivered });
+});
+
+/** Delivers pending notifications without re-running the reminder sweep. */
+adminRoutes.post("/notifications/deliver", async (c) => {
+  const delivered = await deliverPendingNotifications();
+  return c.json(delivered);
+});
+
+/** SMTP diagnostic — verifies the configured mail transport. */
+adminRoutes.get("/email/health", async (c) => {
+  return c.json(await verifyTransport());
 });
 
 adminRoutes.get("/dashboard", async (c) => {
@@ -414,10 +430,26 @@ adminRoutes.post("/customers", async (c) => {
     .returning();
   const apiKey = await createApiKey(lic!.id, "Default");
 
+  // Onboarding email with sign-in details. Best-effort: a mail failure must not
+  // fail customer creation (Sales can still relay the credentials shown below).
+  const welcome = await sendEmail(
+    email,
+    renderWelcomeEmail({
+      orgName: org!.name,
+      customerName,
+      email,
+      temporaryPassword: tempPassword,
+      isTrial: kind !== "paid",
+      trialEndsAt,
+      expiresAt,
+    }),
+  );
+
   return c.json(
     {
       organization: { id: org!.id, name: org!.name, slug: org!.slug },
       customerEmail: email,
+      welcomeEmailSent: welcome.status === "sent",
       temporaryPassword: tempPassword,
       license: {
         id: lic!.id,

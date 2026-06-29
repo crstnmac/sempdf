@@ -49,10 +49,12 @@ function toForm(s: NotificationSettings): FormState {
   return {
     emailTo: s.emailTo ?? '',
     webhookUrl: s.webhookUrl ?? '',
-    usageSummaryFrequency: s.usageSummaryFrequency,
-    usageAlertsEnabled: s.usageAlertsEnabled,
-    overageAlertsEnabled: s.overageAlertsEnabled,
-    hardBlockWarningsEnabled: s.hardBlockWarningsEnabled,
+    usageSummaryFrequency:
+      s.usageSummaryFrequency === 'monthly' ? 'monthly' : DEFAULT_FORM.usageSummaryFrequency,
+    usageAlertsEnabled: s.usageAlertsEnabled ?? DEFAULT_FORM.usageAlertsEnabled,
+    overageAlertsEnabled: s.overageAlertsEnabled ?? DEFAULT_FORM.overageAlertsEnabled,
+    hardBlockWarningsEnabled:
+      s.hardBlockWarningsEnabled ?? DEFAULT_FORM.hardBlockWarningsEnabled,
   }
 }
 

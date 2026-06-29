@@ -302,7 +302,17 @@ portalRoutes.get("/orgs/:orgId/notification-settings", async (c) => {
     .select()
     .from(notificationSettings)
     .where(eq(notificationSettings.accountId, orgId));
-  return c.json(settings ?? { accountId: orgId });
+  return c.json(
+    settings ?? {
+      accountId: orgId,
+      emailTo: null,
+      webhookUrl: null,
+      usageSummaryFrequency: "weekly",
+      usageAlertsEnabled: true,
+      overageAlertsEnabled: true,
+      hardBlockWarningsEnabled: true,
+    },
+  );
 });
 
 portalRoutes.put("/orgs/:orgId/notification-settings", async (c) => {
