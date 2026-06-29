@@ -98,8 +98,8 @@ function UsagePage() {
     }
   }
 
-  function SortIcon({ key }: { key: SortKey }) {
-    if (sort !== key) return null
+  function SortIcon({ column }: { column: SortKey }) {
+    if (sort !== column) return null
     return sortDir === 'asc' ? <ArrowUpIcon className="inline size-3" /> : <ArrowDownIcon className="inline size-3" />
   }
 
@@ -153,7 +153,7 @@ function UsagePage() {
             ) : null}
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <Select value={period} onValueChange={(v) => { setPeriod(v); setPage(1) }}>
+              <Select value={period} onValueChange={(v) => { setPeriod(v ?? period); setPage(1) }}>
                 <SelectTrigger className="sm:w-36">
                   <SelectValue />
                 </SelectTrigger>
@@ -191,17 +191,17 @@ function UsagePage() {
                     <TableRow>
                       <TableHead>Account</TableHead>
                       <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('endpoint')}>
-                        Endpoint <SortIcon key="endpoint" />
+                        Endpoint <SortIcon column="endpoint" />
                       </TableHead>
                       <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('status')}>
-                        Status <SortIcon key="status" />
+                        Status <SortIcon column="status" />
                       </TableHead>
                       <TableHead className="cursor-pointer select-none text-right" onClick={() => toggleSort('pages')}>
-                        Pages <SortIcon key="pages" />
+                        Pages <SortIcon column="pages" />
                       </TableHead>
                       <TableHead>Job</TableHead>
                       <TableHead className="cursor-pointer select-none text-right" onClick={() => toggleSort('createdAt')}>
-                        When <SortIcon key="createdAt" />
+                        When <SortIcon column="createdAt" />
                       </TableHead>
                     </TableRow>
                   </TableHeader>

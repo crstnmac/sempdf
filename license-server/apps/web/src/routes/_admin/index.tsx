@@ -31,7 +31,7 @@ import {
   type DashboardTenant,
   api,
   daysUntil,
-  endpointLabel,
+  activityLabel,
   formatDateTime,
   formatNumber,
   relativeDays,
@@ -54,15 +54,6 @@ interface Attention {
 function attentionFor(t: DashboardTenant): Attention | null {
   if (t.status === 'hard_blocked') {
     return { label: 'Hard blocked', detail: 'New runs rejected', tone: 'danger', rank: 4 }
-  }
-  if (t.status === 'grace_period') {
-    const d = daysUntil(t.hardBlockAt)
-    return {
-      label: 'Over limit — grace',
-      detail: d !== null && d >= 0 ? `Hard block ${relativeDays(t.hardBlockAt)}` : 'Grace expired',
-      tone: 'warning',
-      rank: 3,
-    }
   }
   if (t.remainingUnits < 0) {
     return { label: 'Over limit', detail: `${formatNumber(-t.remainingUnits)} pages over`, tone: 'warning', rank: 2 }
@@ -124,8 +115,8 @@ function DashboardPage() {
                         : 'No licenses require action'}
                     </CardDescription>
                   </div>
-                  <Button asChild variant="ghost" size="sm">
-                    <Link to="/licenses">View all</Link>
+                  <Button render={<Link to="/licenses" />} nativeButton={false} variant="ghost" size="sm">
+                    View all
                   </Button>
                 </CardHeader>
                 <CardContent>
@@ -177,8 +168,8 @@ function DashboardPage() {
                     <CardTitle>Recent telemetry</CardTitle>
                     <CardDescription>Latest authorize / usage events across all tenants</CardDescription>
                   </div>
-                  <Button asChild variant="ghost" size="sm">
-                    <Link to="/usage">View all</Link>
+                  <Button render={<Link to="/usage" />} nativeButton={false} variant="ghost" size="sm">
+                    View all
                   </Button>
                 </CardHeader>
                 <CardContent>
@@ -197,7 +188,7 @@ function DashboardPage() {
                           <TableCell className="font-medium">{event.organizationName}</TableCell>
                           <TableCell>
                             <div className="flex items-center gap-1.5">
-                              <span className="text-sm">{endpointLabel(event.endpoint)}</span>
+                              <span className="text-sm">{activityLabel(event.status)}</span>
                               <TelemetryBadge status={event.status} />
                             </div>
                             {event.errorCode ? (

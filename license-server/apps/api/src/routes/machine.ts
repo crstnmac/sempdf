@@ -75,7 +75,7 @@ machine.post("/authorize", async (c) => {
       nonce,
       signature,
       watermark: result.watermark,
-      watermarkText: result.watermark ? result.status === "trial" ? "Trial Mode" : "Over Limit" : null,
+      watermarkText: result.watermark ? "SemPDF - For Trial Use Only" : null,
       status: result.status,
       hardBlockAt: result.hardBlockAt,
     });
@@ -112,18 +112,15 @@ machine.get("/license", async (c) => {
   if (!lic) return c.json({ error: "unknown_license" }, 404);
   return c.json({
     id: lic.id,
-    keyPrefix: lic.keyPrefix,
     metric: lic.metric,
     window: lic.window,
-    limit: lic.limitUnits,
+    limit: lic.limitUnits + lic.bonusUnits,
     used: lic.usedUnits,
-    remaining: lic.limitUnits - lic.usedUnits,
+    remaining: lic.limitUnits + lic.bonusUnits - lic.usedUnits,
     status: lic.status,
     firstOverageAt: lic.firstOverageAt,
     trialStartedAt: lic.trialStartedAt,
     trialEndsAt: lic.trialEndsAt,
-    gracePeriodDays: lic.gracePeriodDays,
-    failMode: lic.failMode,
     active: lic.active,
     expiresAt: lic.expiresAt,
   });

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
+import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
 
 import { LoginForm } from '#/components/login-form.tsx'
 import { authClient } from '#/lib/auth-client.ts'
@@ -42,10 +42,7 @@ function LoginPage() {
       <div className="flex w-full max-w-sm flex-col gap-6">
         <LoginForm onSubmit={handleSubmit} pending={pending} error={error} />
         <p className="text-center text-sm text-muted-foreground">
-          New enterprise customer?{' '}
-          <Link to="/signup" className="underline underline-offset-4">
-            Create an account
-          </Link>
+          Need access? Contact your account manager to get set up.
         </p>
       </div>
     </div>
