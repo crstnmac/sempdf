@@ -133,6 +133,8 @@ export interface LicenseUsage {
   trialEndsAt: string | null
   windowStartedAt: string | null
   expiresAt: string | null
+  keyCount: number
+  active: boolean
 }
 
 export class ApiError extends Error {
@@ -279,11 +281,17 @@ export const api = {
       expiresAt: string | null
     }>(`/licenses/${id}/plan`, { method: 'POST', body: JSON.stringify(body) }),
   rotateKey: (id: string) =>
-    request<{ id: string; keyPrefix: string; key: string }>(`/licenses/${id}/rotate`, {
-      method: 'POST',
-    }),
+    request<{ id: string; keyPrefix: string; key: string; revokedCount: number }>(
+      `/licenses/${id}/rotate`,
+      { method: 'POST' },
+    ),
   revoke: (id: string) =>
     request<{ ok: boolean }>(`/licenses/${id}/revoke`, { method: 'POST' }),
+  reactivate: (id: string) =>
+    request<{ ok: boolean; active: boolean; status: TenantStatus }>(
+      `/licenses/${id}/reactivate`,
+      { method: 'POST' },
+    ),
   createLicense: (body: Record<string, unknown>) =>
     request<DashboardTenant & { key: string }>('/licenses', {
       method: 'POST',
@@ -327,6 +335,10 @@ export interface PortalApiKey {
   createdAt: string
 }
 
+export interface RevokedApiKey extends PortalApiKey {
+  revokedAt: string
+}
+
 export interface PortalLicense {
   id: string
   accountId: string
@@ -342,6 +354,7 @@ export interface PortalLicense {
   resetAt: string | null
   createdAt: string
   keys: PortalApiKey[]
+  revokedKeys: RevokedApiKey[]
 }
 
 export interface PortalTelemetry extends TelemetryMeta {
@@ -454,6 +467,11 @@ export const portalApi = {
     ),
   revokeKey: (keyId: string) =>
     portalRequest<{ ok: boolean }>(`/keys/${keyId}`, { method: 'DELETE' }),
+  rotateApiKey: (keyId: string) =>
+    portalRequest<{ id: string; name: string; keyPrefix: string; key: string }>(
+      `/keys/${keyId}/rotate`,
+      { method: 'POST' },
+    ),
 }
 
 // ----- presentation helpers -------------------------------------------------

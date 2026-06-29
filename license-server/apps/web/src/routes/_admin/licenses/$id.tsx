@@ -71,12 +71,12 @@ function LicenseDetailPage() {
   const [trialDays, setTrialDays] = useState("15");
   const [trialPages, setTrialPages] = useState("1000");
   const [busy, setBusy] = useState<
-    null | "extend" | "pages" | "rotate" | "revoke"
+    null | "extend" | "pages" | "rotate" | "revoke" | "reactivate"
   >(null);
   const [rotatedKey, setRotatedKey] = useState<string | null>(null);
 
   async function run(
-    action: "extend" | "pages" | "rotate" | "revoke",
+    action: "extend" | "pages" | "rotate" | "revoke" | "reactivate",
     fn: () => Promise<unknown>,
   ) {
     setBusy(action);
@@ -127,6 +127,11 @@ function LicenseDetailPage() {
                   <CardTitle>{data.organizationName}</CardTitle>
                 </div>
                 <div className="flex items-center gap-2">
+                  {!data.active ? (
+                    <span className="rounded-full bg-danger-surface px-2.5 py-0.5 text-xs font-medium text-danger">
+                      Revoked
+                    </span>
+                  ) : null}
                   <WatermarkBadge status={data.status} />
                   <StatusBadge status={data.status} />
                 </div>
@@ -288,19 +293,34 @@ function LicenseDetailPage() {
                 <CardHeader>
                   <CardTitle>Key operations</CardTitle>
                   <CardDescription>
-                    Rotate issues a new key; revoke disables the license.
+                    Rotate revokes {data.keyCount === 1 ? "the" : "all"}{" "}
+                    {data.keyCount} active{" "}
+                    {data.keyCount === 1 ? "key" : "keys"} and issues one fresh
+                    key.{" "}
+                    {data.active
+                      ? "Revoke disables the whole license (reversible)."
+                      : "This license is revoked — reactivate to restore service."}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-3">
                   <div className="flex gap-3">
                     <Button
                       variant="outline"
-                      disabled={busy !== null}
+                      disabled={busy !== null || !data.active}
                       onClick={async () => {
                         const ok = await confirm({
-                          title: "Rotate this license key?",
-                          description: `The current key for ${data.organizationName} will stop working immediately. The replacement key is shown only once, so copy it before leaving this page.`,
-                          confirmLabel: "Rotate key",
+                          title:
+                            data.keyCount > 1
+                              ? `Rotate all ${data.keyCount} keys?`
+                              : "Rotate this license key?",
+                          description:
+                            data.keyCount > 1
+                              ? `All ${data.keyCount} keys on ${data.organizationName} (e.g. production, staging, CI) stop working immediately and are replaced by a single new key. Any environment still using one of the old keys will fail. The replacement is shown only once, so copy it before leaving this page.`
+                              : `The current key for ${data.organizationName} will stop working immediately. The replacement key is shown only once, so copy it before leaving this page.`,
+                          confirmLabel:
+                            data.keyCount > 1
+                              ? `Rotate all ${data.keyCount} keys`
+                              : "Rotate key",
                           destructive: true,
                         });
                         if (!ok) return;
@@ -308,32 +328,55 @@ function LicenseDetailPage() {
                           const res = await api.rotateKey(id);
                           setRotatedKey(res.key);
                           toast.success(
-                            "Key rotated. Copy it now — it is shown once.",
+                            res.revokedCount > 1
+                              ? `${res.revokedCount} keys revoked, one new key issued. Copy it now — shown once.`
+                              : "Key rotated. Copy it now — it is shown once.",
                           );
                         });
                       }}
                     >
                       {busy === "rotate" ? "Rotating…" : "Rotate key"}
                     </Button>
-                    <Button
-                      variant="destructive"
-                      disabled={busy !== null}
-                      onClick={async () => {
-                        const ok = await confirm({
-                          title: "Revoke this license?",
-                          description: `Every API key on ${data.organizationName} stops working immediately — clients will fail to authorize. This cannot be undone from here.`,
-                          confirmLabel: "Revoke license",
-                          destructive: true,
-                        });
-                        if (!ok) return;
-                        void run("revoke", async () => {
-                          await api.revoke(id);
-                          toast.success("License revoked.");
-                        });
-                      }}
-                    >
-                      {busy === "revoke" ? "Revoking…" : "Revoke"}
-                    </Button>
+                    {data.active ? (
+                      <Button
+                        variant="destructive"
+                        disabled={busy !== null}
+                        onClick={async () => {
+                          const ok = await confirm({
+                            title: "Revoke this license?",
+                            description: `Every API key on ${data.organizationName} stops working immediately — clients will fail to authorize. Keys and usage are kept; you can reactivate this license later to restore service.`,
+                            confirmLabel: "Revoke license",
+                            destructive: true,
+                          });
+                          if (!ok) return;
+                          void run("revoke", async () => {
+                            await api.revoke(id);
+                            toast.success("License revoked.");
+                          });
+                        }}
+                      >
+                        {busy === "revoke" ? "Revoking…" : "Revoke"}
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        disabled={busy !== null}
+                        onClick={async () => {
+                          const ok = await confirm({
+                            title: "Reactivate this license?",
+                            description: `Service resumes immediately for ${data.organizationName} under the existing plan and usage. If the license was over quota, it stays hard-blocked until you raise the limit.`,
+                            confirmLabel: "Reactivate license",
+                          });
+                          if (!ok) return;
+                          void run("reactivate", async () => {
+                            await api.reactivate(id);
+                            toast.success("License reactivated.");
+                          });
+                        }}
+                      >
+                        {busy === "reactivate" ? "Reactivating…" : "Reactivate"}
+                      </Button>
+                    )}
                   </div>
                   {rotatedKey ? (
                     <div className="rounded-md border border-border bg-muted-surface p-3">
