@@ -11,9 +11,9 @@ import {
   StatusBadge,
   TelemetryBadge,
   UsageMeter,
-  WatermarkBadge,
 } from "#/components/page-shell.tsx";
 import { useConfirm } from "#/components/confirm.tsx";
+import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import {
   Card,
@@ -132,7 +132,13 @@ function LicenseDetailPage() {
                       Revoked
                     </span>
                   ) : null}
-                  <WatermarkBadge status={data.status} />
+                  {data.status === "trial" ? (
+                    <Badge variant="secondary">Watermark on</Badge>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">
+                      Watermark off
+                    </span>
+                  )}
                   <StatusBadge status={data.status} />
                 </div>
               </CardHeader>

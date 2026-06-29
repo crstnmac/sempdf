@@ -17,9 +17,15 @@ import { Input } from '#/components/ui/input.tsx'
 import { Label } from '#/components/ui/label.tsx'
 import { useAsync } from '#/hooks/use-async.ts'
 import { ApiError, type PortalLicense, formatDate, formatNumber, portalApi, relativeDays } from '#/lib/api.ts'
-import { useActiveOrg } from '#/lib/portal-org.tsx'
+import { RequireOrgAdmin, useActiveOrg } from '#/lib/portal-org.tsx'
 
-export const Route = createFileRoute('/portal/settings')({ component: PortalSettingsPage })
+export const Route = createFileRoute('/portal/settings')({
+  component: () => (
+    <RequireOrgAdmin>
+      <PortalSettingsPage />
+    </RequireOrgAdmin>
+  ),
+})
 
 function PortalSettingsPage() {
   const { activeOrg, activeOrgId } = useActiveOrg()

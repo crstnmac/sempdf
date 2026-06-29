@@ -18,7 +18,6 @@ import {
   StateNotice,
   StatusBadge,
   UsageMeter,
-  WatermarkBadge,
 } from "#/components/page-shell.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Input } from "#/components/ui/input.tsx";
@@ -254,7 +253,6 @@ function UsageSummary({
             </CardTitle>
           </div>
           <div className="flex items-center gap-2">
-            <WatermarkBadge status={primary.status} />
             <StatusBadge status={primary.status} />
           </div>
         </div>
@@ -669,8 +667,7 @@ function StatusBanner({ licenses }: { licenses: PortalLicense[] }) {
       <Banner tone="info">
         Trial active
         {trial.trialEndsAt ? ` — ends ${relativeDays(trial.trialEndsAt)}` : ""}.
-        All output PDFs are watermarked{" "}
-        <strong>“SemPDF - For Trial Use Only”</strong> until you upgrade.
+        All output PDFs are <strong>watermarked</strong> until you upgrade.
       </Banner>
     );
   }

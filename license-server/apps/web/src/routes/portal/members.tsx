@@ -33,10 +33,16 @@ import {
 } from '#/components/ui/table.tsx'
 import { useAsync } from '#/hooks/use-async.ts'
 import { ApiError, formatDate, portalApi } from '#/lib/api.ts'
-import { useActiveOrg } from '#/lib/portal-org.tsx'
+import { RequireOrgAdmin, useActiveOrg } from '#/lib/portal-org.tsx'
 import { useConfirm } from '#/components/confirm.tsx'
 
-export const Route = createFileRoute('/portal/members')({ component: MembersPage })
+export const Route = createFileRoute('/portal/members')({
+  component: () => (
+    <RequireOrgAdmin>
+      <MembersPage />
+    </RequireOrgAdmin>
+  ),
+})
 
 const ROLES = ['member', 'admin', 'owner']
 
@@ -159,6 +165,7 @@ function MembersPage() {
                         <TableCell>
                           <Select
                             value={m.role}
+                            disabled={busy || (m.isSelf && m.role === 'owner')}
                             onValueChange={(value) =>
                               value &&
                               act(async () => {
@@ -167,7 +174,14 @@ function MembersPage() {
                               })
                             }
                           >
-                            <SelectTrigger className="w-32 capitalize">
+                            <SelectTrigger
+                              className="w-32 capitalize"
+                              title={
+                                m.isSelf && m.role === 'owner'
+                                  ? "You can't change your own owner role — ask another owner."
+                                  : undefined
+                              }
+                            >
                               <SelectValue>{m.role}</SelectValue>
                             </SelectTrigger>
                             <SelectContent>
