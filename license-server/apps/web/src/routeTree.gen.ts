@@ -9,7 +9,6 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SignupRouteImport } from './routes/signup'
 import { Route as PortalRouteImport } from './routes/portal'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AdminRouteImport } from './routes/_admin'
@@ -22,11 +21,6 @@ import { Route as AdminUsageRouteImport } from './routes/_admin/usage'
 import { Route as AdminLicensesIndexRouteImport } from './routes/_admin/licenses/index'
 import { Route as AdminLicensesIdRouteImport } from './routes/_admin/licenses/$id'
 
-const SignupRoute = SignupRouteImport.update({
-  id: '/signup',
-  path: '/signup',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const PortalRoute = PortalRouteImport.update({
   id: '/portal',
   path: '/portal',
@@ -86,7 +80,6 @@ export interface FileRoutesByFullPath {
   '/': typeof AdminIndexRoute
   '/login': typeof LoginRoute
   '/portal': typeof PortalRouteWithChildren
-  '/signup': typeof SignupRoute
   '/usage': typeof AdminUsageRoute
   '/portal/members': typeof PortalMembersRoute
   '/portal/notifications': typeof PortalNotificationsRoute
@@ -97,7 +90,6 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
-  '/signup': typeof SignupRoute
   '/usage': typeof AdminUsageRoute
   '/portal/members': typeof PortalMembersRoute
   '/portal/notifications': typeof PortalNotificationsRoute
@@ -112,7 +104,6 @@ export interface FileRoutesById {
   '/_admin': typeof AdminRouteWithChildren
   '/login': typeof LoginRoute
   '/portal': typeof PortalRouteWithChildren
-  '/signup': typeof SignupRoute
   '/_admin/usage': typeof AdminUsageRoute
   '/portal/members': typeof PortalMembersRoute
   '/portal/notifications': typeof PortalNotificationsRoute
@@ -128,7 +119,6 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/portal'
-    | '/signup'
     | '/usage'
     | '/portal/members'
     | '/portal/notifications'
@@ -139,7 +129,6 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
-    | '/signup'
     | '/usage'
     | '/portal/members'
     | '/portal/notifications'
@@ -153,7 +142,6 @@ export interface FileRouteTypes {
     | '/_admin'
     | '/login'
     | '/portal'
-    | '/signup'
     | '/_admin/usage'
     | '/portal/members'
     | '/portal/notifications'
@@ -168,18 +156,10 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRouteWithChildren
   LoginRoute: typeof LoginRoute
   PortalRoute: typeof PortalRouteWithChildren
-  SignupRoute: typeof SignupRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/signup': {
-      id: '/signup'
-      path: '/signup'
-      fullPath: '/signup'
-      preLoaderRoute: typeof SignupRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/portal': {
       id: '/portal'
       path: '/portal'
@@ -297,7 +277,6 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRouteWithChildren,
   LoginRoute: LoginRoute,
   PortalRoute: PortalRouteWithChildren,
-  SignupRoute: SignupRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

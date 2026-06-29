@@ -65,11 +65,9 @@ export function AppSidebar({
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:p-1.5!">
-              <Link to={config.home}>
-                <ShieldCheckIcon className="size-5!" />
-                <span className="text-base font-semibold">{config.title}</span>
-              </Link>
+            <SidebarMenuButton render={<Link to={config.home} />} className="data-[slot=sidebar-menu-button]:p-1.5!">
+              <ShieldCheckIcon className="size-5!" />
+              <span className="text-base font-semibold">{config.title}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -81,15 +79,18 @@ export function AppSidebar({
             <SidebarMenu>
               {config.nav.map((item) => (
                 <SidebarMenuItem key={item.to}>
-                  <SidebarMenuButton asChild tooltip={item.title}>
-                    <Link
-                      to={item.to}
-                      activeOptions={{ exact: item.to === config.home }}
-                      activeProps={{ 'data-active': 'true' }}
-                    >
-                      <item.icon />
-                      <span>{item.title}</span>
-                    </Link>
+                  <SidebarMenuButton
+                    tooltip={item.title}
+                    render={
+                      <Link
+                        to={item.to}
+                        activeOptions={{ exact: item.to === config.home }}
+                        activeProps={{ 'data-active': 'true' }}
+                      />
+                    }
+                  >
+                    <item.icon />
+                    <span>{item.title}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}

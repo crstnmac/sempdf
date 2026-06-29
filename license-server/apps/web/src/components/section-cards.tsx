@@ -27,10 +27,9 @@ export function SectionCards({ summary }: { summary: DashboardSummary }) {
       hint: 'Charged across all licenses',
     },
     {
-      label: 'In grace period',
-      value: formatNumber(summary.graceTenants),
-      hint: 'Over limit — output watermarked',
-      badge: summary.graceTenants > 0 ? 'outline' : undefined,
+      label: 'On trial',
+      value: formatNumber(summary.trialTenants),
+      hint: 'Output watermarked until upgrade',
     },
     {
       label: 'Hard blocked',

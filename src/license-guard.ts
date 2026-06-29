@@ -17,6 +17,7 @@ export {
   isLicenseDevBypass,
   licenseQuotaError,
   shutdownAutoGuard,
+  checkout,
   setJobContext,
   type LicenseGuard,
   type LicenseGuardDecision,

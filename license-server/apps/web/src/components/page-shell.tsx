@@ -5,6 +5,7 @@ import {
   type TelemetryStatus,
   type TenantStatus,
   formatNumber,
+  isUnlimited,
   statusLabel,
   statusTone,
   telemetryTone,
@@ -24,13 +25,11 @@ export function TelemetryBadge({ status }: { status: TelemetryStatus }) {
   return <Badge variant={telemetryTone(status) as BadgeTone}>{status}</Badge>
 }
 
-/** Shows the watermark a generated PDF gets ("Trial Mode" / "Over Limit"). */
+/** Shows the watermark a generated PDF gets ("ZeroPDF - For Trial Use Only"). */
 export function WatermarkBadge({ status }: { status: TenantStatus }) {
   const label = watermarkLabel(status)
   if (!label) return null
-  return (
-    <Badge variant={status === 'grace_period' ? 'destructive' : 'secondary'}>{label}</Badge>
-  )
+  return <Badge variant="secondary">{label}</Badge>
 }
 
 /**
@@ -46,8 +45,9 @@ export function UsageMeter({
   limit: number
   showNumbers?: boolean
 }) {
-  const pct = usagePercent(used, limit)
-  const over = used > limit && limit > 0
+  const unlimited = isUnlimited(limit)
+  const pct = unlimited ? 0 : usagePercent(used, limit)
+  const over = !unlimited && used > limit && limit > 0
   const overBy = over ? used - limit : 0
   const barColor = over || pct >= 100 ? 'bg-destructive' : pct >= 80 ? 'bg-warning' : 'bg-primary'
 
@@ -56,14 +56,14 @@ export function UsageMeter({
       {showNumbers ? (
         <div className="flex justify-between text-xs text-muted-foreground">
           <span className="tabular-nums">
-            {formatNumber(used)} / {limit > 0 ? formatNumber(limit) : '∞'} pages
+            {formatNumber(used)} / {unlimited || limit <= 0 ? '∞' : formatNumber(limit)} pages
           </span>
           {over ? (
             <span className="font-medium text-destructive tabular-nums">
               −{formatNumber(overBy)} over
             </span>
           ) : (
-            <span>{pct}%</span>
+            <span>{unlimited ? '∞' : `${pct}%`}</span>
           )}
         </div>
       ) : null}

@@ -147,7 +147,10 @@ const ENV_LICENSE_KEY = "ZEROPDF_LICENSE_KEY";
 const ENV_LICENSE_SERVER = "ZEROPDF_LICENSE_SERVER";
 const ENV_JOB_ID = "ZEROPDF_JOB_ID";
 const ENV_JOB_DESCRIPTION = "ZEROPDF_JOB_DESCRIPTION";
-const INITIAL_LEASE = 500;
+// No optimistic lease: pages are only generated after the server authorizes
+// them, so the server's counter is the source of truth and an over-limit /
+// expired / inactive license is enforced rather than silently bypassed.
+const INITIAL_LEASE = 0;
 const REFILL_AT = 5;
 const REFILL_AMOUNT = 100;
 const FLUSH_INTERVAL_MS = 5_000;
@@ -166,6 +169,10 @@ interface AutoGuardState {
   lastLanguage?: string | undefined;
   lastConformance?: string | undefined;
   lastFlushAt: number;
+  /** Set once the server rejects an authorize; further generation is refused. */
+  blocked: { reason: string } | null;
+  /** Watermark text the server requires on output ("Trial Mode"/"Over Limit"). */
+  watermarkText: string | undefined;
 }
 
 /** Runtime + job metadata sent alongside authorize/usage for telemetry. */
@@ -186,6 +193,10 @@ function buildClientMeta(state: AutoGuardState): Record<string, unknown> {
 
 let autoGuardState: AutoGuardState | null = null;
 let autoInstallAttempted = false;
+// When the app drives authorization explicitly via checkout(), the guard stops
+// auto-leasing ahead in consume() so each batch is a single deterministic
+// server round-trip (no background authorize racing the checkout).
+let checkoutMode = false;
 
 function getEnvVar(name: string): string | undefined {
   const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env;
@@ -214,6 +225,8 @@ function tryAutoInstallGuard(): boolean {
     key,
     serverUrl: serverUrl.replace(/\/$/, ""),
     lastFlushAt: 0,
+    blocked: null,
+    watermarkText: undefined,
   };
 
   autoGuardState = state;
@@ -227,11 +240,27 @@ function tryAutoInstallGuard(): boolean {
 
   const guard: LicenseGuard = {
     consume(usage: GenerationUsage): LicenseGuardDecision | undefined {
+      // Hard block: once the server has rejected this license, refuse every
+      // subsequent run rather than retrying — the limit is reached/expired.
+      if (state.blocked) {
+        throw licenseQuotaError(
+          `Generation blocked by the license server: ${state.blocked.reason}.`,
+          { blocked: true, reason: state.blocked.reason },
+        );
+      }
+
       const units = usage.pages;
       if (units > state.lease) {
+        // Not authorized yet. In streaming (no-checkout) mode, kick off an async
+        // authorize so a retry succeeds; in checkout mode the app pre-authorizes,
+        // so just report the shortfall. We never generate unauthorized pages.
+        if (!checkoutMode && !state.replenishing) {
+          state.replenishing = true;
+          replenishAutoGuard(state).finally(() => { state.replenishing = false; });
+        }
         throw licenseQuotaError(
-          `License quota exhausted: ${state.lease} pages left, ${units} required. ` +
-            "The auto-guard refills asynchronously — wait a moment and retry, or call checkout() manually.",
+          `License not yet authorized for ${units} page(s) (lease: ${state.lease}). ` +
+            "Call `await checkout(pages)` before generating a batch, or retry shortly.",
           { remaining: state.lease },
         );
       }
@@ -247,12 +276,13 @@ function tryAutoInstallGuard(): boolean {
         flushAutoGuard(state).catch(() => {});
       }
 
-      if (state.lease < REFILL_AT && !state.replenishing) {
+      if (!checkoutMode && state.lease < REFILL_AT && !state.replenishing) {
         state.replenishing = true;
         replenishAutoGuard(state).finally(() => { state.replenishing = false; });
       }
 
-      return undefined;
+      // Stamp the watermark the server requires (trial / over-limit), if any.
+      return state.watermarkText ? { watermarkText: state.watermarkText } : undefined;
     },
   };
 
@@ -260,25 +290,97 @@ function tryAutoInstallGuard(): boolean {
   return true;
 }
 
-async function replenishAutoGuard(state: AutoGuardState): Promise<void> {
+interface AuthorizeOutcome {
+  granted: number;
+  watermarkText: string | undefined;
+  blocked: boolean;
+  reason: string;
+}
+
+/** Single authorize round-trip to the server. Never throws — reports outcome. */
+async function authorizeRequest(state: AutoGuardState, requested: number): Promise<AuthorizeOutcome> {
   const nonce = makeNonce();
+  const res = await fetch(`${state.serverUrl}/v1/authorize`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${state.key}`,
+    },
+    body: JSON.stringify({ requested, nonce, meta: buildClientMeta(state) }),
+  });
+  if (res.status === 403) {
+    // Hard block: over limit, expired, or inactive.
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    return { granted: 0, watermarkText: undefined, blocked: true, reason: data.error ?? "hard_blocked" };
+  }
+  if (!res.ok) return { granted: 0, watermarkText: undefined, blocked: false, reason: "unavailable" };
+  const data = (await res.json()) as { granted?: number; watermark?: boolean; watermarkText?: string | null };
+  return {
+    granted: typeof data.granted === "number" ? data.granted : 0,
+    watermarkText: data.watermark ? data.watermarkText ?? "Over Limit" : undefined,
+    blocked: false,
+    reason: "",
+  };
+}
+
+async function replenishAutoGuard(state: AutoGuardState): Promise<void> {
   try {
-    const res = await fetch(`${state.serverUrl}/v1/authorize`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${state.key}`,
-      },
-      body: JSON.stringify({ requested: REFILL_AMOUNT, nonce, meta: buildClientMeta(state) }),
-    });
-    if (!res.ok) return;
-    const data = (await res.json()) as { granted?: number };
-    if (typeof data.granted === "number" && data.granted > 0) {
-      state.lease += data.granted;
+    const outcome = await authorizeRequest(state, REFILL_AMOUNT);
+    if (outcome.blocked) {
+      state.blocked = { reason: outcome.reason };
+      state.lease = 0;
+      return;
     }
+    if (outcome.granted > 0) state.lease += outcome.granted;
+    state.watermarkText = outcome.watermarkText;
   } catch {
     // server unreachable — retry on next consumption trigger
   }
+}
+
+/**
+ * Pre-authorizes `requested` pages with the license server, awaiting the
+ * response so enforcement (limit, trial watermark, hard block) is reflected at
+ * the synchronous point of generation. Call this before generating a known
+ * batch. Auto-installs the guard from environment variables if needed.
+ *
+ * @throws PdfEngineError(LICENSE_REQUIRED) when no key/server URL is configured.
+ * @throws PdfEngineError(LICENSE_QUOTA_EXCEEDED, {blocked:true}) when the server
+ *   refuses the request (limit reached, license expired/inactive).
+ * @returns the page lease remaining after the checkout.
+ */
+export async function checkout(requested: number = REFILL_AMOUNT): Promise<number> {
+  if (!autoGuardState && !tryAutoInstallGuard()) {
+    throw new PdfEngineError(
+      PdfErrorCode.LICENSE_REQUIRED,
+      "checkout() requires the licensing auto-guard: set ZEROPDF_LICENSE_KEY " +
+        "(and a baked or ZEROPDF_LICENSE_SERVER URL).",
+    );
+  }
+  checkoutMode = true;
+  const state = autoGuardState!;
+  if (state.blocked) {
+    throw licenseQuotaError(`Generation blocked by the license server: ${state.blocked.reason}.`, {
+      blocked: true,
+      reason: state.blocked.reason,
+    });
+  }
+  const want = Math.max(1, Math.floor(requested));
+  const shortfall = want - state.lease;
+  if (shortfall > 0) {
+    const outcome = await authorizeRequest(state, shortfall);
+    if (outcome.blocked) {
+      state.blocked = { reason: outcome.reason };
+      state.lease = 0;
+      throw licenseQuotaError(`License server blocked generation: ${outcome.reason}.`, {
+        blocked: true,
+        reason: outcome.reason,
+      });
+    }
+    state.lease += outcome.granted;
+    state.watermarkText = outcome.watermarkText;
+  }
+  return state.lease;
 }
 
 async function flushAutoGuard(state: AutoGuardState): Promise<void> {
@@ -328,5 +430,6 @@ export function shutdownAutoGuard(): void {
   }
   autoGuardState = null;
   autoInstallAttempted = false;
+  checkoutMode = false;
   setLicenseGuard(undefined);
 }

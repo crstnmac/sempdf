@@ -4,9 +4,41 @@
  * cookie (`credentials: 'include'`); a 401 means "not signed in as admin".
  */
 
-export type TenantStatus = 'none' | 'trial' | 'grace_period' | 'hard_blocked'
+export type TenantStatus = 'none' | 'trial' | 'hard_blocked'
 export type TelemetryStatus = 'success' | 'fail' | 'watermarked' | 'blocked'
-export type UsageWindow = 'day' | 'month' | 'lifetime'
+export type UsageWindow = 'year' | 'lifetime'
+
+/**
+ * Sentinel limit for an "unlimited" plan. Enforcement compares `usedUnits` to
+ * this, so it must be a real (huge) number rather than 0 — `limit: 0` would make
+ * the policy treat every license as at-limit.
+ */
+export const UNLIMITED_LIMIT = Number.MAX_SAFE_INTEGER
+
+/** True when a limit represents an effectively unlimited (∞) plan. */
+export function isUnlimited(limit: number): boolean {
+  return limit >= 1e15
+}
+
+/** Formats a page limit, rendering the unlimited sentinel as ∞. */
+export function formatLimit(limit: number): string {
+  return isUnlimited(limit) ? '∞' : formatNumber(limit)
+}
+
+/**
+ * Annual page-volume plan tiers. A tier's `limit` is the enforced annual page
+ * allowance (`limitUnits`) = the tier ceiling. `limit: null` is the Custom tier
+ * (operator types an exact number); `UNLIMITED_LIMIT` is the Unlimited tier.
+ */
+export const ANNUAL_TIERS: { label: string; limit: number | null }[] = [
+  { label: '0 – 50,000', limit: 50_000 },
+  { label: '50,000 – 250,000', limit: 250_000 },
+  { label: '250,001 – 1,000,000', limit: 1_000_000 },
+  { label: '1,000,001 – 5,000,000', limit: 5_000_000 },
+  { label: '5,000,001 – 20,000,000', limit: 20_000_000 },
+  { label: 'Custom', limit: null },
+  { label: 'Unlimited (∞)', limit: UNLIMITED_LIMIT },
+]
 
 export interface DashboardTenant {
   id: string
@@ -23,8 +55,6 @@ export interface DashboardTenant {
   firstOverageAt: string | null
   trialStartedAt: string | null
   trialEndsAt: string | null
-  hardBlockAt: string | null
-  gracePeriodDays: number
   createdAt: string
 }
 
@@ -80,9 +110,7 @@ export interface NotificationSettings {
 export interface DashboardSummary {
   totalTenants: number
   pagesUsed: number
-  watermarkedTenants: number
   hardBlockedTenants: number
-  graceTenants: number
   trialTenants: number
 }
 
@@ -98,13 +126,15 @@ export interface LicenseUsage {
   accountId: string
   organizationName: string
   metric: string
+  window: UsageWindow
   limit: number
+  baseLimit: number
   used: number
   remaining: number
   status: TenantStatus
   firstOverageAt: string | null
   trialEndsAt: string | null
-  gracePeriodDays: number
+  expiresAt: string | null
   telemetry: TelemetryRow[]
 }
 
@@ -183,6 +213,19 @@ export const api = {
       `/licenses/${id}/extend-trial`,
       { method: 'POST', body: JSON.stringify(body) },
     ),
+  addPages: (id: string, pages: number, recurring: boolean) =>
+    request<{ id: string; limitUnits: number; usedUnits: number; status: TenantStatus; recurring: boolean }>(
+      `/licenses/${id}/add-pages`,
+      { method: 'POST', body: JSON.stringify({ pages, recurring }) },
+    ),
+  changePlan: (
+    id: string,
+    body: { limit: number; window: UsageWindow; expiresAt?: string | null; convertToPaid?: boolean },
+  ) =>
+    request<{ id: string; status: TenantStatus; window: UsageWindow; limitUnits: number; usedUnits: number; expiresAt: string | null }>(
+      `/licenses/${id}/plan`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
   rotateKey: (id: string) =>
     request<{ id: string; keyPrefix: string; key: string }>(`/licenses/${id}/rotate`, {
       method: 'POST',
@@ -194,6 +237,23 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  createCustomer: (body: {
+    orgName: string
+    customerName: string
+    customerEmail: string
+    kind: 'trial' | 'paid'
+    limit: number
+    window: UsageWindow
+    trialEndsAt?: string
+  }) =>
+    request<{
+      organization: { id: string; name: string; slug: string }
+      customerEmail: string
+      temporaryPassword: string
+      license: { id: string; status: TenantStatus; limitUnits: number; trialEndsAt: string | null; expiresAt: string | null }
+      keyPrefix: string
+      key: string
+    }>('/customers', { method: 'POST', body: JSON.stringify(body) }),
 }
 
 // ----- customer portal (own organizations only) -----------------------------
@@ -205,11 +265,18 @@ export interface PortalOrganization {
   role: string
 }
 
+export interface PortalApiKey {
+  id: string
+  name: string
+  keyPrefix: string
+  lastUsedAt: string | null
+  createdAt: string
+}
+
 export interface PortalLicense {
   id: string
   accountId: string
   organizationName: string
-  keyPrefix: string
   metric: string
   window: UsageWindow
   limitUnits: number
@@ -220,6 +287,7 @@ export interface PortalLicense {
   trialEndsAt: string | null
   resetAt: string | null
   createdAt: string
+  keys: PortalApiKey[]
 }
 
 export interface PortalTelemetry extends TelemetryMeta {
@@ -267,11 +335,6 @@ export interface PortalMembers {
 
 export const portalApi = {
   overview: () => portalRequest<PortalOverview>('/overview'),
-  startTrial: (organizationId?: string) =>
-    portalRequest<{ id: string; accountId: string; status: TenantStatus; key?: string; created: boolean }>(
-      '/trial',
-      { method: 'POST', body: JSON.stringify(organizationId ? { organizationId } : {}) },
-    ),
   members: (orgId: string) => portalRequest<PortalMembers>(`/orgs/${orgId}/members`),
   invite: (orgId: string, body: { email: string; role: string }) =>
     portalRequest<PortalInvitation>(`/orgs/${orgId}/invitations`, {
@@ -299,11 +362,13 @@ export const portalApi = {
       method: 'PUT',
       body: JSON.stringify(body),
     }),
-  generateKey: (licenseId: string) =>
-    portalRequest<{ id: string; keyPrefix: string; key: string }>(
-      `/licenses/${licenseId}/key`,
-      { method: 'POST' },
+  createKey: (licenseId: string, name: string) =>
+    portalRequest<{ id: string; name: string; keyPrefix: string; key: string }>(
+      `/licenses/${licenseId}/keys`,
+      { method: 'POST', body: JSON.stringify({ name }) },
     ),
+  revokeKey: (keyId: string) =>
+    portalRequest<{ ok: boolean }>(`/keys/${keyId}`, { method: 'DELETE' }),
 }
 
 // ----- presentation helpers -------------------------------------------------
@@ -331,17 +396,26 @@ export function formatDateTime(value: string | null | undefined): string {
   }).format(new Date(value))
 }
 
-/** Customer-friendly label for an internal API endpoint path. */
-export function endpointLabel(endpoint: string): string {
-  if (endpoint.includes('authorize')) return 'Generation authorized'
-  if (endpoint.includes('usage')) return 'Usage reported'
-  return endpoint
+/**
+ * Human label for an activity row, describing what happened to the generation
+ * (not the internal endpoint). Pairs with the status badge.
+ */
+export function activityLabel(status: TelemetryStatus): string {
+  switch (status) {
+    case 'blocked':
+      return 'Generation blocked'
+    case 'fail':
+      return 'Generation failed'
+    case 'watermarked':
+      return 'PDF generated (watermarked)'
+    default:
+      return 'PDF generated'
+  }
 }
 
 const STATUS_LABELS: Record<TenantStatus, string> = {
   none: 'Active',
   trial: 'Trial',
-  grace_period: 'Grace period',
   hard_blocked: 'Hard blocked',
 }
 
@@ -355,8 +429,6 @@ export function statusTone(status: TenantStatus): BadgeTone {
   switch (status) {
     case 'hard_blocked':
       return 'destructive'
-    case 'grace_period':
-      return 'outline'
     case 'trial':
       return 'secondary'
     default:
@@ -384,12 +456,11 @@ export function usagePercent(used: number, limit: number): number {
 
 /**
  * The visible watermark a generated PDF gets under the current status — mirrors
- * the server's enforcement: trials always watermark ("Trial Mode"); overage
- * grace watermarks future runs ("Over Limit"). Null means clean output.
+ * the server's enforcement: trials watermark every run with
+ * "ZeroPDF - For Trial Use Only". Null means clean output.
  */
 export function watermarkLabel(status: TenantStatus): string | null {
-  if (status === 'trial') return 'Trial Mode'
-  if (status === 'grace_period') return 'Over Limit'
+  if (status === 'trial') return 'ZeroPDF - For Trial Use Only'
   return null
 }
 
