@@ -138,7 +138,7 @@ doc.renderTemplate({
 
 ## Tables
 
-Cells are strings or objects. Cell objects take per-cell styling — `bold`/`italic` (resolved against the table font, including registered families), `font`, `color`, `align`, `background`, and `verticalAlign` — or inline rich-text `runs` instead of `text`. Table options add grid `borderColor`/`borderWidth`, `headerBackground`, and `zebra` striping; all decoration is emitted as artifacts so the structure tree stays clean:
+Cells are strings or objects. Cell objects take per-cell styling — `bold`/`italic` (resolved against the table font, including registered families), `font`, `color`, `align`, `background`, `border`, and `verticalAlign` — or inline rich-text `runs` instead of `text`. Table options add `borders` (with `borderColor`/`borderWidth`), `headerBackground`, and `zebra` striping; all decoration is emitted as artifacts so the structure tree stays clean:
 
 ```ts
 {
@@ -153,6 +153,7 @@ Cells are strings or objects. Cell objects take per-cell styling — `bold`/`ita
   ],
   options: {
     headerRows: 1,
+    borders: "all",
     borderColor: "gray",
     borderWidth: 0.75,
     headerBackground: color("#eeeeee"),
@@ -162,6 +163,49 @@ Cells are strings or objects. Cell objects take per-cell styling — `bold`/`ita
 ```
 
 `zebra: true` fills every second body row with a light gray; pass a color to choose your own. A cell `background` overrides both the header fill and the stripe. The same options work on `page.table()` and `flow.table()`.
+
+### Borders
+
+`borders` selects which lines the table draws. `borderColor` (default medium gray) and `borderWidth` (default `0.75`) style them.
+
+| `borders` | Result |
+| --- | --- |
+| `"all"` | Full grid around every cell. The default when `borderColor`/`borderWidth` is set. |
+| `"horizontal"` | Horizontal rules between rows plus the top and bottom edges; no vertical lines. |
+| `"outer"` | A single frame around the whole table. |
+| `"none"` | No borders, even if `borderColor`/`borderWidth` is set. |
+
+When `borders` is omitted it defaults to `"all"` if a color or width is set, otherwise `"none"` — so existing tables keep their grid.
+
+```ts
+options: { headerRows: 1, borders: "horizontal", borderColor: "gray" }
+```
+
+### Per-cell borders
+
+For finer control, set `border` on a cell to draw individual edges, overriding the table-level `borders`. Each side (`top`, `right`, `bottom`, `left`) accepts `true` (a default gray `0.75` line) or `{ color, width }`. Because a row is just its cells, setting the same side on every cell in a row rules that row — e.g. a line under the header or a top rule on a totals row:
+
+```ts
+{
+  type: "table",
+  rows: [
+    // Rule under the header row.
+    [
+      { text: "Item", header: true, border: { bottom: { width: 1.2, color: color("#1a4db3") } } },
+      { text: "Amount", header: true, border: { bottom: { width: 1.2, color: color("#1a4db3") } } },
+    ],
+    ["Subtotal", "$18.50"],
+    // Top rule + a colored left accent on the totals row.
+    [
+      { text: "Total", border: { top: { width: 1.5 }, left: { width: 3, color: color("#cc3333") } } },
+      { text: "$18.50", border: { top: { width: 1.5 } } },
+    ],
+  ],
+  options: { headerRows: 1 },
+}
+```
+
+Per-cell `border` is drawn on top of any table-level `borders`, so you can box a single cell inside a full grid, or skip the preset entirely and rule only the rows you want.
 
 ## Form Fields
 

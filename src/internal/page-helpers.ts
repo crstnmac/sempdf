@@ -57,6 +57,7 @@ import {
   type NormalizedListItem,
   type NormalizedListOptions,
   type NormalizedRadioGroupOptions,
+  type NormalizedCellBorders,
   type NormalizedTableCell,
   type NormalizedTableOptions,
   type NormalizedTableRow
@@ -886,6 +887,18 @@ export function layoutList(
   return y;
 }
 
+/**
+ * Distance from a cell's content top down to the first text baseline. The text
+ * layout engine treats the given `y` as the first baseline, so glyph ascenders
+ * render above it. In a bordered cell that would push the top line above the
+ * cell's top edge, so we drop the baseline by roughly the ascent (cap height
+ * plus half-leading), keeping the line inside the cell. Approximated as a
+ * fraction of the line height to stay font-agnostic across mixed cell runs.
+ */
+function firstLineBaselineDrop(lineHeight: number): number {
+  return lineHeight * 0.75;
+}
+
 export function layoutTable(
   page: InternalPageModel,
   tableNode: InternalStructureNode,
@@ -898,6 +911,13 @@ export function layoutTable(
   }
   let y = options.y;
   const rowSpanOccupancy = new Map<number, number>();
+  // Per-row geometry collected during layout so borders can be drawn once, after
+  // all rows are placed (needed for "outer" and "horizontal" styles).
+  const rowGeometry: Array<{
+    top: number;
+    height: number;
+    cells: Array<{ x: number; width: number; border?: NormalizedCellBorders | undefined }>;
+  }> = [];
 
   for (const [rowIndex, row] of rows.entries()) {
     const rowNode = createStructureNode(page, "TR", undefined, tableNode);
@@ -946,7 +966,7 @@ export function layoutTable(
           normalizedRuns,
           {
             x: cellX + options.cellPadding,
-            y: y - options.cellPadding,
+            y: y - options.cellPadding - firstLineBaselineDrop(lineHeight),
             width: textWidth,
             lineHeight,
             align: cell.align ?? options.align,
@@ -975,7 +995,7 @@ export function layoutTable(
             ...(cell.color !== undefined ? { color: cell.color } : {}),
             ...(cell.align !== undefined ? { align: cell.align } : {}),
             x: cellX + options.cellPadding,
-            y: y - options.cellPadding,
+            y: y - options.cellPadding - firstLineBaselineDrop(options.lineHeight),
             width: textWidth,
             tag: role
           },
@@ -1019,14 +1039,16 @@ export function layoutTable(
       if (background !== undefined) {
         page.ops.push(tableCellRectOp(placed.x, y - rowHeight, placed.width, rowHeight, { fill: background }));
       }
-      if (options.borderColor !== undefined && options.borderWidth !== undefined) {
-        page.ops.push(
-          tableCellRectOp(placed.x, y - rowHeight, placed.width, rowHeight, {
-            stroke: { color: options.borderColor, width: options.borderWidth },
-          }),
-        );
-      }
     }
+    rowGeometry.push({
+      top: y,
+      height: rowHeight,
+      cells: placedCells.map((placed) => ({
+        x: placed.x,
+        width: placed.width,
+        ...(placed.cell.border !== undefined ? { border: placed.cell.border } : {}),
+      })),
+    });
     for (const placed of placedCells) {
       const align = placed.cell.verticalAlign ?? options.verticalAlign;
       const offset =
@@ -1060,7 +1082,81 @@ export function layoutTable(
     y -= rowHeight + options.rowGap;
   }
 
+  if (options.borderColor !== undefined && options.borderWidth !== undefined && rowGeometry.length > 0) {
+    drawTableBorders(page, rowGeometry, options.borderStyle ?? "all", {
+      x: options.x,
+      width: options.width,
+      stroke: { color: options.borderColor, width: options.borderWidth },
+    });
+  }
+
+  // Per-cell edge borders, drawn last so they sit on top of the table preset.
+  for (const row of rowGeometry) {
+    for (const cell of row.cells) {
+      if (cell.border === undefined) continue;
+      const left = cell.x;
+      const right = cell.x + cell.width;
+      const top = row.top;
+      const bottom = row.top - row.height;
+      if (cell.border.top) page.ops.push(tableLineOp(left, top, right, top, cell.border.top));
+      if (cell.border.bottom) page.ops.push(tableLineOp(left, bottom, right, bottom, cell.border.bottom));
+      if (cell.border.left) page.ops.push(tableLineOp(left, bottom, left, top, cell.border.left));
+      if (cell.border.right) page.ops.push(tableLineOp(right, bottom, right, top, cell.border.right));
+    }
+  }
+
   return y;
+}
+
+/** Draws table border lines once all rows are placed, per the selected style. */
+function drawTableBorders(
+  page: InternalPageModel,
+  rows: ReadonlyArray<{ top: number; height: number; cells: ReadonlyArray<{ x: number; width: number }> }>,
+  style: "all" | "horizontal" | "outer",
+  table: { x: number; width: number; stroke: { color: PdfColor; width: number } }
+): void {
+  const { stroke } = table;
+  if (style === "all") {
+    for (const row of rows) {
+      for (const cell of row.cells) {
+        page.ops.push(tableCellRectOp(cell.x, row.top - row.height, cell.width, row.height, { stroke }));
+      }
+    }
+    return;
+  }
+
+  const top = rows[0]!.top;
+  const last = rows[rows.length - 1]!;
+  const bottom = last.top - last.height;
+
+  if (style === "outer") {
+    page.ops.push(tableCellRectOp(table.x, bottom, table.width, top - bottom, { stroke }));
+    return;
+  }
+
+  // "horizontal": a rule at the top of every row plus the bottom edge of the last.
+  for (const row of rows) {
+    page.ops.push(tableLineOp(table.x, row.top, table.x + table.width, row.top, stroke));
+  }
+  page.ops.push(tableLineOp(table.x, bottom, table.x + table.width, bottom, stroke));
+}
+
+/** Builds a stroked straight-line op for table rules and cell edges, tagged as an artifact. */
+function tableLineOp(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  stroke: { color: PdfColor; width: number }
+): { type: "path"; commands: PathCommand[]; style: ReturnType<typeof normalizePathStyle> } {
+  return {
+    type: "path",
+    commands: [
+      { type: "moveTo", x: x1, y: y1 },
+      { type: "lineTo", x: x2, y: y2 },
+    ],
+    style: normalizePathStyle({ paint: "stroke", stroke, tag: "Artifact" }),
+  };
 }
 
 function buildTableCellStructureOptions(

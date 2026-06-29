@@ -296,15 +296,22 @@ function LicenseDetailPage() {
                     <Button
                       variant="outline"
                       disabled={busy !== null}
-                      onClick={() =>
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: "Rotate this license key?",
+                          description: `The current key for ${data.organizationName} will stop working immediately. The replacement key is shown only once, so copy it before leaving this page.`,
+                          confirmLabel: "Rotate key",
+                          destructive: true,
+                        });
+                        if (!ok) return;
                         void run("rotate", async () => {
                           const res = await api.rotateKey(id);
                           setRotatedKey(res.key);
                           toast.success(
                             "Key rotated. Copy it now — it is shown once.",
                           );
-                        })
-                      }
+                        });
+                      }}
                     >
                       {busy === "rotate" ? "Rotating…" : "Rotate key"}
                     </Button>
