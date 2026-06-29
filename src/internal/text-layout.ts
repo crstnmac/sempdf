@@ -10,6 +10,28 @@ export interface PositionedTextRun {
   readonly glyphs?: readonly EmbeddedTextGlyph[] | undefined;
 }
 
+/**
+ * Text-state / highlight fields that ride from the base options onto each
+ * positioned run so the serializer (Ts/Tr/Tz) and highlight pass can honor them.
+ * Spacing/font/color are copied explicitly by each call site; these are the
+ * formatting extras that would otherwise be dropped.
+ */
+function carriedRunStyle(
+  o: Pick<
+    NormalizedTextBaseOptions,
+    "rise" | "renderMode" | "strokeColor" | "strokeWidth" | "horizontalScaling" | "highlight"
+  >,
+): Partial<NormalizedTextOptions> {
+  return {
+    ...(o.rise !== undefined ? { rise: o.rise } : {}),
+    ...(o.renderMode !== undefined ? { renderMode: o.renderMode } : {}),
+    ...(o.strokeColor !== undefined ? { strokeColor: o.strokeColor } : {}),
+    ...(o.strokeWidth !== undefined ? { strokeWidth: o.strokeWidth } : {}),
+    ...(o.horizontalScaling !== undefined ? { horizontalScaling: o.horizontalScaling } : {}),
+    ...(o.highlight !== undefined ? { highlight: o.highlight } : {}),
+  };
+}
+
 interface ShapedTextRun {
   readonly text: string;
   readonly font: PdfFont;
@@ -118,7 +140,8 @@ export function positionTextRunsVertical(
               ...(options.tag !== undefined ? { tag: options.tag } : {}),
               ...(options.characterSpacing !== undefined ? { characterSpacing: options.characterSpacing } : {}),
               ...(options.wordSpacing !== undefined ? { wordSpacing: options.wordSpacing } : {}),
-              ...(options.leading !== undefined ? { leading: options.leading } : {})
+              ...(options.leading !== undefined ? { leading: options.leading } : {}),
+              ...carriedRunStyle(options)
             },
             ...(run.glyphs ? { glyphs: run.glyphs } : {})
           });
@@ -142,7 +165,8 @@ export function positionTextRunsVertical(
             ...(options.tag !== undefined ? { tag: options.tag } : {}),
             ...(options.characterSpacing !== undefined ? { characterSpacing: options.characterSpacing } : {}),
             ...(options.wordSpacing !== undefined ? { wordSpacing: options.wordSpacing } : {}),
-            ...(options.leading !== undefined ? { leading: options.leading } : {})
+            ...(options.leading !== undefined ? { leading: options.leading } : {}),
+            ...carriedRunStyle(options)
           },
           ...(combinedGlyphs ? { glyphs: combinedGlyphs } : {})
         });
@@ -166,7 +190,8 @@ export function positionTextRunsVertical(
         ...(options.tag !== undefined ? { tag: options.tag } : {}),
         ...(options.characterSpacing !== undefined ? { characterSpacing: options.characterSpacing } : {}),
         ...(options.wordSpacing !== undefined ? { wordSpacing: options.wordSpacing } : {}),
-        ...(options.leading !== undefined ? { leading: options.leading } : {})
+        ...(options.leading !== undefined ? { leading: options.leading } : {}),
+        ...carriedRunStyle(options)
       },
       ...(run.glyphs ? { glyphs: run.glyphs } : {})
     });
@@ -256,7 +281,8 @@ export function positionTextRuns(
         ...(options.tag !== undefined ? { tag: options.tag } : {}),
         ...(options.characterSpacing !== undefined ? { characterSpacing: options.characterSpacing } : {}),
         ...(options.wordSpacing !== undefined ? { wordSpacing: options.wordSpacing } : {}),
-        ...(options.leading !== undefined ? { leading: options.leading } : {})
+        ...(options.leading !== undefined ? { leading: options.leading } : {}),
+        ...carriedRunStyle(options)
       },
       ...(run.glyphs ? { glyphs: run.glyphs } : {})
     });
@@ -1117,7 +1143,8 @@ function buildLineOptions(
     ...(options.tag !== undefined ? { tag: options.tag } : {}),
     ...(options.characterSpacing !== undefined ? { characterSpacing: options.characterSpacing } : {}),
     ...(wordSpacing !== undefined ? { wordSpacing } : {}),
-    ...(options.leading !== undefined ? { leading: options.leading } : {})
+    ...(options.leading !== undefined ? { leading: options.leading } : {}),
+    ...carriedRunStyle(options)
   };
 }
 

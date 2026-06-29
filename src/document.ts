@@ -749,6 +749,14 @@ function buildRichRunInputs(
       ...(kerning !== undefined ? { kerning } : {}),
       ...(block.tag !== undefined ? { tag: block.tag } : {}),
       ...(run.characterSpacing !== undefined ? { characterSpacing: run.characterSpacing } : {}),
+      ...(run.rise !== undefined ? { rise: run.rise } : {}),
+      ...(run.superscript !== undefined ? { superscript: run.superscript } : {}),
+      ...(run.subscript !== undefined ? { subscript: run.subscript } : {}),
+      ...(run.renderMode !== undefined ? { renderMode: run.renderMode } : {}),
+      ...(run.strokeColor !== undefined ? { strokeColor: run.strokeColor } : {}),
+      ...(run.strokeWidth !== undefined ? { strokeWidth: run.strokeWidth } : {}),
+      ...(run.horizontalScaling !== undefined ? { horizontalScaling: run.horizontalScaling } : {}),
+      ...(run.highlight !== undefined ? { highlight: run.highlight } : {}),
     };
     return {
       text: run.text,

@@ -198,6 +198,7 @@ export function addTextToPage(
       ? undefined
       : createStructureNode(page, structureTag, normalized.structure, parent);
   const positioned = positionTextRuns(text, effectiveOptions, embeddedFonts);
+  pushTextHighlights(page, positioned, normalized, embeddedFonts);
   pushPositionedTextRuns(page, positioned, structureNode?.id);
   pushTextDecorations(page, positioned, normalized, embeddedFonts);
   return { width: measureTextWidth(text, effectiveOptions, embeddedFonts), height: normalized.fontSize };
@@ -227,6 +228,7 @@ export function addTextBlockToPage(
     const contentHeight = measurePositionedRunHeight(runs, normalized.lineHeight);
     runs = shiftRunsDown(runs, verticalAlignOffset(normalized.verticalAlign, normalized.height, contentHeight));
   }
+  pushTextHighlights(page, runs, normalized, embeddedFonts);
   pushPositionedTextRuns(page, runs, structureNode?.id);
   pushTextDecorations(page, runs, normalized, embeddedFonts);
   const lineCount = new Set(runs.map((run) => run.options.y)).size || 1;
@@ -347,6 +349,27 @@ export function pushTextDecorations(
   }
 }
 
+/**
+ * Draws a filled highlight rectangle behind each positioned run. Must be called
+ * BEFORE the text runs are pushed so the text paints over the background.
+ */
+export function pushTextHighlights(
+  page: InternalPageModel,
+  runs: readonly PositionedTextRun[],
+  base: NormalizedTextBaseOptions,
+  embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>
+): void {
+  if (base.highlight === undefined) return;
+  for (const run of runs) {
+    const width = measureTextWidth(run.text, base, embeddedFonts);
+    if (width <= 0) continue;
+    // Box spans a little below the baseline (descender room) up past cap height.
+    const yBottom = run.options.y - base.fontSize * 0.25;
+    const height = base.fontSize * 1.12;
+    page.ops.push(tableCellRectOp(run.options.x, yBottom, width, height, { fill: base.highlight }));
+  }
+}
+
 /** Builds a rectangle path op for table cell backgrounds and borders, tagged as an artifact. */
 function tableCellRectOp(
   x: number,
@@ -379,6 +402,18 @@ export function pushInlineDecorations(page: InternalPageModel, decorations: read
     if (d.width <= 0) continue;
     if (d.underline) page.ops.push(decorationOp(d.x, d.baselineY, d.width, d.fontSize, "underline", d.color));
     if (d.strike) page.ops.push(decorationOp(d.x, d.baselineY, d.width, d.fontSize, "strike", d.color));
+  }
+}
+
+/**
+ * Draws highlight backgrounds for inline runs. Must be pushed BEFORE the text
+ * runs so the glyphs paint over the fill (mirrors {@link pushTextHighlights}).
+ */
+export function pushInlineHighlights(page: InternalPageModel, decorations: readonly InlineDecoration[]): void {
+  for (const d of decorations) {
+    if (d.width <= 0 || d.highlight === undefined) continue;
+    const yBottom = d.baselineY - d.fontSize * 0.25;
+    page.ops.push(tableCellRectOp(d.x, yBottom, d.width, d.fontSize * 1.12, { fill: d.highlight }));
   }
 }
 
@@ -424,6 +459,9 @@ export function addRichTextToPage(
     block.tag !== undefined && block.tag !== "Artifact"
       ? createStructureNode(page, block.tag, block.structure, parent)
       : undefined;
+  const shiftedDecorations =
+    offset === 0 ? result.decorations : result.decorations.map((d) => ({ ...d, baselineY: d.baselineY - offset }));
+  pushInlineHighlights(page, shiftedDecorations);
   pushPositionedTextRuns(page, shiftRunsDown(result.runs, offset), structureNode?.id);
   for (const link of result.links) {
     addLinkToPage(
@@ -433,10 +471,7 @@ export function addRichTextToPage(
       structureNode
     );
   }
-  pushInlineDecorations(
-    page,
-    offset === 0 ? result.decorations : result.decorations.map((d) => ({ ...d, baselineY: d.baselineY - offset })),
-  );
+  pushInlineDecorations(page, shiftedDecorations);
   return result.height;
 }
 
@@ -1056,12 +1091,16 @@ export function layoutTable(
           ? 0
           : verticalAlignOffset(align, innerHeight, measurePositionedRunHeight(placed.runs, placed.lineHeight));
       const runs = offset === 0 ? placed.runs : shiftRunsDown(placed.runs, offset);
+      const shiftedDecorations =
+        placed.decorations === undefined
+          ? undefined
+          : offset === 0
+            ? placed.decorations
+            : placed.decorations.map((d) => ({ ...d, baselineY: d.baselineY - offset }));
+      if (shiftedDecorations !== undefined) pushInlineHighlights(page, shiftedDecorations);
       pushPositionedTextRuns(page, runs, placed.node.id);
-      if (placed.decorations !== undefined) {
-        pushInlineDecorations(
-          page,
-          offset === 0 ? placed.decorations : placed.decorations.map((d) => ({ ...d, baselineY: d.baselineY - offset })),
-        );
+      if (shiftedDecorations !== undefined) {
+        pushInlineDecorations(page, shiftedDecorations);
       }
       if (placed.links !== undefined) {
         for (const link of placed.links) {

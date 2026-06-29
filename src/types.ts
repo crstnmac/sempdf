@@ -757,6 +757,15 @@ export interface SoftMaskHandle {
 export type TextDirection = "ltr" | "rtl" | "auto";
 
 /**
+ * Glyph painting mode (the PDF `Tr` text rendering operator):
+ * - `"fill"` — fill glyphs with the text color (default).
+ * - `"stroke"` — outline glyphs with the stroke color/width (no fill).
+ * - `"fillStroke"` — fill and outline.
+ * - `"invisible"` — render nothing (e.g. text over a scanned image for search).
+ */
+export type TextRenderMode = "fill" | "stroke" | "fillStroke" | "invisible";
+
+/**
  * Options for placing a single line of text.
  */
 export interface TextOptions {
@@ -820,6 +829,29 @@ export interface TextOptions {
    * the default encoding is used.
    */
   encoding?: "winansi" | "macroman" | "pdfdoc" | undefined;
+  /**
+   * Raises (positive) or lowers (negative) the text baseline, in PDF points
+   * (the `Ts` operator). Set directly for fine control, or use the
+   * {@link superscript} / {@link subscript} shortcuts.
+   */
+  rise?: number | undefined;
+  /**
+   * Renders the text as superscript — raised above the baseline and reduced in
+   * size. Convenience over {@link rise} + a smaller {@link fontSize}.
+   */
+  superscript?: boolean | undefined;
+  /** Renders the text as subscript — lowered below the baseline and reduced in size. */
+  subscript?: boolean | undefined;
+  /** Glyph painting mode (fill, stroke/outline, fillStroke, invisible). Defaults to fill. */
+  renderMode?: TextRenderMode | undefined;
+  /** Stroke color for `stroke`/`fillStroke` render modes. Defaults to the text color. */
+  strokeColor?: ColorInput | undefined;
+  /** Stroke width in PDF points for `stroke`/`fillStroke` render modes. Defaults to 1. */
+  strokeWidth?: number | undefined;
+  /** Horizontal glyph scaling as a percentage (100 = normal; the `Tz` operator). */
+  horizontalScaling?: number | undefined;
+  /** Background color drawn as a filled rectangle behind the text (inline highlight). */
+  highlight?: ColorInput | undefined;
 }
 
 /**
@@ -899,6 +931,22 @@ export interface TextBlockOptions {
    * the default encoding is used.
    */
   encoding?: "winansi" | "macroman" | "pdfdoc" | undefined;
+  /** Raises (+) or lowers (−) the baseline in PDF points. See {@link TextOptions.rise}. */
+  rise?: number | undefined;
+  /** Renders the block as superscript. See {@link TextOptions.superscript}. */
+  superscript?: boolean | undefined;
+  /** Renders the block as subscript. See {@link TextOptions.subscript}. */
+  subscript?: boolean | undefined;
+  /** Glyph painting mode. See {@link TextOptions.renderMode}. */
+  renderMode?: TextRenderMode | undefined;
+  /** Stroke color for stroking render modes. See {@link TextOptions.strokeColor}. */
+  strokeColor?: ColorInput | undefined;
+  /** Stroke width for stroking render modes. See {@link TextOptions.strokeWidth}. */
+  strokeWidth?: number | undefined;
+  /** Horizontal glyph scaling percentage. See {@link TextOptions.horizontalScaling}. */
+  horizontalScaling?: number | undefined;
+  /** Background highlight color drawn behind the text. See {@link TextOptions.highlight}. */
+  highlight?: ColorInput | undefined;
 }
 
 /**
@@ -934,6 +982,22 @@ export interface InlineTextRun {
   characterSpacing?: number | undefined;
   /** When set, wraps this run in a clickable URI link annotation. */
   link?: string | undefined;
+  /** Raises (+) or lowers (−) this run's baseline in PDF points. See {@link TextOptions.rise}. */
+  rise?: number | undefined;
+  /** Renders this run as superscript. See {@link TextOptions.superscript}. */
+  superscript?: boolean | undefined;
+  /** Renders this run as subscript. See {@link TextOptions.subscript}. */
+  subscript?: boolean | undefined;
+  /** Glyph painting mode for this run. See {@link TextOptions.renderMode}. */
+  renderMode?: TextRenderMode | undefined;
+  /** Stroke color for stroking render modes. See {@link TextOptions.strokeColor}. */
+  strokeColor?: ColorInput | undefined;
+  /** Stroke width for stroking render modes. See {@link TextOptions.strokeWidth}. */
+  strokeWidth?: number | undefined;
+  /** Horizontal glyph scaling percentage for this run. See {@link TextOptions.horizontalScaling}. */
+  horizontalScaling?: number | undefined;
+  /** Background highlight color drawn behind this run. See {@link TextOptions.highlight}. */
+  highlight?: ColorInput | undefined;
 }
 
 /**

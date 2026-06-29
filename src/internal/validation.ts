@@ -1043,7 +1043,14 @@ export function normalizeTextOptions(text: string, options: TextOptions): Normal
     ...(normalized.characterSpacing !== undefined ? { characterSpacing: normalized.characterSpacing } : {}),
     ...(normalized.wordSpacing !== undefined ? { wordSpacing: normalized.wordSpacing } : {}),
     ...(normalized.leading !== undefined ? { leading: normalized.leading } : {}),
-    ...(normalized.encoding !== undefined ? { encoding: normalized.encoding } : {})
+    ...(normalized.encoding !== undefined ? { encoding: normalized.encoding } : {}),
+    ...(normalized.underline !== undefined ? { underline: normalized.underline } : {}),
+    ...(normalized.strike !== undefined ? { strike: normalized.strike } : {}),
+    ...(normalized.rise !== undefined ? { rise: normalized.rise } : {}),
+    ...(normalized.renderMode !== undefined ? { renderMode: normalized.renderMode } : {}),
+    ...(normalized.strokeColor !== undefined ? { strokeColor: normalized.strokeColor } : {}),
+    ...(normalized.strokeWidth !== undefined ? { strokeWidth: normalized.strokeWidth } : {}),
+    ...(normalized.horizontalScaling !== undefined ? { horizontalScaling: normalized.horizontalScaling } : {})
   };
 }
 
@@ -1063,13 +1070,29 @@ export function normalizeTextBaseOptions(options: TextOptions | TextBlockOptions
   const resolvedFont = resolveStyledFont(options.font ?? DEFAULT_FONT, options.bold, options.italic);
   assertKnownBuiltInFont(resolvedFont);
 
+  // Superscript / subscript are conveniences over `rise` + a reduced font size.
+  // An explicit `rise` overrides the computed shift; superscript wins over
+  // subscript when both are set. The size shrinks to ~62% (typographic norm).
+  let effectiveFontSize = fontSize;
+  let rise = normalizeOptionalNumber(options.rise, "rise");
+  if (options.superscript === true || options.subscript === true) {
+    effectiveFontSize = fontSize * 0.62;
+    if (rise === undefined) {
+      rise = options.superscript === true ? fontSize * 0.33 : -(fontSize * 0.18);
+    }
+  }
+
+  const renderMode = options.renderMode;
+  const strokeWidth = normalizeOptionalNumber(options.strokeWidth, "strokeWidth");
+  const horizontalScaling = normalizeOptionalNumber(options.horizontalScaling, "horizontalScaling");
+
   const normalized: NormalizedTextBaseOptions = {
     x: options.x,
     y: options.y,
     font: resolvedFont,
     fallbackFonts: options.fallbackFonts ? [...options.fallbackFonts] : [],
     direction: options.direction ?? "ltr",
-    fontSize,
+    fontSize: effectiveFontSize,
     color: normalizeColor(options.color ?? DEFAULT_COLOR),
     kerning: options.kerning ?? true,
     ...(options.writingMode !== undefined ? { writingMode: options.writingMode } : {}),
@@ -1079,6 +1102,12 @@ export function normalizeTextBaseOptions(options: TextOptions | TextBlockOptions
     ...(('artifactType' in options && options.artifactType !== undefined) ? { artifactType: options.artifactType } : {}),
     ...(options.underline !== undefined ? { underline: options.underline } : {}),
     ...(options.strike !== undefined ? { strike: options.strike } : {}),
+    ...(rise !== undefined ? { rise } : {}),
+    ...(renderMode !== undefined ? { renderMode } : {}),
+    ...(options.strokeColor !== undefined ? { strokeColor: normalizeColor(options.strokeColor) } : {}),
+    ...(strokeWidth !== undefined ? { strokeWidth } : {}),
+    ...(horizontalScaling !== undefined ? { horizontalScaling } : {}),
+    ...(options.highlight !== undefined ? { highlight: normalizeColor(options.highlight) } : {}),
     tateChuYoko: options.writingMode === "vertical" ? true : undefined,
   };
 

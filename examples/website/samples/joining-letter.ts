@@ -10,6 +10,8 @@ const doc = createDocument({
 
 const BRAND = rgb(0.05, 0.25, 0.55);
 const MUTED = rgb(0.45, 0.45, 0.5);
+const TABLE_BORDER = rgb(0.72, 0.76, 0.82);
+const TABLE_HEADER = rgb(0.92, 0.94, 0.98);
 
 doc.renderTemplate({
   page: {
@@ -112,7 +114,12 @@ doc.renderTemplate({
           { text: "6 months (01 Jul 2026 - 31 Dec 2026)" },
         ],
       ],
-      options: { headerRows: 0 },
+      options: {
+        headerRows: 0,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     {
@@ -140,7 +147,12 @@ doc.renderTemplate({
           { text: "16,61,400.00", bold: true, header: true },
         ],
       ],
-      options: { headerRows: 1 },
+      options: {
+        headerRows: 1,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
     {
       type: "paragraph",
@@ -230,7 +242,12 @@ doc.renderTemplate({
           "Signature: ___________________\nName: Mr. John Adam\nDate: ___________________",
         ],
       ],
-      options: { headerRows: 1 },
+      options: {
+        headerRows: 1,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     {
