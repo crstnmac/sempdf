@@ -30,7 +30,8 @@ import {
 import { cn } from '#/lib/utils.ts'
 import type { SessionUser } from '#/lib/auth-client.ts'
 
-type NavItem = { title: string; to: LinkProps['to']; icon: LucideIcon }
+// `adminOnly` items are hidden from org members who are not owner/admin.
+type NavItem = { title: string; to: LinkProps['to']; icon: LucideIcon; adminOnly?: boolean }
 type SidebarConfig = { label: string; home: LinkProps['to']; nav: NavItem[] }
 
 const ADMIN_NAV: NavItem[] = [
@@ -43,9 +44,9 @@ const ADMIN_NAV: NavItem[] = [
 const PORTAL_NAV: NavItem[] = [
   { title: 'Overview', to: '/portal', icon: BuildingIcon },
   { title: 'Activity', to: '/portal/activity', icon: GaugeIcon },
-  { title: 'Members', to: '/portal/members', icon: UsersIcon },
-  { title: 'Notifications', to: '/portal/notifications', icon: BellIcon },
-  { title: 'Settings', to: '/portal/settings', icon: SettingsIcon },
+  { title: 'Members', to: '/portal/members', icon: UsersIcon, adminOnly: true },
+  { title: 'Notifications', to: '/portal/notifications', icon: BellIcon, adminOnly: true },
+  { title: 'Settings', to: '/portal/settings', icon: SettingsIcon, adminOnly: true },
   { title: 'Account', to: '/portal/account', icon: UserCircleIcon },
 ]
 
@@ -60,6 +61,7 @@ export function AppSidebar({
   audience = 'admin',
   organizationName,
   headerSlot,
+  canAdmin = true,
   className,
   ...props
 }: React.ComponentProps<typeof Sidebar> & {
@@ -68,8 +70,11 @@ export function AppSidebar({
   audience?: 'admin' | 'portal'
   organizationName?: string
   headerSlot?: React.ReactNode
+  /** When false, admin-only nav items are hidden (org members without admin). */
+  canAdmin?: boolean
 }) {
   const config = VARIANTS[audience]
+  const navItems = config.nav.filter((item) => canAdmin || !item.adminOnly)
   const shellName = organizationName?.trim() || config.label
   const { isMobile, setOpenMobile } = useSidebar()
   const navigationLabel = `${config.label} navigation`
@@ -115,7 +120,7 @@ export function AppSidebar({
           <SidebarGroupContent>
             <nav aria-label={navigationLabel}>
               <SidebarMenu className="gap-1">
-                {config.nav.map((item) => (
+                {navItems.map((item) => (
                   <SidebarMenuItem key={item.to}>
                     <SidebarMenuButton
                       tooltip={item.title}

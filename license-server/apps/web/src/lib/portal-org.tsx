@@ -75,3 +75,33 @@ export function useActiveOrg(): ActiveOrgValue {
   if (!ctx) throw new Error('useActiveOrg must be used within ActiveOrgProvider')
   return ctx
 }
+
+/**
+ * Gates owner/admin-only portal sections. Org members (no admin role anywhere)
+ * get a clear notice instead of a raw `forbidden` from the API. Members still
+ * reach Overview, Activity, and Account — only these admin sections are blocked.
+ */
+export function RequireOrgAdmin({ children }: { children: React.ReactNode }) {
+  const { loading, noAdminAccess } = useActiveOrg()
+  if (loading) {
+    return (
+      <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+        Loading organization…
+      </div>
+    )
+  }
+  if (noAdminAccess) {
+    return (
+      <div className="flex flex-1 items-center justify-center p-6">
+        <div className="max-w-md rounded-lg border border-border bg-card p-6 text-center">
+          <h2 className="font-heading text-lg font-semibold">Owner or admin access required</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            This section is only available to organization owners and admins. You can still view
+            your organization's usage and activity from the Overview.
+          </p>
+        </div>
+      </div>
+    )
+  }
+  return <>{children}</>
+}

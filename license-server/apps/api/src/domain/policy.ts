@@ -1,5 +1,12 @@
 export type LicenseStatus = "none" | "trial" | "hard_blocked";
 
+/**
+ * The watermark stamped onto every PDF generated under a trial license. Single
+ * source of truth: the authorize endpoint sends this to the library to stamp,
+ * and customer-facing copy (emails) references it. Change it here only.
+ */
+export const TRIAL_WATERMARK_TEXT = "ZeroPDF - For Trial Use Only";
+
 /** Page-utilization alerts fired inline as consumption crosses a threshold. */
 export type UsageEventType = "usage_90_percent" | "usage_95_percent" | "usage_100_percent";
 

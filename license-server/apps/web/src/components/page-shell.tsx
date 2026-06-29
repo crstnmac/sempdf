@@ -12,7 +12,6 @@ import {
   statusTone,
   telemetryTone,
   usagePercent,
-  watermarkLabel,
 } from "#/lib/api.ts";
 
 export function PageContainer({ children }: { children: React.ReactNode }) {
@@ -100,13 +99,6 @@ export function StatusBadge({ status }: { status: TenantStatus }) {
 
 export function TelemetryBadge({ status }: { status: TelemetryStatus }) {
   return <Badge variant={telemetryTone(status) as BadgeTone}>{status}</Badge>;
-}
-
-/** Shows the watermark a generated PDF gets ("ZeroPDF - For Trial Use Only"). */
-export function WatermarkBadge({ status }: { status: TenantStatus }) {
-  const label = watermarkLabel(status);
-  if (!label) return null;
-  return <Badge variant="secondary">{label}</Badge>;
 }
 
 /**

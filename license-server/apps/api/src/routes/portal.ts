@@ -7,6 +7,9 @@ import { apiKeys, apiTelemetry, licenses, notificationSettings } from "../db/sch
 import { invitation, member, organization, user } from "../db/auth-schema.js";
 import { generateKey, hashKey, keyPrefix } from "../domain/keys.js";
 import { createApiKey, windowResetAt } from "../domain/licenses.js";
+import { sendEmail } from "../domain/email/mailer.js";
+import { renderInvitationEmail } from "../domain/email/templates.js";
+import { env } from "../env.js";
 import { randomUUID } from "node:crypto";
 
 /**
@@ -458,7 +461,23 @@ portalRoutes.post("/orgs/:orgId/invitations", async (c) => {
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     })
     .returning();
-  return c.json(row, 201);
+
+  // Notify the invitee. Best-effort: a mail failure must not fail the invite —
+  // the pending invitation still stands and can be re-sent or accepted directly.
+  const [org] = await db.select({ name: organization.name }).from(organization).where(eq(organization.id, orgId));
+  const [inviter] = await db.select({ name: user.name }).from(user).where(eq(user.id, userId));
+  const sent = await sendEmail(
+    email,
+    renderInvitationEmail({
+      orgName: org?.name ?? "your organization",
+      inviterName: inviter?.name ?? null,
+      role,
+      acceptUrl: `${env.appUrl}/accept-invitation/${row!.id}`,
+      expiresAt: row!.expiresAt,
+    }),
+  );
+
+  return c.json({ ...row, invitationEmailSent: sent.status === "sent" }, 201);
 });
 
 /** Cancel a pending invitation. owner/admin only. */
@@ -480,12 +499,31 @@ portalRoutes.patch("/orgs/:orgId/members/:memberId", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const role = body.role === "admin" || body.role === "owner" || body.role === "member" ? body.role : null;
   if (!role) return c.json({ error: "invalid_role" }, 400);
+
+  const memberId = c.req.param("memberId");
+  const [target] = await db
+    .select()
+    .from(member)
+    .where(and(eq(member.id, memberId), eq(member.organizationId, orgId)));
+  if (!target) return c.json({ error: "unknown_member" }, 404);
+
+  // Demoting an owner needs guarding: an owner may not change their own role
+  // (no self-demotion), and the org's last owner may not be demoted by anyone —
+  // either would leave ownership orphaned.
+  if (target.role === "owner" && role !== "owner") {
+    if (target.userId === userId) return c.json({ error: "cannot_change_own_owner_role" }, 409);
+    const owners = await db
+      .select({ id: member.id })
+      .from(member)
+      .where(and(eq(member.organizationId, orgId), eq(member.role, "owner")));
+    if (owners.length <= 1) return c.json({ error: "last_owner" }, 409);
+  }
+
   const [row] = await db
     .update(member)
     .set({ role })
-    .where(and(eq(member.id, c.req.param("memberId")), eq(member.organizationId, orgId)))
+    .where(and(eq(member.id, memberId), eq(member.organizationId, orgId)))
     .returning();
-  if (!row) return c.json({ error: "unknown_member" }, 404);
   return c.json(row);
 });
 
