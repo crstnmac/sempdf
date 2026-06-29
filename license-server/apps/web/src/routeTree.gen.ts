@@ -19,6 +19,7 @@ import { Route as PortalNotificationsRouteImport } from './routes/portal/notific
 import { Route as PortalMembersRouteImport } from './routes/portal/members'
 import { Route as PortalActivityRouteImport } from './routes/portal/activity'
 import { Route as PortalAccountRouteImport } from './routes/portal/account'
+import { Route as AcceptInvitationIdRouteImport } from './routes/accept-invitation.$id'
 import { Route as AdminUsageRouteImport } from './routes/_admin/usage'
 import { Route as AdminLicensesIndexRouteImport } from './routes/_admin/licenses/index'
 import { Route as AdminCustomersIndexRouteImport } from './routes/_admin/customers/index'
@@ -74,6 +75,11 @@ const PortalAccountRoute = PortalAccountRouteImport.update({
   path: '/account',
   getParentRoute: () => PortalRoute,
 } as any)
+const AcceptInvitationIdRoute = AcceptInvitationIdRouteImport.update({
+  id: '/accept-invitation/$id',
+  path: '/accept-invitation/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminUsageRoute = AdminUsageRouteImport.update({
   id: '/usage',
   path: '/usage',
@@ -105,6 +111,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/portal': typeof PortalRouteWithChildren
   '/usage': typeof AdminUsageRoute
+  '/accept-invitation/$id': typeof AcceptInvitationIdRoute
   '/portal/account': typeof PortalAccountRoute
   '/portal/activity': typeof PortalActivityRoute
   '/portal/members': typeof PortalMembersRoute
@@ -119,6 +126,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/usage': typeof AdminUsageRoute
+  '/accept-invitation/$id': typeof AcceptInvitationIdRoute
   '/portal/account': typeof PortalAccountRoute
   '/portal/activity': typeof PortalActivityRoute
   '/portal/members': typeof PortalMembersRoute
@@ -137,6 +145,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/portal': typeof PortalRouteWithChildren
   '/_admin/usage': typeof AdminUsageRoute
+  '/accept-invitation/$id': typeof AcceptInvitationIdRoute
   '/portal/account': typeof PortalAccountRoute
   '/portal/activity': typeof PortalActivityRoute
   '/portal/members': typeof PortalMembersRoute
@@ -156,6 +165,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/portal'
     | '/usage'
+    | '/accept-invitation/$id'
     | '/portal/account'
     | '/portal/activity'
     | '/portal/members'
@@ -170,6 +180,7 @@ export interface FileRouteTypes {
   to:
     | '/login'
     | '/usage'
+    | '/accept-invitation/$id'
     | '/portal/account'
     | '/portal/activity'
     | '/portal/members'
@@ -187,6 +198,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/portal'
     | '/_admin/usage'
+    | '/accept-invitation/$id'
     | '/portal/account'
     | '/portal/activity'
     | '/portal/members'
@@ -204,6 +216,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRouteWithChildren
   LoginRoute: typeof LoginRoute
   PortalRoute: typeof PortalRouteWithChildren
+  AcceptInvitationIdRoute: typeof AcceptInvitationIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -277,6 +290,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/portal/account'
       preLoaderRoute: typeof PortalAccountRouteImport
       parentRoute: typeof PortalRoute
+    }
+    '/accept-invitation/$id': {
+      id: '/accept-invitation/$id'
+      path: '/accept-invitation/$id'
+      fullPath: '/accept-invitation/$id'
+      preLoaderRoute: typeof AcceptInvitationIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_admin/usage': {
       id: '/_admin/usage'
@@ -361,6 +381,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRouteWithChildren,
   LoginRoute: LoginRoute,
   PortalRoute: PortalRouteWithChildren,
+  AcceptInvitationIdRoute: AcceptInvitationIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

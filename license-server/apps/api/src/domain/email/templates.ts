@@ -1,5 +1,5 @@
 import { env } from "../../env.js";
-import type { NotificationEventType } from "../policy.js";
+import { TRIAL_WATERMARK_TEXT, type NotificationEventType } from "../policy.js";
 import { renderLayout, type EmailTone, type RenderedEmail } from "./layout.js";
 
 function fmtNum(n: number): string {
@@ -96,7 +96,7 @@ export function renderNotificationEmail(
         body: `The ${product} trial for ${org} ends on ${date}. Upgrade before then to continue generating without the trial watermark.`,
         facts: [{ label: "Trial ends", value: date }],
         cta: { label: "Upgrade plan", url: billingUrl() },
-        note: "Until you upgrade, generated PDFs carry the “For Trial Use Only” watermark.",
+        note: `Until you upgrade, generated PDFs carry the “${TRIAL_WATERMARK_TEXT}” watermark.`,
       });
     }
 
@@ -115,6 +115,38 @@ export function renderNotificationEmail(
 
 function build(tone: EmailTone, subject: string, block: Parameters<typeof renderLayout>[2]): RenderedEmail {
   return renderLayout(subject, tone, block);
+}
+
+/** Indefinite article for a role name ("an admin", "a member"). */
+const article = (word: string) => (/^[aeiou]/i.test(word) ? "an" : "a");
+
+/** Invitation email sent when an owner/admin invites a teammate to an org. */
+export function renderInvitationEmail(data: {
+  orgName: string;
+  inviterName?: string | null;
+  role: string;
+  acceptUrl: string;
+  expiresAt?: Date | null;
+}): RenderedEmail {
+  const product = env.productName;
+  const inviter = data.inviterName?.trim();
+  const intro = inviter
+    ? `${inviter} invited you to join ${data.orgName} on ${product} as ${article(data.role)} ${data.role}.`
+    : `You've been invited to join ${data.orgName} on ${product} as ${article(data.role)} ${data.role}.`;
+  const facts = [
+    { label: "Organization", value: data.orgName },
+    { label: "Role", value: data.role },
+  ];
+  if (data.expiresAt) facts.push({ label: "Invitation expires", value: fmtDate(data.expiresAt) });
+
+  return renderLayout(`You're invited to ${data.orgName} on ${product}`, "neutral", {
+    eyebrow: "Invitation",
+    heading: `Join ${data.orgName} on ${product}`,
+    body: [intro, "Accept the invitation to access the organization's licenses and usage."],
+    facts,
+    cta: { label: "Accept invitation", url: data.acceptUrl },
+    note: "If you weren't expecting this invitation, you can safely ignore this email.",
+  });
 }
 
 /** Onboarding email sent when a customer account is provisioned. */

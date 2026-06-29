@@ -23,9 +23,15 @@ import {
   SelectValue,
 } from '#/components/ui/select.tsx'
 import { ApiError, type NotificationSettings, portalApi } from '#/lib/api.ts'
-import { useActiveOrg } from '#/lib/portal-org.tsx'
+import { RequireOrgAdmin, useActiveOrg } from '#/lib/portal-org.tsx'
 
-export const Route = createFileRoute('/portal/notifications')({ component: PortalNotificationsPage })
+export const Route = createFileRoute('/portal/notifications')({
+  component: () => (
+    <RequireOrgAdmin>
+      <PortalNotificationsPage />
+    </RequireOrgAdmin>
+  ),
+})
 
 type FormState = {
   emailTo: string

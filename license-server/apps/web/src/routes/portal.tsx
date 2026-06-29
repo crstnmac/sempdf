@@ -4,7 +4,7 @@ import { AppSidebar } from '#/components/app-sidebar.tsx'
 import { OrgSwitcher } from '#/components/org-switcher.tsx'
 import { SidebarInset, SidebarProvider } from '#/components/ui/sidebar.tsx'
 import { ActiveOrgProvider, useActiveOrg } from '#/lib/portal-org.tsx'
-import { authClient, useSession } from '#/lib/auth-client.ts'
+import { authClient, useSession, type SessionUser } from '#/lib/auth-client.ts'
 
 export const Route = createFileRoute('/portal')({
   beforeLoad: async ({ location }) => {
@@ -35,51 +35,43 @@ function PortalLayout() {
 
   return (
     <ActiveOrgProvider>
-      <SidebarProvider
-        style={
-          {
-            '--header-height': 'calc(var(--spacing) * 12)',
-          } as React.CSSProperties
-        }
-      >
-        <AppSidebar
-          audience="portal"
-          user={session.user}
-          onSignOut={handleSignOut}
-          headerSlot={<OrgSwitcher />}
-        />
-        <SidebarInset>
-          <AdminGate>
-            <Outlet />
-          </AdminGate>
-        </SidebarInset>
-      </SidebarProvider>
+      <PortalShell user={session.user} onSignOut={handleSignOut} />
     </ActiveOrgProvider>
   )
 }
 
-/** Blocks the portal for users who administer no organization (plain members). */
-function AdminGate({ children }: { children: React.ReactNode }) {
-  const { loading, noAdminAccess } = useActiveOrg()
-  if (loading) {
-    return (
-      <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-        Loading organization…
-      </div>
-    )
-  }
-  if (noAdminAccess) {
-    return (
-      <div className="flex flex-1 items-center justify-center p-6">
-        <div className="max-w-md rounded-lg border border-border bg-card p-6 text-center">
-          <h2 className="font-heading text-lg font-semibold">No admin access</h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            You are not an owner or admin of any organization. Ask an organization owner to grant
-            you access, or create your own organization.
-          </p>
-        </div>
-      </div>
-    )
-  }
-  return <>{children}</>
+/**
+ * Portal chrome, rendered inside ActiveOrgProvider so it can read the caller's
+ * admin status. Members (no admin org) keep the portal — Overview/Activity/
+ * Account — but admin-only nav is hidden; the admin pages gate themselves with
+ * RequireOrgAdmin for anyone who reaches them by URL.
+ */
+function PortalShell({
+  user,
+  onSignOut,
+}: {
+  user: SessionUser
+  onSignOut: () => void
+}) {
+  const { noAdminAccess } = useActiveOrg()
+  return (
+    <SidebarProvider
+      style={
+        {
+          '--header-height': 'calc(var(--spacing) * 12)',
+        } as React.CSSProperties
+      }
+    >
+      <AppSidebar
+        audience="portal"
+        user={user}
+        onSignOut={onSignOut}
+        canAdmin={!noAdminAccess}
+        headerSlot={<OrgSwitcher />}
+      />
+      <SidebarInset>
+        <Outlet />
+      </SidebarInset>
+    </SidebarProvider>
+  )
 }
