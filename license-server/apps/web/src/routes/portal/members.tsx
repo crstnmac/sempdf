@@ -34,6 +34,7 @@ import {
 import { useAsync } from '#/hooks/use-async.ts'
 import { ApiError, formatDate, portalApi } from '#/lib/api.ts'
 import { useActiveOrg } from '#/lib/portal-org.tsx'
+import { useConfirm } from '#/components/confirm.tsx'
 
 export const Route = createFileRoute('/portal/members')({ component: MembersPage })
 
@@ -42,6 +43,7 @@ const ROLES = ['member', 'admin', 'owner']
 function MembersPage() {
   const { activeOrg, activeOrgId } = useActiveOrg()
   const orgId = activeOrgId ?? ''
+  const confirm = useConfirm()
   const { data, loading, error, refetch } = useAsync(() => portalApi.members(orgId), [orgId])
 
   const [email, setEmail] = useState('')
@@ -182,12 +184,19 @@ function MembersPage() {
                             variant="ghost"
                             size="icon"
                             disabled={busy || m.isSelf}
-                            onClick={() =>
+                            onClick={async () => {
+                              const ok = await confirm({
+                                title: `Remove ${m.name}?`,
+                                description: `${m.email} will lose access to ${activeOrg?.name ?? 'this organization'}. You can re-invite them later.`,
+                                confirmLabel: 'Remove member',
+                                destructive: true,
+                              })
+                              if (!ok) return
                               act(async () => {
                                 await portalApi.removeMember(orgId, m.id)
                                 toast.success('Member removed.')
                               })
-                            }
+                            }}
                           >
                             <Trash2Icon />
                           </Button>

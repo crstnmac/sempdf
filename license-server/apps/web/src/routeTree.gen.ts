@@ -17,7 +17,10 @@ import { Route as AdminIndexRouteImport } from './routes/_admin/index'
 import { Route as PortalSettingsRouteImport } from './routes/portal/settings'
 import { Route as PortalNotificationsRouteImport } from './routes/portal/notifications'
 import { Route as PortalMembersRouteImport } from './routes/portal/members'
+import { Route as PortalActivityRouteImport } from './routes/portal/activity'
+import { Route as PortalAccountRouteImport } from './routes/portal/account'
 import { Route as AdminUsageRouteImport } from './routes/_admin/usage'
+import { Route as AdminCustomersRouteImport } from './routes/_admin/customers'
 import { Route as AdminLicensesIndexRouteImport } from './routes/_admin/licenses/index'
 import { Route as AdminLicensesIdRouteImport } from './routes/_admin/licenses/$id'
 
@@ -60,9 +63,24 @@ const PortalMembersRoute = PortalMembersRouteImport.update({
   path: '/members',
   getParentRoute: () => PortalRoute,
 } as any)
+const PortalActivityRoute = PortalActivityRouteImport.update({
+  id: '/activity',
+  path: '/activity',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalAccountRoute = PortalAccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => PortalRoute,
+} as any)
 const AdminUsageRoute = AdminUsageRouteImport.update({
   id: '/usage',
   path: '/usage',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminCustomersRoute = AdminCustomersRouteImport.update({
+  id: '/customers',
+  path: '/customers',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminLicensesIndexRoute = AdminLicensesIndexRouteImport.update({
@@ -80,7 +98,10 @@ export interface FileRoutesByFullPath {
   '/': typeof AdminIndexRoute
   '/login': typeof LoginRoute
   '/portal': typeof PortalRouteWithChildren
+  '/customers': typeof AdminCustomersRoute
   '/usage': typeof AdminUsageRoute
+  '/portal/account': typeof PortalAccountRoute
+  '/portal/activity': typeof PortalActivityRoute
   '/portal/members': typeof PortalMembersRoute
   '/portal/notifications': typeof PortalNotificationsRoute
   '/portal/settings': typeof PortalSettingsRoute
@@ -90,7 +111,10 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
+  '/customers': typeof AdminCustomersRoute
   '/usage': typeof AdminUsageRoute
+  '/portal/account': typeof PortalAccountRoute
+  '/portal/activity': typeof PortalActivityRoute
   '/portal/members': typeof PortalMembersRoute
   '/portal/notifications': typeof PortalNotificationsRoute
   '/portal/settings': typeof PortalSettingsRoute
@@ -104,7 +128,10 @@ export interface FileRoutesById {
   '/_admin': typeof AdminRouteWithChildren
   '/login': typeof LoginRoute
   '/portal': typeof PortalRouteWithChildren
+  '/_admin/customers': typeof AdminCustomersRoute
   '/_admin/usage': typeof AdminUsageRoute
+  '/portal/account': typeof PortalAccountRoute
+  '/portal/activity': typeof PortalActivityRoute
   '/portal/members': typeof PortalMembersRoute
   '/portal/notifications': typeof PortalNotificationsRoute
   '/portal/settings': typeof PortalSettingsRoute
@@ -119,7 +146,10 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/portal'
+    | '/customers'
     | '/usage'
+    | '/portal/account'
+    | '/portal/activity'
     | '/portal/members'
     | '/portal/notifications'
     | '/portal/settings'
@@ -129,7 +159,10 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
+    | '/customers'
     | '/usage'
+    | '/portal/account'
+    | '/portal/activity'
     | '/portal/members'
     | '/portal/notifications'
     | '/portal/settings'
@@ -142,7 +175,10 @@ export interface FileRouteTypes {
     | '/_admin'
     | '/login'
     | '/portal'
+    | '/_admin/customers'
     | '/_admin/usage'
+    | '/portal/account'
+    | '/portal/activity'
     | '/portal/members'
     | '/portal/notifications'
     | '/portal/settings'
@@ -216,11 +252,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PortalMembersRouteImport
       parentRoute: typeof PortalRoute
     }
+    '/portal/activity': {
+      id: '/portal/activity'
+      path: '/activity'
+      fullPath: '/portal/activity'
+      preLoaderRoute: typeof PortalActivityRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/account': {
+      id: '/portal/account'
+      path: '/account'
+      fullPath: '/portal/account'
+      preLoaderRoute: typeof PortalAccountRouteImport
+      parentRoute: typeof PortalRoute
+    }
     '/_admin/usage': {
       id: '/_admin/usage'
       path: '/usage'
       fullPath: '/usage'
       preLoaderRoute: typeof AdminUsageRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/_admin/customers': {
+      id: '/_admin/customers'
+      path: '/customers'
+      fullPath: '/customers'
+      preLoaderRoute: typeof AdminCustomersRouteImport
       parentRoute: typeof AdminRoute
     }
     '/_admin/licenses/': {
@@ -241,6 +298,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AdminRouteChildren {
+  AdminCustomersRoute: typeof AdminCustomersRoute
   AdminUsageRoute: typeof AdminUsageRoute
   AdminIndexRoute: typeof AdminIndexRoute
   AdminLicensesIdRoute: typeof AdminLicensesIdRoute
@@ -248,6 +306,7 @@ interface AdminRouteChildren {
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminCustomersRoute: AdminCustomersRoute,
   AdminUsageRoute: AdminUsageRoute,
   AdminIndexRoute: AdminIndexRoute,
   AdminLicensesIdRoute: AdminLicensesIdRoute,
@@ -257,6 +316,8 @@ const AdminRouteChildren: AdminRouteChildren = {
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
 interface PortalRouteChildren {
+  PortalAccountRoute: typeof PortalAccountRoute
+  PortalActivityRoute: typeof PortalActivityRoute
   PortalMembersRoute: typeof PortalMembersRoute
   PortalNotificationsRoute: typeof PortalNotificationsRoute
   PortalSettingsRoute: typeof PortalSettingsRoute
@@ -264,6 +325,8 @@ interface PortalRouteChildren {
 }
 
 const PortalRouteChildren: PortalRouteChildren = {
+  PortalAccountRoute: PortalAccountRoute,
+  PortalActivityRoute: PortalActivityRoute,
   PortalMembersRoute: PortalMembersRoute,
   PortalNotificationsRoute: PortalNotificationsRoute,
   PortalSettingsRoute: PortalSettingsRoute,
