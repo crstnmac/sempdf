@@ -7,7 +7,7 @@
   { "label": "Text formatting", "file": "text-formatting.ts" },
   { "label": "Google Fonts", "file": "google-fonts.ts" },
   { "label": "Stylesheets & tables", "file": "stylesheets-and-tables.ts" },
-  { "label": "Single page (low level)", "file": "single-page.ts" },
+  { "label": "Single page template", "file": "single-page.ts" },
   { "label": "Hello world (template)", "file": "hello-world.ts" },
   { "label": "Invoice", "file": "invoice.ts" },
   { "label": "Multi-column", "file": "multi-column.ts" },
