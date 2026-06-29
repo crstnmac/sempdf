@@ -2069,6 +2069,12 @@ export interface TableCellDefinition {
   align?: TextAlign | undefined;
   /** Background fill for this cell, overriding `headerBackground`/`zebra` striping. */
   background?: ColorInput | undefined;
+  /**
+   * Per-edge borders for this cell, drawn on top of the table-level
+   * {@link TableOptions.borders}. Use it to add a border on any specific cell,
+   * or rule a whole row by setting the same side on each cell in that row.
+   */
+  border?: TableCellBorders | undefined;
 }
 
 /**
@@ -2079,6 +2085,39 @@ export type TableCell = string | TableCellDefinition;
  * Input shape accepted for table rows.
  */
 export type TableRow = readonly TableCell[];
+
+/**
+ * Selects which border lines a table draws.
+ */
+export type TableBorderStyle = "all" | "horizontal" | "outer" | "none";
+
+/**
+ * Styling for one edge of a table cell. `width` defaults to 0.75; `color`
+ * defaults to a medium gray.
+ */
+export interface TableCellBorderSide {
+  /** Line color. Defaults to a medium gray. */
+  color?: ColorInput | undefined;
+  /** Line width in PDF points. Defaults to 0.75. */
+  width?: number | undefined;
+}
+
+/**
+ * Per-edge borders for a single table cell, overriding (and drawn on top of)
+ * the table-level {@link TableOptions.borders}. Each side accepts `true` (draw
+ * with the default gray/0.75 line) or a {@link TableCellBorderSide} for an
+ * explicit color and width. Set borders on a row's cells to rule that row.
+ */
+export interface TableCellBorders {
+  /** Top edge. */
+  top?: boolean | TableCellBorderSide | undefined;
+  /** Right edge. */
+  right?: boolean | TableCellBorderSide | undefined;
+  /** Bottom edge. */
+  bottom?: boolean | TableCellBorderSide | undefined;
+  /** Left edge. */
+  left?: boolean | TableCellBorderSide | undefined;
+}
 
 /**
  * Options for rendering tagged tables.
@@ -2134,13 +2173,23 @@ export interface TableOptions {
    */
   summary?: string | undefined;
   /**
-   * Color of the cell grid lines. Setting this (or `borderWidth`) draws a
-   * border around every cell. Drawn as an artifact (not part of the
-   * structure tree).
+   * Color of the border lines. Setting this (or `borderWidth`, or `borders`)
+   * draws borders. Drawn as an artifact (not part of the structure tree).
+   * Defaults to a medium gray when borders are enabled without a color.
    */
   borderColor?: ColorInput | undefined;
-  /** Width of the cell grid lines in PDF points. Defaults to 0.75 when `borderColor` is set. */
+  /** Width of the border lines in PDF points. Defaults to 0.75 when borders are enabled. */
   borderWidth?: number | undefined;
+  /**
+   * Which border lines to draw:
+   * - `"all"` — full grid around every cell (default when a border color/width is set).
+   * - `"horizontal"` — horizontal rules between rows plus top and bottom edges; no vertical lines.
+   * - `"outer"` — a single frame around the whole table.
+   * - `"none"` — no borders, even if `borderColor`/`borderWidth` are set.
+   *
+   * When omitted, defaults to `"all"` if `borderColor`/`borderWidth` is set, otherwise `"none"`.
+   */
+  borders?: TableBorderStyle | undefined;
   /** Background fill behind header cells (header rows/columns and cells marked `header: true`). */
   headerBackground?: ColorInput | undefined;
   /**
