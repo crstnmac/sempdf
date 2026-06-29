@@ -155,7 +155,9 @@ function PortalNotificationsPage() {
                       }
                     >
                       <SelectTrigger id="frequency" className="sm:w-48">
-                        <SelectValue />
+                        <SelectValue>
+                          {form.usageSummaryFrequency === 'weekly' ? 'Weekly' : 'Monthly'}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="weekly">Weekly</SelectItem>

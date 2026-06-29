@@ -492,17 +492,35 @@ adminRoutes.post("/licenses/:id/revoke", async (c) => {
 });
 
 adminRoutes.post("/licenses/:id/extend-trial", async (c) => {
+  const id = c.req.param("id");
   const body = await c.req.json().catch(() => ({}));
-  const trialEndsAt = body.trialEndsAt
-    ? new Date(body.trialEndsAt)
-    : new Date(Date.now() + Number(body.days ?? process.env.DEFAULT_TRIAL_DAYS ?? 15) * 24 * 60 * 60 * 1000);
+
+  const [lic] = await db.select().from(licenses).where(eq(licenses.id, id));
+  if (!lic) return c.json({ error: "unknown_license" }, 404);
+
+  let trialEndsAt: Date;
+  if (body.trialEndsAt) {
+    // Explicit absolute end-date override.
+    trialEndsAt = new Date(body.trialEndsAt);
+    if (Number.isNaN(trialEndsAt.getTime())) return c.json({ error: "bad_request" }, 400);
+  } else {
+    const days = Number(body.days ?? process.env.DEFAULT_TRIAL_DAYS ?? 15);
+    if (!Number.isFinite(days) || days <= 0) return c.json({ error: "bad_request" }, 400);
+    const now = Date.now();
+    // Add the days to the CURRENT end date when the trial is still running so we
+    // truly push it out; for an already-expired (or unset) trial, count from
+    // today so reviving it grants a full N days rather than landing in the past.
+    const base =
+      lic.trialEndsAt && lic.trialEndsAt.getTime() > now ? lic.trialEndsAt.getTime() : now;
+    trialEndsAt = new Date(base + days * 24 * 60 * 60 * 1000);
+  }
+
   const [row] = await db
     .update(licenses)
     .set({ trialEndsAt, status: "trial", firstOverageAt: null })
-    .where(eq(licenses.id, c.req.param("id")))
+    .where(eq(licenses.id, id))
     .returning();
-  if (!row) return c.json({ error: "unknown_license" }, 404);
-  return c.json({ id: row.id, trialEndsAt: row.trialEndsAt, status: row.status });
+  return c.json({ id: row!.id, trialEndsAt: row!.trialEndsAt, status: row!.status });
 });
 
 /**

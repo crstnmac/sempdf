@@ -113,7 +113,7 @@ function MembersPage() {
                     <Label htmlFor="invite-role">Role</Label>
                     <Select value={role} onValueChange={(v) => v && setRole(v)}>
                       <SelectTrigger id="invite-role" className="sm:w-36">
-                        <SelectValue />
+                        <SelectValue className="capitalize">{role}</SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         {ROLES.map((r) => (
@@ -168,7 +168,7 @@ function MembersPage() {
                             }
                           >
                             <SelectTrigger className="w-32 capitalize">
-                              <SelectValue />
+                              <SelectValue>{m.role}</SelectValue>
                             </SelectTrigger>
                             <SelectContent>
                               {ROLES.map((r) => (

@@ -15,7 +15,9 @@ export function OrgSwitcher() {
   return (
     <Select value={activeOrgId ?? undefined} onValueChange={(v) => v && setActiveOrgId(v)}>
       <SelectTrigger className="w-full">
-        <SelectValue placeholder="Select organization" />
+        <SelectValue placeholder="Select organization">
+          {orgs.find((org) => org.id === activeOrgId)?.name ?? 'Select organization'}
+        </SelectValue>
       </SelectTrigger>
       <SelectContent>
         {orgs.map((org) => (
