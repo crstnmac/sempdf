@@ -22,9 +22,25 @@ const doc = createDocument({
   }
 });
 
-const page = doc.addPage({ size: "A4" });
-page.text("Confidential", { x: 56, y: 760, fontSize: 28, color: rgb(0.6, 0.1, 0.1) });
-page.text("This PDF was AES-256 encrypted client-side.", { x: 56, y: 730, fontSize: 12 });
-page.text("Open password: reader", { x: 56, y: 706, fontSize: 12 });
+doc.renderTemplate({
+  page: { size: "A4", margin: 56 },
+  blocks: [
+    {
+      type: "heading",
+      text: "Confidential",
+      options: { level: 1, fontSize: 28, color: rgb(0.6, 0.1, 0.1) }
+    },
+    {
+      type: "paragraph",
+      text: "This PDF was AES-256 encrypted client-side.",
+      options: { fontSize: 12 }
+    },
+    {
+      type: "paragraph",
+      text: "Open password: reader",
+      options: { fontSize: 12 }
+    }
+  ]
+});
 
 export default doc;

@@ -7,6 +7,21 @@ const doc = createDocument({
   }
 });
 
+doc.renderTemplate({
+  page: { size: "A4", margin: 72 },
+  blocks: [
+    {
+      type: "heading",
+      text: "Graphics State",
+      options: { level: 1, color: hex("#1a1a2e") }
+    },
+    {
+      type: "paragraph",
+      text: "The document shell is rendered as a template. The following page uses the low-level graphics-state API because transforms and blend modes operate directly on a page canvas."
+    }
+  ]
+});
+
 const page = doc.addPage({ size: "A4" });
 page.text("Graphics State: Transforms, Alpha & Blend Modes", {
   x: 72, y: 800, fontSize: 16
