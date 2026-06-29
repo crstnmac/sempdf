@@ -1,5 +1,8 @@
 import { createDocument, rgb, mm } from "@barrierbreak/a11ydocs-pdf";
 
+const TABLE_BORDER = rgb(0.72, 0.76, 0.82);
+const TABLE_HEADER = rgb(0.92, 0.94, 0.98);
+
 // Document-wide text defaults are inherited by every text call.
 const doc = createDocument({
   title: "Rich Text & Layout",
@@ -63,11 +66,21 @@ page.text("circle()", { x: mm(130), y: mm(150), fontSize: 11, color: rgb(0.45, 0
 page.table(
   [[
     { text: "A long cell that wraps onto a few lines inside its column to make the row tall." },
-    { text: "top", verticalAlign: "top" },
-    { text: "middle", verticalAlign: "middle" },
-    { text: "bottom", verticalAlign: "bottom" }
+    { text: "top", verticalAlign: "top", header: true },
+    { text: "middle", verticalAlign: "middle", header: true },
+    { text: "bottom", verticalAlign: "bottom", header: true }
   ]],
-  { x: mm(20), y: mm(120), width: mm(170), columnWidths: [mm(85), mm(28), mm(28), mm(29)], fontSize: 11, cellPadding: 4 }
+  {
+    x: mm(20),
+    y: mm(120),
+    width: mm(170),
+    columnWidths: [mm(85), mm(28), mm(28), mm(29)],
+    fontSize: 11,
+    cellPadding: 4,
+    borders: "all",
+    borderColor: TABLE_BORDER,
+    headerBackground: TABLE_HEADER
+  }
 );
 
 // richParagraph template block (rendered on a second page).

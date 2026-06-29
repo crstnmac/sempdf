@@ -4894,6 +4894,30 @@ function* serializePageContentLines(
         if (op.options.leading !== undefined) {
           opLines.push(`${formatPdfNumber(op.options.leading)} TL`);
         }
+        if (op.options.horizontalScaling !== undefined) {
+          opLines.push(`${formatPdfNumber(op.options.horizontalScaling)} Tz`);
+        }
+        if (op.options.rise !== undefined) {
+          opLines.push(`${formatPdfNumber(op.options.rise)} Ts`);
+        }
+        if (op.options.renderMode !== undefined && op.options.renderMode !== 'fill') {
+          const trMode =
+            op.options.renderMode === 'stroke'
+              ? 1
+              : op.options.renderMode === 'fillStroke'
+                ? 2
+                : 3; // invisible
+          opLines.push(`${trMode} Tr`);
+          if (trMode === 1 || trMode === 2) {
+            opLines.push(`${formatPdfNumber(op.options.strokeWidth ?? 1)} w`);
+            opLines.push(
+              serializeStrokeColor(
+                op.options.strokeColor ?? op.options.color,
+                new Map([...resources.colorSpaces].map(([k, v]) => [k, v.name])),
+              ),
+            );
+          }
+        }
         opLines.push(
           `1 0 0 1 ${formatPdfNumber(op.options.x)} ${formatPdfNumber(op.options.y)} Tm`,
         );
@@ -4906,6 +4930,13 @@ function* serializePageContentLines(
             op.glyphs,
           ),
         );
+        // Text-state parameters (Tz/Ts/Tr) persist in the graphics state past ET,
+        // so reset any non-default value to avoid leaking into later text ops.
+        if (op.options.horizontalScaling !== undefined) opLines.push('100 Tz');
+        if (op.options.rise !== undefined) opLines.push('0 Ts');
+        if (op.options.renderMode !== undefined && op.options.renderMode !== 'fill') {
+          opLines.push('0 Tr');
+        }
         opLines.push('ET');
         break;
       case 'path':

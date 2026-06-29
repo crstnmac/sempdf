@@ -4,6 +4,7 @@
   { "label": "Joining Letter", "file": "joining-letter.ts" },
   { "label": "User Manual", "file": "user-manual.ts" },
   { "label": "Rich text & layout", "file": "rich-text-and-layout.ts" },
+  { "label": "Text formatting", "file": "text-formatting.ts" },
   { "label": "Google Fonts", "file": "google-fonts.ts" },
   { "label": "Stylesheets & tables", "file": "stylesheets-and-tables.ts" },
   { "label": "Single page (low level)", "file": "single-page.ts" },

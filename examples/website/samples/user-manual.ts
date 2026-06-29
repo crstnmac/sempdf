@@ -10,6 +10,8 @@ const doc = createDocument({
 
 const BRAND  = rgb(0.05, 0.25, 0.55);
 const MUTED  = rgb(0.45, 0.45, 0.5);
+const TABLE_BORDER = rgb(0.72, 0.76, 0.82);
+const TABLE_HEADER = rgb(0.92, 0.94, 0.98);
 
 doc.renderTemplate({
   page: {
@@ -69,7 +71,12 @@ doc.renderTemplate({
           { text: "XMP (Extensible Metadata Platform) schema injection reader" },
         ],
       ],
-      options: { headerRows: 1 },
+      options: {
+        headerRows: 1,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     {
@@ -91,7 +98,12 @@ doc.renderTemplate({
         ["Step 1", "npm config set @barrierbreak:registry=https://npm.barrierbreak.net"],
         ["Step 2", "npm install @barrierbreak/a11ydocs-pdf"],
       ],
-      options: { headerRows: 1 },
+      options: {
+        headerRows: 1,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     {
@@ -115,7 +127,12 @@ doc.renderTemplate({
         ["structureRoot", "\"Document\"", "Initializes the primary parent tree tag structural layer"],
         ["tagged", "true", "Enables explicit reading order flow boundaries throughout parsing"],
       ],
-      options: { headerRows: 1 },
+      options: {
+        headerRows: 1,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     { type: "pageBreak" },
@@ -146,7 +163,12 @@ doc.renderTemplate({
         ["bold: true", "Injects weight properties securely", "Maintains clean structural layout rules"],
         ["options.headerRows", "Binds repeating headers explicitly", "Maintains context reference on layout splits"],
       ],
-      options: { headerRows: 1 },
+      options: {
+        headerRows: 1,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     {

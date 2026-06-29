@@ -1,5 +1,8 @@
 import { createDocument, rgb } from "@barrierbreak/a11ydocs-pdf";
 
+const TABLE_BORDER = rgb(0.72, 0.76, 0.82);
+const TABLE_HEADER = rgb(0.92, 0.94, 0.98);
+
 const doc = createDocument({
   title: "Invoice 1042",
   language: "en-US",
@@ -26,7 +29,12 @@ doc.renderTemplate({
         ["Development", "20", "$3,000.00"],
         [{ text: "Total", header: true }, "-", "$4,000.00"]
       ],
-      options: { headerRows: 1 }
+      options: {
+        headerRows: 1,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER
+      }
     }
   ]
 });
