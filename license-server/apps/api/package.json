@@ -4,11 +4,16 @@
   "private": true,
   "type": "module",
   "description": "Hono API for ZeroPDF license, trials, page metering, telemetry, and admin routes.",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "tsx watch --env-file=.env src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node --env-file=.env dist/index.js",
+    "sweep": "tsx --env-file=.env src/scripts/sweep.ts",
+    "emails:test": "tsx --env-file=.env src/scripts/send-test-emails.ts",
+    "sweep:prod": "node --env-file=.env dist/scripts/sweep.js",
     "keygen": "tsx --env-file=.env src/scripts/keygen.ts",
     "create-superadmin": "tsx --env-file=.env src/scripts/create-superadmin.ts",
     "db:generate": "drizzle-kit generate",
@@ -21,10 +26,12 @@
     "better-auth": "^1.6.20",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.27",
+    "nodemailer": "^6.10.1",
     "pg": "^8.22.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.11.10",
     "drizzle-kit": "^0.31.10",
     "tsx": "^4.19.2",

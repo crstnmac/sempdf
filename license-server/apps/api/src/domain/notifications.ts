@@ -47,26 +47,27 @@ export async function queueUsageNotifications(
   exec: Executor,
   license: typeof licenses.$inferSelect,
   change: { prevUsed: number; nextUsed: number; limit: number },
-): Promise<void> {
-  if (change.limit <= 0 || change.nextUsed === change.prevUsed) return;
+): Promise<number> {
+  if (change.limit <= 0 || change.nextUsed === change.prevUsed) return 0;
 
   const events = notificationEventsForUsage({
     previousUsedPages: change.prevUsed,
     nextUsedPages: change.nextUsed,
     pageLimit: change.limit,
   });
-  if (events.length === 0) return;
+  if (events.length === 0) return 0;
 
   const [settings] = await exec
     .select()
     .from(notificationSettings)
     .where(eq(notificationSettings.accountId, license.accountId));
-  if (!settings) return;
+  if (!settings) return 0;
 
   const rows = events
     .filter((type) => isEnabled(type, settings))
     .flatMap((type) => channelRows(settings, license, type, { usedPages: change.nextUsed, pageLimit: change.limit }));
   if (rows.length > 0) await exec.insert(notificationEvents).values(rows);
+  return rows.length;
 }
 
 /**
