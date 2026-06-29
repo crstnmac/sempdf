@@ -165,7 +165,12 @@ function NewCustomerPage() {
       <SiteHeader
         title="New customer"
         actions={
-          <Button variant="outline" size="sm" render={<Link to="/customers" />}>
+          <Button
+            nativeButton={false}
+            variant="outline"
+            size="sm"
+            render={<Link to="/customers" />}
+          >
             <ArrowLeftIcon />
             Back to customers
           </Button>
@@ -200,7 +205,9 @@ function NewCustomerPage() {
                   temporary password and should change it after first login.
                 </p>
                 <div className="flex gap-2">
-                  <Button render={<Link to="/customers" />}>Done</Button>
+                  <Button nativeButton={false} render={<Link to="/customers" />}>
+                    Done
+                  </Button>
                   <Button variant="outline" onClick={reset}>
                     Create another
                   </Button>
