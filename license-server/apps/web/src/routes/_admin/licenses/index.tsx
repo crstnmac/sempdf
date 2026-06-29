@@ -155,7 +155,11 @@ function LicensesPage() {
                 <Button variant="outline" size="sm" onClick={refetch}>
                   Refresh
                 </Button>
-                <Button size="sm" render={<Link to="/customers/new" />}>
+                <Button
+                  nativeButton={false}
+                  size="sm"
+                  render={<Link to="/customers/new" />}
+                >
                   <UserPlusIcon />
                   New customer
                 </Button>

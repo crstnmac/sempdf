@@ -24,7 +24,10 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarRail,
+  useSidebar,
 } from '#/components/ui/sidebar.tsx'
+import { cn } from '#/lib/utils.ts'
 import type { SessionUser } from '#/lib/auth-client.ts'
 
 type NavItem = { title: string; to: LinkProps['to']; icon: LucideIcon }
@@ -55,55 +58,94 @@ export function AppSidebar({
   user,
   onSignOut,
   audience = 'admin',
+  organizationName,
   headerSlot,
+  className,
   ...props
 }: React.ComponentProps<typeof Sidebar> & {
   user: SessionUser
   onSignOut: () => void
   audience?: 'admin' | 'portal'
+  organizationName?: string
   headerSlot?: React.ReactNode
 }) {
   const config = VARIANTS[audience]
+  const shellName = organizationName?.trim() || config.label
+  const { isMobile, setOpenMobile } = useSidebar()
+  const navigationLabel = `${config.label} navigation`
+
+  function handleNavigate() {
+    if (isMobile) setOpenMobile(false)
+  }
+
   return (
-    <Sidebar collapsible="offcanvas" {...props}>
-      <SidebarHeader>
+    <Sidebar
+      {...props}
+      aria-label={navigationLabel}
+      collapsible="icon"
+      variant="sidebar"
+      className={cn('border-sidebar-border/80', className)}
+    >
+      <SidebarHeader className="h-(--header-height) shrink-0 flex-row items-center gap-2 border-b border-sidebar-border p-2 group-data-[collapsible=icon]:justify-center">
         <Link
           to={config.home}
-          className="flex items-center gap-2 rounded-lg px-1.5 py-1.5 hover:bg-sidebar-accent"
+          aria-label={`A11yDocs ${shellName} home`}
+          onClick={handleNavigate}
+          className="flex size-8 shrink-0 items-center justify-center rounded-lg text-sidebar-foreground outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring motion-reduce:transition-none"
         >
-          <Logo className="h-6 w-auto shrink-0" />
-          <span className="text-xs font-medium text-muted-foreground">{config.label}</span>
+          <Logo
+            markOnly
+            className="size-6 shrink-0"
+            title=""
+          />
         </Link>
-        {headerSlot ? <div className="px-1 pt-1">{headerSlot}</div> : null}
+        {headerSlot ? (
+          <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">{headerSlot}</div>
+        ) : (
+          <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
+            <span className="block truncate text-sm font-semibold text-sidebar-foreground">
+              {shellName}
+            </span>
+            <span className="block truncate text-xs text-sidebar-foreground/60">A11yDocs</span>
+          </div>
+        )}
       </SidebarHeader>
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupContent className="flex flex-col gap-2">
-            <SidebarMenu>
-              {config.nav.map((item) => (
-                <SidebarMenuItem key={item.to}>
-                  <SidebarMenuButton
-                    tooltip={item.title}
-                    render={
-                      <Link
-                        to={item.to}
-                        activeOptions={{ exact: item.to === config.home }}
-                        activeProps={{ 'data-active': 'true' }}
-                      />
-                    }
-                  >
-                    <item.icon />
-                    <span>{item.title}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
+        <SidebarGroup className="p-2">
+          <SidebarGroupContent>
+            <nav aria-label={navigationLabel}>
+              <SidebarMenu className="gap-1">
+                {config.nav.map((item) => (
+                  <SidebarMenuItem key={item.to}>
+                    <SidebarMenuButton
+                      tooltip={item.title}
+                      className="rounded-lg text-sidebar-foreground/70 hover:text-sidebar-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
+                      render={
+                        <Link
+                          to={item.to}
+                          onClick={handleNavigate}
+                          activeOptions={{ exact: item.to === config.home }}
+                          activeProps={{
+                            'data-active': 'true',
+                            'aria-current': 'page',
+                          }}
+                        />
+                      }
+                    >
+                      <item.icon aria-hidden="true" />
+                      <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </nav>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter>
+      <SidebarFooter className="border-t border-sidebar-border/70 p-2">
         <NavUser user={user} onSignOut={onSignOut} />
       </SidebarFooter>
+      <SidebarRail />
     </Sidebar>
   )
 }
