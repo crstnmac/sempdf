@@ -164,25 +164,17 @@ function PortalNotificationsPage() {
                     </Select>
                   </div>
 
-                  <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-2">
                     <ToggleRow
                       id="usageAlerts"
-                      label="Usage alerts (80% / 100%)"
+                      label="Usage alerts (90% / 95% / 100%)"
                       checked={form.usageAlertsEnabled}
                       onChange={(v) => update('usageAlertsEnabled', v)}
                     />
-                    <ToggleRow
-                      id="overageAlerts"
-                      label="Overage alerts"
-                      checked={form.overageAlertsEnabled}
-                      onChange={(v) => update('overageAlertsEnabled', v)}
-                    />
-                    <ToggleRow
-                      id="hardBlockWarnings"
-                      label="Hard-block warnings"
-                      checked={form.hardBlockWarningsEnabled}
-                      onChange={(v) => update('hardBlockWarningsEnabled', v)}
-                    />
+                    <p className="text-xs text-muted-foreground">
+                      Fires as page usage crosses 90%, 95%, and 100% of the plan limit. Trial and
+                      renewal reminders are always sent.
+                    </p>
                   </div>
 
                   <div>

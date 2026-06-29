@@ -1,11 +1,11 @@
 import { Hono } from "hono";
 import { randomBytes, randomUUID } from "node:crypto";
-import { and, count, desc, eq, gte, ilike, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, exists, gte, ilike, inArray, isNull, lte, or, sql } from "drizzle-orm";
 
 import { auth } from "../auth.js";
 import { db } from "../db/client.js";
 import { apiKeys, apiTelemetry, licenses } from "../db/schema.js";
-import { member, organization } from "../db/auth-schema.js";
+import { member, organization, user } from "../db/auth-schema.js";
 import { createApiKey } from "../domain/licenses.js";
 import { runNotificationSweep } from "../domain/notifications.js";
 
@@ -86,6 +86,7 @@ adminRoutes.get("/dashboard", async (c) => {
       firstOverageAt: lic.firstOverageAt?.toISOString() ?? null,
       trialStartedAt: lic.trialStartedAt?.toISOString() ?? null,
       trialEndsAt: lic.trialEndsAt?.toISOString() ?? null,
+      expiresAt: lic.expiresAt?.toISOString() ?? null,
       createdAt: lic.createdAt.toISOString(),
     };
   });
@@ -124,30 +125,202 @@ adminRoutes.get("/dashboard", async (c) => {
 });
 
 /**
- * Lists every organization (customer) with how many licenses it already has, so
- * an operator can issue the first license for a newly signed-up customer.
+ * Server-paginated license list with search (org name / account id / key prefix)
+ * and status filter. Pagination/filtering happen in SQL so the table scales.
  */
-adminRoutes.get("/organizations", async (c) => {
-  const orgs = await db.select().from(organization).orderBy(desc(organization.createdAt));
-  const lics = await db.select({ accountId: licenses.accountId }).from(licenses);
-  const members = await db
-    .select({ organizationId: member.organizationId })
-    .from(member);
+adminRoutes.get("/licenses", async (c) => {
+  const page = Math.max(1, Number(c.req.query("page") ?? 1));
+  const pageSize = Math.min(100, Math.max(1, Number(c.req.query("pageSize") ?? 25)));
+  const q = (c.req.query("q") ?? "").trim();
+  const statusFilter = c.req.query("status");
 
-  const licenseCounts = new Map<string, number>();
-  for (const lic of lics) licenseCounts.set(lic.accountId, (licenseCounts.get(lic.accountId) ?? 0) + 1);
-  const memberCounts = new Map<string, number>();
-  for (const m of members) memberCounts.set(m.organizationId, (memberCounts.get(m.organizationId) ?? 0) + 1);
+  const conditions = [];
+  if (statusFilter && statusFilter !== "all") {
+    conditions.push(eq(licenses.status, statusFilter as typeof licenses.status.enumValues[number]));
+  }
+  if (q) {
+    const pattern = `%${q}%`;
+    conditions.push(
+      or(
+        ilike(licenses.accountId, pattern),
+        // org name match
+        exists(
+          db
+            .select({ one: sql`1` })
+            .from(organization)
+            .where(and(eq(organization.id, licenses.accountId), ilike(organization.name, pattern))),
+        ),
+        // active key prefix match
+        exists(
+          db
+            .select({ one: sql`1` })
+            .from(apiKeys)
+            .where(and(eq(apiKeys.licenseId, licenses.id), ilike(apiKeys.keyPrefix, pattern))),
+        ),
+      ),
+    );
+  }
+  const where = conditions.length ? and(...conditions) : undefined;
+
+  const [totalRow] = await db.select({ total: count() }).from(licenses).where(where);
+  const rows = await db
+    .select()
+    .from(licenses)
+    .where(where)
+    .orderBy(desc(licenses.createdAt))
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
+
+  // Resolve org names + active keys only for this page.
+  const accountIds = [...new Set(rows.map((r) => r.accountId))];
+  const licenseIds = rows.map((r) => r.id);
+  const orgs = accountIds.length
+    ? await db
+        .select({ id: organization.id, name: organization.name })
+        .from(organization)
+        .where(inArray(organization.id, accountIds))
+    : [];
+  const orgNameById = new Map(orgs.map((o) => [o.id, o.name]));
+  const activeKeys = licenseIds.length
+    ? await db.select().from(apiKeys).where(and(inArray(apiKeys.licenseId, licenseIds), isNull(apiKeys.revokedAt)))
+    : [];
+  const keysByLicense = new Map<string, typeof activeKeys>();
+  for (const k of activeKeys) {
+    const list = keysByLicense.get(k.licenseId) ?? [];
+    list.push(k);
+    keysByLicense.set(k.licenseId, list);
+  }
 
   return c.json({
-    organizations: orgs.map((org) => ({
-      id: org.id,
-      name: org.name,
-      slug: org.slug,
-      licenseCount: licenseCounts.get(org.id) ?? 0,
-      memberCount: memberCounts.get(org.id) ?? 0,
-      createdAt: org.createdAt.toISOString(),
-    })),
+    rows: rows.map((lic) => {
+      const licKeys = keysByLicense.get(lic.id) ?? [];
+      return {
+        id: lic.id,
+        accountId: lic.accountId,
+        organizationName: orgNameById.get(lic.accountId) ?? lic.accountId,
+        keyPrefix: licKeys[0]?.keyPrefix ?? "—",
+        keyCount: licKeys.length,
+        metric: lic.metric,
+        window: lic.window,
+        limitUnits: lic.limitUnits + lic.bonusUnits,
+        bonusUnits: lic.bonusUnits,
+        usedUnits: lic.usedUnits,
+        remainingUnits: lic.limitUnits + lic.bonusUnits - lic.usedUnits,
+        status: lic.status,
+        active: lic.active,
+        firstOverageAt: lic.firstOverageAt?.toISOString() ?? null,
+        trialStartedAt: lic.trialStartedAt?.toISOString() ?? null,
+        trialEndsAt: lic.trialEndsAt?.toISOString() ?? null,
+        expiresAt: lic.expiresAt?.toISOString() ?? null,
+        createdAt: lic.createdAt.toISOString(),
+      };
+    }),
+    total: totalRow?.total ?? 0,
+    page,
+    pageSize,
+  });
+});
+
+/**
+ * Server-paginated customer (organization) list with search over company name,
+ * slug, and owner email. Owner contact, member counts, and the license-status
+ * breakdown are computed only for the current page.
+ */
+adminRoutes.get("/organizations", async (c) => {
+  const page = Math.max(1, Number(c.req.query("page") ?? 1));
+  const pageSize = Math.min(100, Math.max(1, Number(c.req.query("pageSize") ?? 25)));
+  const q = (c.req.query("q") ?? "").trim();
+
+  let where = undefined;
+  if (q) {
+    const pattern = `%${q}%`;
+    where = or(
+      ilike(organization.name, pattern),
+      ilike(organization.slug, pattern),
+      // owner/member email match
+      exists(
+        db
+          .select({ one: sql`1` })
+          .from(member)
+          .innerJoin(user, eq(member.userId, user.id))
+          .where(and(eq(member.organizationId, organization.id), ilike(user.email, pattern))),
+      ),
+    );
+  }
+
+  const [totalRow] = await db.select({ total: count() }).from(organization).where(where);
+  const orgs = await db
+    .select()
+    .from(organization)
+    .where(where)
+    .orderBy(desc(organization.createdAt))
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
+
+  const orgIds = orgs.map((o) => o.id);
+  const lics = orgIds.length
+    ? await db
+        .select({ accountId: licenses.accountId, status: licenses.status })
+        .from(licenses)
+        .where(inArray(licenses.accountId, orgIds))
+    : [];
+  const members = orgIds.length
+    ? await db
+        .select({ organizationId: member.organizationId, userId: member.userId, role: member.role })
+        .from(member)
+        .where(inArray(member.organizationId, orgIds))
+    : [];
+  const memberUserIds = [...new Set(members.map((m) => m.userId))];
+  const users = memberUserIds.length
+    ? await db
+        .select({ id: user.id, email: user.email, name: user.name })
+        .from(user)
+        .where(inArray(user.id, memberUserIds))
+    : [];
+  const userById = new Map(users.map((u) => [u.id, u]));
+
+  const memberCounts = new Map<string, number>();
+  const ownerByOrg = new Map<string, { email: string; name: string }>();
+  const adminByOrg = new Map<string, { email: string; name: string }>();
+  for (const m of members) {
+    memberCounts.set(m.organizationId, (memberCounts.get(m.organizationId) ?? 0) + 1);
+    const u = userById.get(m.userId);
+    if (!u) continue;
+    if (m.role === "owner" && !ownerByOrg.has(m.organizationId)) ownerByOrg.set(m.organizationId, u);
+    if (m.role === "admin" && !adminByOrg.has(m.organizationId)) adminByOrg.set(m.organizationId, u);
+  }
+
+  const counts = new Map<string, { total: number; trial: number; active: number; blocked: number }>();
+  for (const lic of lics) {
+    const c2 = counts.get(lic.accountId) ?? { total: 0, trial: 0, active: 0, blocked: 0 };
+    c2.total += 1;
+    if (lic.status === "trial") c2.trial += 1;
+    else if (lic.status === "hard_blocked") c2.blocked += 1;
+    else c2.active += 1;
+    counts.set(lic.accountId, c2);
+  }
+
+  return c.json({
+    rows: orgs.map((org) => {
+      const contact = ownerByOrg.get(org.id) ?? adminByOrg.get(org.id) ?? null;
+      const c2 = counts.get(org.id) ?? { total: 0, trial: 0, active: 0, blocked: 0 };
+      return {
+        id: org.id,
+        name: org.name,
+        slug: org.slug,
+        ownerEmail: contact?.email ?? null,
+        ownerName: contact?.name ?? null,
+        memberCount: memberCounts.get(org.id) ?? 0,
+        licenseCount: c2.total,
+        trialCount: c2.trial,
+        activeCount: c2.active,
+        blockedCount: c2.blocked,
+        createdAt: org.createdAt.toISOString(),
+      };
+    }),
+    total: totalRow?.total ?? 0,
+    page,
+    pageSize,
   });
 });
 
@@ -174,17 +347,27 @@ adminRoutes.post("/customers", async (c) => {
   }
 
   const now = new Date();
-  // Trial: operator-specified expiry. Paid: live annual plan ending one year out
-  // (the renewal date that drives renewal reminders); lifetime never expires.
+  // Trial: operator-specified expiry. Paid: live annual plan — operator may set a
+  // custom start (`startsAt` → windowStartedAt) and expiry (`expiresAt`), else it
+  // starts now and ends one year out; lifetime never expires.
   const trialEndsAt =
     kind === "paid"
       ? null
       : b.trialEndsAt
         ? new Date(b.trialEndsAt)
         : new Date(now.getTime() + Number(b.trialDays ?? process.env.DEFAULT_TRIAL_DAYS ?? 15) * 24 * 60 * 60 * 1000);
-  const oneYearOut = new Date(now);
-  oneYearOut.setUTCFullYear(oneYearOut.getUTCFullYear() + 1);
-  const expiresAt = kind === "paid" && window === "year" ? oneYearOut : null;
+  const startsAt = b.startsAt ? new Date(b.startsAt) : now;
+  const oneYearAfterStart = new Date(startsAt);
+  oneYearAfterStart.setUTCFullYear(oneYearAfterStart.getUTCFullYear() + 1);
+  const expiresAt =
+    kind === "paid" && window === "year"
+      ? b.expiresAt
+        ? new Date(b.expiresAt)
+        : oneYearAfterStart
+      : null;
+  if (expiresAt && expiresAt.getTime() <= startsAt.getTime()) {
+    return c.json({ error: "expiry_before_start" }, 400);
+  }
 
   // Create the customer's user account first (fails fast on duplicate email)
   // with a temporary password shown once. Runs under the superadmin session.
@@ -225,6 +408,7 @@ adminRoutes.post("/customers", async (c) => {
       status: kind === "paid" ? "none" : "trial",
       trialStartedAt: now,
       trialEndsAt,
+      windowStartedAt: kind === "paid" ? startsAt : now,
       expiresAt,
     })
     .returning();
@@ -330,6 +514,12 @@ adminRoutes.post("/licenses/:id/extend-trial", async (c) => {
  * blocked. Pass `convertToPaid: true` to turn a trial into a paid plan: this
  * additionally ends the trial (status `none`, clears `trialEndsAt`), reactivates
  * the license, and flushes usage to zero on a fresh window.
+ *
+ * Term dates: `expiresAt` is the renewal/end date (drives renewal reminders).
+ * `startsAt` (optional) sets the annual usage-window anchor (`windowStartedAt`)
+ * — when the page counter resets each year — so an operator can run a custom
+ * term like "starts 2027-01-01, expires 2028-01-01". `expiresAt` must be after
+ * `startsAt`.
  */
 adminRoutes.post("/licenses/:id/plan", async (c) => {
   const body = await c.req.json().catch(() => ({}));
@@ -339,24 +529,34 @@ adminRoutes.post("/licenses/:id/plan", async (c) => {
   const window = body.window === "lifetime" ? "lifetime" : "year";
   const convertToPaid = body.convertToPaid === true;
 
+  const startsAt = body.startsAt ? new Date(body.startsAt) : null;
+  const expiresAt = body.expiresAt ? new Date(body.expiresAt) : null;
+  if (startsAt && Number.isNaN(startsAt.getTime())) return c.json({ error: "bad_request" }, 400);
+  if (expiresAt && Number.isNaN(expiresAt.getTime())) return c.json({ error: "bad_request" }, 400);
+  if (startsAt && expiresAt && expiresAt.getTime() <= startsAt.getTime()) {
+    return c.json({ error: "expiry_before_start" }, 400);
+  }
+
   const [lic] = await db.select().from(licenses).where(eq(licenses.id, id));
   if (!lic) return c.json({ error: "unknown_license" }, 404);
 
   const update: Partial<typeof licenses.$inferInsert> = { limitUnits: limit, window };
   if (body.expiresAt !== undefined) {
-    update.expiresAt = body.expiresAt ? new Date(body.expiresAt) : null;
+    update.expiresAt = expiresAt;
   }
+  // Custom start date re-anchors the annual usage window (when usage resets).
+  if (startsAt) update.windowStartedAt = startsAt;
 
   if (convertToPaid) {
     // End the trial and start the paid plan clean: status none, no trial, usage
-    // flushed on a fresh window, reactivated.
+    // flushed on a fresh window, reactivated. A custom startsAt overrides "now".
     update.status = "none";
     update.trialEndsAt = null;
     update.active = true;
     update.firstOverageAt = null;
     update.usedUnits = 0;
     update.bonusUnits = 0;
-    update.windowStartedAt = new Date();
+    if (!startsAt) update.windowStartedAt = new Date();
   } else {
     // Keep usage; recompute status against the new effective limit.
     const effectiveLimit = limit + lic.bonusUnits;
@@ -373,6 +573,7 @@ adminRoutes.post("/licenses/:id/plan", async (c) => {
     window: row!.window,
     limitUnits: row!.limitUnits + row!.bonusUnits,
     usedUnits: row!.usedUnits,
+    windowStartedAt: row!.windowStartedAt,
     expiresAt: row!.expiresAt,
   });
 });
@@ -422,12 +623,6 @@ adminRoutes.get("/licenses/:id/usage", async (c) => {
     .select({ name: organization.name })
     .from(organization)
     .where(eq(organization.id, lic.accountId));
-  const events = await db
-    .select()
-    .from(apiTelemetry)
-    .where(and(eq(apiTelemetry.licenseId, lic.id), eq(apiTelemetry.endpoint, "/v1/authorize")))
-    .orderBy(desc(apiTelemetry.createdAt))
-    .limit(100);
   return c.json({
     id: lic.id,
     accountId: lic.accountId,
@@ -442,8 +637,50 @@ adminRoutes.get("/licenses/:id/usage", async (c) => {
     status: lic.status,
     firstOverageAt: lic.firstOverageAt,
     trialEndsAt: lic.trialEndsAt,
+    windowStartedAt: lic.windowStartedAt,
     expiresAt: lic.expiresAt,
-    telemetry: events,
+  });
+});
+
+/** Server-paginated generation (authorize) events for one license. */
+adminRoutes.get("/licenses/:id/telemetry", async (c) => {
+  const id = c.req.param("id");
+  const page = Math.max(1, Number(c.req.query("page") ?? 1));
+  const pageSize = Math.min(100, Math.max(1, Number(c.req.query("pageSize") ?? 25)));
+  const where = and(eq(apiTelemetry.licenseId, id), eq(apiTelemetry.endpoint, "/v1/authorize"));
+
+  const [totalRow] = await db.select({ total: count() }).from(apiTelemetry).where(where);
+  const rows = await db
+    .select()
+    .from(apiTelemetry)
+    .where(where)
+    .orderBy(desc(apiTelemetry.createdAt))
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
+
+  return c.json({
+    rows: rows.map((event) => ({
+      id: event.id,
+      accountId: event.accountId,
+      organizationName: "",
+      licenseId: event.licenseId,
+      endpoint: event.endpoint,
+      pages: event.pages,
+      status: event.status,
+      jobId: event.jobId,
+      jobDescription: event.jobDescription,
+      libVersion: event.libVersion,
+      nodeVersion: event.nodeVersion,
+      platform: event.platform,
+      tagged: event.tagged,
+      language: event.language,
+      conformance: event.conformance,
+      errorCode: event.errorCode,
+      createdAt: event.createdAt.toISOString(),
+    })),
+    total: totalRow?.total ?? 0,
+    page,
+    pageSize,
   });
 });
 

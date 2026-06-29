@@ -9,18 +9,15 @@ export type TelemetryStatus = 'success' | 'fail' | 'watermarked' | 'blocked'
 export type UsageWindow = 'year' | 'lifetime'
 
 /**
- * Sentinel limit for an "unlimited" plan. Enforcement compares `usedUnits` to
- * this, so it must be a real (huge) number rather than 0 — `limit: 0` would make
- * the policy treat every license as at-limit.
+ * True when a limit represents an effectively unlimited (∞) plan. Kept as a
+ * defensive display helper for any legacy license carrying a very large limit;
+ * the Unlimited tier is no longer offered when creating/changing plans.
  */
-export const UNLIMITED_LIMIT = Number.MAX_SAFE_INTEGER
-
-/** True when a limit represents an effectively unlimited (∞) plan. */
 export function isUnlimited(limit: number): boolean {
   return limit >= 1e15
 }
 
-/** Formats a page limit, rendering the unlimited sentinel as ∞. */
+/** Formats a page limit, rendering a very large/unlimited value as ∞. */
 export function formatLimit(limit: number): string {
   return isUnlimited(limit) ? '∞' : formatNumber(limit)
 }
@@ -28,7 +25,7 @@ export function formatLimit(limit: number): string {
 /**
  * Annual page-volume plan tiers. A tier's `limit` is the enforced annual page
  * allowance (`limitUnits`) = the tier ceiling. `limit: null` is the Custom tier
- * (operator types an exact number); `UNLIMITED_LIMIT` is the Unlimited tier.
+ * (operator types an exact number).
  */
 export const ANNUAL_TIERS: { label: string; limit: number | null }[] = [
   { label: '0 – 50,000', limit: 50_000 },
@@ -37,7 +34,6 @@ export const ANNUAL_TIERS: { label: string; limit: number | null }[] = [
   { label: '1,000,001 – 5,000,000', limit: 5_000_000 },
   { label: '5,000,001 – 20,000,000', limit: 20_000_000 },
   { label: 'Custom', limit: null },
-  { label: 'Unlimited (∞)', limit: UNLIMITED_LIMIT },
 ]
 
 export interface DashboardTenant {
@@ -55,6 +51,7 @@ export interface DashboardTenant {
   firstOverageAt: string | null
   trialStartedAt: string | null
   trialEndsAt: string | null
+  expiresAt: string | null
   createdAt: string
 }
 
@@ -134,8 +131,8 @@ export interface LicenseUsage {
   status: TenantStatus
   firstOverageAt: string | null
   trialEndsAt: string | null
+  windowStartedAt: string | null
   expiresAt: string | null
-  telemetry: TelemetryRow[]
 }
 
 export class ApiError extends Error {
@@ -185,14 +182,49 @@ export interface AdminOrganization {
   id: string
   name: string
   slug: string
-  licenseCount: number
+  ownerEmail: string | null
+  ownerName: string | null
   memberCount: number
+  licenseCount: number
+  trialCount: number
+  activeCount: number
+  blockedCount: number
   createdAt: string
+}
+
+export interface LicensePage {
+  rows: DashboardTenant[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+export interface OrganizationPage {
+  rows: AdminOrganization[]
+  total: number
+  page: number
+  pageSize: number
 }
 
 export const api = {
   dashboard: () => request<DashboardData>('/dashboard'),
-  organizations: () => request<{ organizations: AdminOrganization[] }>('/organizations'),
+  licenses: (params: { page?: number; pageSize?: number; q?: string; status?: TenantStatus | 'all' } = {}) => {
+    const sp = new URLSearchParams()
+    if (params.page) sp.set('page', String(params.page))
+    if (params.pageSize) sp.set('pageSize', String(params.pageSize))
+    if (params.q) sp.set('q', params.q)
+    if (params.status && params.status !== 'all') sp.set('status', params.status)
+    const qs = sp.toString()
+    return request<LicensePage>(`/licenses${qs ? `?${qs}` : ''}`)
+  },
+  organizations: (params: { page?: number; pageSize?: number; q?: string } = {}) => {
+    const sp = new URLSearchParams()
+    if (params.page) sp.set('page', String(params.page))
+    if (params.pageSize) sp.set('pageSize', String(params.pageSize))
+    if (params.q) sp.set('q', params.q)
+    const qs = sp.toString()
+    return request<OrganizationPage>(`/organizations${qs ? `?${qs}` : ''}`)
+  },
   telemetry: (params: {
     page?: number; pageSize?: number; from?: string; to?: string;
     status?: string; q?: string;
@@ -208,6 +240,15 @@ export const api = {
     return request<TelemetryPage>(`/telemetry${qs ? `?${qs}` : ''}`)
   },
   licenseUsage: (id: string) => request<LicenseUsage>(`/licenses/${id}/usage`),
+  licenseTelemetry: (id: string, params: { page?: number; pageSize?: number } = {}) => {
+    const sp = new URLSearchParams()
+    if (params.page) sp.set('page', String(params.page))
+    if (params.pageSize) sp.set('pageSize', String(params.pageSize))
+    const qs = sp.toString()
+    return request<{ rows: TelemetryRow[]; total: number; page: number; pageSize: number }>(
+      `/licenses/${id}/telemetry${qs ? `?${qs}` : ''}`,
+    )
+  },
   extendTrial: (id: string, body: { days?: number; trialEndsAt?: string }) =>
     request<{ id: string; trialEndsAt: string | null; status: TenantStatus }>(
       `/licenses/${id}/extend-trial`,
@@ -220,12 +261,23 @@ export const api = {
     ),
   changePlan: (
     id: string,
-    body: { limit: number; window: UsageWindow; expiresAt?: string | null; convertToPaid?: boolean },
+    body: {
+      limit: number
+      window: UsageWindow
+      startsAt?: string | null
+      expiresAt?: string | null
+      convertToPaid?: boolean
+    },
   ) =>
-    request<{ id: string; status: TenantStatus; window: UsageWindow; limitUnits: number; usedUnits: number; expiresAt: string | null }>(
-      `/licenses/${id}/plan`,
-      { method: 'POST', body: JSON.stringify(body) },
-    ),
+    request<{
+      id: string
+      status: TenantStatus
+      window: UsageWindow
+      limitUnits: number
+      usedUnits: number
+      windowStartedAt: string | null
+      expiresAt: string | null
+    }>(`/licenses/${id}/plan`, { method: 'POST', body: JSON.stringify(body) }),
   rotateKey: (id: string) =>
     request<{ id: string; keyPrefix: string; key: string }>(`/licenses/${id}/rotate`, {
       method: 'POST',
@@ -245,6 +297,8 @@ export const api = {
     limit: number
     window: UsageWindow
     trialEndsAt?: string
+    startsAt?: string
+    expiresAt?: string
   }) =>
     request<{
       organization: { id: string; name: string; slug: string }
@@ -333,8 +387,39 @@ export interface PortalMembers {
   invitations: PortalInvitation[]
 }
 
+export interface PortalActivityRow {
+  id: number
+  organizationName: string
+  endpoint: string
+  pages: number
+  status: TelemetryStatus
+  jobId: string | null
+  jobDescription: string | null
+  errorCode: string | null
+  createdAt: string
+}
+
+export interface PortalActivityPage {
+  rows: PortalActivityRow[]
+  total: number
+  page: number
+  pageSize: number
+}
+
 export const portalApi = {
   overview: () => portalRequest<PortalOverview>('/overview'),
+  usageSeries: (days = 30) =>
+    portalRequest<{ days: number; series: { date: string; pages: number }[] }>(
+      `/usage-series?days=${days}`,
+    ),
+  activity: (params: { page?: number; pageSize?: number; status?: TelemetryStatus | 'all' } = {}) => {
+    const sp = new URLSearchParams()
+    if (params.page) sp.set('page', String(params.page))
+    if (params.pageSize) sp.set('pageSize', String(params.pageSize))
+    if (params.status && params.status !== 'all') sp.set('status', params.status)
+    const qs = sp.toString()
+    return portalRequest<PortalActivityPage>(`/activity${qs ? `?${qs}` : ''}`)
+  },
   members: (orgId: string) => portalRequest<PortalMembers>(`/orgs/${orgId}/members`),
   invite: (orgId: string, body: { email: string; role: string }) =>
     portalRequest<PortalInvitation>(`/orgs/${orgId}/invitations`, {
