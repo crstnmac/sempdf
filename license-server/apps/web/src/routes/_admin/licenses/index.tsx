@@ -11,10 +11,10 @@ import {
   TableSkeleton,
   Toolbar,
   UsageMeter,
-  WatermarkBadge,
 } from "#/components/page-shell.tsx";
 import { UserPlusIcon } from "lucide-react";
 
+import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Input } from "#/components/ui/input.tsx";
 import {
@@ -211,7 +211,13 @@ function LicensesPage() {
                       <StatusBadge status={tenant.status} />
                     </TableCell>
                     <TableCell>
-                      <WatermarkBadge status={tenant.status} />
+                      {tenant.status === "trial" ? (
+                        <Badge variant="secondary">On</Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          Off
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <UsageMeter

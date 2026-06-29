@@ -3,6 +3,7 @@ import type { Context } from "hono";
 
 import { authorize, recordUsage, getLicense, HttpError, type TelemetryMeta } from "../domain/licenses.js";
 import { signAuthorize, publicKeyPem } from "../domain/signing.js";
+import { TRIAL_WATERMARK_TEXT } from "../domain/policy.js";
 
 /**
  * Machine-facing endpoints, authenticated by the licence key (not better-auth).
@@ -75,7 +76,7 @@ machine.post("/authorize", async (c) => {
       nonce,
       signature,
       watermark: result.watermark,
-      watermarkText: result.watermark ? "A11yDocs - For Trial Use Only" : null,
+      watermarkText: result.watermark ? TRIAL_WATERMARK_TEXT : null,
       status: result.status,
       hardBlockAt: result.hardBlockAt,
     });

@@ -557,15 +557,6 @@ export function usagePercent(used: number, limit: number): number {
   return Math.min(100, Math.round((used / limit) * 100))
 }
 
-/**
- * The visible watermark a generated PDF gets under the current status — mirrors
- * the server's enforcement: trials watermark every run with
- * "A11yDocs - For Trial Use Only". Null means clean output.
- */
-export function watermarkLabel(status: TenantStatus): string | null {
-  if (status === 'trial') return 'A11yDocs - For Trial Use Only'
-  return null
-}
 
 /** Whole days from now until `iso` (negative if past). Null when no date. */
 export function daysUntil(iso: string | null | undefined): number | null {
