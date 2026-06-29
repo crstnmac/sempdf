@@ -1,12 +1,29 @@
 import { createDocument, rgb } from "@zeropdf/zeropdf-pdf";
 
+async function ttf(url: string): Promise<Uint8Array> {
+  return new Uint8Array(await (await fetch(url)).arrayBuffer());
+}
+
+const cdn = "https://cdn.jsdelivr.net/npm/@expo-google-fonts";
+const FONTS = {
+  inter400: `${cdn}/inter/400Regular/Inter_400Regular.ttf`,
+  inter700: `${cdn}/inter/700Bold/Inter_700Bold.ttf`,
+};
+
 const doc = createDocument({
-  title: "ZeroPDF PDF Engine Integration Guide",
   language: "en-US",
+  conformance: "pdfua-1",
+  tagged: true,
   structureRoot: "Document",
+  title: "ZeroPDF PDF Engine Integration Guide",
   info: { author: "Accessibility Engineering Division" },
-  defaults: { font: "Helvetica", fontSize: 11, color: rgb(0.1, 0.1, 0.15) },
+  defaults: { fontSize: 11, color: rgb(0.1, 0.1, 0.15) },
 });
+
+const [inter400, inter700] = await Promise.all([
+  ttf(FONTS.inter400),
+  ttf(FONTS.inter700),
+]);
 
 const BRAND  = rgb(0.05, 0.25, 0.55);
 const MUTED  = rgb(0.45, 0.45, 0.5);
@@ -14,24 +31,27 @@ const TABLE_BORDER = rgb(0.72, 0.76, 0.82);
 const TABLE_HEADER = rgb(0.92, 0.94, 0.98);
 
 doc.renderTemplate({
+  autoOutline: { maxLevel: 6 },
+
   page: {
     size: "A4",
     margin: 48,
+    font: "Inter",
     spacing: {
       paragraphAfter: 5,
       headingBefore: { 2: 18, 3: 12 },
-      headingAfter:  { 1: 4,  2: 8, 3: 6 },
+      headingAfter: { 1: 4, 2: 8, 3: 6 },
       tableBefore: 6,
       tableAfter: 14,
     },
   },
-  autoOutline: { maxLevel: 6 },
+
   styles: {
-    heading1:  { fontSize: 22, color: BRAND },
-    heading2:  { fontSize: 16, color: BRAND },
-    heading3:  { fontSize: 12, color: BRAND },
+    heading1: { fontSize: 22, color: BRAND },
+    heading2: { fontSize: 16, color: BRAND },
+    heading3: { fontSize: 12, color: BRAND },
     paragraph: { fontSize: 10, lineHeight: 15 },
-    muted:     { fontSize: 9,  color: MUTED, lineHeight: 14 },
+    muted: { fontSize: 9, color: MUTED, lineHeight: 14 },
   },
 
   blocks: [
@@ -44,7 +64,7 @@ doc.renderTemplate({
       type: "paragraph",
       text: "Version: 1.7.0  |  Target Framework: Node.js / TypeScript  |  Compliance: PDF/UA-1 & WCAG 2.2",
       class: "muted",
-    }, 
+    },
 
     {
       type: "heading",
@@ -55,20 +75,37 @@ doc.renderTemplate({
       type: "table",
       rows: [
         [
-          { text: "System Profile Requirement", header: true, bold: true },
+          {
+            text: "System Profile Requirement",
+            header: true,
+            bold: true,
+            scope: "row",
+          },
           { text: "Minimum Operational Standard" },
         ],
         [
-          { text: "Node.js Environment", header: true, bold: true },
+          {
+            text: "Node.js Environment",
+            header: true,
+            bold: true,
+            scope: "row",
+          },
           { text: "v18.12.0 LTS or superior runtime engine" },
         ],
         [
-          { text: "Font Embedding Engine", header: true, bold: true },
+          {
+            text: "Font Embedding Engine",
+            header: true,
+            bold: true,
+            scope: "row",
+          },
           { text: "TrueType (.ttf) or OpenType (.otf) with full Unicode maps" },
         ],
         [
-          { text: "Metadata Engine", header: true, bold: true },
-          { text: "XMP (Extensible Metadata Platform) schema injection reader" },
+          { text: "Metadata Engine", header: true, bold: true, scope: "row" },
+          {
+            text: "XMP (Extensible Metadata Platform) schema injection reader",
+          },
         ],
       ],
       options: {
@@ -93,10 +130,20 @@ doc.renderTemplate({
       rows: [
         [
           { text: "Phase", bold: true, header: true },
-          { text: "Terminal CLI Command Execution String", header: true, bold: true },
+          {
+            text: "Terminal CLI Command Execution String",
+            header: true,
+            bold: true,
+          },
         ],
-        ["Step 1", "npm config set @zeropdf:registry=https://npm.zeropdf.net"],
-        ["Step 2", "npm install @zeropdf/zeropdf-pdf"],
+        [
+          { text: "Step 1", header: true, scope: "row" },
+          "npm config set @zeropdf:registry=https://npm.zeropdf.net",
+        ],
+        [
+          { text: "Step 2", header: true, scope: "row" },
+          "npm install @zeropdf/zeropdf-pdf",
+        ],
       ],
       options: {
         headerRows: 1,
@@ -123,9 +170,25 @@ doc.renderTemplate({
           { text: "Value Variable Input", header: true, bold: true },
           { text: "A11y Screen Reader Purpose", header: true, bold: true },
         ],
-        ["language", "\"en-US\"", "Forces correct pronunciation synthesizer engine activation"],
-        ["structureRoot", "\"Document\"", "Initializes the primary parent tree tag structural layer"],
-        ["tagged", "true", "Enables explicit reading order flow boundaries throughout parsing"],
+        [
+          { text: "language", header: true, scope: "row" },
+          { text: "en-US" },
+          {
+            text: "Forces correct pronunciation synthesizer engine activation",
+          },
+        ],
+        [
+          { text: "structureRoot", header: true, scope: "row" },
+          { text: '"Document"' },
+          { text: "Initializes the primary parent tree tag structural layer" },
+        ],
+        [
+          { text: "tagged", header: true, scope: "row" },
+          { text: "true" },
+          {
+            text: "Enables explicit reading order flow boundaries throughout parsing",
+          },
+        ],
       ],
       options: {
         headerRows: 1,
@@ -159,9 +222,21 @@ doc.renderTemplate({
           { text: "Required Layout Tag Property", header: true, bold: true },
           { text: "Screen Reader Action Output", header: true, bold: true },
         ],
-        ["header: true", "Maps cell directly to <TH> element", "Announces coordinates context to user"],
-        ["bold: true", "Injects weight properties securely", "Maintains clean structural layout rules"],
-        ["options.headerRows", "Binds repeating headers explicitly", "Maintains context reference on layout splits"],
+        [
+          { text: "header: true", header: true, scope: "row" },
+          { text: "Maps cell directly to <TH> element" },
+          { text: "Announces coordinates context to user" },
+        ],
+        [
+          { text: "bold: true", header: true, scope: "row" },
+          { text: "Injects weight properties securely" },
+          { text: "Maintains clean structural layout rules" },
+        ],
+        [
+          { text: "options.headerRows", header: true, scope: "row" },
+          { text: "Binds repeating headers explicitly" },
+          { text: "Maintains context reference on layout splits" },
+        ],
       ],
       options: {
         headerRows: 1,
@@ -179,10 +254,18 @@ doc.renderTemplate({
     {
       type: "list",
       items: [
-        { body: "Always use explicit layout tag rules on your footers ('Artifact' or 'P') to prevent reading sequence disruption." },
-        { body: "Provide alternative descriptive strings explicitly whenever rendering visual chart files or svg layout structures." },
-        { body: "Maintain logical structural level indexing pipelines consistently (e.g., skip from Level 1 straight down to Level 3 is prohibited)." },
-        { body: "Verify output binaries using validation automation engines like PAC3 or Adobe Accessibility Checker prior to deployment." },
+        {
+          body: "Always use explicit layout tag rules on your footers ('Artifact' or 'P') to prevent reading sequence disruption.",
+        },
+        {
+          body: "Provide alternative descriptive strings explicitly whenever rendering visual chart files or svg layout structures.",
+        },
+        {
+          body: "Maintain logical structural level indexing pipelines consistently (e.g., skip from Level 1 straight down to Level 3 is prohibited).",
+        },
+        {
+          body: "Verify output binaries using validation automation engines like PAC3 or Adobe Accessibility Checker prior to deployment.",
+        },
       ],
     },
   ],
@@ -190,10 +273,16 @@ doc.renderTemplate({
   footer: ({ pageNumber, totalPages }) => [
     {
       type: "paragraph",
-      text: `Accessibility System Documentation  |  Page ${pageNumber} of ${totalPages}  |  Ref: BB-A11Y-PDF-2026`,
-      options: { fontSize: 8, color: MUTED, align: "center", tag: pageNumber === totalPages ? "P" : "Artifact" },
+      text: "Accessibility Documentation",
+      options: {
+        fontSize: 10,
+        tag: pageNumber === totalPages ? "P" : "Artifact",
+      },
     },
   ],
+
+  pageNumber: { region: "footer", align: "right" },
 });
 
 export default doc;
+
