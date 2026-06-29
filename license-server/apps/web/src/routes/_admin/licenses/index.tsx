@@ -9,7 +9,7 @@ import {
   UsageMeter,
   WatermarkBadge,
 } from '#/components/page-shell.tsx'
-import { IssueLicenseSheet } from '#/components/issue-license-sheet.tsx'
+import { NewCustomerSheet } from '#/components/new-customer-sheet.tsx'
 import { Button } from '#/components/ui/button.tsx'
 import { Card, CardContent } from '#/components/ui/card.tsx'
 import { Input } from '#/components/ui/input.tsx'
@@ -37,7 +37,6 @@ const STATUS_FILTERS: { value: TenantStatus | 'all'; label: string }[] = [
   { value: 'all', label: 'All statuses' },
   { value: 'trial', label: 'Trial' },
   { value: 'none', label: 'Active' },
-  { value: 'grace_period', label: 'Grace period' },
   { value: 'hard_blocked', label: 'Hard blocked' },
 ]
 
@@ -69,7 +68,7 @@ function LicensesPage() {
             <Button variant="outline" size="sm" onClick={refetch}>
               Refresh
             </Button>
-            <IssueLicenseSheet onCreated={refetch} />
+            <NewCustomerSheet onCreated={refetch} />
           </>
         }
       />
@@ -144,7 +143,7 @@ function LicensesPage() {
                         <TableCell>
                           <UsageMeter used={tenant.usedUnits} limit={tenant.limitUnits} />
                         </TableCell>
-                        <TableCell className="capitalize">{tenant.window}</TableCell>
+                        <TableCell>{tenant.window === 'year' ? 'Annual' : 'Lifetime'}</TableCell>
                         <TableCell>{formatDate(tenant.trialEndsAt)}</TableCell>
                       </TableRow>
                     ))}

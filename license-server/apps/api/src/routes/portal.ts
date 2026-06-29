@@ -1,12 +1,12 @@
 import { Hono } from "hono";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 
 import { auth } from "../auth.js";
 import { db } from "../db/client.js";
-import { apiTelemetry, licenses, notificationSettings } from "../db/schema.js";
+import { apiKeys, apiTelemetry, licenses, notificationSettings } from "../db/schema.js";
 import { invitation, member, organization, user } from "../db/auth-schema.js";
 import { generateKey, hashKey, keyPrefix } from "../domain/keys.js";
-import { windowResetAt } from "../domain/licenses.js";
+import { createApiKey, windowResetAt } from "../domain/licenses.js";
 import { randomUUID } from "node:crypto";
 
 /**
@@ -70,10 +70,28 @@ portalRoutes.get("/overview", async (c) => {
     .where(inArray(licenses.accountId, orgIds))
     .orderBy(desc(licenses.createdAt));
 
+  // Active API keys for those licenses, grouped by license.
+  const licenseIds = myLicenses.map((lic) => lic.id);
+  const keyRows = licenseIds.length
+    ? await db
+        .select()
+        .from(apiKeys)
+        .where(and(inArray(apiKeys.licenseId, licenseIds), isNull(apiKeys.revokedAt)))
+        .orderBy(asc(apiKeys.createdAt))
+    : [];
+  const keysByLicense = new Map<string, typeof keyRows>();
+  for (const k of keyRows) {
+    const list = keysByLicense.get(k.licenseId) ?? [];
+    list.push(k);
+    keysByLicense.set(k.licenseId, list);
+  }
+
+  // Activity = generations: show authorize events (the charge point), not the
+  // /v1/usage reconciliation flushes.
   const myTelemetry = await db
     .select()
     .from(apiTelemetry)
-    .where(inArray(apiTelemetry.accountId, orgIds))
+    .where(and(inArray(apiTelemetry.accountId, orgIds), eq(apiTelemetry.endpoint, "/v1/authorize")))
     .orderBy(desc(apiTelemetry.createdAt))
     .limit(100);
 
@@ -85,17 +103,23 @@ portalRoutes.get("/overview", async (c) => {
       id: lic.id,
       accountId: lic.accountId,
       organizationName: orgNameById.get(lic.accountId) ?? lic.accountId,
-      keyPrefix: lic.keyPrefix,
       metric: lic.metric,
       window: lic.window,
-      limitUnits: lic.limitUnits,
+      limitUnits: lic.limitUnits + lic.bonusUnits,
       usedUnits: lic.usedUnits,
-      remainingUnits: lic.limitUnits - lic.usedUnits,
+      remainingUnits: lic.limitUnits + lic.bonusUnits - lic.usedUnits,
       status: lic.status,
       active: lic.active,
       trialEndsAt: lic.trialEndsAt?.toISOString() ?? null,
       resetAt: windowResetAt(lic.window, lic.windowStartedAt),
       createdAt: lic.createdAt.toISOString(),
+      keys: (keysByLicense.get(lic.id) ?? []).map((k) => ({
+        id: k.id,
+        name: k.name,
+        keyPrefix: k.keyPrefix,
+        lastUsedAt: k.lastUsedAt?.toISOString() ?? null,
+        createdAt: k.createdAt.toISOString(),
+      })),
     })),
     telemetry: myTelemetry.map((event) => ({
       id: event.id,
@@ -125,86 +149,47 @@ portalRoutes.get("/overview", async (c) => {
 });
 
 /**
- * Self-service trial provisioning for a customer's own organization. Trials are
- * mandatory for new sign-ups (the signup flow calls this right after creating
- * the org), and a portal button offers it for any org that has no license yet.
- *
- * Date-bound, not page-bound: status is `trial` with a default end date; output
- * is watermarked "Trial Mode" until upgraded. One trial per org — if the org
- * already has a license, the existing one is returned untouched.
+ * Lists / creates API keys for one of the caller's own licenses. A license can
+ * have many keys (e.g. prod / staging / CI) that all meter against the same
+ * page quota. Creating returns the plaintext key ONCE. Owners/admins only.
  */
-portalRoutes.post("/trial", async (c) => {
+portalRoutes.post("/licenses/:id/keys", async (c) => {
   const userId = c.get("userId");
+  const id = c.req.param("id");
   const body = await c.req.json().catch(() => ({}));
+  const name = typeof body.name === "string" && body.name.trim() ? body.name.trim().slice(0, 60) : "New key";
 
-  const orgs = await userOrgs(userId);
-  if (orgs.length === 0) return c.json({ error: "no_organization" }, 400);
-  const org = body.organizationId
-    ? orgs.find((o) => o.id === body.organizationId)
-    : orgs[0];
-  if (!org) return c.json({ error: "unknown_organization" }, 404);
-
-  const [existing] = await db
-    .select()
-    .from(licenses)
-    .where(eq(licenses.accountId, org.id))
-    .limit(1);
-  if (existing) {
-    return c.json({ id: existing.id, accountId: existing.accountId, status: existing.status, created: false });
+  const [lic] = await db.select().from(licenses).where(eq(licenses.id, id));
+  if (!lic) return c.json({ error: "unknown_license" }, 404);
+  if (!isOrgAdmin(await userOrgRole(userId, lic.accountId))) {
+    return c.json({ error: "forbidden" }, 403);
   }
+  if (!lic.active) return c.json({ error: "license_inactive" }, 409);
 
-  const trialDays = Number(process.env.DEFAULT_TRIAL_DAYS ?? 15);
-  const trialStartedAt = new Date();
-  const trialEndsAt = new Date(trialStartedAt.getTime() + trialDays * 24 * 60 * 60 * 1000);
-  const key = generateKey();
-  const [row] = await db
-    .insert(licenses)
-    .values({
-      keyHash: hashKey(key),
-      keyPrefix: keyPrefix(key),
-      accountId: org.id,
-      metric: "pages",
-      window: "month",
-      limitUnits: Number(process.env.DEFAULT_TRIAL_PAGE_LIMIT ?? 1000),
-      status: "trial",
-      trialStartedAt,
-      trialEndsAt,
-      gracePeriodDays: Number(process.env.DEFAULT_GRACE_PERIOD_DAYS ?? 7),
-      failMode: "closed",
-    })
-    .returning();
-
-  if (!row) return c.json({ error: "provision_failed" }, 500);
-  // Surface the key once, the same contract as admin issuance and rotation.
-  return c.json({ id: row.id, accountId: row.accountId, status: row.status, key, created: true }, 201);
+  const apiKey = await createApiKey(id, name);
+  return c.json(apiKey, 201);
 });
 
 /**
- * (Re)generates the plaintext license key for one of the caller's own licenses.
- * The key is only ever returned here, once: the server stores just its hash, so
- * there is no "reveal existing key" — calling this rotates to a fresh key and
- * invalidates any previous one. Scoped to the user's organizations.
+ * Revokes one API key. The key stops working immediately; other keys on the
+ * same license are unaffected. Scoped to the caller's orgs; owners/admins only.
  */
-portalRoutes.post("/licenses/:id/key", async (c) => {
+portalRoutes.delete("/keys/:keyId", async (c) => {
   const userId = c.get("userId");
-  const id = c.req.param("id");
+  const keyId = c.req.param("keyId");
 
-  const orgIds = (await userOrgs(userId)).map((org) => org.id);
-  const [lic] = await db.select().from(licenses).where(eq(licenses.id, id));
-  if (!lic || !orgIds.includes(lic.accountId)) {
-    return c.json({ error: "unknown_license" }, 404);
+  const [row] = await db
+    .select({ id: apiKeys.id, accountId: licenses.accountId })
+    .from(apiKeys)
+    .innerJoin(licenses, eq(apiKeys.licenseId, licenses.id))
+    .where(eq(apiKeys.id, keyId));
+  if (!row) return c.json({ error: "unknown_key" }, 404);
+  if (!isOrgAdmin(await userOrgRole(userId, row.accountId))) {
+    return c.json({ error: "forbidden" }, 403);
   }
-  if (!lic.active) {
-    return c.json({ error: "license_inactive" }, 409);
-  }
 
-  const key = generateKey();
-  await db
-    .update(licenses)
-    .set({ keyHash: hashKey(key), keyPrefix: keyPrefix(key) })
-    .where(eq(licenses.id, id));
-
-  return c.json({ id, keyPrefix: keyPrefix(key), key });
+  await db.update(apiKeys).set({ revokedAt: new Date() }).where(eq(apiKeys.id, keyId));
+  return c.json({ ok: true });
 });
 
 /**

@@ -109,7 +109,7 @@ function MembersPage() {
                   </div>
                   <div className="grid gap-1.5">
                     <Label htmlFor="invite-role">Role</Label>
-                    <Select value={role} onValueChange={setRole}>
+                    <Select value={role} onValueChange={(v) => v && setRole(v)}>
                       <SelectTrigger id="invite-role" className="sm:w-36">
                         <SelectValue />
                       </SelectTrigger>
@@ -158,6 +158,7 @@ function MembersPage() {
                           <Select
                             value={m.role}
                             onValueChange={(value) =>
+                              value &&
                               act(async () => {
                                 await portalApi.updateMemberRole(orgId, m.id, value)
                                 toast.success('Role updated.')
