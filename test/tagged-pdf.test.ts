@@ -1320,6 +1320,76 @@ test("emits /Summary on table structure elements", () => {
   assert.match(text, /\/Summary \(A list of contributors\)/);
 });
 
+test("table borders option controls which grid lines are stroked", () => {
+  const rows = [["A", "B"], ["1", "2"], ["3", "4"]];
+  const base = { x: 50, y: 700, width: 200, headerRows: 1, borderColor: "black" } satisfies Partial<import("../src/index.js").TableOptions>;
+  const strokeCount = (opts: Partial<import("../src/index.js").TableOptions>): number => {
+    const doc = createDocument();
+    doc.addPage().table(rows, { ...base, ...opts });
+    const text = new TextDecoder("latin1").decode(doc.toUint8Array());
+    return (text.match(/(^|\n)S(\n|$)/g) ?? []).length;
+  };
+
+  // 3 rows x 2 cells = 6 cell rects.
+  assert.equal(strokeCount({}), 6, "default is full grid");
+  assert.equal(strokeCount({ borders: "all" }), 6, "all = full grid");
+  // 3 row-top rules + 1 bottom edge.
+  assert.equal(strokeCount({ borders: "horizontal" }), 4, "horizontal = row rules");
+  assert.equal(strokeCount({ borders: "outer" }), 1, "outer = single frame");
+  assert.equal(strokeCount({ borders: "none" }), 0, "none suppresses borders");
+});
+
+test("table borders:none suppresses borders without a color set", () => {
+  const doc = createDocument();
+  doc.addPage().table([["A"], ["1"]], { x: 50, y: 700, width: 100, columnWidths: [100], borders: "none" });
+  const text = new TextDecoder("latin1").decode(doc.toUint8Array());
+  assert.equal((text.match(/(^|\n)S(\n|$)/g) ?? []).length, 0);
+});
+
+test("table borders rejects an invalid style", () => {
+  const doc = createDocument();
+  assert.throws(
+    () => doc.addPage().table([["A"]], { x: 50, y: 700, width: 100, columnWidths: [100], borders: "dashed" as never }),
+    /borders must be/
+  );
+});
+
+test("per-cell border draws one stroked segment per requested side", () => {
+  const strokeCount = (cell: object): number => {
+    const doc = createDocument();
+    doc.addPage().table([[cell]], { x: 50, y: 700, width: 100, columnWidths: [100] });
+    const text = new TextDecoder("latin1").decode(doc.toUint8Array());
+    return (text.match(/(^|\n)S(\n|$)/g) ?? []).length;
+  };
+
+  // No table-level border: only the requested cell sides are stroked.
+  assert.equal(strokeCount({ text: "A" }), 0, "no borders by default");
+  assert.equal(strokeCount({ text: "A", border: { bottom: true } }), 1, "one side");
+  assert.equal(
+    strokeCount({ text: "A", border: { top: true, right: true, bottom: true, left: true } }),
+    4,
+    "boxed cell = four sides"
+  );
+});
+
+test("per-cell border draws on top of the table preset", () => {
+  const doc = createDocument();
+  // Preset "all" = 1 cell rect; plus a bottom side on the single cell = 1 more stroke.
+  doc.addPage().table([[{ text: "A", border: { bottom: { width: 2 } } }]], {
+    x: 50, y: 700, width: 100, columnWidths: [100], borders: "all", borderColor: "black"
+  });
+  const text = new TextDecoder("latin1").decode(doc.toUint8Array());
+  assert.equal((text.match(/(^|\n)S(\n|$)/g) ?? []).length, 2);
+});
+
+test("per-cell border rejects a negative width", () => {
+  const doc = createDocument();
+  assert.throws(
+    () => doc.addPage().table([[{ text: "A", border: { top: { width: -1 } } }]], { x: 50, y: 700, width: 100, columnWidths: [100] }),
+    /border width must be zero or greater/
+  );
+});
+
 test("emits artifact type in marked content", () => {
   const doc = createDocument({ tagged: true, language: "en-US" });
   const page = doc.addPage({ size: "Letter" });
