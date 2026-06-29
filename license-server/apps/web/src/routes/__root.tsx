@@ -3,6 +3,7 @@ import { Outlet, createRootRoute } from '@tanstack/react-router'
 import '../styles.css'
 import { ConfirmProvider } from '#/components/confirm.tsx'
 import { Button } from '#/components/ui/button.tsx'
+import { ScrollFade } from '#/components/ui/scroll-fade.tsx'
 import { Toaster } from '#/components/ui/sonner.tsx'
 import { TooltipProvider } from '#/components/ui/tooltip'
 
@@ -23,9 +24,11 @@ function RootErrorComponent({ error }: { error: Error }) {
                     An unexpected error interrupted this page. Reloading usually fixes it.
                 </p>
                 {error?.message ? (
-                    <pre className="mt-3 overflow-x-auto rounded-md border border-border bg-muted-surface p-3 text-left text-xs text-muted-foreground">
-                        {error.message}
-                    </pre>
+                    <div className="mt-3 overflow-hidden rounded-md border border-border bg-muted-surface text-left">
+                        <ScrollFade orientation="horizontal" className="p-3">
+                            <pre className="text-xs text-muted-foreground">{error.message}</pre>
+                        </ScrollFade>
+                    </div>
                 ) : null}
                 <Button className="mt-4" onClick={() => window.location.reload()}>
                     Reload page

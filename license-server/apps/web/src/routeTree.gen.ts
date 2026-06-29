@@ -20,9 +20,10 @@ import { Route as PortalMembersRouteImport } from './routes/portal/members'
 import { Route as PortalActivityRouteImport } from './routes/portal/activity'
 import { Route as PortalAccountRouteImport } from './routes/portal/account'
 import { Route as AdminUsageRouteImport } from './routes/_admin/usage'
-import { Route as AdminCustomersRouteImport } from './routes/_admin/customers'
 import { Route as AdminLicensesIndexRouteImport } from './routes/_admin/licenses/index'
+import { Route as AdminCustomersIndexRouteImport } from './routes/_admin/customers/index'
 import { Route as AdminLicensesIdRouteImport } from './routes/_admin/licenses/$id'
+import { Route as AdminCustomersNewRouteImport } from './routes/_admin/customers/new'
 
 const PortalRoute = PortalRouteImport.update({
   id: '/portal',
@@ -78,14 +79,14 @@ const AdminUsageRoute = AdminUsageRouteImport.update({
   path: '/usage',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminCustomersRoute = AdminCustomersRouteImport.update({
-  id: '/customers',
-  path: '/customers',
-  getParentRoute: () => AdminRoute,
-} as any)
 const AdminLicensesIndexRoute = AdminLicensesIndexRouteImport.update({
   id: '/licenses/',
   path: '/licenses/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminCustomersIndexRoute = AdminCustomersIndexRouteImport.update({
+  id: '/customers/',
+  path: '/customers/',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminLicensesIdRoute = AdminLicensesIdRouteImport.update({
@@ -93,12 +94,16 @@ const AdminLicensesIdRoute = AdminLicensesIdRouteImport.update({
   path: '/licenses/$id',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminCustomersNewRoute = AdminCustomersNewRouteImport.update({
+  id: '/customers/new',
+  path: '/customers/new',
+  getParentRoute: () => AdminRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AdminIndexRoute
   '/login': typeof LoginRoute
   '/portal': typeof PortalRouteWithChildren
-  '/customers': typeof AdminCustomersRoute
   '/usage': typeof AdminUsageRoute
   '/portal/account': typeof PortalAccountRoute
   '/portal/activity': typeof PortalActivityRoute
@@ -106,12 +111,13 @@ export interface FileRoutesByFullPath {
   '/portal/notifications': typeof PortalNotificationsRoute
   '/portal/settings': typeof PortalSettingsRoute
   '/portal/': typeof PortalIndexRoute
+  '/customers/new': typeof AdminCustomersNewRoute
   '/licenses/$id': typeof AdminLicensesIdRoute
+  '/customers/': typeof AdminCustomersIndexRoute
   '/licenses/': typeof AdminLicensesIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
-  '/customers': typeof AdminCustomersRoute
   '/usage': typeof AdminUsageRoute
   '/portal/account': typeof PortalAccountRoute
   '/portal/activity': typeof PortalActivityRoute
@@ -120,7 +126,9 @@ export interface FileRoutesByTo {
   '/portal/settings': typeof PortalSettingsRoute
   '/': typeof AdminIndexRoute
   '/portal': typeof PortalIndexRoute
+  '/customers/new': typeof AdminCustomersNewRoute
   '/licenses/$id': typeof AdminLicensesIdRoute
+  '/customers': typeof AdminCustomersIndexRoute
   '/licenses': typeof AdminLicensesIndexRoute
 }
 export interface FileRoutesById {
@@ -128,7 +136,6 @@ export interface FileRoutesById {
   '/_admin': typeof AdminRouteWithChildren
   '/login': typeof LoginRoute
   '/portal': typeof PortalRouteWithChildren
-  '/_admin/customers': typeof AdminCustomersRoute
   '/_admin/usage': typeof AdminUsageRoute
   '/portal/account': typeof PortalAccountRoute
   '/portal/activity': typeof PortalActivityRoute
@@ -137,7 +144,9 @@ export interface FileRoutesById {
   '/portal/settings': typeof PortalSettingsRoute
   '/_admin/': typeof AdminIndexRoute
   '/portal/': typeof PortalIndexRoute
+  '/_admin/customers/new': typeof AdminCustomersNewRoute
   '/_admin/licenses/$id': typeof AdminLicensesIdRoute
+  '/_admin/customers/': typeof AdminCustomersIndexRoute
   '/_admin/licenses/': typeof AdminLicensesIndexRoute
 }
 export interface FileRouteTypes {
@@ -146,7 +155,6 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/portal'
-    | '/customers'
     | '/usage'
     | '/portal/account'
     | '/portal/activity'
@@ -154,12 +162,13 @@ export interface FileRouteTypes {
     | '/portal/notifications'
     | '/portal/settings'
     | '/portal/'
+    | '/customers/new'
     | '/licenses/$id'
+    | '/customers/'
     | '/licenses/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
-    | '/customers'
     | '/usage'
     | '/portal/account'
     | '/portal/activity'
@@ -168,14 +177,15 @@ export interface FileRouteTypes {
     | '/portal/settings'
     | '/'
     | '/portal'
+    | '/customers/new'
     | '/licenses/$id'
+    | '/customers'
     | '/licenses'
   id:
     | '__root__'
     | '/_admin'
     | '/login'
     | '/portal'
-    | '/_admin/customers'
     | '/_admin/usage'
     | '/portal/account'
     | '/portal/activity'
@@ -184,7 +194,9 @@ export interface FileRouteTypes {
     | '/portal/settings'
     | '/_admin/'
     | '/portal/'
+    | '/_admin/customers/new'
     | '/_admin/licenses/$id'
+    | '/_admin/customers/'
     | '/_admin/licenses/'
   fileRoutesById: FileRoutesById
 }
@@ -273,18 +285,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminUsageRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/_admin/customers': {
-      id: '/_admin/customers'
-      path: '/customers'
-      fullPath: '/customers'
-      preLoaderRoute: typeof AdminCustomersRouteImport
-      parentRoute: typeof AdminRoute
-    }
     '/_admin/licenses/': {
       id: '/_admin/licenses/'
       path: '/licenses'
       fullPath: '/licenses/'
       preLoaderRoute: typeof AdminLicensesIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/_admin/customers/': {
+      id: '/_admin/customers/'
+      path: '/customers'
+      fullPath: '/customers/'
+      preLoaderRoute: typeof AdminCustomersIndexRouteImport
       parentRoute: typeof AdminRoute
     }
     '/_admin/licenses/$id': {
@@ -294,22 +306,31 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminLicensesIdRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/_admin/customers/new': {
+      id: '/_admin/customers/new'
+      path: '/customers/new'
+      fullPath: '/customers/new'
+      preLoaderRoute: typeof AdminCustomersNewRouteImport
+      parentRoute: typeof AdminRoute
+    }
   }
 }
 
 interface AdminRouteChildren {
-  AdminCustomersRoute: typeof AdminCustomersRoute
   AdminUsageRoute: typeof AdminUsageRoute
   AdminIndexRoute: typeof AdminIndexRoute
+  AdminCustomersNewRoute: typeof AdminCustomersNewRoute
   AdminLicensesIdRoute: typeof AdminLicensesIdRoute
+  AdminCustomersIndexRoute: typeof AdminCustomersIndexRoute
   AdminLicensesIndexRoute: typeof AdminLicensesIndexRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
-  AdminCustomersRoute: AdminCustomersRoute,
   AdminUsageRoute: AdminUsageRoute,
   AdminIndexRoute: AdminIndexRoute,
+  AdminCustomersNewRoute: AdminCustomersNewRoute,
   AdminLicensesIdRoute: AdminLicensesIdRoute,
+  AdminCustomersIndexRoute: AdminCustomersIndexRoute,
   AdminLicensesIndexRoute: AdminLicensesIndexRoute,
 }
 
