@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute } from "@tanstack/react-router";
 import { ArrowDownIcon, ArrowUpIcon, DownloadIcon } from "lucide-react";
 
 import { SiteHeader } from "#/components/site-header.tsx";
@@ -40,6 +40,7 @@ import { useDebouncedValue } from "#/hooks/use-debounced-value.ts";
 import {
   type TelemetryRow,
   type TelemetryStatus,
+  type TelemetryTagFilter,
   api,
   formatDateTime,
   formatNumber,
@@ -60,6 +61,18 @@ const PERIODS: { value: string; label: string; hours: number | null }[] = [
   { value: "7d", label: "Last 7 days", hours: 168 },
   { value: "30d", label: "Last 30 days", hours: 720 },
   { value: "all", label: "All time", hours: null },
+];
+const PLATFORM_FILTERS = [
+  { value: "all", label: "All platforms" },
+  { value: "linux", label: "Linux" },
+  { value: "darwin", label: "macOS" },
+  { value: "win32", label: "Windows" },
+] as const;
+const TAG_FILTERS: { value: TelemetryTagFilter; label: string }[] = [
+  { value: "all", label: "Any document" },
+  { value: "tagged", label: "Tagged PDF" },
+  { value: "untagged", label: "Untagged PDF" },
+  { value: "unknown", label: "Tagging unknown" },
 ];
 
 type SortKey = "createdAt" | "pages" | "status" | "endpoint";
@@ -91,6 +104,9 @@ function UsagePage() {
   const [statusFilter, setStatusFilter] = useState<TelemetryStatus | "all">(
     "all",
   );
+  const [platform, setPlatform] =
+    useState<(typeof PLATFORM_FILTERS)[number]["value"]>("all");
+  const [tagged, setTagged] = useState<TelemetryTagFilter>("all");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("createdAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -112,9 +128,11 @@ function UsagePage() {
       pageSize: 50,
       from,
       status: statusFilter === "all" ? undefined : statusFilter,
+      platform,
+      tagged,
       q: debouncedQuery.trim() || undefined,
     }),
-    [page, from, statusFilter, debouncedQuery],
+    [page, from, statusFilter, platform, tagged, debouncedQuery],
   );
 
   const { data, loading, error, refetch } = useAsync(
@@ -138,6 +156,12 @@ function UsagePage() {
   }, [data, sort, sortDir]);
 
   const totalPages = Math.ceil((data?.total ?? 0) / params.pageSize);
+  const hasFilters =
+    period !== "all" ||
+    statusFilter !== "all" ||
+    platform !== "all" ||
+    tagged !== "all" ||
+    Boolean(query.trim());
 
   function toggleSort(key: SortKey) {
     if (sort === key) {
@@ -168,6 +192,8 @@ function UsagePage() {
         pageSize: 200,
         from,
         status: statusFilter === "all" ? undefined : statusFilter,
+        platform,
+        tagged,
         q: query.trim() || undefined,
       });
       for (const row of res.rows) acc.push(csvRow(row));
@@ -249,7 +275,10 @@ function UsagePage() {
                       setPage(1);
                     }}
                   >
-                    <SelectTrigger className="sm:w-36">
+                    <SelectTrigger
+                      className="sm:w-36"
+                      aria-label="Filter telemetry by period"
+                    >
                       <SelectValue>
                         {PERIODS.find((o) => o.value === period)?.label ??
                           "Select period"}
@@ -270,7 +299,10 @@ function UsagePage() {
                       setPage(1);
                     }}
                   >
-                    <SelectTrigger className="sm:w-44">
+                    <SelectTrigger
+                      className="sm:w-44"
+                      aria-label="Filter telemetry by outcome"
+                    >
                       <SelectValue>
                         {STATUS_FILTERS.find((o) => o.value === statusFilter)
                           ?.label ?? "All statuses"}
@@ -284,6 +316,60 @@ function UsagePage() {
                       ))}
                     </SelectContent>
                   </Select>
+                  <Select
+                    value={platform}
+                    onValueChange={(value) => {
+                      setPlatform(
+                        (value as (typeof PLATFORM_FILTERS)[number]["value"] | null) ??
+                          "all",
+                      );
+                      setPage(1);
+                    }}
+                  >
+                    <SelectTrigger
+                      className="sm:w-40"
+                      aria-label="Filter telemetry by platform"
+                    >
+                      <SelectValue>
+                        {PLATFORM_FILTERS.find(
+                          (option) => option.value === platform,
+                        )?.label ?? "All platforms"}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PLATFORM_FILTERS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={tagged}
+                    onValueChange={(value) => {
+                      setTagged(
+                        (value as TelemetryTagFilter | null) ?? "all",
+                      );
+                      setPage(1);
+                    }}
+                  >
+                    <SelectTrigger
+                      className="sm:w-44"
+                      aria-label="Filter telemetry by document tagging"
+                    >
+                      <SelectValue>
+                        {TAG_FILTERS.find((option) => option.value === tagged)
+                          ?.label ?? "Any document"}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TAG_FILTERS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Input
                     placeholder="Search org, endpoint, or job…"
                     value={query}
@@ -292,7 +378,24 @@ function UsagePage() {
                       setPage(1);
                     }}
                     className="sm:max-w-xs"
+                    aria-label="Search telemetry"
                   />
+                  {hasFilters ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setPeriod("all");
+                        setStatusFilter("all");
+                        setPlatform("all");
+                        setTagged("all");
+                        setQuery("");
+                        setPage(1);
+                      }}
+                    >
+                      Clear filters
+                    </Button>
+                  ) : null}
                   <span className="text-sm text-muted-foreground sm:ml-auto">
                     {formatNumber(data?.total ?? 0)} events
                   </span>
@@ -339,10 +442,21 @@ function UsagePage() {
                   {sortedRows.map((event) => (
                     <TableRow key={event.id}>
                       <TableCell className="font-medium">
-                        {event.organizationName}
-                        <div className="font-mono text-[10px] text-muted-foreground">
+                        <Link
+                          to="/customers/$id"
+                          params={{ id: event.accountId }}
+                          className="underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          {event.organizationName}
+                        </Link>
+                        <Link
+                          to="/licenses/$id"
+                          params={{ id: event.licenseId }}
+                          className="block w-fit font-mono text-[10px] font-normal text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          aria-label={`View license ${event.licenseId}`}
+                        >
                           {event.licenseId.slice(0, 8)}…
-                        </div>
+                        </Link>
                       </TableCell>
                       <TableCell className="font-mono text-xs">
                         {event.endpoint}
