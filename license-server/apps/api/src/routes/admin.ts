@@ -135,6 +135,7 @@ adminRoutes.get("/dashboard", async (c) => {
       language: event.language,
       conformance: event.conformance,
       errorCode: event.errorCode,
+      host: event.host,
       createdAt: event.createdAt.toISOString(),
     })),
   });
@@ -773,6 +774,7 @@ adminRoutes.get("/licenses/:id/telemetry", async (c) => {
       language: event.language,
       conformance: event.conformance,
       errorCode: event.errorCode,
+      host: event.host,
       createdAt: event.createdAt.toISOString(),
     })),
     total: totalRow?.total ?? 0,
@@ -857,6 +859,7 @@ adminRoutes.get("/telemetry", async (c) => {
       language: event.language,
       conformance: event.conformance,
       errorCode: event.errorCode,
+      host: event.host,
       createdAt: event.createdAt.toISOString(),
     })),
     total,

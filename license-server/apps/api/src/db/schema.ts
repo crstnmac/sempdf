@@ -1,10 +1,21 @@
 import { sql } from "drizzle-orm";
-import { bigint, bigserial, boolean, index, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, bigserial, boolean, index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 // Application tables. better-auth owns its own auth tables (user, session,
 // account, verification, organization, member, apikey) — generate those with
 // its CLI (`npx @better-auth/cli generate`). `accountId` below references a
 // better-auth organization id (a customer).
+
+/** Host/server metadata reported by the library's auto-guard (Node only). */
+export interface HostMeta {
+  hostname?: string | undefined;
+  osType?: string | undefined;
+  osRelease?: string | undefined;
+  cpuCount?: number | undefined;
+  totalMemBytes?: number | undefined;
+  cloud?: string | undefined;
+  region?: string | undefined;
+}
 
 /**
  * A license: the unit of enforcement. Carries a page quota (`limitUnits`) over
@@ -79,6 +90,9 @@ export const apiTelemetry = pgTable(
     language: text("language"),
     conformance: text("conformance"),
     errorCode: text("error_code"),
+    // Host/server metadata captured once per client process (Node only):
+    // { hostname, osType, osRelease, cpuCount, totalMemBytes, cloud, region }.
+    host: jsonb("host").$type<HostMeta>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

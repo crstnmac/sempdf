@@ -499,12 +499,17 @@ function LicenseTelemetryCard({ id }: { id: string }) {
   );
 }
 
-/** SDK + runtime a generation reported (lib version · platform · node). */
+/** SDK + runtime a generation reported (lib version · platform · node · host). */
 function clientLine(event: TelemetryRow): React.ReactNode {
+  const host = event.host;
+  const where = host
+    ? [host.hostname, [host.cloud, host.region].filter(Boolean).join("/")].filter(Boolean).join(" @ ")
+    : null;
   const parts = [
     event.libVersion ? `lib ${event.libVersion}` : null,
     event.platform,
     event.nodeVersion ? `node ${event.nodeVersion}` : null,
+    where || null,
   ].filter(Boolean);
   return parts.length ? (
     <span className="font-mono">{parts.join(" · ")}</span>
