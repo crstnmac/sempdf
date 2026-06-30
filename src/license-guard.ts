@@ -18,6 +18,8 @@ export {
   licenseQuotaError,
   shutdownAutoGuard,
   checkout,
+  ensureLicenseAuthorized,
+  flushLicenseUsage,
   setJobContext,
   type LicenseGuard,
   type LicenseGuardDecision,

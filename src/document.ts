@@ -1,5 +1,5 @@
 import { PdfEngineError, PdfErrorCode } from "./errors.js";
-import { consumeLicense } from "./internal/license-guard.js";
+import { consumeLicense, ensureLicenseAuthorized, flushLicenseUsage } from "./internal/license-guard.js";
 import {
   parseDocument,
   ParsedPdfDocument,
@@ -5249,8 +5249,10 @@ export class PdfDocument {
     }
     this._finalized = true;
     this._finalizedPageCount = this.pages.length;
+    await ensureLicenseAuthorized(this.pages.length);
     this._applyLicenseDecision();
     await serializeDocumentToSink(this.toModel(), sink);
+    await flushLicenseUsage();
     } finally {
       this._writing = false;
     }
@@ -5307,6 +5309,30 @@ export class PdfDocument {
     this._finalizedPageCount = this.pages.length;
     this._finalizedBytes = this._serializeToBytes();
     return new Blob([this._finalizedBytes as BlobPart], { type: "application/pdf" });
+  }
+
+  /**
+   * Async counterpart to {@link toArrayBuffer} that authorizes and meters the
+   * page batch with the license server. See {@link toUint8ArrayAsync}.
+   *
+   * @returns The serialized PDF data as an ArrayBuffer.
+   */
+  async toArrayBufferAsync(): Promise<ArrayBuffer> {
+    const bytes = await this.toUint8ArrayAsync();
+    const buffer = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(buffer).set(bytes);
+    return buffer;
+  }
+
+  /**
+   * Async counterpart to {@link toBlob} that authorizes and meters the page
+   * batch with the license server. See {@link toUint8ArrayAsync}.
+   *
+   * @returns The serialized PDF data as a Blob.
+   */
+  async toBlobAsync(): Promise<Blob> {
+    const bytes = await this.toUint8ArrayAsync();
+    return new Blob([bytes as BlobPart], { type: "application/pdf" });
   }
 
   /**
@@ -5636,9 +5662,26 @@ export class PdfDocument {
    * @param path The file path to write to.
    */
   async writeToFile(path: string): Promise<void> {
+    const bytes = await this.toUint8ArrayAsync();
     const { writeFile } = await import('node:fs/promises');
-    const bytes = this.toUint8Array();
     await writeFile(path, bytes);
+  }
+
+  /**
+   * Async counterpart to {@link toUint8Array} that pre-authorizes the page
+   * batch with the license server before serializing, then flushes usage back.
+   * Use this (or {@link save}/{@link writeToFile}) in one-shot scripts so the
+   * baked-in license guard works with zero extra code — the synchronous
+   * {@link toUint8Array} cannot await the authorize round-trip and throws
+   * `LICENSE_QUOTA_EXCEEDED` until a lease exists.
+   *
+   * @returns The serialized PDF data as a Uint8Array.
+   */
+  async toUint8ArrayAsync(): Promise<Uint8Array> {
+    await ensureLicenseAuthorized(this.pages.length);
+    const bytes = this.toUint8Array();
+    await flushLicenseUsage();
+    return bytes;
   }
 
   /**
@@ -6673,6 +6716,30 @@ export class PdfEditableDocument {
   }
 
   /**
+   * Async counterpart to {@link toArrayBuffer} that authorizes and meters the
+   * page batch with the license server. See {@link toUint8ArrayAsync}.
+   *
+   * @returns The serialized PDF data as an ArrayBuffer.
+   */
+  async toArrayBufferAsync(): Promise<ArrayBuffer> {
+    const bytes = await this.toUint8ArrayAsync();
+    const buffer = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(buffer).set(bytes);
+    return buffer;
+  }
+
+  /**
+   * Async counterpart to {@link toBlob} that authorizes and meters the page
+   * batch with the license server. See {@link toUint8ArrayAsync}.
+   *
+   * @returns The serialized PDF data as a Blob.
+   */
+  async toBlobAsync(): Promise<Blob> {
+    const bytes = await this.toUint8ArrayAsync();
+    return new Blob([bytes as BlobPart], { type: "application/pdf" });
+  }
+
+  /**
    * Internal serialization without finalization checks.
    */
   private _serializeToBytes(): Uint8Array {
@@ -6860,9 +6927,24 @@ export class PdfEditableDocument {
    * @param path The file path to write to.
    */
   async writeToFile(path: string): Promise<void> {
+    const bytes = await this.toUint8ArrayAsync();
     const { writeFile } = await import('node:fs/promises');
-    const bytes = this.toUint8Array();
     await writeFile(path, bytes);
+  }
+
+  /**
+   * Async counterpart to {@link toUint8Array} that pre-authorizes the page
+   * batch with the license server before serializing, then flushes usage back,
+   * so one-shot scripts work with the baked-in license guard without calling
+   * `checkout()` manually.
+   *
+   * @returns The serialized PDF data as a Uint8Array.
+   */
+  async toUint8ArrayAsync(): Promise<Uint8Array> {
+    await ensureLicenseAuthorized(this.pageOrder.length);
+    const bytes = this.toUint8Array();
+    await flushLicenseUsage();
+    return bytes;
   }
 
   /**
