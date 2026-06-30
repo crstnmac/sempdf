@@ -33,9 +33,13 @@ import {
   TableRow,
 } from "#/components/ui/table.tsx";
 import { useAsync } from "#/hooks/use-async.ts";
+import { useDebouncedValue } from "#/hooks/use-debounced-value.ts";
 import {
   type DashboardTenant,
+  type LicenseServiceFilter,
+  type LicenseUtilizationFilter,
   type TenantStatus,
+  type UsageWindow,
   api,
   formatDate,
   formatNumber,
@@ -76,10 +80,29 @@ function termCell(tenant: DashboardTenant): React.ReactNode {
 }
 
 const STATUS_FILTERS: { value: TenantStatus | "all"; label: string }[] = [
-  { value: "all", label: "All statuses" },
+  { value: "all", label: "All billing statuses" },
   { value: "trial", label: "Trial" },
-  { value: "none", label: "Active" },
+  { value: "none", label: "Paid" },
   { value: "hard_blocked", label: "Hard blocked" },
+];
+const SERVICE_FILTERS: { value: LicenseServiceFilter; label: string }[] = [
+  { value: "all", label: "All service states" },
+  { value: "active", label: "Service active" },
+  { value: "revoked", label: "Revoked" },
+];
+const WINDOW_FILTERS: { value: UsageWindow | "all"; label: string }[] = [
+  { value: "all", label: "All terms" },
+  { value: "year", label: "Annual" },
+  { value: "lifetime", label: "Lifetime" },
+];
+const UTILIZATION_FILTERS: {
+  value: LicenseUtilizationFilter;
+  label: string;
+}[] = [
+  { value: "all", label: "Any utilization" },
+  { value: "unused", label: "Unused" },
+  { value: "near_limit", label: "80%+ used" },
+  { value: "over_limit", label: "At / over limit" },
 ];
 
 const PAGE_SIZE = 25;
@@ -87,11 +110,24 @@ const PAGE_SIZE = 25;
 function LicensesPage() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<TenantStatus | "all">("all");
+  const [service, setService] = useState<LicenseServiceFilter>("all");
+  const [window, setWindow] = useState<UsageWindow | "all">("all");
+  const [utilization, setUtilization] =
+    useState<LicenseUtilizationFilter>("all");
   const [page, setPage] = useState(1);
+  const debouncedQuery = useDebouncedValue(query, 300);
 
   const params = useMemo(
-    () => ({ page, pageSize: PAGE_SIZE, q: query.trim() || undefined, status }),
-    [page, query, status],
+    () => ({
+      page,
+      pageSize: PAGE_SIZE,
+      q: debouncedQuery.trim() || undefined,
+      status,
+      service,
+      window,
+      utilization,
+    }),
+    [page, debouncedQuery, status, service, window, utilization],
   );
   const { data, loading, error, refetch } = useAsync(
     () => api.licenses(params),
@@ -101,6 +137,12 @@ function LicensesPage() {
   const rows = data?.rows ?? [];
   const total = data?.total ?? 0;
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const hasFilters =
+    Boolean(query.trim()) ||
+    status !== "all" ||
+    service !== "all" ||
+    window !== "all" ||
+    utilization !== "all";
 
   return (
     <>
@@ -127,6 +169,7 @@ function LicensesPage() {
                     setPage(1);
                   }}
                   className="sm:max-w-xs"
+                  aria-label="Search licenses"
                 />
                 <Select
                   value={status}
@@ -135,10 +178,13 @@ function LicensesPage() {
                     setPage(1);
                   }}
                 >
-                  <SelectTrigger className="sm:w-48">
+                  <SelectTrigger
+                    className="sm:w-44"
+                    aria-label="Filter licenses by billing status"
+                  >
                     <SelectValue>
                       {STATUS_FILTERS.find((f) => f.value === status)?.label ??
-                        "All statuses"}
+                        "All billing statuses"}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
@@ -149,6 +195,99 @@ function LicensesPage() {
                     ))}
                   </SelectContent>
                 </Select>
+                <Select
+                  value={service}
+                  onValueChange={(value) => {
+                    setService(
+                      (value as LicenseServiceFilter | null) ?? "all",
+                    );
+                    setPage(1);
+                  }}
+                >
+                  <SelectTrigger
+                    className="sm:w-40"
+                    aria-label="Filter licenses by service state"
+                  >
+                    <SelectValue>
+                      {SERVICE_FILTERS.find((f) => f.value === service)?.label ??
+                        "All service states"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SERVICE_FILTERS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={window}
+                  onValueChange={(value) => {
+                    setWindow((value as UsageWindow | "all" | null) ?? "all");
+                    setPage(1);
+                  }}
+                >
+                  <SelectTrigger
+                    className="sm:w-36"
+                    aria-label="Filter licenses by term"
+                  >
+                    <SelectValue>
+                      {WINDOW_FILTERS.find((f) => f.value === window)?.label ??
+                        "All terms"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {WINDOW_FILTERS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={utilization}
+                  onValueChange={(value) => {
+                    setUtilization(
+                      (value as LicenseUtilizationFilter | null) ?? "all",
+                    );
+                    setPage(1);
+                  }}
+                >
+                  <SelectTrigger
+                    className="sm:w-40"
+                    aria-label="Filter licenses by utilization"
+                  >
+                    <SelectValue>
+                      {UTILIZATION_FILTERS.find(
+                        (f) => f.value === utilization,
+                      )?.label ?? "Any utilization"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {UTILIZATION_FILTERS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {hasFilters ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setQuery("");
+                      setStatus("all");
+                      setService("all");
+                      setWindow("all");
+                      setUtilization("all");
+                      setPage(1);
+                    }}
+                  >
+                    Clear filters
+                  </Button>
+                ) : null}
                 <span className="text-sm text-muted-foreground sm:ml-auto">
                   {formatNumber(total)} total
                 </span>

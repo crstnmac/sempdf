@@ -25,6 +25,7 @@ import { Route as AdminLicensesIndexRouteImport } from './routes/_admin/licenses
 import { Route as AdminCustomersIndexRouteImport } from './routes/_admin/customers/index'
 import { Route as AdminLicensesIdRouteImport } from './routes/_admin/licenses/$id'
 import { Route as AdminCustomersNewRouteImport } from './routes/_admin/customers/new'
+import { Route as AdminCustomersIdRouteImport } from './routes/_admin/customers/$id'
 
 const PortalRoute = PortalRouteImport.update({
   id: '/portal',
@@ -105,6 +106,11 @@ const AdminCustomersNewRoute = AdminCustomersNewRouteImport.update({
   path: '/customers/new',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminCustomersIdRoute = AdminCustomersIdRouteImport.update({
+  id: '/customers/$id',
+  path: '/customers/$id',
+  getParentRoute: () => AdminRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AdminIndexRoute
@@ -118,6 +124,7 @@ export interface FileRoutesByFullPath {
   '/portal/notifications': typeof PortalNotificationsRoute
   '/portal/settings': typeof PortalSettingsRoute
   '/portal/': typeof PortalIndexRoute
+  '/customers/$id': typeof AdminCustomersIdRoute
   '/customers/new': typeof AdminCustomersNewRoute
   '/licenses/$id': typeof AdminLicensesIdRoute
   '/customers/': typeof AdminCustomersIndexRoute
@@ -134,6 +141,7 @@ export interface FileRoutesByTo {
   '/portal/settings': typeof PortalSettingsRoute
   '/': typeof AdminIndexRoute
   '/portal': typeof PortalIndexRoute
+  '/customers/$id': typeof AdminCustomersIdRoute
   '/customers/new': typeof AdminCustomersNewRoute
   '/licenses/$id': typeof AdminLicensesIdRoute
   '/customers': typeof AdminCustomersIndexRoute
@@ -153,6 +161,7 @@ export interface FileRoutesById {
   '/portal/settings': typeof PortalSettingsRoute
   '/_admin/': typeof AdminIndexRoute
   '/portal/': typeof PortalIndexRoute
+  '/_admin/customers/$id': typeof AdminCustomersIdRoute
   '/_admin/customers/new': typeof AdminCustomersNewRoute
   '/_admin/licenses/$id': typeof AdminLicensesIdRoute
   '/_admin/customers/': typeof AdminCustomersIndexRoute
@@ -172,6 +181,7 @@ export interface FileRouteTypes {
     | '/portal/notifications'
     | '/portal/settings'
     | '/portal/'
+    | '/customers/$id'
     | '/customers/new'
     | '/licenses/$id'
     | '/customers/'
@@ -188,6 +198,7 @@ export interface FileRouteTypes {
     | '/portal/settings'
     | '/'
     | '/portal'
+    | '/customers/$id'
     | '/customers/new'
     | '/licenses/$id'
     | '/customers'
@@ -206,6 +217,7 @@ export interface FileRouteTypes {
     | '/portal/settings'
     | '/_admin/'
     | '/portal/'
+    | '/_admin/customers/$id'
     | '/_admin/customers/new'
     | '/_admin/licenses/$id'
     | '/_admin/customers/'
@@ -333,12 +345,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminCustomersNewRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/_admin/customers/$id': {
+      id: '/_admin/customers/$id'
+      path: '/customers/$id'
+      fullPath: '/customers/$id'
+      preLoaderRoute: typeof AdminCustomersIdRouteImport
+      parentRoute: typeof AdminRoute
+    }
   }
 }
 
 interface AdminRouteChildren {
   AdminUsageRoute: typeof AdminUsageRoute
   AdminIndexRoute: typeof AdminIndexRoute
+  AdminCustomersIdRoute: typeof AdminCustomersIdRoute
   AdminCustomersNewRoute: typeof AdminCustomersNewRoute
   AdminLicensesIdRoute: typeof AdminLicensesIdRoute
   AdminCustomersIndexRoute: typeof AdminCustomersIndexRoute
@@ -348,6 +368,7 @@ interface AdminRouteChildren {
 const AdminRouteChildren: AdminRouteChildren = {
   AdminUsageRoute: AdminUsageRoute,
   AdminIndexRoute: AdminIndexRoute,
+  AdminCustomersIdRoute: AdminCustomersIdRoute,
   AdminCustomersNewRoute: AdminCustomersNewRoute,
   AdminLicensesIdRoute: AdminLicensesIdRoute,
   AdminCustomersIndexRoute: AdminCustomersIndexRoute,
