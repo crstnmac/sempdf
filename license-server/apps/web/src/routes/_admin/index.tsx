@@ -185,7 +185,15 @@ function DashboardPage() {
                     <TableBody>
                       {data.telemetry.slice(0, 6).map((event) => (
                         <TableRow key={event.id}>
-                          <TableCell className="font-medium">{event.organizationName}</TableCell>
+                          <TableCell className="font-medium">
+                            <Link
+                              to="/customers/$id"
+                              params={{ id: event.accountId }}
+                              className="underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              {event.organizationName}
+                            </Link>
+                          </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-1.5">
                               <span className="text-sm">{activityLabel(event.status)}</span>

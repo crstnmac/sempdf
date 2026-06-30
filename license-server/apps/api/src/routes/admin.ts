@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { randomBytes, randomUUID } from "node:crypto";
-import { and, count, desc, eq, exists, gte, ilike, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, exists, gte, ilike, inArray, isNull, lte, not, or, sql } from "drizzle-orm";
 
 import { auth } from "../auth.js";
 import { db } from "../db/client.js";
@@ -150,10 +150,27 @@ adminRoutes.get("/licenses", async (c) => {
   const pageSize = Math.min(100, Math.max(1, Number(c.req.query("pageSize") ?? 25)));
   const q = (c.req.query("q") ?? "").trim();
   const statusFilter = c.req.query("status");
+  const serviceFilter = c.req.query("service");
+  const windowFilter = c.req.query("window");
+  const utilizationFilter = c.req.query("utilization");
 
   const conditions = [];
   if (statusFilter && statusFilter !== "all") {
     conditions.push(eq(licenses.status, statusFilter as typeof licenses.status.enumValues[number]));
+  }
+  if (serviceFilter === "active") conditions.push(eq(licenses.active, true));
+  if (serviceFilter === "revoked") conditions.push(eq(licenses.active, false));
+  if (windowFilter === "year" || windowFilter === "lifetime") {
+    conditions.push(eq(licenses.window, windowFilter));
+  }
+  if (utilizationFilter === "unused") {
+    conditions.push(eq(licenses.usedUnits, 0));
+  } else if (utilizationFilter === "near_limit") {
+    conditions.push(
+      sql`${licenses.usedUnits} * 100 >= (${licenses.limitUnits} + ${licenses.bonusUnits}) * 80`,
+    );
+  } else if (utilizationFilter === "over_limit") {
+    conditions.push(sql`${licenses.usedUnits} >= ${licenses.limitUnits} + ${licenses.bonusUnits}`);
   }
   if (q) {
     const pattern = `%${q}%`;
@@ -247,23 +264,66 @@ adminRoutes.get("/organizations", async (c) => {
   const page = Math.max(1, Number(c.req.query("page") ?? 1));
   const pageSize = Math.min(100, Math.max(1, Number(c.req.query("pageSize") ?? 25)));
   const q = (c.req.query("q") ?? "").trim();
+  const licenseFilter = c.req.query("license");
+  const createdAfter = c.req.query("createdAfter");
 
-  let where = undefined;
+  const conditions = [];
   if (q) {
     const pattern = `%${q}%`;
-    where = or(
-      ilike(organization.name, pattern),
-      ilike(organization.slug, pattern),
-      // owner/member email match
-      exists(
-        db
-          .select({ one: sql`1` })
-          .from(member)
-          .innerJoin(user, eq(member.userId, user.id))
-          .where(and(eq(member.organizationId, organization.id), ilike(user.email, pattern))),
+    conditions.push(
+      or(
+        ilike(organization.name, pattern),
+        ilike(organization.slug, pattern),
+        // owner/member email match
+        exists(
+          db
+            .select({ one: sql`1` })
+            .from(member)
+            .innerJoin(user, eq(member.userId, user.id))
+            .where(and(eq(member.organizationId, organization.id), ilike(user.email, pattern))),
+        ),
       ),
     );
   }
+  if (createdAfter) {
+    const date = new Date(createdAfter);
+    if (!Number.isNaN(date.getTime())) conditions.push(gte(organization.createdAt, date));
+  }
+  if (licenseFilter === "none") {
+    conditions.push(
+      not(
+        exists(
+          db
+            .select({ one: sql`1` })
+            .from(licenses)
+            .where(eq(licenses.accountId, organization.id)),
+        ),
+      ),
+    );
+  } else if (
+    licenseFilter === "active" ||
+    licenseFilter === "trial" ||
+    licenseFilter === "hard_blocked" ||
+    licenseFilter === "revoked"
+  ) {
+    const licenseConditions = [eq(licenses.accountId, organization.id)];
+    if (licenseFilter === "active") {
+      licenseConditions.push(eq(licenses.status, "none"), eq(licenses.active, true));
+    } else if (licenseFilter === "revoked") {
+      licenseConditions.push(eq(licenses.active, false));
+    } else {
+      licenseConditions.push(eq(licenses.status, licenseFilter));
+    }
+    conditions.push(
+      exists(
+        db
+          .select({ one: sql`1` })
+          .from(licenses)
+          .where(and(...licenseConditions)),
+      ),
+    );
+  }
+  const where = conditions.length ? and(...conditions) : undefined;
 
   const [totalRow] = await db.select({ total: count() }).from(organization).where(where);
   const orgs = await db
@@ -277,7 +337,11 @@ adminRoutes.get("/organizations", async (c) => {
   const orgIds = orgs.map((o) => o.id);
   const lics = orgIds.length
     ? await db
-        .select({ accountId: licenses.accountId, status: licenses.status })
+        .select({
+          accountId: licenses.accountId,
+          status: licenses.status,
+          active: licenses.active,
+        })
         .from(licenses)
         .where(inArray(licenses.accountId, orgIds))
     : [];
@@ -307,11 +371,21 @@ adminRoutes.get("/organizations", async (c) => {
     if (m.role === "admin" && !adminByOrg.has(m.organizationId)) adminByOrg.set(m.organizationId, u);
   }
 
-  const counts = new Map<string, { total: number; trial: number; active: number; blocked: number }>();
+  const counts = new Map<
+    string,
+    { total: number; trial: number; active: number; blocked: number; revoked: number }
+  >();
   for (const lic of lics) {
-    const c2 = counts.get(lic.accountId) ?? { total: 0, trial: 0, active: 0, blocked: 0 };
+    const c2 = counts.get(lic.accountId) ?? {
+      total: 0,
+      trial: 0,
+      active: 0,
+      blocked: 0,
+      revoked: 0,
+    };
     c2.total += 1;
-    if (lic.status === "trial") c2.trial += 1;
+    if (!lic.active) c2.revoked += 1;
+    else if (lic.status === "trial") c2.trial += 1;
     else if (lic.status === "hard_blocked") c2.blocked += 1;
     else c2.active += 1;
     counts.set(lic.accountId, c2);
@@ -320,7 +394,13 @@ adminRoutes.get("/organizations", async (c) => {
   return c.json({
     rows: orgs.map((org) => {
       const contact = ownerByOrg.get(org.id) ?? adminByOrg.get(org.id) ?? null;
-      const c2 = counts.get(org.id) ?? { total: 0, trial: 0, active: 0, blocked: 0 };
+      const c2 = counts.get(org.id) ?? {
+        total: 0,
+        trial: 0,
+        active: 0,
+        blocked: 0,
+        revoked: 0,
+      };
       return {
         id: org.id,
         name: org.name,
@@ -332,12 +412,101 @@ adminRoutes.get("/organizations", async (c) => {
         trialCount: c2.trial,
         activeCount: c2.active,
         blockedCount: c2.blocked,
+        revokedCount: c2.revoked,
         createdAt: org.createdAt.toISOString(),
       };
     }),
     total: totalRow?.total ?? 0,
     page,
     pageSize,
+  });
+});
+
+/**
+ * Full operator view of one customer, including its people and licenses. The
+ * list endpoint intentionally stays compact; this route supplies the heavier
+ * data only after an operator opens a customer.
+ */
+adminRoutes.get("/organizations/:id", async (c) => {
+  const organizationId = c.req.param("id");
+  const [org] = await db
+    .select()
+    .from(organization)
+    .where(eq(organization.id, organizationId))
+    .limit(1);
+
+  if (!org) return c.json({ error: "organization_not_found" }, 404);
+
+  const [orgMembers, orgLicenses] = await Promise.all([
+    db
+      .select({
+        id: member.id,
+        userId: user.id,
+        name: user.name,
+        email: user.email,
+        emailVerified: user.emailVerified,
+        banned: user.banned,
+        role: member.role,
+        createdAt: member.createdAt,
+      })
+      .from(member)
+      .innerJoin(user, eq(member.userId, user.id))
+      .where(eq(member.organizationId, organizationId))
+      .orderBy(member.createdAt),
+    db
+      .select()
+      .from(licenses)
+      .where(eq(licenses.accountId, organizationId))
+      .orderBy(desc(licenses.createdAt)),
+  ]);
+
+  const licenseIds = orgLicenses.map((lic) => lic.id);
+  const activeKeys = licenseIds.length
+    ? await db
+        .select()
+        .from(apiKeys)
+        .where(and(inArray(apiKeys.licenseId, licenseIds), isNull(apiKeys.revokedAt)))
+    : [];
+  const keysByLicense = new Map<string, typeof activeKeys>();
+  for (const key of activeKeys) {
+    const keys = keysByLicense.get(key.licenseId) ?? [];
+    keys.push(key);
+    keysByLicense.set(key.licenseId, keys);
+  }
+
+  return c.json({
+    id: org.id,
+    name: org.name,
+    slug: org.slug,
+    logo: org.logo,
+    createdAt: org.createdAt.toISOString(),
+    members: orgMembers.map((orgMember) => ({
+      ...orgMember,
+      banned: orgMember.banned ?? false,
+      createdAt: orgMember.createdAt.toISOString(),
+    })),
+    licenses: orgLicenses.map((lic) => {
+      const licKeys = keysByLicense.get(lic.id) ?? [];
+      return {
+        id: lic.id,
+        accountId: lic.accountId,
+        organizationName: org.name,
+        keyPrefix: licKeys[0]?.keyPrefix ?? "—",
+        keyCount: licKeys.length,
+        metric: lic.metric,
+        window: lic.window,
+        limitUnits: lic.limitUnits + lic.bonusUnits,
+        usedUnits: lic.usedUnits,
+        remainingUnits: lic.limitUnits + lic.bonusUnits - lic.usedUnits,
+        status: lic.status,
+        active: lic.active,
+        firstOverageAt: lic.firstOverageAt?.toISOString() ?? null,
+        trialStartedAt: lic.trialStartedAt?.toISOString() ?? null,
+        trialEndsAt: lic.trialEndsAt?.toISOString() ?? null,
+        expiresAt: lic.expiresAt?.toISOString() ?? null,
+        createdAt: lic.createdAt.toISOString(),
+      };
+    }),
   });
 });
 
@@ -745,7 +914,39 @@ adminRoutes.get("/licenses/:id/telemetry", async (c) => {
   const id = c.req.param("id");
   const page = Math.max(1, Number(c.req.query("page") ?? 1));
   const pageSize = Math.min(100, Math.max(1, Number(c.req.query("pageSize") ?? 25)));
-  const where = and(eq(apiTelemetry.licenseId, id), eq(apiTelemetry.endpoint, "/v1/authorize"));
+  const from = c.req.query("from");
+  const statusFilter = c.req.query("status");
+  const platformFilter = c.req.query("platform");
+  const taggedFilter = c.req.query("tagged");
+  const q = (c.req.query("q") ?? "").trim();
+  const conditions = [
+    eq(apiTelemetry.licenseId, id),
+    eq(apiTelemetry.endpoint, "/v1/authorize"),
+  ];
+  if (from) conditions.push(gte(apiTelemetry.createdAt, new Date(from)));
+  if (statusFilter && statusFilter !== "all") {
+    conditions.push(
+      eq(apiTelemetry.status, statusFilter as typeof apiTelemetry.status.enumValues[number]),
+    );
+  }
+  if (platformFilter && platformFilter !== "all") {
+    conditions.push(eq(apiTelemetry.platform, platformFilter));
+  }
+  if (taggedFilter === "tagged") conditions.push(eq(apiTelemetry.tagged, true));
+  if (taggedFilter === "untagged") conditions.push(eq(apiTelemetry.tagged, false));
+  if (taggedFilter === "unknown") conditions.push(isNull(apiTelemetry.tagged));
+  if (q) {
+    const pattern = `%${q}%`;
+    conditions.push(
+      or(
+        ilike(apiTelemetry.jobId, pattern),
+        ilike(apiTelemetry.jobDescription, pattern),
+        ilike(apiTelemetry.errorCode, pattern),
+        ilike(apiTelemetry.libVersion, pattern),
+      )!,
+    );
+  }
+  const where = and(...conditions);
 
   const [totalRow] = await db.select({ total: count() }).from(apiTelemetry).where(where);
   const rows = await db
@@ -793,12 +994,20 @@ adminRoutes.get("/telemetry", async (c) => {
   const from = c.req.query("from");
   const to = c.req.query("to");
   const statusFilter = c.req.query("status");
+  const platformFilter = c.req.query("platform");
+  const taggedFilter = c.req.query("tagged");
   const q = c.req.query("q");
 
   const conditions = [];
   if (from) conditions.push(gte(apiTelemetry.createdAt, new Date(from)));
   if (to) conditions.push(lte(apiTelemetry.createdAt, new Date(to)));
   if (statusFilter && statusFilter !== "all") conditions.push(eq(apiTelemetry.status, statusFilter as typeof apiTelemetry.status.enumValues[number]));
+  if (platformFilter && platformFilter !== "all") {
+    conditions.push(eq(apiTelemetry.platform, platformFilter));
+  }
+  if (taggedFilter === "tagged") conditions.push(eq(apiTelemetry.tagged, true));
+  if (taggedFilter === "untagged") conditions.push(eq(apiTelemetry.tagged, false));
+  if (taggedFilter === "unknown") conditions.push(isNull(apiTelemetry.tagged));
   if (q) {
     const pattern = `%${q}%`;
     conditions.push(or(
@@ -806,6 +1015,14 @@ adminRoutes.get("/telemetry", async (c) => {
       ilike(apiTelemetry.endpoint, pattern),
       ilike(apiTelemetry.jobId, pattern),
       ilike(apiTelemetry.jobDescription, pattern),
+      ilike(apiTelemetry.errorCode, pattern),
+      ilike(apiTelemetry.libVersion, pattern),
+      exists(
+        db
+          .select({ one: sql`1` })
+          .from(organization)
+          .where(and(eq(organization.id, apiTelemetry.accountId), ilike(organization.name, pattern))),
+      ),
     ));
   }
   // Activity = generations: show authorize events, not /v1/usage reconciliation.
