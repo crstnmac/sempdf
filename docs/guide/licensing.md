@@ -23,9 +23,9 @@ setLicenseGuard({ consume() {} }); // allow unlimited generation
 ## Zero-config auto-guard (Node only)
 
 When you set `A11YDOCS_LICENSE_KEY` and `A11YDOCS_LICENSE_SERVER` environment
-variables, the core library automatically installs a built-in guard on the first
-call to `toUint8Array()` / `toBlob()`. No imports, no `checkout()`, no `flush()` —
-just set the env vars and generate.
+variables, the core library automatically installs a built-in guard the first
+time you generate. No imports, no `checkout()`, no `flush()` — just set the env
+vars and call an **async output method**.
 
 ```sh
 export A11YDOCS_LICENSE_KEY=a11y_RoVJ2Ppl9bUbdHKj1NRXMhivW39k_-qS
@@ -38,19 +38,55 @@ import { createDocument } from "@barrierbreak/a11ydocs-pdf";
 // No licensing import — the guard is auto-installed on first generation.
 const doc = createDocument({ title: "Hello" });
 doc.addPage({ size: "A4" }).text("Hello", { x: 24, y: 700 });
-await doc.toUint8Array(); // auto-guard handles checkout + flush
+await doc.save("hello.pdf"); // pre-authorizes, generates, and flushes usage
 ```
 
-The auto-guard starts with a 10-page initial lease, refills asynchronously when
-the lease drops below 5, and reports usage every 30 seconds. If the lease runs
-out before a refill completes, generation throws `LICENSE_QUOTA_EXCEEDED` — wait
-a moment and retry.
+### Use an async output method
 
-To shut down the auto-guard (e.g. before process exit), call:
+Authorizing quota is a network round-trip, so it can only run from an `async`
+method. These methods pre-authorize the page batch with the server, generate,
+then flush usage back — with **zero extra code**:
+
+| Method | Returns |
+|--------|---------|
+| `await doc.save(path)` / `writeToFile(path)` | writes a file (Node) |
+| `await doc.toUint8ArrayAsync()` | `Uint8Array` |
+| `await doc.toArrayBufferAsync()` | `ArrayBuffer` |
+| `await doc.toBlobAsync()` | `Blob` (browser-friendly) |
+| `await doc.writeTo(sink)` | streams to a `ByteSink` |
+
+::: warning Synchronous `toUint8Array()` cannot auto-authorize
+The synchronous `toUint8Array()` / `toArrayBuffer()` / `toBlob()` methods cannot
+await the authorize round-trip, so on a cold lease they throw
+`LICENSE_QUOTA_EXCEEDED`. Either switch to an async method above, or call
+`await checkout(pages)` first (see [Model: lease / batch](#model-lease-batch)).
+:::
+
+The auto-guard starts with **no lease** (`0`): pages are only generated after the
+server authorizes them, so the server's counter is the source of truth and an
+over-limit, expired, or inactive license is enforced rather than silently
+bypassed. After the first authorize it refills by `100` pages whenever the lease
+drops below `5`, and flushes usage on a short debounce (and a background timer)
+so usage lands promptly without a network call per PDF.
+
+The async output methods flush before they resolve, so short-lived scripts
+record usage even though the background flush timer is `unref()`'d. For a
+long-running process you can still shut the guard down explicitly before exit:
 
 ```ts
 import { shutdownAutoGuard } from "@barrierbreak/a11ydocs-pdf/license-guard";
 shutdownAutoGuard(); // stops the flush timer, reports remaining usage
+```
+
+Advanced callers can drive the same baked-in steps manually — both are exported
+from `@barrierbreak/a11ydocs-pdf/license-guard`:
+
+```ts
+import { ensureLicenseAuthorized, flushLicenseUsage } from "@barrierbreak/a11ydocs-pdf/license-guard";
+
+await ensureLicenseAuthorized(doc.pageCount); // pre-authorize the batch
+const bytes = doc.toUint8Array();             // now safe: lease is warm
+await flushLicenseUsage();                     // report usage and await delivery
 ```
 
 ::: warning Enforcement is a deterrent, not a wall
@@ -62,7 +98,14 @@ silently. Pair it with server-side anomaly detection.
 
 ## Model: lease / batch
 
-Generation is synchronous, so the client does not call the network per PDF.
+::: tip
+Most callers don't need this. The [async output methods](#use-an-async-output-method)
+above already pre-authorize and flush for you. Reach for explicit `checkout()`
+only when you want to reserve a large batch up front and then use the
+**synchronous** `toUint8Array()` in a tight loop.
+:::
+
+Generation can be synchronous, so the client need not call the network per PDF.
 Instead it reserves a **lease** of quota, and synchronous generation draws it
 down locally:
 

@@ -260,7 +260,9 @@ function tryAutoInstallGuard(): boolean {
         }
         throw licenseQuotaError(
           `License not yet authorized for ${units} page(s) (lease: ${state.lease}). ` +
-            "Call `await checkout(pages)` before generating a batch, or retry shortly.",
+            "Use an async output method (`await doc.save(path)`, `toUint8ArrayAsync()`, " +
+            "`toArrayBufferAsync()`, `toBlobAsync()`, or `writeTo(sink)`) which pre-authorizes " +
+            "automatically, or call `await checkout(pages)` before the synchronous `toUint8Array()`.",
           { remaining: state.lease },
         );
       }
@@ -381,6 +383,39 @@ export async function checkout(requested: number = REFILL_AMOUNT): Promise<numbe
     state.watermarkText = outcome.watermarkText;
   }
   return state.lease;
+}
+
+/**
+ * Ensures the license server has authorized enough pages for the synchronous
+ * serialize that is about to run. This is the async counterpart the library
+ * calls from its own async output methods (`save`/`writeTo`/`toUint8ArrayAsync`)
+ * so zero-config callers never have to invoke {@link checkout} themselves — the
+ * lease-0 "not yet authorized" throw only happens on the purely synchronous
+ * {@link PdfDocument.toUint8Array} path, which cannot await a network call.
+ *
+ * No-op when: a manual guard is installed (its own `consume` governs), the dev
+ * bypass is on with no auto-guard, or no `A11YDOCS_LICENSE_KEY` is configured
+ * (the subsequent synchronous consume reports the standard licensing error).
+ * Propagates blocked/expired/over-limit errors from {@link checkout}.
+ */
+export async function ensureLicenseAuthorized(pages: number): Promise<void> {
+  if (autoGuardState === null) {
+    if (activeGuard !== undefined) return; // a manual guard governs enforcement
+    if (isLicenseDevBypass()) return; // development bypass, nothing to authorize
+    if (!tryAutoInstallGuard()) return; // no key configured — let sync consume error
+  }
+  if (autoGuardState === null) return;
+  await checkout(Math.max(1, Math.floor(pages)));
+}
+
+/**
+ * Flushes any buffered usage to the license server and awaits delivery. The
+ * library calls this from its async output methods so a short-lived process
+ * (the unref'd flush timer never fires) still records usage before it exits.
+ * No-op when no auto-guard is installed.
+ */
+export async function flushLicenseUsage(): Promise<void> {
+  if (autoGuardState !== null) await flushAutoGuard(autoGuardState);
 }
 
 async function flushAutoGuard(state: AutoGuardState): Promise<void> {

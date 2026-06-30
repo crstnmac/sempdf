@@ -88,6 +88,8 @@ interface AuthorizeResponse {
   resetAt?: string;
   nonce: string;
   signature?: string;
+  /** Id of the key that signed `signature`; selects the public key to verify against. */
+  kid?: string;
   watermark?: boolean;
   watermarkText?: string | null;
   status?: "none" | "trial" | "grace_period" | "hard_blocked";
@@ -315,9 +317,18 @@ export async function createLicenseClient(options: LicenseClientOptions): Promis
   return client;
 }
 
-/** Canonical bytes the server signs and the client verifies. */
-export function canonicalAuthPayload(key: string, r: Pick<AuthorizeResponse, "granted" | "remaining" | "resetAt" | "nonce">): Uint8Array {
-  const text = `${key}|${r.granted}|${r.remaining}|${r.resetAt ?? ""}|${r.nonce}`;
+/**
+ * Canonical bytes the server signs and the client verifies.
+ *
+ * FORM (v2): `kid|key|granted|remaining|resetAt|nonce`. The leading `kid`
+ * (defaulting to "v1" when the server omits it) lets the server rotate signing
+ * keys: the client reads `kid` from the response, selects the matching public
+ * key, and reconstructs the SAME string that begins with that kid. Must stay
+ * byte-for-byte identical to the server's `signAuthorize` canonical form.
+ */
+export function canonicalAuthPayload(key: string, r: Pick<AuthorizeResponse, "granted" | "remaining" | "resetAt" | "nonce" | "kid">): Uint8Array {
+  const kid = r.kid ?? "v1";
+  const text = `${kid}|${key}|${r.granted}|${r.remaining}|${r.resetAt ?? ""}|${r.nonce}`;
   return new TextEncoder().encode(text);
 }
 

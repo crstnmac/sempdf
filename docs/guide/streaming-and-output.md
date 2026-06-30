@@ -2,16 +2,25 @@
 
 PDFs serialize to `Uint8Array` by default. For large documents, write directly to a sink so memory stays bounded.
 
+::: tip Sync vs async output
+Each byte method has an `async` counterpart — `toUint8ArrayAsync()`,
+`toBlobAsync()`, `toArrayBufferAsync()` — plus `save()` and `writeTo()`. Under a
+configured license key the async forms authorize and meter the page batch for
+you; the synchronous forms below require the dev bypass (`A11YDOCS_LICENSE_DEV=1`)
+or a prior `checkout()`. See [Licensing](./licensing).
+:::
+
 ## In-memory bytes
 
 ```ts
-const bytes = doc.toUint8Array();
+const bytes = doc.toUint8Array();        // sync
+const bytes = await doc.toUint8ArrayAsync(); // licensed: auto-authorize + meter
 ```
 
 ## Browser blob
 
 ```ts
-const blob = doc.toBlob();
+const blob = await doc.toBlobAsync();    // licensed: auto-authorize + meter
 const url = URL.createObjectURL(blob);
 ```
 

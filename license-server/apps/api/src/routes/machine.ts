@@ -2,8 +2,9 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 
 import { authorize, recordUsage, getLicense, HttpError, type TelemetryMeta } from "../domain/licenses.js";
-import { signAuthorize, publicKeyPem } from "../domain/signing.js";
+import { signAuthorize, publicKeyBundle } from "../domain/signing.js";
 import { TRIAL_WATERMARK_TEXT } from "../domain/policy.js";
+import { env } from "../env.js";
 
 /**
  * Machine-facing endpoints, authenticated by the licence key (not better-auth).
@@ -51,8 +52,14 @@ function readMeta(
   };
 }
 
-/** Public key clients configure as `publicKeyPem` to verify signed responses. */
-machine.get("/public-key", (c) => c.text(publicKeyPem()));
+/**
+ * Public keys clients use to verify signed responses. Returns a JSON bundle:
+ * `{ kid, publicKeyPem, keys: [{ kid, publicKeyPem }, ...] }`. A client reads the
+ * `kid` from an authorize response and verifies against the matching entry in
+ * `keys` (supports key rotation). `publicKeyPem`/`kid` at the top level name the
+ * current primary key for clients that pin a single key.
+ */
+machine.get("/public-key", (c) => c.json(publicKeyBundle()));
 
 /**
  * Reserve quota. Bearer key + body { requested, nonce }. Atomic
@@ -65,15 +72,20 @@ machine.post("/authorize", async (c) => {
   const nonce = String(body.nonce ?? "");
   const { jobId, jobDescription, meta } = readMeta(c, body);
   if (!key || !nonce || requested <= 0) return c.json({ error: "bad_request" }, 400);
+  // Cap the per-call charge so a single request cannot debit an arbitrary amount.
+  if (requested > env.maxRequestedPerCall) {
+    return c.json({ error: "bad_request", reason: "requested_exceeds_max", max: env.maxRequestedPerCall }, 400);
+  }
 
   try {
-    const result = await authorize(key, requested, { jobId, jobDescription, endpoint: "/v1/authorize", meta });
-    const signature = signAuthorize({ key, granted: result.granted, remaining: result.remaining, resetAt: result.resetAt, nonce });
+    const result = await authorize(key, requested, { nonce, jobId, jobDescription, endpoint: "/v1/authorize", meta });
+    const { signature, kid } = signAuthorize({ key, granted: result.granted, remaining: result.remaining, resetAt: result.resetAt, nonce });
     return c.json({
       granted: result.granted,
       remaining: result.remaining,
       resetAt: result.resetAt,
       nonce,
+      kid,
       signature,
       watermark: result.watermark,
       watermarkText: result.watermark ? TRIAL_WATERMARK_TEXT : null,

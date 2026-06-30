@@ -93,3 +93,64 @@ at launch — these are added later as load grows, not pre-purchased.
 > Essential + Object Storage/CDN dashboard, on a vRack private network. Verify Managed PostgreSQL
 > availability in the region first. Upgrade the database to a high-availability plan and add a
 > second API instance once trials convert to paying customers.
+
+---
+
+## High availability & single points of failure (post-hardening review)
+
+The launch footprint above is deliberately minimal, but it is worth naming the single points of
+failure explicitly and the constraints the application code now imposes on horizontal scaling.
+
+### SPOFs at launch
+
+- **Single API instance.** One `b3-8` is a SPOF: a crash, a bad deploy, or host maintenance takes
+  the licensing surface down entirely. Authorize is on the customers' critical path (the SDK calls
+  it before generating), so an outage blocks customer workloads.
+- **Single PostgreSQL.** Managed PostgreSQL *Essential* is single-node. The DB is the hard
+  dependency for every authorize/usage call; losing it is a full outage. Backups protect against
+  data loss but not against downtime.
+
+### Recommendation
+
+- **Run ≥2 API instances behind the load balancer.** The API is stateless *except* for the two
+  in-process concerns below, so two or three small instances + the Public Cloud Load Balancer give
+  rolling deploys and host-failure tolerance. Health-check the LB against **`/readyz`** (which
+  verifies DB connectivity), not `/healthz` (liveness only), so an instance with a dead DB
+  connection is drained.
+- **PostgreSQL HA / read replica.** Move to **Managed PostgreSQL Business** (2-node HA) before the
+  first paying customer depends on uptime. A read replica can later offload the heavy
+  dashboard/telemetry reads from the write primary that authorize needs.
+- **Connection pooler (PgBouncer)** once instance-count × `PG_POOL_MAX` approaches the server's
+  connection ceiling.
+
+### Per-instance state — the multi-instance caveats
+
+Two pieces of the hardened API hold state **in process memory**, so they do **not** coordinate
+across instances:
+
+1. **Rate limiter** (`src/middleware/rate-limit.ts`). The sliding-window counters live in each
+   instance's memory. With *N* instances behind the LB, the effective global limit is *N* ×
+   `RATE_LIMIT_MAX` (and a client pinned to one instance by sticky routing sees the single-instance
+   limit). For correct global limiting across instances, back the limiter with a **shared store**
+   (Redis with a sliding-window or token-bucket Lua script). Until then, set `RATE_LIMIT_MAX` with
+   the instance count in mind, or treat it as best-effort abuse protection rather than a hard quota.
+2. **Metrics counters** (`src/observability/metrics.ts`). `license_requests_total`, latency
+   histograms, the 429 counter, etc. are per-instance. Scrape **every** instance's `/metrics` and
+   aggregate in Prometheus; do not read a single instance and assume it is the whole fleet. (Pool
+   gauges and `license_sweep_age_seconds` are read live — pool stats are inherently per-instance;
+   sweep age comes from the shared DB so it is consistent across instances.)
+
+The **idempotency ledger** (`request_nonces`) and the **sweep heartbeat** (`sweep_runs`) are in
+Postgres, so they *are* shared and correct across instances — authorize de-duplication and sweep
+freshness work regardless of which instance handles a request.
+
+### Operational cron jobs
+
+Two maintenance jobs run from external cron (single-runner; do **not** fan out across instances):
+
+- **`npm run sweep:prod`** — hourly. Lifecycle reminders + notification delivery. Writes a
+  `sweep_runs` heartbeat; alert when `license_sweep_age_seconds` (from `/metrics`) exceeds
+  `SWEEP_STALE_SECONDS`.
+- **`npm run telemetry:prune:prod`** — daily. Batched retention delete on `api_telemetry`
+  (`TELEMETRY_RETENTION_DAYS`) and `request_nonces` (`NONCE_RETENTION_DAYS`) so neither fills the
+  disk.

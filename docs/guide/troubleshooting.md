@@ -45,6 +45,8 @@ try {
 | `INVALID_DESTINATION` | Named destination target page is invalid | Ensure the target page exists in the document |
 | `INVALID_LINK` | Link target URL or link rectangle is invalid | Verify URL format and rectangle dimensions |
 | `INVALID_METADATA` | Document info or XMP metadata is malformed | Check date formats (`D:YYYYMMDDHHmmSS` for info, ISO 8601 for XMP) |
+| `LICENSE_REQUIRED` | No license guard installed and the dev bypass is off | Set `A11YDOCS_LICENSE_KEY` (+ server URL), install a guard, or set `A11YDOCS_LICENSE_DEV=1` for local use. See [Licensing](./licensing) |
+| `LICENSE_QUOTA_EXCEEDED` | Lease not yet authorized (cold start) on a synchronous output call, or the server blocked the license (over-limit / expired / inactive) | Use an async output method (`await doc.save()`, `toUint8ArrayAsync()`, `toBlobAsync()`, `toArrayBufferAsync()`, `writeTo()`) which pre-authorizes, or call `await checkout(pages)` before `toUint8Array()`. If the server blocked it, check quota/renewal |
 | `INVALID_OUTLINE` | Outline bookmark has missing or invalid target | Ensure each outline item has a valid page or named destination |
 | `INVALID_TRANSFORM` | Matrix is singular or contains non-finite values | Verify matrix determinant is non-zero; all entries must be finite numbers |
 | `INVALID_DASH_PATTERN` | Dash pattern contains zero or negative values | All dash array elements must be positive numbers |

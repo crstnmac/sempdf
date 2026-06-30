@@ -2,7 +2,7 @@ import { and, eq, isNull } from "drizzle-orm";
 
 import { db } from "../db/client.js";
 import { generateKey, hashKey, keyPrefix } from "./keys.js";
-import { apiKeys, apiTelemetry, licenses, type License } from "../db/schema.js";
+import { apiKeys, apiTelemetry, licenses, requestNonces, type License } from "../db/schema.js";
 import { evaluateLicensePolicy } from "./policy.js";
 import { queueUsageNotifications } from "./notifications.js";
 import { deliverPendingNotifications } from "./delivery.js";
@@ -14,7 +14,17 @@ export interface AuthorizeResult {
   watermark: boolean;
   status: License["status"];
   hardBlockAt: string | null;
+  /** True when this is an idempotent replay of a prior identical-nonce charge. */
+  replayed?: boolean;
 }
+
+/** A unique-violation thrown by Postgres (duplicate (license_id, nonce)). */
+function isUniqueViolation(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { code?: string }).code === "23505";
+}
+
+/** How stale an api_keys.lastUsedAt may get before authorize rewrites it. */
+const LAST_USED_THROTTLE_MS = 60_000;
 
 /** A typed HTTP error so route handlers can map to status codes. */
 export class HttpError extends Error {
@@ -50,9 +60,10 @@ function windowExpired(window: License["window"], startedAt: Date, now: Date): b
 export async function authorize(
   key: string,
   requested: number,
-  options: { jobId?: string | undefined; jobDescription?: string | undefined; endpoint?: string; meta?: TelemetryMeta } = {},
+  options: { nonce?: string; jobId?: string | undefined; jobDescription?: string | undefined; endpoint?: string; meta?: TelemetryMeta } = {},
 ): Promise<AuthorizeResult> {
   const keyHash = hashKey(key);
+  const nonce = options.nonce ?? "";
   // Count of usage alerts queued this charge, so we can flush them immediately
   // (outside the transaction, once the rows are committed and visible).
   let queuedAlerts = 0;
@@ -60,7 +71,9 @@ export async function authorize(
   // inside the transaction would roll back the very telemetry/status writes we
   // make for a blocked request. We commit those, then throw outside.
   const outcome = await db.transaction(async (tx): Promise<
-    { blocked: true; reason: string; status: License["status"]; hardBlockAt: string | null; remaining: number } | (AuthorizeResult & { blocked: false })
+    | { blocked: true; reason: string; status: License["status"]; hardBlockAt: string | null; remaining: number }
+    | { blocked: false; replay: AuthorizeResult }
+    | (AuthorizeResult & { blocked: false; replay?: undefined })
   > => {
     const [apiKey] = await tx
       .select()
@@ -69,9 +82,30 @@ export async function authorize(
     if (!apiKey) throw new HttpError(404, "unknown_license");
     const [lic] = await tx.select().from(licenses).where(eq(licenses.id, apiKey.licenseId)).for("update");
     if (!lic) throw new HttpError(404, "unknown_license");
-    await tx.update(apiKeys).set({ lastUsedAt: new Date() }).where(eq(apiKeys.id, apiKey.id));
+
+    // Idempotency: a client retry resends the same nonce. If we've already
+    // charged for it, replay the stored grant WITHOUT charging again. The license
+    // row is locked FOR UPDATE above, so a concurrent first-attempt for the same
+    // (license, nonce) is serialized behind us — either it committed first (we
+    // see its row here) or it waits and then hits the UNIQUE constraint below.
+    if (nonce) {
+      const [prior] = await tx
+        .select({ grant: requestNonces.grant })
+        .from(requestNonces)
+        .where(and(eq(requestNonces.licenseId, lic.id), eq(requestNonces.nonce, nonce)));
+      if (prior) {
+        return { blocked: false, replay: { ...(JSON.parse(prior.grant) as AuthorizeResult), replayed: true } };
+      }
+    }
 
     const now = new Date();
+    // Throttle lastUsedAt writes. A write on every authorize is pure WAL +
+    // row-lock churn for a value only used for "last seen" display, which does
+    // not need second precision. Update at most once per minute per key — drops
+    // ~99% of these writes under sustained load.
+    if (!apiKey.lastUsedAt || now.getTime() - apiKey.lastUsedAt.getTime() > LAST_USED_THROTTLE_MS) {
+      await tx.update(apiKeys).set({ lastUsedAt: now }).where(eq(apiKeys.id, apiKey.id));
+    }
     let used = lic.usedUnits;
     let bonus = lic.bonusUnits;
     let startedAt = lic.windowStartedAt;
@@ -139,8 +173,7 @@ export async function authorize(
     // Proactive alerts when this charge crosses 90% / 95% / 100%.
     queuedAlerts = await queueUsageNotifications(tx, lic, { prevUsed, nextUsed, limit: effectiveLimit });
 
-    return {
-      blocked: false,
+    const result: AuthorizeResult = {
       granted,
       remaining: effectiveLimit - nextUsed,
       resetAt: windowResetAt(lic.window, startedAt),
@@ -148,6 +181,30 @@ export async function authorize(
       status: decision.status,
       hardBlockAt: decision.hardBlockAt?.toISOString() ?? null,
     };
+
+    // Claim the nonce so a retry replays this grant instead of re-charging. The
+    // INSERT shares this transaction with the charge above, so the nonce row and
+    // the usedUnits increment commit atomically — a crash mid-charge leaves
+    // neither. A racing duplicate raises a UNIQUE violation (23505); we catch it
+    // and replay the now-committed sibling grant.
+    if (nonce) {
+      try {
+        await tx
+          .insert(requestNonces)
+          .values({ licenseId: lic.id, apiKeyId: apiKey.id, nonce, grant: JSON.stringify(result) });
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          const [prior] = await tx
+            .select({ grant: requestNonces.grant })
+            .from(requestNonces)
+            .where(and(eq(requestNonces.licenseId, lic.id), eq(requestNonces.nonce, nonce)));
+          if (prior) return { blocked: false, replay: { ...(JSON.parse(prior.grant) as AuthorizeResult), replayed: true } };
+        }
+        throw err;
+      }
+    }
+
+    return { blocked: false, ...result };
   });
 
   // Usage alerts (90/95/100%) are time-sensitive, so flush them now instead of
@@ -166,7 +223,9 @@ export async function authorize(
       status: outcome.status,
     });
   }
-  const { blocked: _blocked, ...result } = outcome;
+  // Idempotent replay: return the previously-stored grant verbatim (no re-charge).
+  if (outcome.replay) return outcome.replay;
+  const { blocked: _blocked, replay: _replay, ...result } = outcome;
   return result;
 }
 
@@ -196,10 +255,16 @@ export async function recordUsage(
     license: { ...lic, limitUnits: lic.limitUnits + lic.bonusUnits },
     now,
   });
-  await db
-    .update(licenses)
-    .set({ status: decision.status, firstOverageAt: decision.firstOverageAt })
-    .where(eq(licenses.id, lic.id));
+  // Skip the write when nothing changed — the common case. recordUsage is the
+  // /v1/usage path (audit-only, charged at authorize), so on a healthy license
+  // status + firstOverageAt are almost always already correct; writing them
+  // every call was a needless UPDATE (lock + WAL) on the hottest reconcile path.
+  if (decision.status !== lic.status || !sameInstant(decision.firstOverageAt, lic.firstOverageAt)) {
+    await db
+      .update(licenses)
+      .set({ status: decision.status, firstOverageAt: decision.firstOverageAt })
+      .where(eq(licenses.id, lic.id));
+  }
 
   await db.insert(apiTelemetry).values({
     licenseId: lic.id,
@@ -219,15 +284,25 @@ export async function recordUsage(
   });
 }
 
-/** Looks up a licence by one of its (plaintext) API keys, via the api_keys table. */
+/** True when two nullable timestamps represent the same instant (or both null). */
+function sameInstant(a: Date | null, b: Date | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.getTime() === b.getTime();
+}
+
+/**
+ * Looks up a licence by one of its (plaintext) API keys, via the api_keys table.
+ * Single round trip: join api_keys → licenses instead of two sequential SELECTs,
+ * halving DB latency and pool occupancy on /v1/license and /v1/usage.
+ */
 export async function getLicense(key: string): Promise<License | undefined> {
-  const [apiKey] = await db
-    .select()
+  const [row] = await db
+    .select({ lic: licenses })
     .from(apiKeys)
-    .where(and(eq(apiKeys.keyHash, hashKey(key)), isNull(apiKeys.revokedAt)));
-  if (!apiKey) return undefined;
-  const [lic] = await db.select().from(licenses).where(eq(licenses.id, apiKey.licenseId));
-  return lic;
+    .innerJoin(licenses, eq(licenses.id, apiKeys.licenseId))
+    .where(and(eq(apiKeys.keyHash, hashKey(key)), isNull(apiKeys.revokedAt)))
+    .limit(1);
+  return row?.lic;
 }
 
 /**
