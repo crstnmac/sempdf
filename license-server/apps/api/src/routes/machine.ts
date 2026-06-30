@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 
 import { authorize, recordUsage, getLicense, HttpError, type TelemetryMeta } from "../domain/licenses.js";
+import type { HostMeta } from "../db/schema.js";
 import { signAuthorize, publicKeyBundle } from "../domain/signing.js";
 import { TRIAL_WATERMARK_TEXT } from "../domain/policy.js";
 import { env } from "../env.js";
@@ -48,8 +49,33 @@ function readMeta(
       language: str(m.language),
       conformance: str(m.conformance),
       errorCode: str(m.errorCode),
+      host: sanitizeHost(m.host),
     },
   };
+}
+
+/**
+ * Coerces the client-reported `host` blob into a clean {@link HostMeta} — string
+ * fields stringified, numeric fields parsed, unknown keys dropped — so untrusted
+ * client input never lands in the jsonb column verbatim.
+ */
+function sanitizeHost(v: unknown): HostMeta | undefined {
+  if (typeof v !== "object" || v === null) return undefined;
+  const h = v as Record<string, unknown>;
+  const s = (x: unknown): string | undefined =>
+    typeof x === "string" && x.length > 0 ? x.slice(0, 256) : undefined;
+  const n = (x: unknown): number | undefined =>
+    typeof x === "number" && Number.isFinite(x) ? x : undefined;
+  const host: HostMeta = {
+    hostname: s(h.hostname),
+    osType: s(h.osType),
+    osRelease: s(h.osRelease),
+    cpuCount: n(h.cpuCount),
+    totalMemBytes: n(h.totalMemBytes),
+    cloud: s(h.cloud),
+    region: s(h.region),
+  };
+  return Object.values(host).some((x) => x !== undefined) ? host : undefined;
 }
 
 /**

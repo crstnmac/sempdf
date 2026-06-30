@@ -74,6 +74,8 @@ function csvRow(row: TelemetryRow): string {
     row.jobDescription ?? row.jobId ?? "",
     row.platform ?? "",
     row.libVersion ?? "",
+    row.host?.hostname ?? "",
+    [row.host?.cloud, row.host?.region].filter(Boolean).join("/"),
     row.tagged === null ? "" : row.tagged ? "tagged" : "untagged",
     row.conformance ?? "",
     row.language ?? "",
@@ -157,7 +159,7 @@ function UsagePage() {
 
   async function exportCsv() {
     const acc = [
-      '"Org","Endpoint","Status","Pages","Job","Platform","Version","Tagged","Conformance","Language","When"',
+      '"Org","Endpoint","Status","Pages","Job","Platform","Version","Host","Cloud","Tagged","Conformance","Language","When"',
     ];
     let p = 1;
     while (true) {
@@ -399,6 +401,22 @@ function UsagePage() {
                           Library: {row.libVersion ? `v${row.libVersion}` : "—"}
                         </div>
                         <div>Node: {row.nodeVersion ?? "—"}</div>
+                        <div>Host: {row.host?.hostname ?? "—"}</div>
+                        <div>
+                          Server:{" "}
+                          {row.host
+                            ? [
+                                [row.host.cloud, row.host.region].filter(Boolean).join("/"),
+                                row.host.osType,
+                                row.host.cpuCount ? `${row.host.cpuCount} cpu` : null,
+                                row.host.totalMemBytes
+                                  ? `${Math.round(row.host.totalMemBytes / 1e9)} GB`
+                                  : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ") || "—"
+                            : "—"}
+                        </div>
                         <div>
                           A11y:{" "}
                           {row.tagged === null
