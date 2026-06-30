@@ -52,6 +52,7 @@ export function renderNotificationEmail(
         heading: "You've used 90% of your page limit",
         body: `${org} has used ${pct}% of the page allowance for the current billing period. Generation continues normally until the limit is reached.`,
         facts: usageFacts,
+        factsLabel: "Usage details",
         cta: { label: "View usage", url: usageUrl() },
       });
 
@@ -61,6 +62,7 @@ export function renderNotificationEmail(
         heading: "You've used 95% of your page limit",
         body: `${org} has used ${pct}% of the page allowance for the current billing period. When usage reaches 100%, new generation is blocked until the period resets or the limit is raised.`,
         facts: usageFacts,
+        factsLabel: "Usage details",
         cta: { label: "Review plan", url: billingUrl() },
       });
 
@@ -70,6 +72,7 @@ export function renderNotificationEmail(
         heading: "You've reached your page limit",
         body: `${org} has used the full page allowance for the current billing period. New generation is blocked until the period resets or you raise the limit.`,
         facts: usageFacts,
+        factsLabel: "Usage details",
         cta: { label: "Manage plan", url: billingUrl() },
         note: "Generation resumes automatically when the billing period resets.",
       });
@@ -83,6 +86,7 @@ export function renderNotificationEmail(
         heading: `Your subscription renews on ${date}`,
         body: `The ${product} subscription for ${org} is scheduled to renew on ${date}. No action is needed if your billing details are up to date.`,
         facts: [{ label: "Renewal date", value: date }],
+        factsLabel: "Subscription details",
         cta: { label: "Manage subscription", url: billingUrl() },
       });
     }
@@ -95,6 +99,7 @@ export function renderNotificationEmail(
         heading: `Your trial ends on ${date}`,
         body: `The ${product} trial for ${org} ends on ${date}. Upgrade before then to continue generating without the trial watermark.`,
         facts: [{ label: "Trial ends", value: date }],
+        factsLabel: "Trial details",
         cta: { label: "Upgrade plan", url: billingUrl() },
         note: `Until you upgrade, generated PDFs carry the “${TRIAL_WATERMARK_TEXT}” watermark.`,
       });
@@ -144,6 +149,7 @@ export function renderInvitationEmail(data: {
     heading: `Join ${data.orgName} on ${product}`,
     body: [intro, "Accept the invitation to access the organization's licenses and usage."],
     facts,
+    factsLabel: "Invitation details",
     cta: { label: "Accept invitation", url: data.acceptUrl },
     note: "If you weren't expecting this invitation, you can safely ignore this email.",
   });
@@ -175,6 +181,7 @@ export function renderWelcomeEmail(data: {
       "Sign in with the temporary password below, then set a new password from your account settings.",
     ],
     facts,
+    factsLabel: "Sign-in details",
     cta: { label: "Sign in", url: `${env.appUrl}/login` },
     note: "For security, the temporary password is shown only this once. Change it after your first sign-in.",
   });

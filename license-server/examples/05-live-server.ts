@@ -35,8 +35,8 @@ banner(`Demo 5: live metering against ${server ?? "(baked server URL)"}`);
 // Attach job metadata — surfaces in the telemetry tables as job id / description.
 setJobContext({ id: `demo-${Date.now()}`, description: "License demo batch" });
 
-const BATCHES = Number(process.env.DEMO_BATCHES ?? 2);
-const PAGES_PER_BATCH = Number(process.env.DEMO_PAGES ?? 50000);
+const BATCHES = Number(process.env.DEMO_BATCHES ?? 500);
+const PAGES_PER_BATCH = Number(process.env.DEMO_PAGES ?? 5000);
 
 let generated = 0;
 for (let i = 1; i <= BATCHES; i++) {
