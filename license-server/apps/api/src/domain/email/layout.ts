@@ -2,13 +2,13 @@ import { env } from "../../env.js";
 
 /** Brand palette for inline email styles (clients ignore <style>/classes). */
 const COLOR = {
-  bg: "#f5f4f8",
+  bg: "#ffffff",
   card: "#ffffff",
-  border: "#e6e2ee",
-  hairline: "#efedf4",
-  ink: "#1d1a27",
-  body: "#3f3b4a",
-  muted: "#6b6577",
+  border: "#e5e5e5",
+  hairline: "#e5e5e5",
+  ink: "#111111",
+  body: "#333333",
+  muted: "#686270",
   // 4.76:1 against the white card, preserving AA contrast for small text.
   faint: "#777080",
   primary: "#5928ED",
@@ -61,6 +61,8 @@ export interface RenderedEmail {
 }
 
 const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+const logoUrl = () => `${env.appUrl}/email-assets/a11ydocs-logo.png`;
+const heroUrl = () => `${env.appUrl}/email-assets/email.png`;
 
 /** Wraps structured content in the branded, responsive HTML email shell. */
 export function renderLayout(subject: string, tone: EmailTone, block: EmailBlock): RenderedEmail {
@@ -70,18 +72,18 @@ export function renderLayout(subject: string, tone: EmailTone, block: EmailBlock
   const bodyHtml = bodyParas
     .map(
       (p, i) =>
-        `<p style="margin:${i === 0 ? "0" : "14px 0 0"};color:${COLOR.body};font-size:15px;line-height:1.62;">${esc(p)}</p>`,
+        `<p style="margin:${i === 0 ? "0" : "14px 0 0"};color:${COLOR.body};font-size:16px;line-height:1.5;text-align:left;">${esc(p)}</p>`,
     )
     .join("");
 
   const factsHtml = block.facts?.length
-    ? `<table aria-label="${esc(block.factsLabel ?? "Message details")}" width="100%" cellpadding="0" cellspacing="0" style="margin:22px 0 4px;border:1px solid ${COLOR.border};border-radius:10px;border-collapse:separate;">
+    ? `<table aria-label="${esc(block.factsLabel ?? "Message details")}" width="100%" cellpadding="0" cellspacing="0" style="margin:22px 0 4px;border:1px solid ${COLOR.border};border-radius:8px;border-collapse:separate;">
         <tbody>
         ${block.facts
           .map(
             (f, i) => `<tr>
-              <th scope="row" style="padding:11px 14px;${i ? `border-top:1px solid ${COLOR.hairline};` : ""}color:${COLOR.muted};font-size:13px;font-weight:400;text-align:left;">${esc(f.label)}</th>
-              <td style="padding:11px 14px;${i ? `border-top:1px solid ${COLOR.hairline};` : ""}color:${COLOR.ink};font-size:13px;font-weight:600;text-align:right;overflow-wrap:anywhere;">${esc(f.value)}</td>
+              <th scope="row" style="padding:12px 14px;${i ? `border-top:1px solid ${COLOR.hairline};` : ""}color:${COLOR.muted};font-size:14px;font-weight:400;text-align:left;">${esc(f.label)}</th>
+              <td style="padding:12px 14px;${i ? `border-top:1px solid ${COLOR.hairline};` : ""}color:${COLOR.ink};font-size:14px;font-weight:600;text-align:right;overflow-wrap:anywhere;">${esc(f.value)}</td>
             </tr>`,
           )
           .join("")}
@@ -90,10 +92,10 @@ export function renderLayout(subject: string, tone: EmailTone, block: EmailBlock
     : "";
 
   const ctaHtml = block.cta
-    ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:26px 0 2px;">
-        <tr><td style="border-radius:8px;background:${COLOR.primary};">
+    ? `<table role="presentation" align="center" cellpadding="0" cellspacing="0" style="margin:26px auto 2px;">
+        <tr><td style="border-radius:4px;background:${COLOR.primary};">
           <a href="${esc(block.cta.url)}" target="_blank" rel="noopener noreferrer"
-             style="display:inline-block;padding:12px 22px;color:${COLOR.primaryInk};font-family:${FONT};font-size:14px;font-weight:600;line-height:1;text-decoration:none;border-radius:8px;">
+             style="display:inline-block;padding:11px 22px;color:${COLOR.primaryInk};font-family:${FONT};font-size:15px;font-weight:500;line-height:1.2;text-decoration:none;border-radius:4px;">
             ${esc(block.cta.label)}
           </a>
         </td></tr>
@@ -101,11 +103,11 @@ export function renderLayout(subject: string, tone: EmailTone, block: EmailBlock
     : "";
 
   const eyebrowHtml = block.eyebrow
-    ? `<p style="margin:0 0 8px;color:${EYEBROW[tone]};font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">${esc(block.eyebrow)}</p>`
+    ? `<p style="margin:0 0 8px;color:${EYEBROW[tone]};font-size:12px;font-weight:700;letter-spacing:.08em;text-align:center;text-transform:uppercase;">${esc(block.eyebrow)}</p>`
     : "";
 
   const noteHtml = block.note
-    ? `<p style="margin:18px 0 0;color:${COLOR.faint};font-size:13px;line-height:1.55;">${esc(block.note)}</p>`
+    ? `<p style="margin:18px 0 0;color:${COLOR.faint};font-size:13px;line-height:1.55;text-align:center;">${esc(block.note)}</p>`
     : "";
 
   const html = `<!doctype html>
@@ -118,23 +120,40 @@ export function renderLayout(subject: string, tone: EmailTone, block: EmailBlock
   <div aria-hidden="true" style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">${esc(preheader)}</div>
   <div role="article" aria-roledescription="email" aria-label="${esc(subject)}">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${COLOR.bg};">
-      <tr><td align="center" style="padding:32px 16px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:${COLOR.card};border:1px solid ${COLOR.border};border-radius:12px;">
-          <tr><td style="padding:26px 32px 0;font-family:${FONT};">
-            <span style="font-size:16px;font-weight:700;color:${COLOR.ink};letter-spacing:-.01em;">${esc(env.productName)}</span>
+      <tr><td align="center" style="padding:24px 16px 16px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:${COLOR.card};border:1px solid ${COLOR.border};border-radius:8px;overflow:hidden;">
+          <tr><td align="center" height="72" style="padding:0 24px;">
+            <a href="${esc(env.appUrl)}" target="_blank" rel="noopener noreferrer" aria-label="${esc(env.productName)}">
+              <img src="${esc(logoUrl())}" width="144" alt="${esc(env.productName)}"
+                   style="display:block;width:144px;max-width:100%;height:auto;border:0;outline:none;text-decoration:none;"/>
+            </a>
           </td></tr>
-          <tr><td style="padding:24px 32px 30px;font-family:${FONT};overflow-wrap:anywhere;">
+          <tr><td>
+            <img src="${esc(heroUrl())}" width="600" alt=""
+                 style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;text-decoration:none;"/>
+          </td></tr>
+          <tr><td style="padding:20px 24px 28px;font-family:${FONT};overflow-wrap:anywhere;">
             ${eyebrowHtml}
-            <h1 style="margin:0 0 14px;color:${COLOR.ink};font-size:20px;line-height:1.35;font-weight:600;">${esc(block.heading)}</h1>
+            <h1 style="margin:0 0 18px;color:${COLOR.ink};font-size:24px;line-height:1.35;font-weight:600;text-align:center;">${esc(block.heading)}</h1>
             ${bodyHtml}
             ${factsHtml}
             ${ctaHtml}
             ${noteHtml}
           </td></tr>
-          <tr><td style="padding:20px 32px;border-top:1px solid ${COLOR.hairline};font-family:${FONT};overflow-wrap:anywhere;">
-            <p style="margin:0;color:${COLOR.faint};font-size:12px;line-height:1.6;">
-              ${esc(env.productName)} sends this message to the contact on file for your account.
-              Need help? Email <a href="mailto:${esc(env.supportEmail)}" style="color:${COLOR.muted};text-decoration:underline;">${esc(env.supportEmail)}</a>.
+          <tr><td style="padding:18px 24px;border-top:1px solid ${COLOR.hairline};font-family:${FONT};overflow-wrap:anywhere;">
+            <p style="margin:0;color:${COLOR.faint};font-size:12px;line-height:1.6;text-align:center;">
+              This message was sent to you by ${esc(env.productName)}.
+            </p>
+          </td></tr>
+        </table>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;">
+          <tr><td style="padding:28px 24px 0;font-family:${FONT};overflow-wrap:anywhere;">
+            <p style="margin:0;color:${COLOR.faint};font-size:12px;line-height:1.6;text-align:center;">
+              Need help? Email <a href="mailto:${esc(env.supportEmail)}" style="color:${COLOR.primary};font-weight:500;text-decoration:underline;">${esc(env.supportEmail)}</a>.
+            </p>
+            <p style="margin:8px 0 0;color:${COLOR.faint};font-size:12px;line-height:1.6;text-align:center;">
+              © ${new Date().getFullYear()} <a href="${esc(env.appUrl)}" style="color:${COLOR.primary};font-weight:500;text-decoration:none;">${esc(env.productName)}</a>
+              <span aria-hidden="true"> | </span> All Rights Reserved.
             </p>
           </td></tr>
         </table>

@@ -39,6 +39,9 @@ test("email layout exposes semantic structure to assistive technology", () => {
   );
   assert.match(email.html, /<div aria-hidden="true"[^>]*>Your private preview<\/div>/);
   assert.match(email.html, /<h1[^>]*>Your account is ready<\/h1>/);
+  assert.match(email.html, /src="http:\/\/localhost:3000\/email-assets\/a11ydocs-logo\.png"/);
+  assert.match(email.html, /src="http:\/\/localhost:3000\/email-assets\/email\.png"/);
+  assert.match(email.html, /alt="A11yDocs"/);
   assert.match(email.html, /<table aria-label="Sign-in details"/);
   assert.match(email.html, /<th scope="row"[^>]*>Sign-in email<\/th>/);
   assert.match(email.html, /<td[^>]*>person@example\.com<\/td>/);
