@@ -2,7 +2,7 @@ import { and, eq, isNull } from "drizzle-orm";
 
 import { db } from "../db/client.js";
 import { generateKey, hashKey, keyPrefix } from "./keys.js";
-import { apiKeys, apiTelemetry, licenses, requestNonces, type License } from "../db/schema.js";
+import { apiKeys, apiTelemetry, licenses, requestNonces, type HostMeta, type License } from "../db/schema.js";
 import { evaluateLicensePolicy } from "./policy.js";
 import { queueUsageNotifications } from "./notifications.js";
 import { deliverPendingNotifications } from "./delivery.js";
@@ -281,6 +281,7 @@ export async function recordUsage(
     language: options.meta?.language,
     conformance: options.meta?.conformance,
     errorCode: options.meta?.errorCode,
+    host: options.meta?.host,
   });
 }
 
@@ -332,6 +333,7 @@ export interface TelemetryMeta {
   language?: string | undefined;
   conformance?: string | undefined;
   errorCode?: string | undefined;
+  host?: HostMeta | undefined;
 }
 
 async function recordTelemetry(
@@ -361,6 +363,7 @@ async function recordTelemetry(
     language: event.meta?.language,
     conformance: event.meta?.conformance,
     errorCode: event.meta?.errorCode,
+    host: event.meta?.host,
   });
 }
 

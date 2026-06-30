@@ -175,7 +175,72 @@ interface AutoGuardState {
   watermarkText: string | undefined;
 }
 
-/** Runtime + job metadata sent alongside authorize/usage for telemetry. */
+/**
+ * Host/server metadata, captured once per process (Node only). Best-effort: in
+ * the browser, or if `node:os` is unavailable, stays `undefined` and is omitted
+ * from telemetry. Loaded lazily so the browser bundle never imports `node:os`.
+ */
+interface HostMeta {
+  hostname?: string | undefined;
+  osType?: string | undefined;
+  osRelease?: string | undefined;
+  cpuCount?: number | undefined;
+  totalMemBytes?: number | undefined;
+  /** Cloud/orchestrator hints derived from env, when present. */
+  cloud?: string | undefined;
+  region?: string | undefined;
+}
+
+let hostMeta: HostMeta | undefined;
+let hostMetaReady: Promise<void> | undefined;
+
+/**
+ * Begins capturing host metadata (Node only) and returns a promise that
+ * resolves once `hostMeta` is populated (or determined unavailable). Idempotent:
+ * repeated calls return the same in-flight/settled promise. Async output paths
+ * await this before building telemetry so the very first authorize carries host
+ * data rather than filling in only on a later round-trip.
+ */
+function captureHostMeta(): Promise<void> {
+  if (hostMetaReady) return hostMetaReady;
+  const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process;
+  if (!proc) {
+    hostMetaReady = Promise.resolve(); // browser — leave undefined
+    return hostMetaReady;
+  }
+  // Node-only; loaded lazily and guarded so the browser bundle stays clean.
+  hostMetaReady = import("node:os")
+    .then((os) => {
+      const env = proc.env ?? {};
+      const cloud = env.K_SERVICE
+        ? "cloudrun"
+        : env.AWS_LAMBDA_FUNCTION_NAME
+          ? "lambda"
+          : env.KUBERNETES_SERVICE_HOST
+            ? "k8s"
+            : env.VERCEL
+              ? "vercel"
+              : undefined;
+      // On serverless platforms the hostname is a random per-invocation
+      // container id — high cardinality, no operational meaning. Drop it and
+      // rely on cloud/region for "where this ran"; keep it elsewhere (bare
+      // metal, VMs, k8s pods) where it's a stable, meaningful identifier.
+      const ephemeralHost = cloud === "lambda" || cloud === "cloudrun" || cloud === "vercel";
+      hostMeta = {
+        hostname: ephemeralHost ? undefined : os.hostname(),
+        osType: os.type(),
+        osRelease: os.release(),
+        cpuCount: os.cpus().length,
+        totalMemBytes: os.totalmem(),
+        cloud,
+        region: env.AWS_REGION ?? env.VERCEL_REGION ?? env.GOOGLE_CLOUD_REGION,
+      };
+    })
+    .catch(() => {});
+  return hostMetaReady;
+}
+
+/** Runtime + host + job metadata sent alongside authorize/usage for telemetry. */
 function buildClientMeta(state: AutoGuardState): Record<string, unknown> {
   const proc = (globalThis as { process?: { version?: string; platform?: string; arch?: string } }).process;
   const job = currentJobContext();
@@ -183,6 +248,7 @@ function buildClientMeta(state: AutoGuardState): Record<string, unknown> {
     libVersion: bakedLibVersion,
     nodeVersion: proc?.version,
     platform: proc ? `${proc.platform ?? ""}/${proc.arch ?? ""}` : undefined,
+    host: hostMeta,
     jobId: job.id,
     jobDescription: job.description,
     tagged: state.lastTagged,
@@ -230,6 +296,7 @@ function tryAutoInstallGuard(): boolean {
   };
 
   autoGuardState = state;
+  void captureHostMeta(); // warm host metadata; awaited again before first round-trip
 
   state.flushTimer = setInterval(() => {
     flushAutoGuard(state).catch(() => {});
@@ -301,6 +368,7 @@ interface AuthorizeOutcome {
 
 /** Single authorize round-trip to the server. Never throws — reports outcome. */
 async function authorizeRequest(state: AutoGuardState, requested: number): Promise<AuthorizeOutcome> {
+  await captureHostMeta(); // ensure host telemetry is ready for the first round-trip
   const nonce = makeNonce();
   const res = await fetch(`${state.serverUrl}/v1/authorize`, {
     method: "POST",
@@ -422,6 +490,7 @@ async function flushAutoGuard(state: AutoGuardState): Promise<void> {
   const pages = state.consumedPages;
   const docs = state.consumedDocs;
   if (pages <= 0 && docs <= 0) return;
+  await captureHostMeta(); // ensure host telemetry is ready for the usage flush
   state.consumedPages = 0;
   state.consumedDocs = 0;
   try {
