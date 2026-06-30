@@ -9,7 +9,8 @@ const COLOR = {
   ink: "#1d1a27",
   body: "#3f3b4a",
   muted: "#6b6577",
-  faint: "#9b95a6",
+  // 4.76:1 against the white card, preserving AA contrast for small text.
+  faint: "#777080",
   primary: "#5928ED",
   primaryInk: "#ffffff",
 } as const;
@@ -41,8 +42,10 @@ export interface EmailBlock {
   heading: string;
   /** Lead paragraph(s). A string, or several rendered as separate paragraphs. */
   body: string | string[];
-  /** Optional label→value rows rendered as a definition list. */
+  /** Optional label→value rows rendered as a data table with row headers. */
   facts?: { label: string; value: string }[];
+  /** Accessible name for the facts table. */
+  factsLabel?: string;
   /** Single primary call-to-action. */
   cta?: { label: string; url: string };
   /** Optional fine-print note under the CTA (e.g. a security reminder). */
@@ -72,22 +75,24 @@ export function renderLayout(subject: string, tone: EmailTone, block: EmailBlock
     .join("");
 
   const factsHtml = block.facts?.length
-    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:22px 0 4px;border:1px solid ${COLOR.border};border-radius:10px;border-collapse:separate;">
+    ? `<table aria-label="${esc(block.factsLabel ?? "Message details")}" width="100%" cellpadding="0" cellspacing="0" style="margin:22px 0 4px;border:1px solid ${COLOR.border};border-radius:10px;border-collapse:separate;">
+        <tbody>
         ${block.facts
           .map(
             (f, i) => `<tr>
-              <td style="padding:11px 14px;${i ? `border-top:1px solid ${COLOR.hairline};` : ""}color:${COLOR.muted};font-size:13px;">${esc(f.label)}</td>
-              <td style="padding:11px 14px;${i ? `border-top:1px solid ${COLOR.hairline};` : ""}color:${COLOR.ink};font-size:13px;font-weight:600;text-align:right;">${esc(f.value)}</td>
+              <th scope="row" style="padding:11px 14px;${i ? `border-top:1px solid ${COLOR.hairline};` : ""}color:${COLOR.muted};font-size:13px;font-weight:400;text-align:left;">${esc(f.label)}</th>
+              <td style="padding:11px 14px;${i ? `border-top:1px solid ${COLOR.hairline};` : ""}color:${COLOR.ink};font-size:13px;font-weight:600;text-align:right;overflow-wrap:anywhere;">${esc(f.value)}</td>
             </tr>`,
           )
           .join("")}
+        </tbody>
       </table>`
     : "";
 
   const ctaHtml = block.cta
     ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:26px 0 2px;">
         <tr><td style="border-radius:8px;background:${COLOR.primary};">
-          <a href="${esc(block.cta.url)}" target="_blank"
+          <a href="${esc(block.cta.url)}" target="_blank" rel="noopener noreferrer"
              style="display:inline-block;padding:12px 22px;color:${COLOR.primaryInk};font-family:${FONT};font-size:14px;font-weight:600;line-height:1;text-decoration:none;border-radius:8px;">
             ${esc(block.cta.label)}
           </a>
@@ -104,36 +109,38 @@ export function renderLayout(subject: string, tone: EmailTone, block: EmailBlock
     : "";
 
   const html = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"/>
+<html lang="en" dir="ltr"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <meta name="color-scheme" content="light only"/>
 <meta name="supported-color-schemes" content="light"/>
 <title>${esc(subject)}</title></head>
 <body style="margin:0;padding:0;background:${COLOR.bg};-webkit-font-smoothing:antialiased;">
-  <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">${esc(preheader)}</div>
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${COLOR.bg};">
-    <tr><td align="center" style="padding:32px 16px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:${COLOR.card};border:1px solid ${COLOR.border};border-radius:12px;">
-        <tr><td style="padding:26px 32px 0;font-family:${FONT};">
-          <span style="font-size:16px;font-weight:700;color:${COLOR.ink};letter-spacing:-.01em;">${esc(env.productName)}</span>
-        </td></tr>
-        <tr><td style="padding:24px 32px 30px;font-family:${FONT};">
-          ${eyebrowHtml}
-          <h1 style="margin:0 0 14px;color:${COLOR.ink};font-size:20px;line-height:1.35;font-weight:600;">${esc(block.heading)}</h1>
-          ${bodyHtml}
-          ${factsHtml}
-          ${ctaHtml}
-          ${noteHtml}
-        </td></tr>
-        <tr><td style="padding:20px 32px;border-top:1px solid ${COLOR.hairline};font-family:${FONT};">
-          <p style="margin:0;color:${COLOR.faint};font-size:12px;line-height:1.6;">
-            ${esc(env.productName)} sends this message to the contact on file for your account.
-            Need help? Email <a href="mailto:${esc(env.supportEmail)}" style="color:${COLOR.muted};text-decoration:underline;">${esc(env.supportEmail)}</a>.
-          </p>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
+  <div aria-hidden="true" style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">${esc(preheader)}</div>
+  <div role="article" aria-roledescription="email" aria-label="${esc(subject)}">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${COLOR.bg};">
+      <tr><td align="center" style="padding:32px 16px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:${COLOR.card};border:1px solid ${COLOR.border};border-radius:12px;">
+          <tr><td style="padding:26px 32px 0;font-family:${FONT};">
+            <span style="font-size:16px;font-weight:700;color:${COLOR.ink};letter-spacing:-.01em;">${esc(env.productName)}</span>
+          </td></tr>
+          <tr><td style="padding:24px 32px 30px;font-family:${FONT};overflow-wrap:anywhere;">
+            ${eyebrowHtml}
+            <h1 style="margin:0 0 14px;color:${COLOR.ink};font-size:20px;line-height:1.35;font-weight:600;">${esc(block.heading)}</h1>
+            ${bodyHtml}
+            ${factsHtml}
+            ${ctaHtml}
+            ${noteHtml}
+          </td></tr>
+          <tr><td style="padding:20px 32px;border-top:1px solid ${COLOR.hairline};font-family:${FONT};overflow-wrap:anywhere;">
+            <p style="margin:0;color:${COLOR.faint};font-size:12px;line-height:1.6;">
+              ${esc(env.productName)} sends this message to the contact on file for your account.
+              Need help? Email <a href="mailto:${esc(env.supportEmail)}" style="color:${COLOR.muted};text-decoration:underline;">${esc(env.supportEmail)}</a>.
+            </p>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </div>
 </body></html>`;
 
   return { subject, html, text: toPlainText(bodyParas, block) };
