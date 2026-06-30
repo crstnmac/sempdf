@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { ArrowLeftIcon } from "lucide-react";
@@ -10,6 +10,7 @@ import {
   StateNotice,
   StatusBadge,
   TelemetryBadge,
+  Toolbar,
   UsageMeter,
 } from "#/components/page-shell.tsx";
 import { useConfirm } from "#/components/confirm.tsx";
@@ -33,11 +34,14 @@ import {
   TableRow,
 } from "#/components/ui/table.tsx";
 import { useAsync } from "#/hooks/use-async.ts";
+import { useDebouncedValue } from "#/hooks/use-debounced-value.ts";
 import {
   ANNUAL_TIERS,
   ApiError,
   type LicenseUsage,
   type TelemetryRow,
+  type TelemetryStatus,
+  type TelemetryTagFilter,
   type UsageWindow,
   activityLabel,
   api,
@@ -405,17 +409,82 @@ function LicenseDetailPage() {
 }
 
 const TELEMETRY_PAGE_SIZE = 25;
+const LICENSE_TELEMETRY_PERIODS = [
+  { value: "all", label: "All time", hours: null },
+  { value: "24h", label: "Last 24 hours", hours: 24 },
+  { value: "7d", label: "Last 7 days", hours: 168 },
+  { value: "30d", label: "Last 30 days", hours: 720 },
+] as const;
+const LICENSE_TELEMETRY_STATUSES: {
+  value: TelemetryStatus | "all";
+  label: string;
+}[] = [
+  { value: "all", label: "All outcomes" },
+  { value: "success", label: "Success" },
+  { value: "watermarked", label: "Watermarked" },
+  { value: "blocked", label: "Blocked" },
+  { value: "fail", label: "Failed" },
+];
+const LICENSE_TELEMETRY_PLATFORMS = [
+  { value: "all", label: "All platforms" },
+  { value: "linux", label: "Linux" },
+  { value: "darwin", label: "macOS" },
+  { value: "win32", label: "Windows" },
+] as const;
+const LICENSE_TELEMETRY_TAGS: {
+  value: TelemetryTagFilter;
+  label: string;
+}[] = [
+  { value: "all", label: "Any document" },
+  { value: "tagged", label: "Tagged PDF" },
+  { value: "untagged", label: "Untagged PDF" },
+  { value: "unknown", label: "Tagging unknown" },
+];
 
 /** Server-paginated generation events for one license. */
 function LicenseTelemetryCard({ id }: { id: string }) {
   const [page, setPage] = useState(1);
+  const [period, setPeriod] =
+    useState<(typeof LICENSE_TELEMETRY_PERIODS)[number]["value"]>("all");
+  const [status, setStatus] = useState<TelemetryStatus | "all">("all");
+  const [platform, setPlatform] =
+    useState<(typeof LICENSE_TELEMETRY_PLATFORMS)[number]["value"]>("all");
+  const [tagged, setTagged] = useState<TelemetryTagFilter>("all");
+  const [query, setQuery] = useState("");
+  const debouncedQuery = useDebouncedValue(query, 300);
+  const from = useMemo(() => {
+    const hours = LICENSE_TELEMETRY_PERIODS.find(
+      (option) => option.value === period,
+    )?.hours;
+    return hours
+      ? new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
+      : undefined;
+  }, [period]);
+  const params = useMemo(
+    () => ({
+      page,
+      pageSize: TELEMETRY_PAGE_SIZE,
+      from,
+      status,
+      platform,
+      tagged,
+      q: debouncedQuery.trim() || undefined,
+    }),
+    [page, from, status, platform, tagged, debouncedQuery],
+  );
   const { data, loading } = useAsync(
-    () => api.licenseTelemetry(id, { page, pageSize: TELEMETRY_PAGE_SIZE }),
-    [id, page],
+    () => api.licenseTelemetry(id, params),
+    [id, JSON.stringify(params)],
   );
   const rows = data?.rows ?? [];
   const total = data?.total ?? 0;
   const lastPage = Math.max(1, Math.ceil(total / TELEMETRY_PAGE_SIZE));
+  const hasFilters =
+    period !== "all" ||
+    status !== "all" ||
+    platform !== "all" ||
+    tagged !== "all" ||
+    Boolean(query.trim());
 
   return (
     <Card>
@@ -428,6 +497,144 @@ function LicenseTelemetryCard({ id }: { id: string }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 p-0">
+        <div className="border-y p-3">
+          <Toolbar>
+            <Select
+              value={period}
+              onValueChange={(value) => {
+                setPeriod(
+                  (value as (typeof LICENSE_TELEMETRY_PERIODS)[number]["value"] | null) ??
+                    "all",
+                );
+                setPage(1);
+              }}
+            >
+              <SelectTrigger
+                className="sm:w-40"
+                aria-label="Filter license telemetry by period"
+              >
+                <SelectValue>
+                  {LICENSE_TELEMETRY_PERIODS.find(
+                    (option) => option.value === period,
+                  )?.label ?? "All time"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {LICENSE_TELEMETRY_PERIODS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={status}
+              onValueChange={(value) => {
+                setStatus(
+                  (value as TelemetryStatus | "all" | null) ?? "all",
+                );
+                setPage(1);
+              }}
+            >
+              <SelectTrigger
+                className="sm:w-40"
+                aria-label="Filter license telemetry by outcome"
+              >
+                <SelectValue>
+                  {LICENSE_TELEMETRY_STATUSES.find(
+                    (option) => option.value === status,
+                  )?.label ?? "All outcomes"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {LICENSE_TELEMETRY_STATUSES.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={platform}
+              onValueChange={(value) => {
+                setPlatform(
+                  (value as (typeof LICENSE_TELEMETRY_PLATFORMS)[number]["value"] | null) ??
+                    "all",
+                );
+                setPage(1);
+              }}
+            >
+              <SelectTrigger
+                className="sm:w-36"
+                aria-label="Filter license telemetry by platform"
+              >
+                <SelectValue>
+                  {LICENSE_TELEMETRY_PLATFORMS.find(
+                    (option) => option.value === platform,
+                  )?.label ?? "All platforms"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {LICENSE_TELEMETRY_PLATFORMS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={tagged}
+              onValueChange={(value) => {
+                setTagged((value as TelemetryTagFilter | null) ?? "all");
+                setPage(1);
+              }}
+            >
+              <SelectTrigger
+                className="sm:w-44"
+                aria-label="Filter license telemetry by document tagging"
+              >
+                <SelectValue>
+                  {LICENSE_TELEMETRY_TAGS.find(
+                    (option) => option.value === tagged,
+                  )?.label ?? "Any document"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {LICENSE_TELEMETRY_TAGS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setPage(1);
+              }}
+              placeholder="Search job, error, or version…"
+              aria-label="Search license telemetry"
+              className="sm:max-w-xs"
+            />
+            {hasFilters ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setPeriod("all");
+                  setStatus("all");
+                  setPlatform("all");
+                  setTagged("all");
+                  setQuery("");
+                  setPage(1);
+                }}
+              >
+                Clear filters
+              </Button>
+            ) : null}
+          </Toolbar>
+        </div>
         <Table containerClassName="max-h-[60vh]">
           <TableHeader className="sticky top-0 z-10 bg-card">
             <TableRow>
@@ -478,7 +685,9 @@ function LicenseTelemetryCard({ id }: { id: string }) {
                   colSpan={6}
                   className="text-center text-muted-foreground"
                 >
-                  No telemetry for this license yet.
+                  {hasFilters
+                    ? "No telemetry matches the current filters."
+                    : "No telemetry for this license yet."}
                 </TableCell>
               </TableRow>
             ) : null}

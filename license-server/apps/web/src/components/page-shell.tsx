@@ -36,7 +36,7 @@ export function ListContainer({ children }: { children: React.ReactNode }) {
 /** Search + filters + actions row. Lives inside a block (the table card header). */
 export function Toolbar({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center">
+    <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
       {children}
     </div>
   );

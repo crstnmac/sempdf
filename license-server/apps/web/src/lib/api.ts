@@ -7,6 +7,10 @@
 export type TenantStatus = 'none' | 'trial' | 'hard_blocked'
 export type TelemetryStatus = 'success' | 'fail' | 'watermarked' | 'blocked'
 export type UsageWindow = 'year' | 'lifetime'
+export type LicenseServiceFilter = 'all' | 'active' | 'revoked'
+export type LicenseUtilizationFilter = 'all' | 'unused' | 'near_limit' | 'over_limit'
+export type OrganizationLicenseFilter = 'all' | 'active' | 'trial' | 'hard_blocked' | 'revoked' | 'none'
+export type TelemetryTagFilter = 'all' | 'tagged' | 'untagged' | 'unknown'
 
 /**
  * True when a limit represents an effectively unlimited (∞) plan. Kept as a
@@ -41,6 +45,7 @@ export interface DashboardTenant {
   accountId: string
   organizationName: string
   keyPrefix: string
+  keyCount: number
   metric: string
   window: UsageWindow
   limitUnits: number
@@ -202,6 +207,7 @@ export interface AdminOrganization {
   trialCount: number
   activeCount: number
   blockedCount: number
+  revokedCount: number
   createdAt: string
 }
 
@@ -219,28 +225,69 @@ export interface OrganizationPage {
   pageSize: number
 }
 
+export interface AdminOrganizationMember {
+  id: string
+  userId: string
+  name: string
+  email: string
+  emailVerified: boolean
+  banned: boolean
+  role: string
+  createdAt: string
+}
+
+export interface AdminOrganizationDetail {
+  id: string
+  name: string
+  slug: string
+  logo: string | null
+  createdAt: string
+  members: AdminOrganizationMember[]
+  licenses: DashboardTenant[]
+}
+
 export const api = {
   dashboard: () => request<DashboardData>('/dashboard'),
-  licenses: (params: { page?: number; pageSize?: number; q?: string; status?: TenantStatus | 'all' } = {}) => {
+  licenses: (params: {
+    page?: number
+    pageSize?: number
+    q?: string
+    status?: TenantStatus | 'all'
+    service?: LicenseServiceFilter
+    window?: UsageWindow | 'all'
+    utilization?: LicenseUtilizationFilter
+  } = {}) => {
     const sp = new URLSearchParams()
     if (params.page) sp.set('page', String(params.page))
     if (params.pageSize) sp.set('pageSize', String(params.pageSize))
     if (params.q) sp.set('q', params.q)
     if (params.status && params.status !== 'all') sp.set('status', params.status)
+    if (params.service && params.service !== 'all') sp.set('service', params.service)
+    if (params.window && params.window !== 'all') sp.set('window', params.window)
+    if (params.utilization && params.utilization !== 'all') sp.set('utilization', params.utilization)
     const qs = sp.toString()
     return request<LicensePage>(`/licenses${qs ? `?${qs}` : ''}`)
   },
-  organizations: (params: { page?: number; pageSize?: number; q?: string } = {}) => {
+  organizations: (params: {
+    page?: number
+    pageSize?: number
+    q?: string
+    license?: OrganizationLicenseFilter
+    createdAfter?: string
+  } = {}) => {
     const sp = new URLSearchParams()
     if (params.page) sp.set('page', String(params.page))
     if (params.pageSize) sp.set('pageSize', String(params.pageSize))
     if (params.q) sp.set('q', params.q)
+    if (params.license && params.license !== 'all') sp.set('license', params.license)
+    if (params.createdAfter) sp.set('createdAfter', params.createdAfter)
     const qs = sp.toString()
     return request<OrganizationPage>(`/organizations${qs ? `?${qs}` : ''}`)
   },
+  organization: (id: string) => request<AdminOrganizationDetail>(`/organizations/${id}`),
   telemetry: (params: {
     page?: number; pageSize?: number; from?: string; to?: string;
-    status?: string; q?: string;
+    status?: string; platform?: string; tagged?: TelemetryTagFilter; q?: string;
   } = {}) => {
     const sp = new URLSearchParams()
     if (params.page) sp.set('page', String(params.page))
@@ -248,15 +295,30 @@ export const api = {
     if (params.from) sp.set('from', params.from)
     if (params.to) sp.set('to', params.to)
     if (params.status) sp.set('status', params.status)
+    if (params.platform && params.platform !== 'all') sp.set('platform', params.platform)
+    if (params.tagged && params.tagged !== 'all') sp.set('tagged', params.tagged)
     if (params.q) sp.set('q', params.q)
     const qs = sp.toString()
     return request<TelemetryPage>(`/telemetry${qs ? `?${qs}` : ''}`)
   },
   licenseUsage: (id: string) => request<LicenseUsage>(`/licenses/${id}/usage`),
-  licenseTelemetry: (id: string, params: { page?: number; pageSize?: number } = {}) => {
+  licenseTelemetry: (id: string, params: {
+    page?: number
+    pageSize?: number
+    from?: string
+    status?: TelemetryStatus | 'all'
+    platform?: string
+    tagged?: TelemetryTagFilter
+    q?: string
+  } = {}) => {
     const sp = new URLSearchParams()
     if (params.page) sp.set('page', String(params.page))
     if (params.pageSize) sp.set('pageSize', String(params.pageSize))
+    if (params.from) sp.set('from', params.from)
+    if (params.status && params.status !== 'all') sp.set('status', params.status)
+    if (params.platform && params.platform !== 'all') sp.set('platform', params.platform)
+    if (params.tagged && params.tagged !== 'all') sp.set('tagged', params.tagged)
+    if (params.q) sp.set('q', params.q)
     const qs = sp.toString()
     return request<{ rows: TelemetryRow[]; total: number; page: number; pageSize: number }>(
       `/licenses/${id}/telemetry${qs ? `?${qs}` : ''}`,
