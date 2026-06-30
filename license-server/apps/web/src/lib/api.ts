@@ -55,6 +55,16 @@ export interface DashboardTenant {
   createdAt: string
 }
 
+export interface HostMeta {
+  hostname?: string
+  osType?: string
+  osRelease?: string
+  cpuCount?: number
+  totalMemBytes?: number
+  cloud?: string
+  region?: string
+}
+
 export interface TelemetryMeta {
   libVersion: string | null
   nodeVersion: string | null
@@ -63,6 +73,7 @@ export interface TelemetryMeta {
   language: string | null
   conformance: string | null
   errorCode: string | null
+  host: HostMeta | null
 }
 
 export interface TelemetryRow extends TelemetryMeta {
