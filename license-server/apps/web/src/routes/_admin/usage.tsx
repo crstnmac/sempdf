@@ -36,6 +36,7 @@ import {
   TableRow,
 } from "#/components/ui/table.tsx";
 import { useAsync } from "#/hooks/use-async.ts";
+import { useDebouncedValue } from "#/hooks/use-debounced-value.ts";
 import {
   type TelemetryRow,
   type TelemetryStatus,
@@ -99,15 +100,19 @@ function UsagePage() {
     return new Date(Date.now() - opt.hours * 3600000).toISOString();
   }, [period]);
 
+  // Debounce the free-text search so each keystroke does not trigger its own
+  // request (and its own ILIKE telemetry scan on the server).
+  const debouncedQuery = useDebouncedValue(query, 300);
+
   const params = useMemo(
     () => ({
       page,
       pageSize: 50,
       from,
       status: statusFilter === "all" ? undefined : statusFilter,
-      q: query.trim() || undefined,
+      q: debouncedQuery.trim() || undefined,
     }),
-    [page, from, statusFilter, query],
+    [page, from, statusFilter, debouncedQuery],
   );
 
   const { data, loading, error, refetch } = useAsync(

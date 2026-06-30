@@ -48,6 +48,15 @@ const bytes = doc.toUint8Array();
 
 The library returns standard binary data, so you can write the bytes in Node.js, upload them, or create a `Blob` in the browser.
 
+::: tip Licensed deployments
+With a license key configured (`SEMPDF_LICENSE_KEY`), prefer an **async**
+output method — `await doc.save(path)`, `toUint8ArrayAsync()`, `toBlobAsync()`,
+`toArrayBufferAsync()`, or `writeTo(sink)`. They authorize and meter the page
+batch automatically. The synchronous `toUint8Array()` shown above works under
+the dev bypass (`SEMPDF_LICENSE_DEV=1`) or after an explicit `checkout()`. See
+[Licensing](./licensing).
+:::
+
 ## Convenience helpers
 
 A few options keep call sites short:
@@ -74,7 +83,7 @@ await doc.save("out.pdf");
 - **`bold` / `italic`** — resolve to the right font face. See [Text and Fonts](./text-and-fonts).
 - **`defaults`** — document-wide `font`, `fontSize`, `color`, `kerning`, `direction`, overridden per call.
 - **Chaining** — page builder methods return the page, so calls compose.
-- **`doc.save(path)`** — Node-only; in the browser use `toUint8Array()` or `toBlob()`.
+- **`doc.save(path)`** — Node-only; in the browser use `toBlobAsync()` / `toUint8ArrayAsync()` (or their sync forms under the dev bypass / after `checkout()`).
 - **Top-left origin** — see [Coordinate system](#coordinate-system) below.
 
 ## Coordinate system

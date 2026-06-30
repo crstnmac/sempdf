@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { bigint, bigserial, boolean, index, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { bigint, bigserial, boolean, index, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 // Application tables. better-auth owns its own auth tables (user, session,
 // account, verification, organization, member, apikey) — generate those with
@@ -84,6 +84,85 @@ export const apiTelemetry = pgTable(
   (t) => ({
     accountIdx: index("api_telemetry_account_idx").on(t.accountId, t.createdAt),
     licenseIdx: index("api_telemetry_license_idx").on(t.licenseId, t.createdAt),
+    // Every dashboard/portal view shows generations only — i.e. endpoint =
+    // '/v1/authorize' ordered by createdAt DESC. PARTIAL indexes on exactly that
+    // predicate stay small (no /v1/usage rows) and turn the previous full
+    // scan + sort over the whole table into a bounded index scan. /v1/usage
+    // inserts never touch these, so the metering write path pays nothing.
+    //
+    // NOTE: columns are ASCENDING on purpose. `ORDER BY created_at DESC`
+    // defaults to NULLS FIRST; a `DESC NULLS LAST` index does NOT match it, so
+    // Postgres would re-sort. A plain ascending index is scanned BACKWARD for
+    // the DESC query (yielding DESC NULLS FIRST) and stops at LIMIT — no sort.
+    authorizeRecentIdx: index("api_telemetry_authorize_recent_idx")
+      .on(t.createdAt)
+      .where(sql`${t.endpoint} = '/v1/authorize'`),
+    authorizeLicenseIdx: index("api_telemetry_authorize_license_idx")
+      .on(t.licenseId, t.createdAt)
+      .where(sql`${t.endpoint} = '/v1/authorize'`),
+    authorizeAccountIdx: index("api_telemetry_authorize_account_idx")
+      .on(t.accountId, t.createdAt)
+      .where(sql`${t.endpoint} = '/v1/authorize'`),
+  }),
+);
+
+/**
+ * Idempotency ledger for /v1/authorize. Reserve-as-charge increments usedUnits on
+ * every call, so a client retry (same `nonce`) would double-charge. Each authorize
+ * claims (license_id, nonce) here inside the same transaction that charges; a
+ * second attempt with the same pair hits the UNIQUE constraint, and the handler
+ * replays the previously-stored grant WITHOUT charging again.
+ *
+ * RETENTION: nonces are only useful for the client's retry window (seconds to
+ * minutes). Rows older than the retention horizon are prunable by the sweep /
+ * prune-telemetry script — see `prune-telemetry.ts` and `sweep.ts`.
+ */
+export const requestNonces = pgTable(
+  "request_nonces",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    licenseId: uuid("license_id")
+      .notNull()
+      .references(() => licenses.id, { onDelete: "cascade" }),
+    apiKeyId: uuid("api_key_id"),
+    nonce: text("nonce").notNull(),
+    /** The grant JSON returned to the client, replayed verbatim on a retry. */
+    grant: text("grant").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    // One grant per (license, nonce). Scoping to license (not api_key) means a
+    // retry on a sibling key of the same license still de-duplicates against the
+    // shared quota.
+    uniq: uniqueIndex("request_nonces_license_nonce_uniq").on(t.licenseId, t.nonce),
+    // Supports range-delete pruning by age.
+    createdIdx: index("request_nonces_created_idx").on(t.createdAt),
+  }),
+);
+
+/**
+ * Heartbeat for the external-cron notification sweep. One row per run records
+ * start/finish and outcome counts. The most recent successful row's `finishedAt`
+ * is the "last successful sweep" timestamp surfaced by /readyz and /metrics so a
+ * wedged cron becomes visible instead of silently failing.
+ */
+export const sweepRuns = pgTable(
+  "sweep_runs",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    ok: boolean("ok").notNull().default(false),
+    scanned: bigint("scanned", { mode: "number" }).notNull().default(0),
+    queued: bigint("queued", { mode: "number" }).notNull().default(0),
+    delivered: bigint("delivered", { mode: "number" }).notNull().default(0),
+    failed: bigint("failed", { mode: "number" }).notNull().default(0),
+    /** Error message when ok=false. */
+    error: text("error"),
+  },
+  (t) => ({
+    // "Most recent successful run" lookups: WHERE ok ORDER BY finished_at DESC.
+    finishedIdx: index("sweep_runs_finished_idx").on(t.finishedAt),
   }),
 );
 
@@ -137,7 +216,9 @@ export type ApiKey = typeof apiKeys.$inferSelect;
 export type ApiTelemetry = typeof apiTelemetry.$inferSelect;
 export type NotificationSettings = typeof notificationSettings.$inferSelect;
 export type NotificationEvent = typeof notificationEvents.$inferSelect;
+export type RequestNonce = typeof requestNonces.$inferSelect;
+export type SweepRun = typeof sweepRuns.$inferSelect;
 
 // Re-export for migration tooling that wants a single namespace.
-export const appSchema = { licenses, apiKeys, apiTelemetry, notificationSettings, notificationEvents };
+export const appSchema = { licenses, apiKeys, apiTelemetry, requestNonces, sweepRuns, notificationSettings, notificationEvents };
 export { sql };
