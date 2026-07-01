@@ -1218,6 +1218,20 @@ export interface FlowTextOptions
   blockWidth?: number | undefined;
   /** Alignment of the block inside the flow column. */
   blockAlign?: "left" | "center" | "right" | undefined;
+  /**
+   * Minimum number of lines to keep together at the bottom of a region before
+   * this paragraph is allowed to break across a column or page. If fewer than
+   * this many lines would remain at the bottom, the whole paragraph moves to the
+   * next region. Only applies to multi-column flows (single-column paragraphs
+   * are never split). Defaults to 1 (no constraint). Fractions are floored.
+   */
+  orphans?: number | undefined;
+  /**
+   * Minimum number of lines this paragraph must carry into a new region after a
+   * break, so a lone trailing line is never left stranded. Only applies to
+   * multi-column flows. Defaults to 1 (no constraint). Fractions are floored.
+   */
+  widows?: number | undefined;
 }
 
 /**
@@ -1705,6 +1719,74 @@ export interface TemplatePageBreakBlock {
 }
 
 /**
+ * Options for a table-of-contents block.
+ */
+export interface TemplateTocOptions {
+  /** Deepest heading level to include (1-6). Defaults to 3. */
+  maxLevel?: 1 | 2 | 3 | 4 | 5 | 6 | undefined;
+  /** Font used for entries. Defaults to the flow font. */
+  font?: PdfFont | undefined;
+  /** Entry font size in points. Defaults to 11. */
+  fontSize?: number | undefined;
+  /** Vertical space per entry in points. Defaults to `fontSize * 1.6`. */
+  lineHeight?: number | undefined;
+  /** Points of indentation added per heading level below level 1. Defaults to 16. */
+  indent?: number | undefined;
+  /** Whether each entry links to its heading's page. Defaults to true. */
+  link?: boolean | undefined;
+  /** Whether to show the resolved page number for each entry. Defaults to true. */
+  pageNumbers?: boolean | undefined;
+}
+
+/**
+ * Options for a cross-reference block.
+ */
+export interface TemplateCrossRefOptions {
+  /** Font used for the reference text. Defaults to the flow font. */
+  font?: PdfFont | undefined;
+  /** Font size in points. Defaults to the flow font size. */
+  fontSize?: number | undefined;
+  /** Whether the reference links to its target's page. Defaults to true. */
+  link?: boolean | undefined;
+  /**
+   * Whether the resolved target page number is appended. When `text` contains
+   * the placeholder `{page}`, the number is substituted there instead. Defaults
+   * to true.
+   */
+  pageNumbers?: boolean | undefined;
+}
+
+/**
+ * Template block that renders a cross-reference to a named {@link
+ * TemplateBlockControls.anchor} elsewhere in the document. The target page
+ * number is resolved after the whole document is laid out, so a reference may
+ * point forward or backward.
+ */
+export interface TemplateCrossRefBlock {
+  readonly type: "crossRef";
+  /** Name of the target {@link TemplateBlockControls.anchor}. */
+  readonly to: string;
+  /**
+   * Reference text. May contain the placeholder `{page}`, replaced by the
+   * resolved page number. Defaults to `"see page {page}"`.
+   */
+  readonly text?: string | undefined;
+  readonly options?: TemplateCrossRefOptions | undefined;
+}
+
+/**
+ * Template block that renders a table of contents from the document's
+ * top-level heading blocks. Entries are collected from the surrounding
+ * template's headings (up to `maxLevel`); page numbers and links are resolved
+ * after the whole document has been laid out, so a TOC may appear before the
+ * content it references.
+ */
+export interface TemplateTocBlock {
+  readonly type: "toc";
+  readonly options?: TemplateTocOptions | undefined;
+}
+
+/**
  * Template block for rendering a text form field.
  */
 export interface TemplateTextFieldBlock {
@@ -1849,9 +1931,43 @@ export interface TemplateCustomBlock {
 }
 
 /**
+ * Pagination controls carried by every template block. Applied by the
+ * document-level template paginator ({@link PdfDocument.renderTemplate}).
+ * Merged into {@link TemplateBlock} by intersection so each block type gains
+ * them without redeclaring.
+ */
+export interface TemplateBlockControls {
+  /**
+   * Force a page break (or advance to the next column) before this block,
+   * unless the flow cursor is already at the top of a fresh region.
+   */
+  readonly breakBefore?: boolean | undefined;
+  /** Force a page break (or advance to the next column) after this block. */
+  readonly breakAfter?: boolean | undefined;
+  /**
+   * Keep this block whole — never split its content across a page or column
+   * boundary. Paragraphs, which may otherwise split line-by-line across
+   * columns, are placed as a unit instead.
+   */
+  readonly keepTogether?: boolean | undefined;
+  /**
+   * Registers a named destination at this block's page, referenceable by a
+   * {@link TemplateCrossRefBlock}. The name must be unique within the template.
+   */
+  readonly anchor?: string | undefined;
+  /**
+   * Footnote text anchored to this block. A numbered marker is appended to the
+   * block (for text blocks: `heading`/`paragraph`), and the note is rendered at
+   * the bottom of the page the block lands on. Notes are numbered document-wide
+   * in reading order.
+   */
+  readonly footnote?: string | undefined;
+}
+
+/**
  * Union of block types accepted by template rendering.
  */
-export type TemplateBlock =
+export type TemplateBlock = (
   | TemplateHeadingBlock
   | TemplateParagraphBlock
   | TemplateRichParagraphBlock
@@ -1860,6 +1976,8 @@ export type TemplateBlock =
   | TemplateLinkBlock
   | TemplateSectionBlock
   | TemplatePageBreakBlock
+  | TemplateTocBlock
+  | TemplateCrossRefBlock
   | TemplateTextFieldBlock
   | TemplateCheckBoxBlock
   | TemplateChoiceFieldBlock
@@ -1873,7 +1991,8 @@ export type TemplateBlock =
   | TemplatePathBlock
   | TemplateRectBlock
   | TemplateListBlock
-  | TemplateCustomBlock;
+  | TemplateCustomBlock
+) & TemplateBlockControls;
 
 /**
  * Top-level options for rendering a reusable document template.
@@ -2001,6 +2120,15 @@ export interface TemplateDocumentOptions {
    * See {@link TemplateStylesheet} for the selector and cascade rules.
    */
   styles?: TemplateStylesheet | undefined;
+  /**
+   * Callback that returns master-page background blocks for each page (e.g. a
+   * full-bleed watermark, rule, or tint). Rendered full-page (no margins) and
+   * drawn behind all other content. Tag background blocks as `"Artifact"` to
+   * keep them out of the reading order.
+   */
+  background?:
+    | ((context: TemplateRenderContext) => readonly TemplateBlock[])
+    | undefined;
   /** Callback that returns header blocks for each page. */
   header?:
     | ((context: TemplateRenderContext) => readonly TemplateBlock[])
@@ -2193,10 +2321,21 @@ export interface TableOptions {
   y: number;
   /** Width in PDF points. */
   width: number;
-  /** Explicit table column widths in PDF points. */
-  columnWidths?: readonly number[] | undefined;
+  /**
+   * Table column widths in PDF points. Provide an explicit array (must sum to
+   * `width`), or `"auto"` to size columns to their content — each column takes
+   * its natural un-wrapped width scaled to fill `width`, shrinking toward its
+   * longest-word width when content is too wide. Defaults to equal columns.
+   */
+  columnWidths?: readonly number[] | "auto" | undefined;
   /** Number of leading rows treated as table headers. */
   headerRows?: number | undefined;
+  /**
+   * Number of trailing rows treated as a table footer. When a table is split
+   * across pages by the template paginator, these rows repeat at the bottom of
+   * every slice (mirroring how `headerRows` repeat at the top). Defaults to 0.
+   */
+  footerRows?: number | undefined;
   /** Number of leading columns treated as table headers. */
   headerColumns?: number | undefined;
   /** Padding inside table cells in PDF points. */
@@ -2263,10 +2402,49 @@ export interface TableOptions {
   zebra?: boolean | ColorInput | undefined;
 }
 
+/** How an image fills its placement box. See {@link ImageFitOptions.fit}. */
+export type ImageFit = "fill" | "contain" | "cover";
+
+/** Alignment of an image within its box for `contain`/`cover`. */
+export type ImagePosition =
+  | "center"
+  | "top"
+  | "bottom"
+  | "left"
+  | "right"
+  | "top-left"
+  | "top-right"
+  | "bottom-left"
+  | "bottom-right";
+
+/** Shape an image is clipped to within its box. */
+export type ImageClip = "none" | "circle" | "ellipse";
+
+/**
+ * Fit, positioning, and clipping controls shared by all raster image
+ * placements. The image is always laid out inside its `width`×`height` box.
+ */
+export interface ImageFitOptions {
+  /**
+   * How the image fills its box:
+   * - `"fill"` (default) — stretch to the box, ignoring aspect ratio.
+   * - `"contain"` — scale to fit inside the box, preserving aspect (letterboxed).
+   * - `"cover"` — scale to cover the box, preserving aspect (overflow cropped).
+   */
+  fit?: ImageFit | undefined;
+  /** Alignment within the box when `fit` leaves slack or overflow. Defaults to `"center"`. */
+  position?: ImagePosition | undefined;
+  /**
+   * Clip the image to a shape inscribed in its box: `"ellipse"` fills the box,
+   * `"circle"` uses the smaller box dimension (centered). Defaults to `"none"`.
+   */
+  clip?: ImageClip | undefined;
+}
+
 /**
  * Options for placing JPEG images on a page.
  */
-export interface JpegImageOptions {
+export interface JpegImageOptions extends ImageFitOptions {
   /** Horizontal position in PDF points. */
   x: number;
   /** Vertical position in PDF points. */
@@ -2292,7 +2470,7 @@ export interface JpegImageOptions {
 /**
  * Options for placing PNG images on a page.
  */
-export interface PngImageOptions {
+export interface PngImageOptions extends ImageFitOptions {
   /** Horizontal position in PDF points. */
   x: number;
   /** Vertical position in PDF points. */
@@ -2316,7 +2494,7 @@ export interface PngImageOptions {
 /**
  * Options for placing BMP images on a page.
  */
-export interface BmpImageOptions {
+export interface BmpImageOptions extends ImageFitOptions {
   /** Horizontal position in PDF points. */
   x: number;
   /** Vertical position in PDF points. */
@@ -2340,7 +2518,7 @@ export interface BmpImageOptions {
 /**
  * Options for placing JBIG2 images on a page.
  */
-export interface Jbig2ImageOptions {
+export interface Jbig2ImageOptions extends ImageFitOptions {
   /** Horizontal position in PDF points. */
   x: number;
   /** Vertical position in PDF points. */
@@ -2400,7 +2578,7 @@ export interface PageLinkOptions {
 /**
  * Options for placing TIFF images on a page.
  */
-export interface TiffImageOptions {
+export interface TiffImageOptions extends ImageFitOptions {
   /** Horizontal position in PDF points. */
   x: number;
   /** Vertical position in PDF points. */
@@ -2425,7 +2603,7 @@ export interface TiffImageOptions {
  * Options for placing JPEG 2000 (JP2) images on a page.
  * PDF spec supports JPXDecode filter for JPEG 2000 image data.
  */
-export interface Jp2ImageOptions {
+export interface Jp2ImageOptions extends ImageFitOptions {
   /** Horizontal position in PDF points. */
   x: number;
   /** Vertical position in PDF points. */
@@ -2449,7 +2627,7 @@ export interface Jp2ImageOptions {
 /**
  * Options for placing WebP images on a page.
  */
-export interface WebpImageOptions {
+export interface WebpImageOptions extends ImageFitOptions {
   /** Horizontal position in PDF points. */
   x: number;
   /** Vertical position in PDF points. */
@@ -2473,7 +2651,7 @@ export interface WebpImageOptions {
 /**
  * Options for placing GIF images on a page.
  */
-export interface GifImageOptions {
+export interface GifImageOptions extends ImageFitOptions {
   /** Horizontal position in PDF points. */
   x: number;
   /** Vertical position in PDF points. */

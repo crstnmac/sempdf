@@ -642,7 +642,6 @@ function LicenseTelemetryCard({ id }: { id: string }) {
               <TableHead className="text-right">Pages</TableHead>
               <TableHead>Job</TableHead>
               <TableHead>Client / runtime</TableHead>
-              <TableHead>Document</TableHead>
               <TableHead className="text-right">When</TableHead>
             </TableRow>
           </TableHeader>
@@ -671,9 +670,6 @@ function LicenseTelemetryCard({ id }: { id: string }) {
                 <TableCell className="text-xs text-muted-foreground">
                   {clientLine(event)}
                 </TableCell>
-                <TableCell className="text-xs text-muted-foreground">
-                  {documentLine(event)}
-                </TableCell>
                 <TableCell className="text-right text-xs whitespace-nowrap text-muted-foreground">
                   {formatDateTime(event.createdAt)}
                 </TableCell>
@@ -682,7 +678,7 @@ function LicenseTelemetryCard({ id }: { id: string }) {
             {!loading && rows.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={5}
                   className="text-center text-muted-foreground"
                 >
                   {hasFilters
@@ -725,16 +721,6 @@ function clientLine(event: TelemetryRow): React.ReactNode {
   ) : (
     "—"
   );
-}
-
-/** Document attributes a generation reported (conformance · language · tagged). */
-function documentLine(event: TelemetryRow): React.ReactNode {
-  const parts = [
-    event.conformance,
-    event.language,
-    event.tagged === null ? null : event.tagged ? "tagged" : "untagged",
-  ].filter(Boolean);
-  return parts.length ? parts.join(" · ") : "—";
 }
 
 function todayStr(): string {

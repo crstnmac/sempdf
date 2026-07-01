@@ -2,6 +2,22 @@
 
 All notable changes to `@zeropdf/zeropdf-pdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Report pagination controls.** Every template block now accepts `breakBefore`/`breakAfter` (force a fresh region before/after), `keepTogether` (never split; for paragraphs this disables column line-splitting), and `widows`/`orphans` (minimum lines to carry into / leave before a break when a paragraph splits across columns).
+- **Table of contents.** A `{ type: "toc" }` template block builds a linked, page-numbered contents list from the document's heading blocks. Page numbers resolve after layout, so the TOC can sit at the front and point forward. Tagged for PDF/UA as a `TOC` → `TOCI` → `Reference` → `Link` hierarchy, with the entry text inside the `Link` (accessible name) and the link annotation nested in the same `Link`. Options: `maxLevel`, `font`, `fontSize`, `lineHeight`, `indent`, `link`, `pageNumbers`.
+- **Cross-references.** Any block can declare a named `anchor`; a `{ type: "crossRef", to, text }` block links to it and substitutes the resolved page number (via a `{page}` placeholder or appended).
+- **Footnotes.** A `footnote` on a text block appends a numbered marker and renders the note at the bottom of the page it lands on; the paginator reserves the space so notes never overlap content.
+- **Smarter tables.** `columnWidths: "auto"` sizes columns to their content (natural width scaled to fill, shrinking toward the longest word). `footerRows: N` repeats the last `N` rows at the bottom of every page when a table splits (mirroring `headerRows`).
+- **Image fit, positioning, and clipping.** Raster image placements accept `fit` (`"fill"` | `"contain"` | `"cover"`), `position` (9 anchors), and `clip` (`"none"` | `"circle"` | `"ellipse"`), applied consistently across page, flow, and template image blocks.
+- **Master-page backgrounds.** `renderTemplate` accepts a `background` callback returning full-bleed blocks drawn behind every page's content (watermarks, tints, rules).
+
+### Fixed
+
+- **Horizontal text scaling now affects layout.** `horizontalScaling` (the `Tz` operator) is now included in width measurement, so wrapping, alignment, justification, and highlight/annotation rectangles are correct for condensed/expanded text.
+
 ## [2.0.0] - 2026-06-25
 
 ### Changed

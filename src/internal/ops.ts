@@ -63,6 +63,9 @@ export interface NormalizedImageOptions {
   tag?: PdfFigureStructureTag | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;
   structureGroupId?: number | undefined;
+  fit?: import("../types.js").ImageFit | undefined;
+  position?: import("../types.js").ImagePosition | undefined;
+  clip?: import("../types.js").ImageClip | undefined;
 }
 
 export type PdfOp =
