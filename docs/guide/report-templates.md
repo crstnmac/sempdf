@@ -357,7 +357,21 @@ A `{ type: "toc" }` block renders a table of contents from the template's top-le
 { type: "toc", options: { maxLevel: 2 } }
 ```
 
-`TemplateTocOptions`: `maxLevel` (default 3), `font`, `fontSize`, `lineHeight`, `indent` (per level), `link` (default `true`), `pageNumbers` (default `true`). Entries indent by heading level, show the resolved page number, and link to the heading's page.
+`TemplateTocOptions`: `maxLevel` (default 3), `font`, `fontSize`, `lineHeight`, `indent` (per level), `link` (default `true`), `pageNumbers` (default `true`), `leader` (`"dots"` default | `"line"` | `"none"`), `leaderColor` (default light gray), `levelStyles` (per-level `font`/`fontSize`/`color`), and `numbering` (hierarchical section numbers). Entries indent by heading level, show the resolved page number (right-aligned into a column), and link to the heading's page. The leader between the title and the page number is drawn as a decorative artifact, so assistive technology never announces it.
+
+```ts
+{
+  type: "toc",
+  options: {
+    maxLevel: 2,
+    numbering: true,                                  // "1", "1.1", "1.2" (tagged Lbl)
+    levelStyles: { 1: { fontSize: 13, color: rgb(0.1, 0.2, 0.5) }, 2: { fontSize: 10 } },
+    leader: "dots",
+  },
+}
+```
+
+With `numbering`, each item gains a hierarchical `Lbl` (e.g. `1.2`). `levelStyles` overrides font/size/color per heading level. Page numbers are right-aligned so they line up regardless of digit count.
 
 The TOC is tagged for PDF/UA as a `TOC` → `TOCI` → `Reference` → `Link` hierarchy: each item's text (title and page number) lives inside the `Link` element so the link has an accessible name, and the link annotation is nested in that same `Link`. (v1: top-level headings only, single-line entries.)
 
@@ -383,18 +397,54 @@ Attach `footnote` text to any text block. A numbered marker (`[1]`, `[2]`, …) 
 
 Notes are numbered document-wide in reading order.
 
+## Page background color
+
+Set `pageBackground` to fill every page with a solid color, drawn behind all other content (and the watermark) and tagged as an artifact:
+
+```ts
+doc.renderTemplate({
+  pageBackground: rgb(0.98, 0.96, 0.90),
+  blocks: [/* ... */],
+});
+```
+
+To apply a background to **every** page of a document — including pages you add with `doc.addPage()` outside a template — set `pageBackground` on `createDocument` instead:
+
+```ts
+const doc = createDocument({ pageBackground: rgb(0.98, 0.96, 0.90) });
+```
+
+A template's own `pageBackground` overrides the document-level one. To fill a single page ad hoc, draw a full-page rectangle first: `page.rect(0, 0, page.size.width, page.size.height, { fill: rgb(...), tag: "Artifact" })`.
+
+## Watermarks
+
+For a diagonal, centered watermark, use the first-class `watermark` option — it is drawn behind every page's content, rotated and centered automatically, and always tagged as an artifact (out of the reading order):
+
+```ts
+doc.renderTemplate({
+  watermark: "DRAFT",                                    // or an options object
+  // watermark: { text: "CONFIDENTIAL", rotation: 45, opacity: 0.15, color: rgb(0.5, 0.5, 0.5), fontSize: 120 },
+  blocks: [/* ... */],
+});
+```
+
+`TemplateWatermarkOptions`: `text`, `fontSize` (default auto-sized to span the page diagonally), `font` (default Helvetica-Bold), `color` (default medium gray), `opacity` (0–1, default `0.15`), `rotation` (degrees, default `45`).
+
 ## Master-page backgrounds
 
-A `background` callback returns blocks drawn full-bleed behind every page's content — watermarks, tints, rules. It runs per page like `header`/`footer`, and its output is layered behind everything else. Tag background blocks as `"Artifact"` so they stay out of the reading order:
+A `background` callback returns blocks drawn behind every page's content — tints, rules, logos. It runs per page like `header`/`footer` (a flow from the top content edge), and its output is layered behind everything else. Tag background blocks as `"Artifact"` so they stay out of the reading order. For a centered text watermark prefer the `watermark` option above.
 
 ```ts
 doc.renderTemplate({
   background: ({ pageNumber }) => [
-    { type: "paragraph", text: "DRAFT", options: { tag: "Artifact", color: "gray", fontSize: 72 } },
+    // e.g. a full-width tint band or a rule behind the content.
+    { type: "rect", width: 515, height: 6, style: { fill: rgb(0.93, 0.95, 0.99), tag: "Artifact" } },
   ],
   blocks: [/* ... */],
 });
 ```
+
+The background is a flow starting at the top content edge, so blocks lay out from there (use `align`/`blockAlign` for horizontal placement, or a `rect`/image sized to the page for full-bleed fills). For a centered, rotated text watermark, use the `watermark` option above instead — it handles positioning for you.
 
 ## Auto outlines
 

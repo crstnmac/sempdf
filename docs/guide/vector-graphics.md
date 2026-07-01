@@ -32,15 +32,18 @@ These helpers are available on `PdfPage` and `PdfStructureContainer` (absolute c
 
 ## Colors
 
-Color options accept structured colors — `rgb()`, `gray()`, `cmyk()`, `hex()`, `separation()`, `deviceN()` — or a **named color** string resolved to RGB:
+Color options accept structured colors — `rgb()`, `gray()`, `cmyk()`, `hsl()`, `hex()`, `separation()`, `deviceN()` — or a **named color** string resolved to RGB:
 
 ```ts
 page.text("Alert", { x: 56, y: 760, color: "red" });
 page.rect(56, 700, 80, 24, { fill: "navy" });
-const c = color("teal"); // or color("#0a7") for hex
+const c = color("teal");        // or color("#0a7") for hex
+const accent = hsl(210, 0.8, 0.45);   // hue 0–360°, saturation & lightness 0–1
+const lime = hsl(87, "87%", "80%");   // …or percentage strings
+const same = color("hsl(87, 87%, 80%)"); // …or a CSS hsl() string
 ```
 
-Named colors: `black white gray grey silver red green blue yellow cyan magenta orange purple pink brown navy teal lime maroon olive`. The `color()` helper also parses `#RGB`/`#RRGGBB`.
+Named colors: `black white gray grey silver red green blue yellow cyan magenta orange purple pink brown navy teal lime maroon olive`. The `color()` helper also parses `#RGB`/`#RRGGBB` and CSS `hsl(...)` strings. `hsl(h, s, l)` takes a hue in degrees (wrapped) plus saturation and lightness — as a `0–1` fraction, a percentage string (`"87%"`), or a `0–100` number — and converts to an RGB color.
 
 ## Path commands
 

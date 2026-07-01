@@ -460,6 +460,13 @@ export interface DocumentOptions {
    * override these.
    */
   shapeDefaults?: ShapeStyle | undefined;
+  /**
+   * Solid background color filled behind every page's content (drawn as the
+   * first thing on each page, tagged as an artifact). Applies to pages created
+   * via {@link PdfDocument.addPage} and {@link PdfDocument.renderTemplate}. A
+   * template's own `pageBackground` option overrides this.
+   */
+  pageBackground?: ColorInput | undefined;
   /** Document information dictionary values. */
   info?: DocumentInfo;
   /** XMP metadata packet or structured XMP metadata input. */
@@ -1719,6 +1726,19 @@ export interface TemplatePageBreakBlock {
 }
 
 /**
+ * Per-heading-level style overrides for TOC entries. Keyed by level (1-6);
+ * unset fields fall back to the TOC's base options.
+ */
+export interface TemplateTocEntryStyle {
+  /** Font for entries at this level. */
+  font?: PdfFont | undefined;
+  /** Font size in points for entries at this level. */
+  fontSize?: number | undefined;
+  /** Text color for the title and page number at this level. */
+  color?: ColorInput | undefined;
+}
+
+/**
  * Options for a table-of-contents block.
  */
 export interface TemplateTocOptions {
@@ -1728,6 +1748,13 @@ export interface TemplateTocOptions {
   font?: PdfFont | undefined;
   /** Entry font size in points. Defaults to 11. */
   fontSize?: number | undefined;
+  /** Per-level style overrides (e.g. a larger, darker level 1). Keyed by heading level. */
+  levelStyles?: { readonly [level: number]: TemplateTocEntryStyle } | undefined;
+  /**
+   * When true, each entry is prefixed with a hierarchical section number (e.g.
+   * "1", "1.2") tagged as a `Lbl`. Defaults to false.
+   */
+  numbering?: boolean | undefined;
   /** Vertical space per entry in points. Defaults to `fontSize * 1.6`. */
   lineHeight?: number | undefined;
   /** Points of indentation added per heading level below level 1. Defaults to 16. */
@@ -1736,6 +1763,14 @@ export interface TemplateTocOptions {
   link?: boolean | undefined;
   /** Whether to show the resolved page number for each entry. Defaults to true. */
   pageNumbers?: boolean | undefined;
+  /**
+   * Decorative leader drawn between the entry title and its page number:
+   * `"dots"` (default) a dotted leader, `"line"` a thin rule, `"none"` nothing.
+   * The leader is emitted as an artifact, so it is not announced by AT.
+   */
+  leader?: "dots" | "line" | "none" | undefined;
+  /** Color of the leader dots/rule. Defaults to a light gray. */
+  leaderColor?: ColorInput | undefined;
 }
 
 /**
@@ -2081,6 +2116,24 @@ export interface TemplateStylesheet {
 }
 
 /**
+ * Options for a document watermark drawn behind every page's content.
+ */
+export interface TemplateWatermarkOptions {
+  /** Watermark text. */
+  text: string;
+  /** Font size in points. Defaults to an automatic size that spans the page diagonally. */
+  fontSize?: number | undefined;
+  /** Font. Defaults to Helvetica-Bold. */
+  font?: PdfFont | undefined;
+  /** Text color. Defaults to a medium gray. */
+  color?: ColorInput | undefined;
+  /** Fill opacity (0-1). Defaults to 0.15. */
+  opacity?: number | undefined;
+  /** Rotation in degrees, counter-clockwise about the page center. Defaults to 45. */
+  rotation?: number | undefined;
+}
+
+/**
  * Top-level options for rendering template blocks into a complete document.
  */
 export interface TemplateDocumentOptions {
@@ -2121,10 +2174,23 @@ export interface TemplateDocumentOptions {
    */
   styles?: TemplateStylesheet | undefined;
   /**
+   * Fills every page with a solid background color, drawn behind all other
+   * content (including the watermark and background blocks). Emitted as an
+   * artifact so it stays out of the reading order.
+   */
+  pageBackground?: ColorInput | undefined;
+  /**
+   * A diagonal watermark drawn centered behind every page's content (e.g.
+   * "DRAFT", "CONFIDENTIAL"). Pass a string for defaults, or an options object
+   * to control size, color, opacity, and rotation. Always tagged as an artifact.
+   */
+  watermark?: string | TemplateWatermarkOptions | undefined;
+  /**
    * Callback that returns master-page background blocks for each page (e.g. a
-   * full-bleed watermark, rule, or tint). Rendered full-page (no margins) and
-   * drawn behind all other content. Tag background blocks as `"Artifact"` to
-   * keep them out of the reading order.
+   * full-bleed tint, rule, or logo). Rendered as a flow from the top content
+   * edge and drawn behind all other content. Tag background blocks as
+   * `"Artifact"` to keep them out of the reading order. For a centered text
+   * watermark prefer {@link TemplateDocumentOptions.watermark}.
    */
   background?:
     | ((context: TemplateRenderContext) => readonly TemplateBlock[])
@@ -3531,6 +3597,14 @@ export function color(name: NamedColor | string): RgbColor {
   if (name.startsWith("#")) {
     return hex(name);
   }
+  if (/^hsla?\(/i.test(name.trim())) {
+    const parts = name.match(/-?\d*\.?\d+/g);
+    if (parts === null || parts.length < 3) {
+      throw new PdfEngineError(PdfErrorCode.INVALID_COLOR, `Invalid HSL color: "${name}".`);
+    }
+    // CSS HSL: hue in degrees, saturation and lightness as 0–100 (percent).
+    return hsl(parseFloat(parts[0]!), parseFloat(parts[1]!) / 100, parseFloat(parts[2]!) / 100);
+  }
   const rgb255 = NAMED_COLORS[name as NamedColor];
   if (rgb255 === undefined) {
     throw new PdfEngineError(
@@ -3539,6 +3613,52 @@ export function color(name: NamedColor | string): RgbColor {
     );
   }
   return { kind: "rgb", r: rgb255[0] / 255, g: rgb255[1] / 255, b: rgb255[2] / 255 };
+}
+
+/**
+ * Normalizes an HSL saturation/lightness component. Accepts a `0–1` fraction, a
+ * percentage string (`"87%"`), or a `0–100` number (values above 1 are treated
+ * as percentages). Clamped to `[0, 1]`.
+ */
+function normalizeHslComponent(value: number | string): number {
+  const parsed =
+    typeof value === "string"
+      ? value.trim().endsWith("%")
+        ? parseFloat(value) / 100
+        : parseFloat(value)
+      : value > 1
+        ? value / 100
+        : value;
+  return Math.min(1, Math.max(0, Number.isFinite(parsed) ? parsed : 0));
+}
+
+/**
+ * Creates a color from HSL. Converted to an {@link RgbColor} for output (HSL is
+ * not a native PDF color space).
+ *
+ * @param h Hue in degrees; wrapped into [0, 360).
+ * @param s Saturation as a `0–1` fraction, a percentage string (`"87%"`), or a `0–100` number.
+ * @param l Lightness as a `0–1` fraction, a percentage string (`"80%"`), or a `0–100` number.
+ *
+ * @returns The equivalent RGB color.
+ */
+export function hsl(h: number, s: number | string, l: number | string): RgbColor {
+  const hue = ((h % 360) + 360) % 360;
+  const sat = normalizeHslComponent(s);
+  const light = normalizeHslComponent(l);
+  const c = (1 - Math.abs(2 * light - 1)) * sat;
+  const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const m = light - c / 2;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  if (hue < 60) { r = c; g = x; }
+  else if (hue < 120) { r = x; g = c; }
+  else if (hue < 180) { g = c; b = x; }
+  else if (hue < 240) { g = x; b = c; }
+  else if (hue < 300) { r = x; b = c; }
+  else { r = c; b = x; }
+  return { kind: "rgb", r: r + m, g: g + m, b: b + m };
 }
 
 /**

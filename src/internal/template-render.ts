@@ -9,6 +9,7 @@ import type {
   FlowRadioGroupOptions,
   FlowSignatureFieldOptions,
   FlowTableOptions,
+  ColorInput,
   FlowTextFieldOptions,
   PageLinkOptions,
   PdfFont,
@@ -23,6 +24,7 @@ import type {
   TemplateTableBlock,
   TemplateTocBlock,
   TemplateCrossRefBlock,
+  TemplateWatermarkOptions,
 } from '../types.js';
 import type { ResolvedPageSize } from './validation.js';
 
@@ -131,6 +133,13 @@ export function renderTemplateDocument(
   // either is requested.
   const hasToc = options.blocks.some((block) => block.type === 'toc');
   const collectHeadings = Boolean(options.autoOutline) || hasToc;
+  const measureLineWidth = (text: string, fontSize: number, font: PdfFont | undefined): number =>
+    doc.measureText(text, { fontSize, ...(font ? { font } : {}) }).width;
+  // The document's body font — `page.font`, else the stylesheet's `paragraph`
+  // font. Inherited by the TOC, footnotes, and cross-references so they match
+  // the selected font. (The `createDocument` default font is already applied by
+  // the containers when no font is passed.)
+  const templateFont = options.page?.font ?? options.styles?.paragraph?.font;
 
   const attachOverflowHandler = (): void => {
     current.flow.setOverflowHandler(() => {
@@ -193,13 +202,13 @@ export function renderTemplateDocument(
 
     if (block.type === 'toc') {
       if (block.anchor !== undefined) anchors.set(block.anchor, current.page);
-      renderTocBlock(block, options.blocks, () => current, advanceToNextFlowRegion, tocBackfills);
+      renderTocBlock(block, options.blocks, () => current, advanceToNextFlowRegion, tocBackfills, measureLineWidth, templateFont);
       pendingBreakAfter = breakAfter;
       continue;
     }
 
     if (block.type === 'crossRef') {
-      renderCrossRefBlock(block, () => current, advanceToNextFlowRegion, crossRefBackfills);
+      renderCrossRefBlock(block, () => current, advanceToNextFlowRegion, crossRefBackfills, templateFont);
       pendingBreakAfter = breakAfter;
       continue;
     }
@@ -254,6 +263,7 @@ export function renderTemplateDocument(
         x: current.flow.contentX,
         number: footnoteCounter,
         text: block.footnote,
+        ...(templateFont ? { font: templateFont } : {}),
       });
       // Append the marker to text-bearing blocks so the reference is visible.
       if (block.type === 'heading' || block.type === 'paragraph') {
@@ -267,10 +277,10 @@ export function renderTemplateDocument(
 
   assertPageCountWithinStrictLimit(strict, pages.length);
   resolveDeferredPageLinks(deferredPageLinks, pages);
-  resolveTocBackfills(tocBackfills, headings, pages);
+  resolveTocBackfills(tocBackfills, headings, pages, measureLineWidth);
   resolveCrossRefBackfills(crossRefBackfills, anchors, pages);
   renderPageFootnotes(footnotes);
-  renderTemplateRunningRegions(pages, options, metadata);
+  renderTemplateRunningRegions(pages, options, metadata, measureLineWidth);
 
   if (options.autoOutline && headings.length > 0) {
     buildOutlineFromHeadings(doc, headings, options.autoOutline);
@@ -433,9 +443,9 @@ interface TocBackfill {
   readonly content: PdfStructureContainer;
   readonly rect: { x: number; y: number; width: number; height: number };
   readonly baselineY: number;
-  readonly numberX: number;
   readonly fontSize: number;
   readonly font: PdfFont | undefined;
+  readonly color?: ColorInput | undefined;
   /** Index of this entry among headings filtered to `maxLevel`; aligns with the collected headings. */
   readonly ordinal: number;
   readonly maxLevel: number;
@@ -468,20 +478,26 @@ function renderTocBlock(
   getCurrent: () => CurrentPageRef,
   advancePage: () => void,
   backfills: TocBackfill[],
+  measure: (text: string, fontSize: number, font: PdfFont | undefined) => number,
+  defaultFont: PdfFont | undefined,
 ): void {
   const opts = block.options ?? {};
   const maxLevel = opts.maxLevel ?? 3;
   const entries = collectTocEntries(allBlocks, maxLevel);
   if (entries.length === 0) return;
 
-  const fontSize = opts.fontSize ?? 11;
-  const lineHeight = opts.lineHeight ?? fontSize * 1.6;
+  const baseFontSize = opts.fontSize ?? 11;
   const indentStep = opts.indent ?? 16;
   const showNumbers = opts.pageNumbers !== false;
   const link = opts.link !== false;
-  const font = opts.font;
-  // Room reserved on the right for the (post-render) page number.
-  const numberSlot = fontSize * 2;
+  // Inherit the template's body font unless the TOC (or a level style) overrides it.
+  const baseFont = opts.font ?? defaultFont;
+  const leader = opts.leader ?? 'dots';
+  const leaderColor: ColorInput = opts.leaderColor ?? { kind: 'gray', value: 0.6 };
+  const levelStyles = opts.levelStyles;
+  const numbering = opts.numbering === true;
+  // Hierarchical section counters; index i tracks the current level (i+1) count.
+  const counters: number[] = [];
 
   // One `TOC` structure container per page the TOC occupies (structure nodes
   // belong to a page, so a TOC that flows onto a new page starts a new TOC
@@ -498,14 +514,22 @@ function renderTocBlock(
 
   let ordinal = 0;
   for (const entry of entries) {
+    const style = levelStyles?.[entry.level];
+    const fontSize = style?.fontSize ?? baseFontSize;
+    const font = style?.font ?? baseFont;
+    const color = style?.color;
+    const lineHeight = opts.lineHeight ?? fontSize * 1.6;
+    // Room reserved on the right for the right-aligned page number.
+    const numberSlot = fontSize * 2.5;
+    const textStyle = { fontSize, ...(font ? { font } : {}), ...(color ? { color } : {}) };
+
     if (
       getCurrent().flow.remainingHeight < lineHeight &&
       getCurrent().flow.cursorY < getCurrent().startY
     ) {
       advancePage();
     }
-    const flow = getCurrent().flow;
-    const rect = flow.reservePageLinkRect({
+    const rect = getCurrent().flow.reservePageLinkRect({
       width: Number.MAX_SAFE_INTEGER,
       height: lineHeight,
       borderWidth: 0,
@@ -513,29 +537,68 @@ function renderTocBlock(
       marginTop: 0,
       marginBottom: 0,
     });
-    const indent = (entry.level - 1) * indentStep;
     const baselineY = rect.y + lineHeight * 0.25;
+    const indent = (entry.level - 1) * indentStep;
+    let textX = rect.x + indent;
+    const toci = tocContainerFor(getCurrent().page).container('TOCI');
+
+    // Optional hierarchical section number (TOCI → Lbl), e.g. "1", "1.2".
+    if (numbering) {
+      counters[entry.level - 1] = (counters[entry.level - 1] ?? 0) + 1;
+      counters.length = entry.level; // reset deeper levels
+      const label = `${counters.map((count) => count ?? 0).join('.')}  `;
+      toci.structure('Lbl').text(label, { x: textX, y: baselineY, ...textStyle, tag: 'Span' });
+      textX += measure(label, fontSize, font);
+    }
+
     // PDF/UA structure: TOC → TOCI → Reference → Link → (text + OBJR). The text
     // lives inside the Link so the link has an accessible name; the page number
     // and the link annotation are added to the same Link during backfill. When
     // linking is disabled the text sits directly in the Reference (no Link).
-    const toci = tocContainerFor(getCurrent().page).container('TOCI');
     const reference = toci.structure('Reference');
     const content = link ? reference.structure('Link') : reference;
-    content.text(entry.text, {
-      x: rect.x + indent,
-      y: baselineY,
-      fontSize,
-      ...(font ? { font } : {}),
-      tag: 'Span',
-    });
+    content.text(entry.text, { x: textX, y: baselineY, ...textStyle, tag: 'Span' });
+
+    // Decorative leader between the title and the page-number slot. Drawn as an
+    // artifact on the host page so it stays out of the reading order.
+    if (leader !== 'none' && showNumbers) {
+      const titleWidth = measure(entry.text, fontSize, font);
+      const leaderStart = textX + titleWidth + fontSize * 0.5;
+      const leaderEnd = rect.x + rect.width - numberSlot - fontSize * 0.3;
+      if (leaderEnd - leaderStart > fontSize * 0.5) {
+        const host = getCurrent().page;
+        if (leader === 'dots') {
+          const unit = '. ';
+          const unitWidth = measure(unit, fontSize, font) || fontSize * 0.5;
+          const count = Math.floor((leaderEnd - leaderStart) / unitWidth);
+          if (count > 0) {
+            host.text(unit.repeat(count), {
+              x: leaderStart,
+              y: baselineY,
+              fontSize,
+              ...(font ? { font } : {}),
+              color: leaderColor,
+              tag: 'Artifact',
+            });
+          }
+        } else {
+          const ruleY = baselineY + fontSize * 0.15;
+          host.line(leaderStart, ruleY, leaderEnd, ruleY, {
+            stroke: leaderColor,
+            lineWidth: 0.5,
+            tag: 'Artifact',
+          });
+        }
+      }
+    }
+
     backfills.push({
       content,
       rect,
       baselineY,
-      numberX: rect.x + rect.width - numberSlot,
       fontSize,
       font,
+      ...(color ? { color } : {}),
       ordinal,
       maxLevel,
       link,
@@ -554,6 +617,7 @@ function resolveTocBackfills(
   backfills: readonly TocBackfill[],
   headings: readonly CollectedHeading[],
   pages: ReadonlyArray<{ pageNumber: number; page: PdfPage }>,
+  measure: (text: string, fontSize: number, font: PdfFont | undefined) => number,
 ): void {
   for (const entry of backfills) {
     const matches = headings.filter((heading) => heading.level <= entry.maxLevel);
@@ -562,12 +626,16 @@ function resolveTocBackfills(
     const target = pages.find((candidate) => candidate.page === heading.page);
     if (!target) continue;
     if (entry.pageNumbers) {
-      // The page number is part of the link's (or reference's) content.
-      entry.content.text(String(target.pageNumber), {
-        x: entry.numberX,
+      // The page number is part of the link's (or reference's) content, and is
+      // right-aligned to the table's right edge so numbers line up in a column.
+      const numberText = String(target.pageNumber);
+      const numberX = entry.rect.x + entry.rect.width - measure(numberText, entry.fontSize, entry.font);
+      entry.content.text(numberText, {
+        x: numberX,
         y: entry.baselineY,
         fontSize: entry.fontSize,
         ...(entry.font ? { font: entry.font } : {}),
+        ...(entry.color ? { color: entry.color } : {}),
         tag: 'Span',
       });
     }
@@ -598,6 +666,7 @@ interface FootnoteEntry {
   readonly x: number;
   readonly number: number;
   readonly text: string;
+  readonly font?: PdfFont | undefined;
 }
 
 /**
@@ -621,6 +690,7 @@ function renderPageFootnotes(footnotes: readonly FootnoteEntry[]): void {
         x: note.x,
         y,
         fontSize: FOOTNOTE_FONT_SIZE,
+        ...(note.font ? { font: note.font } : {}),
         tag: 'Note',
       });
     });
@@ -649,6 +719,7 @@ function renderCrossRefBlock(
   getCurrent: () => CurrentPageRef,
   advancePage: () => void,
   backfills: CrossRefBackfill[],
+  defaultFont: PdfFont | undefined,
 ): void {
   const opts = block.options ?? {};
   const fontSize = opts.fontSize ?? 11;
@@ -672,7 +743,7 @@ function renderCrossRefBlock(
     rect,
     baselineY: rect.y + lineHeight * 0.25,
     fontSize,
-    font: opts.font,
+    font: opts.font ?? defaultFont,
     to: block.to,
     template: block.text ?? 'see page {page}',
     pageNumbers: opts.pageNumbers !== false,
@@ -879,10 +950,20 @@ function renderTemplateRunningRegions(
   pages: ReadonlyArray<{ pageNumber: number; page: PdfPage }>,
   options: TemplateDocumentOptions,
   metadata: Pick<TemplateRenderContext, 'title' | 'author'>,
+  measure: (text: string, fontSize: number, font: PdfFont | undefined) => number,
 ): void {
   const totalPages = pages.length;
+  const watermark = options.watermark === undefined
+    ? undefined
+    : typeof options.watermark === 'string'
+      ? { text: options.watermark }
+      : options.watermark;
   for (const { pageNumber, page } of pages) {
     const context = { pageNumber, totalPages, ...metadata };
+    // Draw the watermark first so that, once every "behind" layer is hoisted to
+    // the front, a background tint (hoisted last) ends up furthest back and the
+    // watermark sits just above it — both still behind the body content.
+    if (watermark) renderPageWatermark(page, watermark, measure);
     if (options.header) {
       // The body is rendered before running regions, so the header's structure
       // roots and content ops would otherwise land last in the page. Hoist both
@@ -910,16 +991,84 @@ function renderTemplateRunningRegions(
       const rootsBeforeBackground = page.structureRootCount();
       const opsBeforeBackground = page.contentOpCount();
       page
-        .flow(backgroundFlowOptions(page.size))
+        .flow(backgroundFlowOptions(page.size, options.page))
         .render(options.background(context), options.styles);
       page.hoistStructureRootsToFront(rootsBeforeBackground);
       page.hoistContentOpsToFront(opsBeforeBackground);
     }
+
+    if (options.pageBackground !== undefined) {
+      // A solid page fill, hoisted last so it sits behind every other layer
+      // (page background < watermark < background blocks < body/header/footer).
+      const opsBeforeFill = page.contentOpCount();
+      page.rect(0, 0, page.size.width, page.size.height, { fill: options.pageBackground, tag: 'Artifact' });
+      page.hoistContentOpsToFront(opsBeforeFill);
+    }
   }
 }
 
-function backgroundFlowOptions(pageSize: ResolvedPageSize): FlowOptions {
-  return { x: 0, y: pageSize.height, width: pageSize.width, marginBottom: 0 };
+/**
+ * Draws a diagonal, centered, semi-transparent watermark behind the page's
+ * content. Uses a save/rotate/alpha graphics-state scope and is tagged as an
+ * artifact, then hoisted to the front of the content stream so it draws first.
+ */
+function renderPageWatermark(
+  page: PdfPage,
+  watermark: TemplateWatermarkOptions,
+  measure: (text: string, fontSize: number, font: PdfFont | undefined) => number,
+): void {
+  const { width, height } = page.size;
+  const rotation = watermark.rotation ?? 45;
+  const font = watermark.font;
+  const opacity = Math.min(1, Math.max(0, watermark.opacity ?? 0.15));
+  const color: ColorInput = watermark.color ?? { kind: 'gray', value: 0.5 };
+  const fontSize = watermark.fontSize ?? autoWatermarkFontSize(watermark.text, width, height, rotation, font, measure);
+  const textWidth = measure(watermark.text, fontSize, font);
+
+  const rootsBefore = page.structureRootCount();
+  const opsBefore = page.contentOpCount();
+  page.saveState();
+  page.setExtGState({ fillAlpha: opacity });
+  page.translate(width / 2, height / 2);
+  page.rotate(rotation);
+  page.text(watermark.text, {
+    x: -textWidth / 2,
+    y: -fontSize * 0.35,
+    fontSize,
+    font: font ?? 'Helvetica-Bold',
+    color,
+    tag: 'Artifact',
+  });
+  page.restoreState();
+  page.hoistStructureRootsToFront(rootsBefore);
+  page.hoistContentOpsToFront(opsBefore);
+}
+
+/** Picks a watermark font size whose rotated footprint spans ~90% of the page. */
+function autoWatermarkFontSize(
+  text: string,
+  width: number,
+  height: number,
+  rotation: number,
+  font: PdfFont | undefined,
+  measure: (text: string, fontSize: number, font: PdfFont | undefined) => number,
+): number {
+  const widthAt100 = measure(text, 100, font) || 100;
+  const radians = (rotation * Math.PI) / 180;
+  const cos = Math.max(Math.abs(Math.cos(radians)), 0.15);
+  const sin = Math.max(Math.abs(Math.sin(radians)), 0.15);
+  const targetTextWidth = Math.min((width * 0.9) / cos, (height * 0.9) / sin);
+  return (100 * targetTextWidth) / widthAt100;
+}
+
+function backgroundFlowOptions(
+  pageSize: ResolvedPageSize,
+  options: TemplatePageOptions | undefined,
+): FlowOptions {
+  // Start at the top content edge (below the top margin), like the body flow, so
+  // the first line's ascenders land on the page instead of above the top edge.
+  const m = resolvePageMargins(options, pageSize);
+  return { x: 0, y: pageSize.height - m.top, width: pageSize.width, marginBottom: 0 };
 }
 
 const DEFAULT_HEADER_OFFSET = 24;

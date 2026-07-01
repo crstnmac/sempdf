@@ -6,16 +6,22 @@ All notable changes to `@sempdf/sempdf-pdf` are documented here. This project fo
 
 ### Added
 
+- **`hsl()` color helper.** `hsl(h, s, l)` converts to an RGB color, alongside the existing `rgb`/`cmyk`/`gray`/`hex`/`color` helpers. Saturation/lightness accept a `0–1` fraction, a percentage string (`"87%"`), or a `0–100` number; `color()` also parses CSS `hsl(...)` strings (e.g. `color("hsl(87, 87%, 80%)")`).
 - **Report pagination controls.** Every template block now accepts `breakBefore`/`breakAfter` (force a fresh region before/after), `keepTogether` (never split; for paragraphs this disables column line-splitting), and `widows`/`orphans` (minimum lines to carry into / leave before a break when a paragraph splits across columns).
-- **Table of contents.** A `{ type: "toc" }` template block builds a linked, page-numbered contents list from the document's heading blocks. Page numbers resolve after layout, so the TOC can sit at the front and point forward. Tagged for PDF/UA as a `TOC` → `TOCI` → `Reference` → `Link` hierarchy, with the entry text inside the `Link` (accessible name) and the link annotation nested in the same `Link`. Options: `maxLevel`, `font`, `fontSize`, `lineHeight`, `indent`, `link`, `pageNumbers`.
+- **Table of contents.** A `{ type: "toc" }` template block builds a linked, page-numbered contents list from the document's heading blocks. Page numbers resolve after layout, so the TOC can sit at the front and point forward. Tagged for PDF/UA as a `TOC` → `TOCI` → `Reference` → `Link` hierarchy, with the entry text inside the `Link` (accessible name) and the link annotation nested in the same `Link`. Options: `maxLevel`, `font`, `fontSize`, `lineHeight`, `indent`, `link`, `pageNumbers`, a decorative `leader` (`"dots"` | `"line"` | `"none"`) with `leaderColor` (drawn as an artifact so AT never announces it), `levelStyles` (per-level font/size/color), and `numbering` (hierarchical `Lbl` section numbers like `1.2`). Page numbers are right-aligned into a column.
 - **Cross-references.** Any block can declare a named `anchor`; a `{ type: "crossRef", to, text }` block links to it and substitutes the resolved page number (via a `{page}` placeholder or appended).
 - **Footnotes.** A `footnote` on a text block appends a numbered marker and renders the note at the bottom of the page it lands on; the paginator reserves the space so notes never overlap content.
 - **Smarter tables.** `columnWidths: "auto"` sizes columns to their content (natural width scaled to fill, shrinking toward the longest word). `footerRows: N` repeats the last `N` rows at the bottom of every page when a table splits (mirroring `headerRows`).
 - **Image fit, positioning, and clipping.** Raster image placements accept `fit` (`"fill"` | `"contain"` | `"cover"`), `position` (9 anchors), and `clip` (`"none"` | `"circle"` | `"ellipse"`), applied consistently across page, flow, and template image blocks.
-- **Master-page backgrounds.** `renderTemplate` accepts a `background` callback returning full-bleed blocks drawn behind every page's content (watermarks, tints, rules).
+- **Page background color.** `createDocument` accepts a `pageBackground` color that fills every page (via `addPage` and `renderTemplate`) behind all content, tagged as an artifact; `renderTemplate` also accepts a `pageBackground` that overrides it per template.
+- **Watermarks.** `renderTemplate` accepts a `watermark` option (a string or `TemplateWatermarkOptions`) that draws a diagonal, centered, semi-transparent mark behind every page, auto-sized to span the page and always tagged as an artifact.
+- **Master-page backgrounds.** `renderTemplate` accepts a `background` callback returning blocks drawn behind every page's content (tints, rules, logos).
 
 ### Fixed
 
+- **TOC, footnotes, and cross-references now inherit the selected font from any source.** They previously ignored the template's font and rendered in the built-in default. They now resolve the font from `page.font`, the document `defaults.font`, or the stylesheet `paragraph` style (still overridable per feature/level).
+- **`PdfPage.container()` and `PdfPage.structure()` now inherit the document's font families and text defaults.** Text drawn through a page-level structure container previously lost the default font and registered families (falling back to Helvetica); this also drove the TOC font regression above.
+- **Master-page background text is no longer clipped off the top of the page.** The `background` flow started at the exact top edge, so a background paragraph's first line was drawn above the page and never appeared. It now starts at the top content edge like the body flow.
 - **Horizontal text scaling now affects layout.** `horizontalScaling` (the `Tz` operator) is now included in width measurement, so wrapping, alignment, justification, and highlight/annotation rectangles are correct for condensed/expanded text.
 
 ## [2.0.0] - 2026-06-25

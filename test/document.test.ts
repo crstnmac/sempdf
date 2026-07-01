@@ -1487,6 +1487,116 @@ test("toc block lists headings with resolved page numbers and links", () => {
   assert.match(new TextDecoder("latin1").decode(bytes), /\/Link/);
 });
 
+test("toc, footnotes, and cross-refs inherit the selected font from every source", () => {
+  // The font can be selected via page.font, the document defaults, or the
+  // stylesheet body style. In all three the TOC/footnote/cross-ref must use it
+  // rather than leaking the built-in Helvetica default.
+  const render = (docOptions: object, templateExtra: object) => {
+    const doc = createDocument({ compress: false, ...docOptions });
+    doc.renderTemplate({
+      page: { size: "A4", margin: 56 },
+      ...templateExtra,
+      blocks: [
+        { type: "toc" },
+        { type: "crossRef", to: "ch", text: "see page {page}" },
+        { type: "pageBreak" },
+        { type: "heading", text: "Chapter", options: { level: 1 }, anchor: "ch" },
+        { type: "paragraph", text: "Body", footnote: "A note." },
+      ],
+    });
+    return new TextDecoder("latin1").decode(doc.toUint8Array());
+  };
+  const cases = [
+    render({}, { page: { size: "A4", margin: 56, font: "Times-Roman" } }),
+    render({ defaults: { font: "Times-Roman" } }, {}),
+    render({}, { styles: { paragraph: { font: "Times-Roman" }, heading: { font: "Times-Roman" }, heading1: { font: "Times-Roman" } } }),
+  ];
+  for (const text of cases) {
+    assert.match(text, /\/BaseFont \/Times-Roman/);
+    assert.doesNotMatch(text, /\/BaseFont \/Helvetica\b/);
+  }
+});
+
+test("page.container inherits the document's default font", () => {
+  const doc = createDocument({ compress: false, tagged: true, defaults: { font: "Courier" } });
+  doc.addPage().container("Sect", (c) => {
+    c.text("Inside a container", { x: 56, y: 700 });
+  });
+  const text = new TextDecoder("latin1").decode(doc.toUint8Array());
+  // Text drawn through a page-level structure container uses the document
+  // default font, not the built-in Helvetica fallback.
+  assert.match(text, /\/BaseFont \/Courier/);
+  assert.doesNotMatch(text, /\/BaseFont \/Helvetica\b/);
+});
+
+test("toc numbering adds hierarchical Lbl labels", () => {
+  const doc = createDocument({ tagged: true, structureRoot: "Document" });
+  doc.renderTemplate({
+    page: { size: { width: 360, height: 400 }, margin: 20, fontSize: 10, lineHeight: 12 },
+    blocks: [
+      { type: "toc", options: { maxLevel: 2, numbering: true } },
+      { type: "pageBreak" },
+      { type: "heading", text: "Alpha", options: { level: 1 } },
+      { type: "heading", text: "Beta", options: { level: 2 } },
+      { type: "heading", text: "Gamma", options: { level: 2 } },
+    ],
+  });
+  const parsed = parseDocument(doc.toUint8Array());
+  // Section numbers are tagged as Lbl inside each TOCI.
+  const [root] = parsed.listStructureElements();
+  const toc = root?.children?.find((el) => el.role === "TOC");
+  const firstItem = toc?.children?.[0];
+  assert.ok((firstItem?.children ?? []).some((c) => c.role === "Lbl"), "TOCI should start with a Lbl");
+  // Hierarchical numbering: 1, 1.1, 1.2.
+  const toc0 = parsed.extractText()[0]!.runs.map((r) => r.text).join("");
+  assert.match(toc0, /1\.1/);
+  assert.match(toc0, /1\.2/);
+});
+
+test("toc levelStyles renders entries at per-level font sizes", () => {
+  const doc = createDocument();
+  doc.renderTemplate({
+    page: { size: { width: 360, height: 400 }, margin: 20, fontSize: 10, lineHeight: 16 },
+    blocks: [
+      { type: "toc", options: { maxLevel: 2, levelStyles: { 1: { fontSize: 18 }, 2: { fontSize: 9 } } } },
+      { type: "pageBreak" },
+      { type: "heading", text: "BigChapter", options: { level: 1 } },
+      { type: "heading", text: "SmallSection", options: { level: 2 } },
+    ],
+  });
+  const runs = parseDocument(doc.toUint8Array()).extractText()[0]!.runs;
+  const big = runs.find((r) => r.text.includes("BigChapter"));
+  const small = runs.find((r) => r.text.includes("SmallSection"));
+  assert.ok(big && small);
+  // The level-1 entry is rendered larger than the level-2 entry.
+  assert.ok((big!.fontSize ?? 0) > (small!.fontSize ?? 0), `expected L1 > L2, got ${big!.fontSize} vs ${small!.fontSize}`);
+});
+
+test("toc draws a dotted leader by default as a decorative artifact", () => {
+  const build = (leader?: "dots" | "line" | "none") => {
+    const doc = createDocument({ compress: false });
+    doc.renderTemplate({
+      page: { size: { width: 320, height: 220 }, margin: 20, fontSize: 10, lineHeight: 12 },
+      blocks: [
+        { type: "toc", ...(leader ? { options: { leader } } : {}) },
+        { type: "pageBreak" },
+        { type: "heading", text: "Chapter One" },
+      ],
+    });
+    return new TextDecoder("latin1").decode(doc.toUint8Array());
+  };
+  // Default: a dotted leader, emitted inside an /Artifact marked-content run.
+  const dflt = build();
+  assert.match(dflt, /\. \. \./);
+  assert.match(dflt, /\/Artifact BMC/);
+  // Opt out.
+  assert.doesNotMatch(build("none"), /\. \. \. \./);
+  // A rule leader strokes a line instead of drawing dots.
+  const line = build("line");
+  assert.doesNotMatch(line, /\. \. \. \./);
+  assert.match(line, / l\n/); // a lineto in the stroked leader path
+});
+
 test("toc emits a TOC/TOCI/Reference/Link structure hierarchy", () => {
   const doc = createDocument({ tagged: true, language: "en-US", structureRoot: "Document" });
   doc.renderTemplate({
@@ -1578,12 +1688,80 @@ test("master-page background renders on every page behind the content", () => {
   const parsed = parseDocument(bytes);
   assert.equal(parsed.getPageCount(), 2);
   const pages = parsed.extractText();
-  // The background appears on both pages.
-  assert.ok(pages[0]!.runs.some((r) => r.text.includes("WATERMARK")));
+  // The background appears on both pages...
+  const wm0 = pages[0]!.runs.find((r) => r.text.includes("WATERMARK"));
+  assert.ok(wm0);
   assert.ok(pages[1]!.runs.some((r) => r.text.includes("WATERMARK")));
+  // ...and lands on the page (below the top edge), not clipped above it.
+  assert.ok(wm0!.y > 0 && wm0!.y <= 200 - 10, `background text should be on-page, got y=${wm0!.y}`);
   // It is drawn behind the body: on page 1 the watermark op precedes the body op.
   const text = new TextDecoder("latin1").decode(bytes);
   assert.ok(text.indexOf("WATERMARK") < text.indexOf("Body one"), "background must draw before body");
+});
+
+test("document pageBackground fills manually added pages behind their content", () => {
+  const doc = createDocument({ compress: false, pageBackground: rgb(0.95, 0.97, 1) });
+  const page = doc.addPage({ size: { width: 200, height: 300 } });
+  page.text("Hello", { x: 20, y: 260 });
+  const text = new TextDecoder("latin1").decode(doc.toUint8Array());
+  const fill = text.search(/0 0 200 300 re/);
+  assert.ok(fill >= 0, "expected a full-page fill");
+  assert.ok(fill < text.indexOf("(Hello)"), "page background must draw before content");
+});
+
+test("document pageBackground applies to template pages exactly once", () => {
+  const doc = createDocument({ compress: false, pageBackground: rgb(0.95, 0.97, 1) });
+  doc.renderTemplate({
+    page: { size: { width: 200, height: 300 }, margin: 20 },
+    watermark: "DRAFT",
+    blocks: [{ type: "paragraph", text: "Body" }],
+  });
+  const text = new TextDecoder("latin1").decode(doc.toUint8Array());
+  // Inherited by the template, drawn once per page and back-most.
+  assert.equal((text.match(/0 0 200 300 re/g) ?? []).length, 1);
+  const fill = text.search(/0 0 200 300 re/);
+  assert.ok(fill < text.indexOf("(DRAFT)") && fill < text.indexOf("(Body)"));
+});
+
+test("pageBackground fills every page behind all content as an artifact", () => {
+  const doc = createDocument({ compress: false });
+  doc.renderTemplate({
+    page: { size: { width: 200, height: 300 }, margin: 20 },
+    pageBackground: rgb(0.9, 0.95, 1),
+    watermark: "DRAFT",
+    blocks: [{ type: "paragraph", text: "Body one" }, { type: "pageBreak" }, { type: "paragraph", text: "Body two" }],
+  });
+  const text = new TextDecoder("latin1").decode(doc.toUint8Array());
+  // A full-page fill rect on each page.
+  assert.equal((text.match(/0 0 200 300 re/g) ?? []).length, 2);
+  // Behind everything: the fill precedes the watermark and body on page 1.
+  const fill = text.indexOf("0 0 200 300 re");
+  assert.ok(fill >= 0 && fill < text.indexOf("(DRAFT)") && fill < text.indexOf("(Body one)"), "page background must draw first");
+});
+
+test("watermark renders a rotated, centered artifact behind content on every page", () => {
+  const doc = createDocument({ compress: false });
+  doc.renderTemplate({
+    page: { size: { width: 300, height: 400 }, margin: 30 },
+    watermark: { text: "DRAFT", rotation: 30, opacity: 0.2, fontSize: 60 },
+    blocks: [
+      { type: "paragraph", text: "Body one" },
+      { type: "pageBreak" },
+      { type: "paragraph", text: "Body two" },
+    ],
+  });
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder("latin1").decode(bytes);
+  // One watermark per page.
+  assert.equal((text.match(/\(DRAFT\)/g) ?? []).length, 2);
+  // Tagged as an artifact, rotated, and alpha-blended via an ExtGState.
+  assert.match(text, /\/Artifact BMC/);
+  assert.match(text, / gs\n/);
+  assert.match(text, /0\.86602[0-9]* /); // cos(30deg) in the rotation matrix
+  // Drawn behind the body: the watermark precedes the body text on page 1.
+  assert.ok(text.indexOf("(DRAFT)") < text.indexOf("(Body one)"), "watermark must draw behind content");
+  // Not in the reading order (artifact) — the structure tree has no watermark text.
+  assert.equal(parseDocument(bytes).getPageCount(), 2);
 });
 
 test("crossRef throws when the target anchor is missing", () => {
