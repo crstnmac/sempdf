@@ -56,7 +56,7 @@ export { validatePdf2Conformance } from "./internal/pdf2-validation.js";
 export type { Pdf2ComplianceIssue } from "./internal/pdf2-validation.js";
 export { validateWithVeraPdf, parseVeraPdfReport } from "./internal/verapdf-validate.js";
 export type { VeraPdfValidateOptions, VeraPdfValidateResult } from "./internal/verapdf-validate.js";
-export { cm, cmyk, color, deviceN, gray, hex, inch, mm, PAGE_SIZES, pt, rgb, separation } from "./types.js";
+export { cm, cmyk, color, deviceN, gray, hex, hsl, inch, mm, PAGE_SIZES, pt, rgb, separation } from "./types.js";
 export type {
   BinaryData,
   BmpImageOptions,
@@ -203,6 +203,8 @@ export type {
   TemplatePageBreakBlock,
   TemplateTocBlock,
   TemplateTocOptions,
+  TemplateTocEntryStyle,
+  TemplateWatermarkOptions,
   TemplateCrossRefBlock,
   TemplateCrossRefOptions,
   TemplatePageLinkBlock,
