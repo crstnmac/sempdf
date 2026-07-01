@@ -42,7 +42,7 @@ For anything beyond a few blocks, prefer the flow/template APIs — they track t
 
 | Goal | Use |
 |------|-----|
-| Color | `rgb()`, `cmyk()`, `gray()`, `hex()`, or a [named color](./vector-graphics#colors) string / `color()` |
+| Color | `rgb()`, `cmyk()`, `gray()`, `hsl()`, `hex()`, or a [named color](./vector-graphics#colors) string / `color()` |
 | Bold/italic, font families | [`registerFontFamily()`](./text-and-fonts#embedded-fonts-font-families) + `bold`/`italic` flags |
 | Underline / strike-through | `underline` / `strike` text options |
 | Physical units | `mm()`, `cm()`, `inch()`, `pt()` |

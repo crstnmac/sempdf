@@ -1,7 +1,40 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createDocument, color, rgb, PdfEngineError, PdfErrorCode } from "../src/index.js";
+import { createDocument, color, hsl, rgb, PdfEngineError, PdfErrorCode } from "../src/index.js";
+
+function approx(actual: number, expected: number): boolean {
+  return Math.abs(actual - expected) < 1e-9;
+}
+
+test("hsl converts to the equivalent RGB color", () => {
+  assert.deepEqual(hsl(0, 1, 0.5), { kind: "rgb", r: 1, g: 0, b: 0 });
+  assert.deepEqual(hsl(120, 1, 0.5), { kind: "rgb", r: 0, g: 1, b: 0 });
+  assert.deepEqual(hsl(240, 1, 0.5), { kind: "rgb", r: 0, g: 0, b: 1 });
+  // Zero saturation is gray at the given lightness.
+  assert.deepEqual(hsl(200, 0, 0.5), { kind: "rgb", r: 0.5, g: 0.5, b: 0.5 });
+  // Hue wraps and s/l clamp to [0,1].
+  assert.deepEqual(hsl(-120, 1, 0.5), hsl(240, 1, 0.5));
+  const clamped = hsl(0, 5, -1);
+  assert.ok(approx(clamped.r, 0) && approx(clamped.g, 0) && approx(clamped.b, 0));
+});
+
+test("hsl accepts percentages, 0-100 numbers, and CSS strings equivalently", () => {
+  const fraction = hsl(87, 0.87, 0.8);
+  // Percentage strings, bare 0-100 numbers, and a CSS hsl() string all match.
+  assert.deepEqual(hsl(87, "87%", "80%"), fraction);
+  assert.deepEqual(hsl(87, 87, 80), fraction);
+  assert.deepEqual(color("hsl(87, 87%, 80%)"), fraction);
+  assert.deepEqual(color("hsl(87 87% 80%)"), fraction);
+});
+
+test("hsl color renders in a document", () => {
+  const doc = createDocument({ compress: false });
+  doc.addPage().text("Teal", { x: 56, y: 700, color: hsl(180, 1, 0.25) });
+  const text = new TextDecoder("latin1").decode(doc.toUint8Array());
+  // hsl(180,1,0.25) => rgb(0, 0.5, 0.5); emitted as an `rg` fill.
+  assert.match(text, /0 0\.5 0\.5 rg/);
+});
 
 function decodeLatin1(bytes: Uint8Array): string {
   return new TextDecoder("latin1").decode(bytes);
