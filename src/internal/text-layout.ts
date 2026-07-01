@@ -457,7 +457,7 @@ function measureRunSubstring(
 
   const measureOpts: Pick<
     NormalizedTextBaseOptions,
-    "font" | "fallbackFonts" | "direction" | "fontSize" | "characterSpacing" | "wordSpacing" | "kerning"
+    "font" | "fallbackFonts" | "direction" | "fontSize" | "characterSpacing" | "wordSpacing" | "kerning" | "horizontalScaling"
   > = {
     font: runFont,
     fallbackFonts: [],
@@ -466,6 +466,7 @@ function measureRunSubstring(
     kerning: run.options.kerning,
     ...(run.options.characterSpacing !== undefined ? { characterSpacing: run.options.characterSpacing } : {}),
     ...(run.options.wordSpacing !== undefined ? { wordSpacing: run.options.wordSpacing } : {}),
+    ...(run.options.horizontalScaling !== undefined ? { horizontalScaling: run.options.horizontalScaling } : {}),
   };
   const prefix = run.text.slice(0, charStart);
   const seg = run.text.slice(charStart, charEnd);
@@ -532,16 +533,25 @@ function measureRunSubstringWithGlyphs(
   const fullWidth = (advanceUnits / upe) * fontSize + additivePoints;
   const resolvedPrefix = prefixWidth ?? fullWidth;
   const resolvedSegEnd = segEndWidth ?? fullWidth;
-  return { prefixWidth: resolvedPrefix, segWidth: Math.max(resolvedSegEnd - resolvedPrefix, 0) };
+  // Match measureTextWidth: rendered advance is scaled horizontally by Tz.
+  const scale = horizontalScaleFactor(run.options.horizontalScaling);
+  return { prefixWidth: resolvedPrefix * scale, segWidth: Math.max(resolvedSegEnd - resolvedPrefix, 0) * scale };
 }
 
 export function measureTextWidth(
   text: string,
-  options: Pick<NormalizedTextBaseOptions, "font" | "fallbackFonts" | "direction" | "fontSize" | "characterSpacing" | "wordSpacing" | "kerning">,
+  options: Pick<NormalizedTextBaseOptions, "font" | "fallbackFonts" | "direction" | "fontSize" | "characterSpacing" | "wordSpacing" | "kerning" | "horizontalScaling">,
   embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>
 ): number {
   const resolvedDirection = resolveTextDirection(text, options.direction);
-  return shapeTextRuns(text, options, embeddedFonts, resolvedDirection).reduce((total, run) => total + run.advanceWidth, 0);
+  const unscaled = shapeTextRuns(text, options, embeddedFonts, resolvedDirection).reduce((total, run) => total + run.advanceWidth, 0);
+  // Tz scales all horizontal advance (glyph widths + Tc + Tw) uniformly, so the
+  // rendered width is the unscaled measurement times scale/100.
+  return unscaled * horizontalScaleFactor(options.horizontalScaling);
+}
+
+function horizontalScaleFactor(horizontalScaling: number | undefined): number {
+  return (horizontalScaling ?? 100) / 100;
 }
 
 export function makeKerningPairKey(leftGlyphId: number, rightGlyphId: number): number {
@@ -939,7 +949,7 @@ function wrapParagraph(
     ? segmentThaiWords(normalizedParagraph)
     : normalizedParagraph.split(/\s+/).filter((word) => word.length > 0);
   const lines: string[] = [];
-  const charSpacing = options.characterSpacing ?? 0;
+  const charSpacing = (options.characterSpacing ?? 0) * horizontalScaleFactor(options.horizontalScaling);
   const spaceWidth = measureTextWidth(" ", options, embeddedFonts);
   let currentLine = "";
   let currentWidth = 0;
@@ -1127,7 +1137,10 @@ function buildLineOptions(
   } else if (options.align === "justify" && !isLastLine) {
     const gaps = countWordGaps(text);
     if (gaps > 0 && baseWidth < options.width) {
-      const extraSpacing = (options.width - baseWidth) / gaps;
+      // baseWidth is already Tz-scaled (rendered) space, but wordSpacing (Tw) is
+      // applied in text space and then scaled by Tz — divide out the factor so the
+      // added gaps render to exactly fill the remaining width.
+      const extraSpacing = (options.width - baseWidth) / gaps / horizontalScaleFactor(options.horizontalScaling);
       wordSpacing = (wordSpacing ?? 0) + extraSpacing;
     }
   }

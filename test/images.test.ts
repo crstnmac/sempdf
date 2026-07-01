@@ -193,6 +193,41 @@ test("embeds PNG images with FlateDecode and PNG predictor parameters", () => {
   assert.match(text, /\/Im1 Do/);
 });
 
+test("image fit contain preserves aspect ratio and centers in the box", () => {
+  const doc = createDocument();
+  doc.addPage().png(tinyPngBytes(), { x: 40, y: 600, width: 100, height: 40, fit: "contain" });
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  // 1x1 image into a 100x40 box: contain scales to 40x40, centered horizontally.
+  assert.match(text, /40 0 0 40 70 600 cm/);
+});
+
+test("image fit cover fills the box and clips the overflow", () => {
+  const doc = createDocument();
+  doc.addPage().png(tinyPngBytes(), { x: 40, y: 600, width: 100, height: 40, fit: "cover" });
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  // cover scales the 1x1 image to 100x100, centered vertically (y offset -30).
+  assert.match(text, /100 0 0 100 40 570 cm/);
+  // The overflow is clipped to the box rectangle.
+  assert.match(text, /40 600 100 40 re\nW\nn/);
+});
+
+test("image position aligns the fitted image within the box", () => {
+  const doc = createDocument();
+  doc.addPage().png(tinyPngBytes(), { x: 40, y: 600, width: 40, height: 100, fit: "contain", position: "top" });
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  // 40x40 fitted image aligned to the top of a 100-tall box: dy = 600 + (100-40).
+  assert.match(text, /40 0 0 40 40 660 cm/);
+});
+
+test("image clip circle emits a bezier clip path", () => {
+  const doc = createDocument();
+  doc.addPage().png(tinyPngBytes(), { x: 40, y: 600, width: 40, height: 40, clip: "circle" });
+  const text = new TextDecoder().decode(doc.toUint8Array());
+  // Circle clip: a moveto at (cx+rx, cy) = (80, 620), four curves, then W n.
+  assert.match(text, /80 620 m\n/);
+  assert.match(text, / c\n.* c\n.* c\n.* c\nW\nn/s);
+});
+
 test("embeds PNG transparency masks from tRNS chunks", () => {
   const png = transparentTinyPngBytes();
   const doc = createDocument();

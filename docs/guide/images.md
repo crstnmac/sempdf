@@ -52,6 +52,34 @@ Pass only `width` or `height` to scale proportionally:
 page.png(pngBytes, { x: 56, y: 700, width: 64 });
 ```
 
+## Fit, position, and clipping
+
+By default an image stretches to fill its `width`×`height` box (`fit: "fill"`). Use `fit` to preserve the image's aspect ratio within the box, and `position` to align the result:
+
+```ts
+// Scale to fit inside the box, letterboxed, anchored to the top:
+page.png(pngBytes, { x: 56, y: 600, width: 200, height: 120, fit: "contain", position: "top" });
+
+// Scale to cover the box, cropping the overflow:
+page.png(pngBytes, { x: 56, y: 600, width: 200, height: 120, fit: "cover" });
+```
+
+| `fit` | Result |
+|-------|--------|
+| `"fill"` (default) | Stretch to the box, ignoring aspect ratio |
+| `"contain"` | Scale to fit inside the box, preserving aspect (letterboxed) |
+| `"cover"` | Scale to cover the box, preserving aspect (overflow cropped to the box) |
+
+`position` (for `contain`/`cover`) accepts `"center"` (default), `"top"`, `"bottom"`, `"left"`, `"right"`, and the four corners (`"top-left"`, …).
+
+`clip` masks the image to a shape inscribed in its box — `"ellipse"` fills the box, `"circle"` uses the smaller dimension (centered). Combine with `fit: "cover"` for a filled circular avatar:
+
+```ts
+page.jpeg(photoBytes, { x: 56, y: 560, width: 96, height: 96, fit: "cover", clip: "circle" });
+```
+
+These options apply to all raster formats (JPEG, PNG, BMP, TIFF, JP2, WebP, GIF, JBIG2) and to flow/template `image` blocks.
+
 ## Additional Image Formats
 
 Beyond JPEG and PNG, the library supports several other image formats through dedicated methods:

@@ -82,6 +82,23 @@ test("horizontal scaling emits Tz and resets to 100", () => {
   assert.match(out, /100 Tz/); // reset
 });
 
+test("measureText scales width by horizontalScaling", () => {
+  const doc = createDocument();
+  const normal = doc.measureText("condensed", { fontSize: 20 }).width;
+  const half = doc.measureText("condensed", { fontSize: 20, horizontalScaling: 50 }).width;
+  // Tz scales all horizontal advance uniformly, so 50% => exactly half the width.
+  assert.ok(Math.abs(half - normal * 0.5) < 1e-6, `expected ${normal * 0.5}, got ${half}`);
+});
+
+test("condensed text wraps fewer lines than normal for the same width", () => {
+  const doc = createDocument();
+  const text = "The quick brown fox jumps over the lazy dog again and again and again";
+  const normal = doc.measureTextBlock(text, { width: 200, fontSize: 12 });
+  const condensed = doc.measureTextBlock(text, { width: 200, fontSize: 12, horizontalScaling: 50 });
+  // Half-width glyphs fit more per line, so wrapping produces fewer lines.
+  assert.ok(condensed.lineCount < normal.lineCount, `normal=${normal.lineCount} condensed=${condensed.lineCount}`);
+});
+
 test("highlight draws a filled rectangle behind the text", () => {
   const plain = operators((doc) => {
     doc.addPage().text("Highlighted", { x: 56, y: 700 });
