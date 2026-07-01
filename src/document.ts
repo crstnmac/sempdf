@@ -3994,6 +3994,8 @@ export class PdfPage {
         normalizeContainerStructureTag(tag),
         normalizeStructureOptions(options),
       ),
+      this.fontFamilies,
+      this.textDefaults,
     );
     if (build) {
       build(container);
@@ -4055,6 +4057,8 @@ export class PdfPage {
         normalizeStructureRole(role),
         normalizeStructureOptions(options),
       ),
+      this.fontFamilies,
+      this.textDefaults,
     );
     if (build) {
       build(container);
@@ -4976,6 +4980,12 @@ export class PdfDocument {
   /** Document-wide default styling for page shape helpers. */
   private readonly shapeDefaults?: ShapeStyle | undefined;
 
+  /** Solid fill drawn behind every page's content when set. */
+  private readonly pageBackground?: ColorInput | undefined;
+
+  /** Suppresses the auto page-background fill while a template manages its own layering. */
+  private suppressAutoPageBackground = false;
+
   /** Calculation order for form fields. */
   private calculationOrder?: string[] | undefined;
 
@@ -5019,6 +5029,9 @@ export class PdfDocument {
     }
     if (options.shapeDefaults !== undefined) {
       this.shapeDefaults = { ...options.shapeDefaults };
+    }
+    if (options.pageBackground !== undefined) {
+      this.pageBackground = options.pageBackground;
     }
   }
 
@@ -5089,7 +5102,12 @@ export class PdfDocument {
     const page = createPageModel(options.size ?? this.defaultPageSize, options.transparencyGroup, options.tabOrder);
     this.pages.push(page);
     this._unlock();
-    return new PdfPage(page, this.embeddedFonts, this.fontFamilies, this.textDefaults, options.origin ?? "bottom-left", this.shapeDefaults);
+    const pdfPage = new PdfPage(page, this.embeddedFonts, this.fontFamilies, this.textDefaults, options.origin ?? "bottom-left", this.shapeDefaults);
+    if (this.pageBackground !== undefined && !this.suppressAutoPageBackground) {
+      // Fill the whole page first so it sits behind everything drawn afterward.
+      pdfPage.rect(0, 0, page.size.width, page.size.height, { fill: this.pageBackground, tag: "Artifact" });
+    }
+    return pdfPage;
   }
 
   /** The number of pages currently in the document. */
@@ -5289,10 +5307,22 @@ export class PdfDocument {
         this.registerFontFamily(name, faces);
       }
     }
-    renderTemplateDocument(this, options, {
-      title: this.info.title,
-      author: this.info.author,
-    });
+    // The template manages its own page layering (watermark, background blocks,
+    // page fill), so suppress the per-page auto fill and let the renderer draw
+    // the effective page background — the template option, else the doc option.
+    const templateOptions: TemplateDocumentOptions =
+      options.pageBackground === undefined && this.pageBackground !== undefined
+        ? { ...options, pageBackground: this.pageBackground }
+        : options;
+    this.suppressAutoPageBackground = true;
+    try {
+      renderTemplateDocument(this, templateOptions, {
+        title: this.info.title,
+        author: this.info.author,
+      });
+    } finally {
+      this.suppressAutoPageBackground = false;
+    }
     this._unlock();
   }
 

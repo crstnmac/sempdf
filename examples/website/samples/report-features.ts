@@ -13,14 +13,8 @@ doc.renderTemplate({
   page: { size: "A4", margin: 56 },
   autoOutline: { maxLevel: 2 },
 
-  // Full-bleed watermark drawn behind every page (tagged as an artifact).
-  background: () => [
-    {
-      type: "paragraph",
-      text: "DRAFT",
-      options: { tag: "Artifact", color: rgb(0.92, 0.92, 0.95), fontSize: 96, blockAlign: "center" },
-    },
-  ],
+  // A diagonal watermark drawn centered behind every page (always an artifact).
+  watermark: { text: "DRAFT", opacity: 0.12, color: rgb(0.2, 0.3, 0.6) },
 
   // Page numbers in the footer.
   pageNumber: { region: "footer", align: "right", format: ({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}` },
@@ -35,9 +29,18 @@ doc.renderTemplate({
     { type: "heading", text: "Quarterly Report", options: { level: 1 } },
     { type: "paragraph", text: "Everything below is generated in the browser.", class: "muted" },
 
-    // The TOC lists the headings that follow and links to their pages.
+    // The TOC lists the headings that follow and links to their pages, with
+    // hierarchical section numbers, per-level styling, and dotted leaders.
     { type: "heading", text: "Contents", options: { level: 2 } },
-    { type: "toc", options: { maxLevel: 2 } },
+    {
+      type: "toc",
+      options: {
+        maxLevel: 2,
+        numbering: true,
+        leader: "dots",
+        levelStyles: { 1: { fontSize: 13, color: rgb(0.11, 0.22, 0.45) }, 2: { fontSize: 11 } },
+      },
+    },
 
     // Start each section on a fresh page.
     { type: "heading", text: "Summary", options: { level: 1 }, breakBefore: true },
