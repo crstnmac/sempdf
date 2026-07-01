@@ -121,6 +121,8 @@ doc.renderTemplate({
 | `link` | URI link with paragraph spacing |
 | `list` | Ordered/unordered/nested |
 | `pageBreak` | Force next block to a new page |
+| `toc` | Table of contents built from heading blocks ([Table of contents](#table-of-contents)) |
+| `crossRef` | Cross-reference to a named `anchor`, with resolved page number ([Cross-references](#cross-references)) |
 | `section` | Logical grouping in structure tree |
 | `textField` | Single-line text input |
 | `checkBox` | Boolean checkbox |
@@ -163,6 +165,18 @@ Cells are strings or objects. Cell objects take per-cell styling — `bold`/`ita
 ```
 
 `zebra: true` fills every second body row with a light gray; pass a color to choose your own. A cell `background` overrides both the header fill and the stripe. The same options work on `page.table()` and `flow.table()`.
+
+**Auto column sizing.** Set `columnWidths: "auto"` to size each column to its content instead of splitting the width equally. Columns take their natural (un-wrapped) width scaled to fill the table, shrinking toward their longest-word width when the content is too wide:
+
+```ts
+options: { columnWidths: "auto" }
+```
+
+**Repeating footers.** `footerRows: N` marks the last `N` rows as a footer. When a template splits a table across pages, those rows repeat at the bottom of every slice — the mirror of `headerRows`, which repeat at the top:
+
+```ts
+options: { headerRows: 1, footerRows: 1 } // e.g. a header row plus a totals row
+```
 
 ### Borders
 
@@ -316,9 +330,71 @@ pageNumber: { region: "footer", align: "right" }
 
 `region`: `"header" | "footer"`. `align`: `"left" | "center" | "right"`.
 
-## Page breaks
+## Page breaks and pagination controls
 
 `{ type: "pageBreak" }` forces the next block onto a fresh page. A break before any body content on the current page is ignored, so defensive breaks never produce blank pages.
+
+Every block also accepts these pagination controls:
+
+| Control | Effect |
+|---------|--------|
+| `breakBefore: true` | Advance to a fresh region (column, else page) before this block. No-op at the top of a region. |
+| `breakAfter: true` | Advance to a fresh region after this block. |
+| `keepWithNext: true` | Keep this block on the same page as the following one when both fit (headings default to `true`). |
+| `keepTogether: true` | Never split this block across a boundary. For paragraphs, this disables line-by-line splitting across columns. |
+| `widows` / `orphans` | Minimum lines to carry into a new region (`widows`) or leave before a break (`orphans`) when a paragraph splits. **Multi-column only** — single-column paragraphs never split. Default `1`. |
+
+```ts
+{ type: "heading", text: "Appendix A", breakBefore: true },
+{ type: "paragraph", text: longCopy, orphans: 2, widows: 2 },
+```
+
+## Table of contents
+
+A `{ type: "toc" }` block renders a table of contents from the template's top-level heading blocks. Page numbers and links are resolved after the whole document is laid out, so the TOC can sit at the front and still point forward:
+
+```ts
+{ type: "toc", options: { maxLevel: 2 } }
+```
+
+`TemplateTocOptions`: `maxLevel` (default 3), `font`, `fontSize`, `lineHeight`, `indent` (per level), `link` (default `true`), `pageNumbers` (default `true`). Entries indent by heading level, show the resolved page number, and link to the heading's page.
+
+The TOC is tagged for PDF/UA as a `TOC` → `TOCI` → `Reference` → `Link` hierarchy: each item's text (title and page number) lives inside the `Link` element so the link has an accessible name, and the link annotation is nested in that same `Link`. (v1: top-level headings only, single-line entries.)
+
+## Cross-references
+
+Give any block a unique `anchor`, then reference it from a `crossRef` block. The target page number is resolved after layout, so references may point forward or backward:
+
+```ts
+{ type: "heading", text: "Methodology", anchor: "methodology" },
+// ...elsewhere...
+{ type: "crossRef", to: "methodology", text: "See the methodology on page {page}." },
+```
+
+`{page}` in `text` is replaced with the resolved page number; without the placeholder the number is appended (unless `options.pageNumbers: false`). The reference links to the target page by default (`options.link`). Referencing a missing anchor throws.
+
+## Footnotes
+
+Attach `footnote` text to any text block. A numbered marker (`[1]`, `[2]`, …) is appended to the block, and the note is rendered at the bottom of the page the block lands on; the paginator reserves the space so notes never overlap body content:
+
+```ts
+{ type: "paragraph", text: "As reported last year", footnote: "Annual Review 2024, p. 12." }
+```
+
+Notes are numbered document-wide in reading order.
+
+## Master-page backgrounds
+
+A `background` callback returns blocks drawn full-bleed behind every page's content — watermarks, tints, rules. It runs per page like `header`/`footer`, and its output is layered behind everything else. Tag background blocks as `"Artifact"` so they stay out of the reading order:
+
+```ts
+doc.renderTemplate({
+  background: ({ pageNumber }) => [
+    { type: "paragraph", text: "DRAFT", options: { tag: "Artifact", color: "gray", fontSize: 72 } },
+  ],
+  blocks: [/* ... */],
+});
+```
 
 ## Auto outlines
 

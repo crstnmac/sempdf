@@ -1963,6 +1963,9 @@ export function normalizeImageOptions(options: JpegImageOptions | PngImageOption
   altText?: string | undefined;
   tag?: import("../types.js").PdfFigureStructureTag | "Artifact" | undefined;
   structure?: import("../types.js").PdfStructureOptions | undefined;
+  fit?: import("../types.js").ImageFit | undefined;
+  position?: import("../types.js").ImagePosition | undefined;
+  clip?: import("../types.js").ImageClip | undefined;
 }): NormalizedImageOptions {
   assertFinite(options.x, "x");
   assertFinite(options.y, "y");
@@ -1985,8 +1988,38 @@ export function normalizeImageOptions(options: JpegImageOptions | PngImageOption
       ? { altText: options.altText.trim() }
       : {}),
     ...("tag" in options && options.tag !== undefined ? { tag: normalizeFigureStructureTag(options.tag) } : {}),
-    ...("structure" in options && options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
+    ...("structure" in options && options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {}),
+    ...("fit" in options && options.fit !== undefined ? { fit: normalizeImageFit(options.fit) } : {}),
+    ...("position" in options && options.position !== undefined ? { position: normalizeImagePosition(options.position) } : {}),
+    ...("clip" in options && options.clip !== undefined ? { clip: normalizeImageClip(options.clip) } : {})
   };
+}
+
+const IMAGE_FIT_VALUES: ReadonlySet<string> = new Set(["fill", "contain", "cover"]);
+const IMAGE_POSITION_VALUES: ReadonlySet<string> = new Set([
+  "center", "top", "bottom", "left", "right", "top-left", "top-right", "bottom-left", "bottom-right"
+]);
+const IMAGE_CLIP_VALUES: ReadonlySet<string> = new Set(["none", "circle", "ellipse"]);
+
+function normalizeImageFit(value: string): import("../types.js").ImageFit {
+  if (!IMAGE_FIT_VALUES.has(value)) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Image fit must be 'fill', 'contain', or 'cover'.", { fit: value });
+  }
+  return value as import("../types.js").ImageFit;
+}
+
+function normalizeImagePosition(value: string): import("../types.js").ImagePosition {
+  if (!IMAGE_POSITION_VALUES.has(value)) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Invalid image position.", { position: value });
+  }
+  return value as import("../types.js").ImagePosition;
+}
+
+function normalizeImageClip(value: string): import("../types.js").ImageClip {
+  if (!IMAGE_CLIP_VALUES.has(value)) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Image clip must be 'none', 'circle', or 'ellipse'.", { clip: value });
+  }
+  return value as import("../types.js").ImageClip;
 }
 
 export function normalizeUriLinkOptions(url: string, options: UriLinkOptions): NormalizedUriLinkOptions {

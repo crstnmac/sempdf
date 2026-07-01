@@ -243,6 +243,13 @@ function hashBytes(data: Uint8Array): string {
 
 const fontCache = new Map<string, ParsedTrueTypeFont>();
 
+/**
+ * Internal registry mapping a {@link PdfPage} to its backing model, so
+ * cross-instance operations (e.g. linking a structure container to another
+ * page) can resolve a target page's model without exposing it publicly.
+ */
+const pageModelRegistry = new WeakMap<PdfPage, InternalPageModel>();
+
 function applyLicenseWatermark(pages: readonly InternalPageModel[], text: string): void {
   for (const page of pages) {
     if (page.ops.some((op) => op.type === "text" && op.options.structure?.actualText === "license-watermark")) {
@@ -873,7 +880,10 @@ export class PdfStructureContainer {
       this.fontFamilies,
       this.textDefaults,
     );
-    const normalizedOptions = normalizeTableOptions(normalizedRows, resolvedOptions);
+    const normalizedOptions = normalizeTableOptions(
+      normalizedRows,
+      withAutoColumnWidths(resolvedOptions, normalizedRows, this.embeddedFonts),
+    );
     layoutTable(
       this.page,
       createStructureNode(
@@ -997,6 +1007,39 @@ export class PdfStructureContainer {
    */
   link(url: string, options: UriLinkOptions): this {
     addLinkToPage(this.page, url, options, this.node);
+    return this;
+  }
+
+  /**
+   * Adds a tagged internal page-link annotation nested under this container,
+   * so the `Link` structure element becomes a child of this node (e.g. a
+   * `TOCI`) rather than a page-level root.
+   *
+   * @param target The page to navigate to.
+   * @param options Link rectangle and tagging options.
+   */
+  linkToPage(target: PdfPage, options: PageLinkOptions): this {
+    const targetModel = pageModelRegistry.get(target);
+    if (targetModel === undefined) {
+      throw new PdfEngineError(PdfErrorCode.INVALID_TEXT, "linkToPage target is not a page of this document.", {});
+    }
+    const normalizedOptions = normalizePageLinkOptions(options);
+    const annotationIndex = this.page.annotations.length;
+    const structureGroupId = addAnnotationStructureNode(
+      this.page,
+      "Link",
+      annotationIndex,
+      normalizedOptions.tag,
+      normalizedOptions.structure,
+      placementBoundingBox(normalizedOptions),
+      this.node,
+    );
+    this.page.annotations.push({
+      type: "page",
+      target: targetModel,
+      options: normalizedOptions,
+      ...(structureGroupId === undefined ? {} : { structureGroupId }),
+    });
     return this;
   }
 
@@ -1303,6 +1346,139 @@ function computeAlignedX(
   return baseX;
 }
 
+/**
+ * Computes the line indices at which a splitting paragraph must start a new flow
+ * region (column or page), honoring orphan/widow minimums. `firstCap` is how
+ * many lines fit in the current (possibly partial) region; `fullCap` is a fresh
+ * region's capacity. With `orphans === 1` and `widows === 1` this reproduces
+ * plain greedy fill, so default behavior is unchanged.
+ */
+export function computeParagraphRegionBreaks(
+  lineCount: number,
+  firstCap: number,
+  fullCap: number,
+  orphans: number,
+  widows: number,
+): number[] {
+  if (lineCount <= firstCap) return [];
+  const regionLines: number[] = [];
+  let placed = 0;
+  let cap = Math.max(firstCap, 0);
+  while (placed < lineCount) {
+    // A fresh region always takes at least one line so a too-tall line can never
+    // stall the loop (it overflows the region instead, matching greedy fill).
+    let take = Math.min(cap, lineCount - placed);
+    if (take <= 0) take = Math.min(fullCap, lineCount - placed);
+    regionLines.push(take);
+    placed += take;
+    cap = fullCap;
+  }
+  // Widow control: if the final region holds fewer than `widows` lines, pull
+  // lines down from the previous region without dropping it below the orphan
+  // minimum (so fixing a widow can never create an orphan).
+  if (regionLines.length >= 2) {
+    const lastIdx = regionLines.length - 1;
+    const deficit = widows - regionLines[lastIdx]!;
+    if (deficit > 0) {
+      const movable = Math.min(deficit, regionLines[lastIdx - 1]! - Math.max(orphans, 1));
+      if (movable > 0) {
+        regionLines[lastIdx - 1] = regionLines[lastIdx - 1]! - movable;
+        regionLines[lastIdx] = regionLines[lastIdx]! + movable;
+      }
+    }
+  }
+  const breaks: number[] = [];
+  let acc = 0;
+  for (let region = 0; region < regionLines.length - 1; region += 1) {
+    acc += regionLines[region]!;
+    breaks.push(acc);
+  }
+  return breaks;
+}
+
+/**
+ * Resolves `columnWidths: "auto"` into explicit per-column widths sized to cell
+ * content. Each column takes its natural (un-wrapped) content width scaled to
+ * fill the table width; when the content is too wide to fit, columns shrink
+ * toward their minimum (longest unbreakable word) width. Any other
+ * `columnWidths` value is returned unchanged.
+ */
+function withAutoColumnWidths(
+  options: TableOptions,
+  rows: readonly NormalizedTableRow[],
+  embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>,
+): TableOptions {
+  if (options.columnWidths !== "auto") return options;
+
+  const columnCount = rows.reduce((max, row) => {
+    let cols = 0;
+    for (const cell of row) cols += Math.max(1, cell.colSpan);
+    return Math.max(max, cols);
+  }, 0);
+  const width = options.width;
+  if (columnCount === 0) return { ...options, columnWidths: undefined };
+
+  const base = normalizeTextBaseOptions(options);
+  const measureOne = (text: string, font: PdfFont | undefined): number =>
+    text.length === 0 ? 0 : measureTextWidth(text, { ...base, ...(font ? { font } : {}) }, embeddedFonts);
+  const longestWord = (text: string, font: PdfFont | undefined): number => {
+    let max = 0;
+    for (const word of text.split(/\s+/)) {
+      if (word.length > 0) max = Math.max(max, measureOne(word, font));
+    }
+    return max;
+  };
+
+  const maxW = new Array<number>(columnCount).fill(0);
+  const minW = new Array<number>(columnCount).fill(0);
+  for (const row of rows) {
+    let col = 0;
+    for (const cell of row) {
+      const span = Math.max(1, cell.colSpan);
+      // Spread a spanning cell's demand evenly across the columns it covers.
+      const naturalPer = measureOne(cell.text, cell.font) / span;
+      const wordPer = longestWord(cell.text, cell.font) / span;
+      for (let s = 0; s < span && col + s < columnCount; s += 1) {
+        maxW[col + s] = Math.max(maxW[col + s]!, naturalPer);
+        minW[col + s] = Math.max(minW[col + s]!, wordPer);
+      }
+      col += span;
+    }
+  }
+
+  const pad = (options.cellPadding ?? 2) * 2;
+  const maxPadded = maxW.map((w) => w + pad);
+  const minPadded = minW.map((w) => w + pad);
+  const totalMax = maxPadded.reduce((s, w) => s + w, 0);
+
+  let widths: number[];
+  if (totalMax <= 0) {
+    widths = new Array<number>(columnCount).fill(width / columnCount);
+  } else if (totalMax <= width) {
+    // Content fits: grow every column proportionally to fill the table width.
+    widths = maxPadded.map((w) => (w / totalMax) * width);
+  } else {
+    const totalMin = minPadded.reduce((s, w) => s + w, 0);
+    if (totalMin >= width) {
+      // Even minimum widths overflow: scale them down proportionally.
+      widths = minPadded.map((w) => (w / totalMin) * width);
+    } else {
+      // Give each column its minimum, then distribute the remaining space in
+      // proportion to how much each column wants to grow toward its natural width.
+      const slack = width - totalMin;
+      const flex = totalMax - totalMin;
+      widths = maxPadded.map((w, i) => minPadded[i]! + ((w - minPadded[i]!) / flex) * slack);
+    }
+  }
+
+  // Correct floating-point drift so the widths sum to exactly `width`
+  // (normalizeTableOptions enforces this within 0.001).
+  const drift = width - widths.reduce((s, w) => s + w, 0);
+  widths[widths.length - 1] = widths[widths.length - 1]! + drift;
+
+  return { ...options, columnWidths: widths };
+}
+
 function resolveDefaultSpacingBefore(
   kind: FlowBlockKind,
   level: HeadingLevelKey,
@@ -1540,6 +1716,28 @@ export class PdfFlow {
   }
 
   /**
+   * The y-coordinate of the flow's bottom content boundary (the top of the
+   * bottom margin). Content is laid out above this line.
+   */
+  get bottomMargin(): number {
+    return this.state.marginBottom;
+  }
+
+  /** The x-coordinate of the flow frame's left content edge. */
+  get contentX(): number {
+    return this.state.frameX;
+  }
+
+  /**
+   * Raises the bottom content boundary by `height` points, shrinking the
+   * writable region. Used to reserve a page-bottom band (e.g. for footnotes)
+   * so subsequent content stops above it.
+   */
+  reserveBottomSpace(height: number): void {
+    if (height > 0) this.state.marginBottom += height;
+  }
+
+  /**
    * Gets the zero-based active column index.
    *
    * @returns The current flow column index.
@@ -1694,6 +1892,14 @@ export class PdfFlow {
           0,
         );
       case "pageBreak":
+        return 0;
+      case "toc":
+        // The TOC self-paginates in the document paginator; its height cannot be
+        // estimated from the block alone (it depends on the whole document's
+        // headings), so it does not participate in block-level fit checks.
+        return 0;
+      case "crossRef":
+        // Self-paginating single line handled by the document paginator.
         return 0;
       case "textField":
       case "checkBox":
@@ -2130,14 +2336,14 @@ export class PdfFlow {
       1,
     );
     const width = options.width ?? innerWidth;
-    const normalizedOptions = normalizeTableOptions(normalizedRows, resolveFontFamilyOptions({
+    const normalizedOptions = normalizeTableOptions(normalizedRows, withAutoColumnWidths(resolveFontFamilyOptions({
       ...(this.textDefaults ?? {}),
       ...flowTextDefaults(this.state),
       ...options,
       x: this.state.x + spacing.left,
       y: this.state.y,
       width,
-    }, this.fontFamilies));
+    }, this.fontFamilies), normalizedRows, this.embeddedFonts));
     const nextY = layoutTable(
       this.page,
       createStructureNode(
@@ -2152,6 +2358,42 @@ export class PdfFlow {
     );
     this.state.y = nextY - spacing.after;
     return this;
+  }
+
+  /**
+   * Resolves a table's effective column widths exactly as {@link table} would
+   * lay them out. Used by the template paginator so a table split across pages
+   * sizes its columns identically on every slice (a `"auto"` table is measured
+   * once over all rows, not re-measured per slice). Returns numeric widths, or
+   * `undefined` when the table uses the default equal-width columns.
+   */
+  resolveTableColumnWidths(
+    rows: readonly TableRow[],
+    options: FlowTableOptions = {},
+  ): readonly number[] | undefined {
+    const normalizedRows = resolveTableCellContent(
+      normalizeTableRows(rows),
+      {
+        font: options.font ?? this.state.font ?? this.textDefaults?.font,
+        fontSize: options.fontSize ?? this.state.fontSize ?? this.textDefaults?.fontSize,
+        color: options.color ?? this.state.color ?? this.textDefaults?.color,
+        kerning: options.kerning ?? this.state.kerning ?? this.textDefaults?.kerning,
+      },
+      this.fontFamilies,
+      this.textDefaults,
+    );
+    const spacing = this.resolveSpacing("table", options);
+    const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
+    const width = options.width ?? innerWidth;
+    const resolved = withAutoColumnWidths(
+      resolveFontFamilyOptions(
+        { ...(this.textDefaults ?? {}), ...flowTextDefaults(this.state), ...options, x: this.state.x, y: this.state.y, width },
+        this.fontFamilies,
+      ),
+      normalizedRows,
+      this.embeddedFonts,
+    );
+    return Array.isArray(resolved.columnWidths) ? resolved.columnWidths : undefined;
   }
 
   /**
@@ -2352,14 +2594,14 @@ export class PdfFlow {
     );
     const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
     const width = options.width ?? innerWidth;
-    const normalizedOptions = normalizeTableOptions(normalizedRows, resolveFontFamilyOptions({
+    const normalizedOptions = normalizeTableOptions(normalizedRows, withAutoColumnWidths(resolveFontFamilyOptions({
       ...(this.textDefaults ?? {}),
       ...flowTextDefaults(this.state),
       ...options,
       x: this.state.x,
       y: this.state.y,
       width,
-    }, this.fontFamilies));
+    }, this.fontFamilies), normalizedRows, this.embeddedFonts));
     const rowSpanOccupancy = new Map<number, number>();
     const heights: number[] = [];
 
@@ -2571,17 +2813,40 @@ export class PdfFlow {
       const lines = groupPositionedRunsByLine(laidOutRuns);
       let placedRuns: import("./internal/text-layout.js").PositionedTextRun[] = [];
 
-      for (const line of lines) {
-        if (this.remainingHeight < normalized.lineHeight && this.state.y < this.state.startY) {
-          if (!this.advanceColumn()) {
-            pushTextHighlights(this.page, placedRuns, normalized, this.embeddedFonts);
-            pushPositionedTextRuns(this.page, placedRuns, structureNode?.id);
-            pushTextDecorations(this.page, placedRuns, normalized, this.embeddedFonts);
-            placedRuns = [];
-            if (this.advanceFlowRegion()) {
-              structureNode = createTextStructureNode();
-            }
+      const advanceRegion = (): void => {
+        if (!this.advanceColumn()) {
+          pushTextHighlights(this.page, placedRuns, normalized, this.embeddedFonts);
+          pushPositionedTextRuns(this.page, placedRuns, structureNode?.id);
+          pushTextDecorations(this.page, placedRuns, normalized, this.embeddedFonts);
+          placedRuns = [];
+          if (this.advanceFlowRegion()) {
+            structureNode = createTextStructureNode();
           }
+        }
+      };
+
+      // Precompute region break points so orphan/widow minimums can pull the
+      // break earlier than a purely greedy fill would. Defaults (1/1) reproduce
+      // greedy fill exactly.
+      const lineHeight = normalized.lineHeight;
+      const orphans = Math.max(1, Math.floor(options.orphans ?? 1));
+      const widows = Math.max(1, Math.floor(options.widows ?? 1));
+      const fullCap = Math.max(1, Math.floor((this.state.startY - this.state.marginBottom) / lineHeight));
+      let firstCap = Math.max(0, Math.floor(this.remainingHeight / lineHeight));
+      // Orphan control: if the paragraph will split and fewer than `orphans` of
+      // its lines fit in the current partial region, move it whole to a fresh one.
+      if (this.state.y < this.state.startY && lines.length > firstCap && firstCap < orphans) {
+        advanceRegion();
+        firstCap = fullCap;
+      }
+      const breakBefore = new Set(
+        computeParagraphRegionBreaks(lines.length, firstCap, fullCap, orphans, widows),
+      );
+
+      for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+        const line = lines[lineIndex]!;
+        if (breakBefore.has(lineIndex)) {
+          advanceRegion();
         }
         const currentInnerWidth = Math.max(this.state.width - marginLeft - marginRight, 1);
         const currentBlockX = computeBlockX(
@@ -3449,7 +3714,9 @@ export class PdfPage {
     private readonly textDefaults?: TextDefaults | undefined,
     private readonly origin: "bottom-left" | "top-left" = "bottom-left",
     private readonly shapeDefaults?: ShapeStyle | undefined,
-  ) {}
+  ) {
+    pageModelRegistry.set(this, page);
+  }
 
   /** Merges the document shape defaults beneath a per-call shape style. */
   private withShapeDefaults(style?: ShapeStyle): ShapeStyle | undefined {
@@ -3659,7 +3926,10 @@ export class PdfPage {
       this.fontFamilies,
       this.textDefaults,
     );
-    const normalizedOptions = normalizeTableOptions(normalizedRows, resolvedOptions);
+    const normalizedOptions = normalizeTableOptions(
+      normalizedRows,
+      withAutoColumnWidths(resolvedOptions, normalizedRows, this.embeddedFonts),
+    );
     layoutTable(
       this.page,
       createStructureNode(this.page, "Table", normalizedOptions.structure),

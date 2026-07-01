@@ -68,8 +68,8 @@ export const env = {
 
   /** Rate limiting for machine routes (/v1 authorize/usage/license). */
   rateLimit: {
-    /** Disable entirely by setting RATE_LIMIT_ENABLED=false. */
-    enabled: process.env.RATE_LIMIT_ENABLED !== "false",
+    /** Disabled by default; explicitly opt in with RATE_LIMIT_ENABLED=true. */
+    enabled: process.env.RATE_LIMIT_ENABLED === "true",
     /** Sliding-window length in milliseconds. */
     windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS ?? 1_000),
     /** Max requests per window per (api-key + client IP). */
