@@ -27,9 +27,12 @@ import { setLicenseGuard } from "@barrierbreak/a11ydocs-pdf/license-guard";
 setLicenseGuard({ consume() {} }); // unlimited generation, watermarked output
 ```
 
-The same currently applies to guards installed by the licensing client package:
-until the signed-proof handshake ships, use the auto-guard for production
-(clean) output.
+The licensing client package upgrades itself to the verified path
+automatically: on its first successful `checkout()` it authorizes against a
+core-issued install challenge and presents the server-signed response as proof
+(`getLicenseInstallChallenge()` + `setLicenseGuardWithProof()`), so its output
+is clean — or carries the server-mandated trial watermark, which the proof
+pins so a permissive guard cannot drop it.
 
 ## Zero-config auto-guard (Node only)
 

@@ -174,12 +174,11 @@ test("watermarked authorization stamps generated PDFs and reports watermarked us
   const doc = createDocument({ title: "t", compress: false });
   doc.addPage({ size: "A4" }).text("x", { x: 24, y: 700 });
   const pdf = new TextDecoder("latin1").decode(doc.toUint8Array());
-  // Core ≥2.1 treats guards installed via the public setLicenseGuard() as
-  // unverified and forces the fixed UNLICENSED watermark over the client's
-  // "Trial Mode" text. Clean/trial-marked output requires the core auto-guard
-  // (A11YDOCS_LICENSE_KEY) until the signed-proof handshake lands, at which
-  // point this assertion flips back to /Trial Mode/.
-  assert.match(pdf, /UNLICENSED/);
+  // checkout() upgraded the guard to the verified path via the signed install
+  // proof, and the proof carries the server's watermark requirement — so the
+  // trial watermark (not the UNLICENSED fallback) is stamped.
+  assert.match(pdf, /Trial Mode/);
+  assert.doesNotMatch(pdf, /UNLICENSED/);
   await client.flush();
   assert.deepEqual(usageLog, [{
     documents: 1,
