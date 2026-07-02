@@ -87,5 +87,12 @@ image that needs them (drizzle-kit push is additive-safe; review the plan).
   `LICENSE_SIGNING_KEY`/`LICENSE_SIGNING_KID`, move the old public key into
   `LICENSE_SIGNING_PUBKEYS_PREV`, and ship the client update **before** the
   server flips (signing canonical v2).
+- **Observability**: each instance runs an OTel Collector
+  (`otel-collector-config.yaml`) shipping the api's Prometheus `/metrics` and
+  all container logs to self-hosted SigNoz via OTLP (`SIGNOZ_OTLP_ENDPOINT` in
+  `.env`, plus `HOST_TAG` to distinguish instances). `/metrics` is scraped over
+  the internal docker network and is never exposed publicly. Suggested SigNoz
+  alerts: 5xx rate, `license_sweep_age_seconds` (wedged cron), pg pool
+  saturation, and a missing-host (no data from a `host.name`) alert.
 - **Backups**: managed PG has automatic backups; optionally `pg_dump` to Object
   Storage for offsite copies.
