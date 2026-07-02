@@ -55,6 +55,15 @@ export interface LicenseGuardDecision {
 
 let activeGuard: LicenseGuard | undefined;
 let activeGuardVerified = false;
+/**
+ * Watermark the license server required in the install proof (trial keys).
+ * Forced over any decision from the proof-verified guard, so a trial key
+ * cannot unlock clean output by pairing its valid proof with a permissive
+ * guard.
+ */
+let activeGuardForcedWatermark: string | undefined;
+/** Outstanding single-use install challenge (see getLicenseInstallChallenge). */
+let installChallenge: string | null = null;
 
 /**
  * Watermark forced onto every page when generation is authorized by an
@@ -82,6 +91,7 @@ const DEV_WATERMARK = "DEVELOPMENT — not for distribution";
 export function setLicenseGuard(guard: LicenseGuard | undefined): void {
   activeGuard = guard;
   activeGuardVerified = false;
+  activeGuardForcedWatermark = undefined;
 }
 
 /**
@@ -94,6 +104,69 @@ export function setLicenseGuard(guard: LicenseGuard | undefined): void {
 export function setVerifiedLicenseGuard(guard: LicenseGuard | undefined): void {
   activeGuard = guard;
   activeGuardVerified = guard !== undefined;
+  activeGuardForcedWatermark = undefined;
+}
+
+/**
+ * Issues a single-use nonce for the signed-proof guard install
+ * ({@link setLicenseGuardWithProof}). An external licensing client asks the
+ * license server to authorize against THIS nonce; because the core generated
+ * it fresh, a captured signed response from some earlier session cannot be
+ * replayed as an install proof.
+ */
+export function getLicenseInstallChallenge(): string {
+  installChallenge = makeNonce();
+  return installChallenge;
+}
+
+/**
+ * A signed authorize response presented as proof that the installing client
+ * holds a license the server accepts. `nonce` must be the outstanding
+ * {@link getLicenseInstallChallenge} value and the signature must verify
+ * against the baked server public keys (canonical v3).
+ */
+export interface LicenseInstallProof {
+  /** License key the response was signed for. */
+  key: string;
+  granted: number;
+  remaining: number;
+  resetAt?: string | null | undefined;
+  nonce: string;
+  watermark?: boolean | undefined;
+  watermarkText?: string | null | undefined;
+  signature?: string | undefined;
+  kid?: string | undefined;
+}
+
+/**
+ * Installs a guard on the verified path using a server-signed proof. The
+ * challenge is consumed whether or not verification succeeds (single use).
+ * When the proof carries the server's watermark requirement (trial keys), that
+ * watermark is forced onto every document the guard authorizes — a trial proof
+ * cannot unlock clean output.
+ *
+ * @throws PdfEngineError(INVALID_OPERATION) when no challenge is outstanding,
+ *   the proof's nonce does not match it, or the signature does not verify.
+ */
+export async function setLicenseGuardWithProof(guard: LicenseGuard, proof: LicenseInstallProof): Promise<void> {
+  const challenge = installChallenge;
+  installChallenge = null; // single use, consumed even on failure
+  if (!challenge || proof.nonce !== challenge) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_OPERATION,
+      "License install proof rejected: missing or mismatched install challenge. " +
+        "Request a fresh challenge via getLicenseInstallChallenge() and authorize against it.",
+    );
+  }
+  if (!(await verifyAuthorizeResponse(proof.key, challenge, proof))) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_OPERATION,
+      "License install proof rejected: server signature verification failed.",
+    );
+  }
+  activeGuard = guard;
+  activeGuardVerified = true;
+  activeGuardForcedWatermark = proof.watermark ? proof.watermarkText ?? "Trial Mode" : undefined;
 }
 
 /**
@@ -103,7 +176,12 @@ export function setVerifiedLicenseGuard(guard: LicenseGuard | undefined): void {
  * fixed unlicensed watermark regardless of what the guard returned.
  */
 function finalizeDecision(decision: LicenseGuardDecision | undefined): LicenseGuardDecision | undefined {
-  if (activeGuardVerified) return decision;
+  if (activeGuardVerified) {
+    if (activeGuardForcedWatermark !== undefined) {
+      return { ...decision, watermarkText: activeGuardForcedWatermark };
+    }
+    return decision;
+  }
   return { ...decision, watermarkText: UNVERIFIED_WATERMARK };
 }
 
@@ -434,17 +512,28 @@ function serverPubkeys(): Record<string, string> {
 
 /**
  * Canonical bytes the server signs (must stay byte-for-byte identical to the
- * server's `signAuthorize` and the licensing client's `canonicalAuthPayload`):
- * `kid|key|granted|remaining|resetAt|nonce`. The nonce is the one THIS client
- * generated for the request, so a captured "allow" cannot be replayed.
+ * server's `signAuthorize` and the licensing client's `canonicalAuthPayload`).
+ * FORM (v3): `kid|key|granted|remaining|resetAt|nonce|watermark|watermarkText`
+ * — the watermark flag/text are inside the signature so a tampering proxy
+ * cannot strip a trial watermark; the text is last so embedded `|` cannot
+ * shift earlier fields. The nonce is the one THIS client generated for the
+ * request, so a captured "allow" cannot be replayed.
  */
 function canonicalAuthorizePayload(
   kid: string,
   key: string,
-  r: { granted: number; remaining: number; resetAt?: string | null | undefined },
+  r: {
+    granted: number;
+    remaining: number;
+    resetAt?: string | null | undefined;
+    watermark?: boolean | undefined;
+    watermarkText?: string | null | undefined;
+  },
   nonce: string,
 ): Uint8Array {
-  return new TextEncoder().encode(`${kid}|${key}|${r.granted}|${r.remaining}|${r.resetAt ?? ""}|${nonce}`);
+  return new TextEncoder().encode(
+    `${kid}|${key}|${r.granted}|${r.remaining}|${r.resetAt ?? ""}|${nonce}|${r.watermark ? 1 : 0}|${r.watermarkText ?? ""}`,
+  );
 }
 
 function pemToSpkiDer(pem: string): Uint8Array {
@@ -492,7 +581,15 @@ async function verifyEd25519(publicKeyPem: string, data: Uint8Array, signatureBa
 async function verifyAuthorizeResponse(
   key: string,
   nonce: string,
-  data: { granted?: number; remaining?: number; resetAt?: string | null; signature?: string; kid?: string },
+  data: {
+    granted?: number | undefined;
+    remaining?: number | undefined;
+    resetAt?: string | null | undefined;
+    watermark?: boolean | undefined;
+    watermarkText?: string | null | undefined;
+    signature?: string | undefined;
+    kid?: string | undefined;
+  },
 ): Promise<boolean> {
   const keys = serverPubkeys();
   if (Object.keys(keys).length === 0) return true; // no baked keys — transport trust (dev)
@@ -503,7 +600,13 @@ async function verifyAuthorizeResponse(
   const payload = canonicalAuthorizePayload(
     kid,
     key,
-    { granted: data.granted ?? 0, remaining: data.remaining ?? 0, resetAt: data.resetAt },
+    {
+      granted: data.granted ?? 0,
+      remaining: data.remaining ?? 0,
+      resetAt: data.resetAt,
+      watermark: data.watermark,
+      watermarkText: data.watermarkText,
+    },
     nonce,
   );
   return verifyEd25519(pem, payload, data.signature);

@@ -25,12 +25,16 @@ export function signingKid(): string {
 /**
  * Signs the canonical authorize payload, returning a base64 signature.
  *
- * CANONICAL FORM (v2): `kid|key|granted|remaining|resetAt|nonce`.
- * The leading `kid` was added so clients can rotate keys: they read `kid` from
- * the response, look up the matching public key, and verify against the SAME
- * canonical string (which now begins with that kid). Clients MUST prepend the
- * `kid` they received when reconstructing the string to verify. A client that
- * does not yet support rotation can pin a single key and a single kid ("v1").
+ * CANONICAL FORM (v3):
+ * `kid|key|granted|remaining|resetAt|nonce|watermark|watermarkText`.
+ * The leading `kid` supports key rotation: clients read `kid` from the
+ * response, look up the matching public key, and verify against the SAME
+ * canonical string (which begins with that kid). v3 folds the watermark flag
+ * and text into the signed payload so a tampering proxy cannot strip a trial /
+ * over-limit watermark from an otherwise valid response. `watermark` is
+ * canonicalized as `1`/`0`; `watermarkText` is LAST so embedded `|` characters
+ * cannot shift earlier fields. Must stay byte-for-byte identical to
+ * `canonicalAuthorizePayload` in the core library and the licensing client.
  */
 export function signAuthorize(payload: {
   key: string;
@@ -38,10 +42,14 @@ export function signAuthorize(payload: {
   remaining: number;
   resetAt: string | null;
   nonce: string;
+  watermark: boolean;
+  watermarkText: string | null;
 }): { signature: string; kid: string } {
   cachedKey ??= loadPrivateKey();
   const kid = signingKid();
-  const text = `${kid}|${payload.key}|${payload.granted}|${payload.remaining}|${payload.resetAt ?? ""}|${payload.nonce}`;
+  const text =
+    `${kid}|${payload.key}|${payload.granted}|${payload.remaining}|${payload.resetAt ?? ""}|${payload.nonce}` +
+    `|${payload.watermark ? 1 : 0}|${payload.watermarkText ?? ""}`;
   return { signature: edSign(null, Buffer.from(text, "utf8"), cachedKey).toString("base64"), kid };
 }
 

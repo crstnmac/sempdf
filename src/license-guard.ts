@@ -13,6 +13,9 @@
 export {
   setLicenseGuard,
   getLicenseGuard,
+  getLicenseInstallChallenge,
+  setLicenseGuardWithProof,
+  type LicenseInstallProof,
   consumeLicense,
   isLicenseDevBypass,
   licenseQuotaError,
