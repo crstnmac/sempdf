@@ -92,7 +92,7 @@ docker run -d --name a11ydocs-dev-db \
 [Secrets](#secrets--generation-reference)); point `DATABASE_URL` at the dev
 container:
 
-```
+```sh
 DATABASE_URL=postgres://a11ydocs:a11ydocs@localhost:5433/a11ydocs_license
 ```
 
