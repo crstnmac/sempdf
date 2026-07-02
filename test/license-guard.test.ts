@@ -3,11 +3,18 @@ import assert from "node:assert/strict";
 
 import { createDocument, PdfErrorCode } from "../src/index.js";
 import { setLicenseGuard, licenseQuotaError, isLicenseDevBypass, type LicenseGuard } from "../src/license-guard.js";
+import { setVerifiedLicenseGuard } from "../src/internal/license-guard.js";
 
 function genOnePdf(): void {
   const doc = createDocument({ title: "t" });
   doc.addPage({ size: "A4" }).text("x", { x: 24, y: 700 });
   doc.toUint8Array();
+}
+
+function pdfText(): string {
+  const doc = createDocument({ title: "t", compress: false });
+  doc.addPage({ size: "A4" }).text("customer content", { x: 24, y: 700 });
+  return new TextDecoder("latin1").decode(doc.toUint8Array());
 }
 
 /** Runs `fn` with the dev bypass forced off, then restores the env. */
@@ -23,10 +30,12 @@ function withBypassOff<T>(fn: () => T): T {
 
 test.afterEach(() => setLicenseGuard(undefined));
 
-test("dev bypass allows generation without a guard", () => {
-  // The test suite runs with ZEROPDF_LICENSE_DEV=1.
+test("dev bypass allows generation without a guard, with a DEVELOPMENT watermark", () => {
+  // The suite runs with ZEROPDF_LICENSE_DEV=1 but preloads a verified guard
+  // (license-setup.ts); clear it to exercise the bare bypass.
+  setLicenseGuard(undefined);
   assert.equal(isLicenseDevBypass(), true);
-  genOnePdf();
+  assert.match(pdfText(), /DEVELOPMENT/);
 });
 
 test("secure by default: no guard and bypass off throws LICENSE_REQUIRED", () => {
@@ -66,12 +75,30 @@ test("a throwing guard blocks generation", () => {
   assert.throws(genOnePdf, (e: unknown) => (e as { code?: string }).code === PdfErrorCode.LICENSE_QUOTA_EXCEEDED);
 });
 
-test("a guard can request a visible watermark on generated pages", () => {
+test("an unverified guard is always stamped UNLICENSED, even with custom text", () => {
+  // Public setLicenseGuard() is the unverified path: the guard's own watermark
+  // text is overridden by the fixed unlicensed mark so a permissive guard
+  // cannot produce clean (or blank-marked) output.
   setLicenseGuard({ consume: () => ({ watermarkText: "Trial Mode" }) });
-  const doc = createDocument({ title: "t", compress: false });
-  doc.addPage({ size: "A4" }).text("customer content", { x: 24, y: 700 });
-  const pdf = new TextDecoder("latin1").decode(doc.toUint8Array());
-  assert.match(pdf, /Trial Mode/);
+  const pdf = pdfText();
+  assert.match(pdf, /UNLICENSED/);
+  assert.doesNotMatch(pdf, /Trial Mode/);
+});
+
+test("a permissive unverified guard (playground-style) is watermarked", () => {
+  setLicenseGuard({ consume() {} });
+  assert.match(pdfText(), /UNLICENSED/);
+});
+
+test("a verified guard controls its own watermark", () => {
+  // Server-backed path: custom watermark (trial/over-limit) passes through…
+  setVerifiedLicenseGuard({ consume: () => ({ watermarkText: "Trial Mode" }) });
+  const trial = pdfText();
+  assert.match(trial, /Trial Mode/);
+  assert.doesNotMatch(trial, /UNLICENSED/);
+  // …and a fully licensed run is clean.
+  setVerifiedLicenseGuard({ consume() {} });
+  assert.doesNotMatch(pdfText(), /UNLICENSED|DEVELOPMENT|Trial Mode/);
 });
 
 test("re-serializing the same document does not double-count", () => {

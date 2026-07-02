@@ -4,6 +4,11 @@ All notable changes to `@zeropdf/zeropdf-pdf` are documented here. This project 
 
 ## [Unreleased]
 
+### Changed
+
+- **Auto-guard now verifies signed authorize responses.** When the server's Ed25519 public keys are baked into the build (`ZEROPDF_LICENSE_PUBKEYS` / `ZEROPDF_LICENSE_PUBKEY` env at build time, kid-keyed for rotation), every `/v1/authorize` response must carry a valid signature over the canonical `kid|key|granted|remaining|resetAt|nonce` payload — bound to the request's fresh nonce, so a captured "allow" cannot be replayed and a spoofed server (DNS/proxy tampering) grants nothing (fail closed: no lease, generation refused; never a hard block). Works in Node (`node:crypto`) and the browser (WebCrypto). With no baked keys (dev builds) verification is skipped; the bake script warns loudly if a production URL is baked without keys. Known gap until canonical v3: the `watermark` flag is not part of the signed payload.
+- **BREAKING: watermark-unless-verified licensing.** Only the server-backed auto-guard (`ZEROPDF_LICENSE_KEY`) produces watermark-free output. Guards installed through the public `setLicenseGuard()` are now *unverified*: they can still meter and block, but every page they authorize is stamped with a fixed `UNLICENSED — evaluation only` watermark that the guard cannot override or blank. The `ZEROPDF_LICENSE_DEV=1` bypass still allows generation but stamps `DEVELOPMENT — not for distribution`. This closes the two-line metering bypass (`setLicenseGuard({ consume() {} })`) — it now yields watermarked evaluation output instead of clean PDFs. Guards installed by `@zeropdf/zeropdf-pdf-licensing` are also unverified until the signed-proof handshake ships; production deployments should use the auto-guard. The playground continues to work, watermarked.
+
 ### Added
 
 - **`hsl()` color helper.** `hsl(h, s, l)` converts to an RGB color, alongside the existing `rgb`/`cmyk`/`gray`/`hex`/`color` helpers. Saturation/lightness accept a `0–1` fraction, a percentage string (`"87%"`), or a `0–100` number; `color()` also parses CSS `hsl(...)` strings (e.g. `color("hsl(87, 87%, 80%)")`).

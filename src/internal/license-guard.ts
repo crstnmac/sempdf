@@ -1,5 +1,5 @@
 import { PdfEngineError, PdfErrorCode } from "../errors.js";
-import { bakedServerUrl, bakedLibVersion } from "./license-server.js";
+import { bakedServerUrl, bakedLibVersion, bakedServerPubkeys } from "./license-server.js";
 
 /**
  * A guard consulted immediately before a document is serialized to bytes. It
@@ -54,13 +54,57 @@ export interface LicenseGuardDecision {
 }
 
 let activeGuard: LicenseGuard | undefined;
+let activeGuardVerified = false;
+
+/**
+ * Watermark forced onto every page when generation is authorized by an
+ * UNVERIFIED guard (anything installed through the public
+ * {@link setLicenseGuard}). The text is fixed on purpose: an unverified guard
+ * must not be able to blank or soften it, otherwise installing
+ * `{ consume() {} }` would be a two-line metering bypass. Clean output requires
+ * the verified path (the server-backed auto-guard, or internal callers via
+ * {@link setVerifiedLicenseGuard}).
+ */
+const UNVERIFIED_WATERMARK = "UNLICENSED — evaluation only";
+
+/** Watermark stamped when generating under the ZEROPDF_LICENSE_DEV bypass. */
+const DEV_WATERMARK = "DEVELOPMENT — not for distribution";
 
 /**
  * Installs (or clears, with `undefined`) the process-wide license guard. Called
  * by the licensing client; not part of the normal generation API.
+ *
+ * Guards installed through this public entrypoint are **unverified**: they can
+ * meter and block, but every document they authorize is stamped with a fixed
+ * "unlicensed" watermark. Watermark-free output requires the server-backed
+ * auto-guard (`ZEROPDF_LICENSE_KEY`).
  */
 export function setLicenseGuard(guard: LicenseGuard | undefined): void {
   activeGuard = guard;
+  activeGuardVerified = false;
+}
+
+/**
+ * INTERNAL — installs a guard on the verified (watermark-free) path. Not
+ * re-exported from the public `./license-guard` subpath or the package index,
+ * and the package `exports` map blocks deep imports, so external code cannot
+ * reach it. Used by the auto-guard (whose authority is the license server) and
+ * by the library's own test/tooling preloads.
+ */
+export function setVerifiedLicenseGuard(guard: LicenseGuard | undefined): void {
+  activeGuard = guard;
+  activeGuardVerified = guard !== undefined;
+}
+
+/**
+ * Applies the unverified-guard policy to a guard decision: decisions from the
+ * verified path pass through untouched (the license server dictates trial /
+ * over-limit watermarks); decisions from unverified guards are forced to the
+ * fixed unlicensed watermark regardless of what the guard returned.
+ */
+function finalizeDecision(decision: LicenseGuardDecision | undefined): LicenseGuardDecision | undefined {
+  if (activeGuardVerified) return decision;
+  return { ...decision, watermarkText: UNVERIFIED_WATERMARK };
 }
 
 /** Returns the currently installed guard, if any. */
@@ -120,12 +164,12 @@ export function isLicenseDevBypass(): boolean {
  */
 export function consumeLicense(usage: GenerationUsage): LicenseGuardDecision | undefined {
   if (activeGuard !== undefined) {
-    return activeGuard.consume(usage) ?? undefined;
+    return finalizeDecision(activeGuard.consume(usage) ?? undefined);
   }
   if (tryAutoInstallGuard()) {
-    return activeGuard!.consume(usage) ?? undefined;
+    return finalizeDecision(activeGuard!.consume(usage) ?? undefined);
   }
-  if (isLicenseDevBypass()) return undefined;
+  if (isLicenseDevBypass()) return { watermarkText: DEV_WATERMARK };
   throw new PdfEngineError(
     PdfErrorCode.LICENSE_REQUIRED,
     "PDF generation requires a license. Install a guard via the licensing client " +
@@ -355,7 +399,10 @@ function tryAutoInstallGuard(): boolean {
     },
   };
 
-  setLicenseGuard(guard);
+  // The auto-guard's authority is the license server itself (authorize/usage
+  // round-trips), so it installs on the verified path: the server decides
+  // trial/over-limit watermarks, and fully licensed output is clean.
+  setVerifiedLicenseGuard(guard);
   return true;
 }
 
@@ -364,6 +411,102 @@ interface AuthorizeOutcome {
   watermarkText: string | undefined;
   blocked: boolean;
   reason: string;
+}
+
+// ---------------------------------------------------------------------------
+// Authorize-response signature verification (Ed25519, canonical v2)
+// ---------------------------------------------------------------------------
+
+let serverPubkeysOverride: Record<string, string> | undefined;
+
+/**
+ * INTERNAL — overrides the baked server public keys (tests only). Like
+ * {@link setVerifiedLicenseGuard}, unreachable for package consumers via the
+ * exports map.
+ */
+export function overrideServerPublicKeys(keys: Record<string, string> | undefined): void {
+  serverPubkeysOverride = keys;
+}
+
+function serverPubkeys(): Record<string, string> {
+  return serverPubkeysOverride ?? bakedServerPubkeys;
+}
+
+/**
+ * Canonical bytes the server signs (must stay byte-for-byte identical to the
+ * server's `signAuthorize` and the licensing client's `canonicalAuthPayload`):
+ * `kid|key|granted|remaining|resetAt|nonce`. The nonce is the one THIS client
+ * generated for the request, so a captured "allow" cannot be replayed.
+ */
+function canonicalAuthorizePayload(
+  kid: string,
+  key: string,
+  r: { granted: number; remaining: number; resetAt?: string | null | undefined },
+  nonce: string,
+): Uint8Array {
+  return new TextEncoder().encode(`${kid}|${key}|${r.granted}|${r.remaining}|${r.resetAt ?? ""}|${nonce}`);
+}
+
+function pemToSpkiDer(pem: string): Uint8Array {
+  const b64 = pem.replace(/-----(BEGIN|END) PUBLIC KEY-----/g, "").replace(/\s+/g, "");
+  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+}
+
+/**
+ * Verifies an Ed25519 signature. Uses node:crypto when available (Node),
+ * otherwise WebCrypto (browser). Returns false — never throws — so callers
+ * fail closed on any verification problem, including a runtime with no crypto.
+ */
+async function verifyEd25519(publicKeyPem: string, data: Uint8Array, signatureBase64: string): Promise<boolean> {
+  let sig: Uint8Array;
+  try {
+    sig = Uint8Array.from(atob(signatureBase64), (c) => c.charCodeAt(0));
+  } catch {
+    return false;
+  }
+  try {
+    const getBuiltinModule = (globalThis as { process?: { getBuiltinModule?: (n: string) => unknown } }).process
+      ?.getBuiltinModule;
+    const nodeCrypto = getBuiltinModule?.("node:crypto") as
+      | { verify(alg: null, data: Uint8Array, key: unknown, sig: Uint8Array): boolean; createPublicKey(k: string): unknown }
+      | undefined;
+    if (nodeCrypto?.verify) {
+      return nodeCrypto.verify(null, data, nodeCrypto.createPublicKey(publicKeyPem), sig);
+    }
+    const subtle = globalThis.crypto?.subtle;
+    if (!subtle) return false;
+    const key = await subtle.importKey("spki", pemToSpkiDer(publicKeyPem) as unknown as BufferSource, { name: "Ed25519" }, false, ["verify"]);
+    return await subtle.verify({ name: "Ed25519" }, key, sig as unknown as BufferSource, data as unknown as BufferSource);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Validates a signed authorize response against the baked public keys. When no
+ * keys are baked (dev builds) verification is skipped. With keys baked, a
+ * missing signature, unknown kid, or bad signature all fail — the caller
+ * treats the response as granting nothing (fail closed), never as a hard block
+ * (a transient MITM/misconfig should not poison the license state).
+ */
+async function verifyAuthorizeResponse(
+  key: string,
+  nonce: string,
+  data: { granted?: number; remaining?: number; resetAt?: string | null; signature?: string; kid?: string },
+): Promise<boolean> {
+  const keys = serverPubkeys();
+  if (Object.keys(keys).length === 0) return true; // no baked keys — transport trust (dev)
+  if (!data.signature) return false;
+  const kid = data.kid ?? "v1";
+  const pem = keys[kid];
+  if (!pem) return false;
+  const payload = canonicalAuthorizePayload(
+    kid,
+    key,
+    { granted: data.granted ?? 0, remaining: data.remaining ?? 0, resetAt: data.resetAt },
+    nonce,
+  );
+  return verifyEd25519(pem, payload, data.signature);
 }
 
 /** Single authorize round-trip to the server. Never throws — reports outcome. */
@@ -384,7 +527,21 @@ async function authorizeRequest(state: AutoGuardState, requested: number): Promi
     return { granted: 0, watermarkText: undefined, blocked: true, reason: data.error ?? "hard_blocked" };
   }
   if (!res.ok) return { granted: 0, watermarkText: undefined, blocked: false, reason: "unavailable" };
-  const data = (await res.json()) as { granted?: number; watermark?: boolean; watermarkText?: string | null };
+  const data = (await res.json()) as {
+    granted?: number;
+    remaining?: number;
+    resetAt?: string | null;
+    watermark?: boolean;
+    watermarkText?: string | null;
+    signature?: string;
+    kid?: string;
+  };
+  // With public keys baked in, only a response provably signed by the license
+  // server grants pages. A spoofed server (DNS/proxy tampering) fails here and
+  // the lease stays empty — generation is refused rather than un-metered.
+  if (!(await verifyAuthorizeResponse(state.key, nonce, data))) {
+    return { granted: 0, watermarkText: undefined, blocked: false, reason: "bad_signature" };
+  }
   return {
     granted: typeof data.granted === "number" ? data.granted : 0,
     watermarkText: data.watermark ? data.watermarkText ?? "Over Limit" : undefined,

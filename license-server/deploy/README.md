@@ -75,6 +75,23 @@ HOSTS="10.0.0.11 10.0.0.12" scripts/deploy.sh $(git rev-parse --short HEAD)
 Schema changes: run `scripts/migrate.sh` against prod **before** deploying the
 image that needs them (drizzle-kit push is additive-safe; review the plan).
 
+## Releasing the client library (after this server is live)
+
+The core library bakes licensing constants at build time
+(`scripts/bake-license-server.mjs`, runs on `prebuild`). A production npm
+release MUST be built with:
+
+```sh
+ZEROPDF_LICENSE_SERVER=https://<public-domain> \
+ZEROPDF_LICENSE_PUBKEYS='{"v1":"-----BEGIN PUBLIC KEY-----\n..."}' \
+npm publish   # prepublishOnly runs the bake + build + tests
+```
+
+The pubkeys map is kid-keyed (get the PEM from the server's `/v1/public-key`;
+keep old kids during signing-key rotation). Without baked keys the auto-guard
+skips signature verification of authorize responses (the bake script warns);
+without the URL it points at localhost. Both are release blockers.
+
 ## Operations notes
 
 - **Connections**: DB1-4 caps ~100 connections. `PG_POOL_MAX=15` × 2 instances
