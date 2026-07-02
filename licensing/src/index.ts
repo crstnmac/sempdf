@@ -23,7 +23,14 @@
  * silently grant quota.
  */
 import { PdfEngineError, PdfErrorCode } from "@sempdf/sempdf-pdf";
-import { setLicenseGuard, type GenerationUsage, type LicenseGuard, type LicenseGuardDecision } from "@sempdf/sempdf-pdf/license-guard";
+import {
+  setLicenseGuard,
+  getLicenseInstallChallenge,
+  setLicenseGuardWithProof,
+  type GenerationUsage,
+  type LicenseGuard,
+  type LicenseGuardDecision,
+} from "@sempdf/sempdf-pdf/license-guard";
 
 export interface LicenseClientOptions {
   /** The license key issued by the server. */
@@ -107,6 +114,8 @@ export class LicenseClient {
   private watermark = false;
   private watermarkText: string | undefined;
   private lastGoodCheckout = 0;
+  /** True once the guard was re-installed on the core's verified path. */
+  private proofInstalled = false;
 
   constructor(options: LicenseClientOptions) {
     if (!options.key) throw new PdfEngineError(PdfErrorCode.INVALID_OPERATION, "License key is required.");
@@ -181,14 +190,29 @@ export class LicenseClient {
     // Flush prior usage opportunistically so server counters stay accurate.
     await this.flush().catch(() => {});
 
+    // Until the guard is proof-verified, authorize against a core-issued
+    // install challenge so this response doubles as the install proof.
+    const challenge = this.proofInstalled ? undefined : getLicenseInstallChallenge();
+
     let response: AuthorizeResponse | undefined;
     try {
-      response = await this.authorize(units);
+      response = await this.authorize(units, challenge);
     } catch (err) {
       return this.handleOutage(units, err);
     }
 
     this.verifySignature(response);
+    if (challenge !== undefined && response.granted > 0) {
+      // Upgrade to the verified (watermark-free) path: the core re-verifies the
+      // signature over ITS challenge nonce against the baked public keys. On
+      // any failure keep running unverified — output is watermarked, not broken.
+      try {
+        await setLicenseGuardWithProof(this.asGuard(), { key: this.options.key, ...response });
+        this.proofInstalled = true;
+      } catch {
+        /* stays on the unverified path */
+      }
+    }
     if (response.granted <= 0) {
       throw new PdfEngineError(PdfErrorCode.LICENSE_QUOTA_EXCEEDED, "License quota exhausted; the server granted no further units.", {
         remaining: response.remaining,
@@ -242,8 +266,8 @@ export class LicenseClient {
     );
   }
 
-  private async authorize(requested: number): Promise<AuthorizeResponse> {
-    const nonce = randomNonce();
+  private async authorize(requested: number, nonceOverride?: string): Promise<AuthorizeResponse> {
+    const nonce = nonceOverride ?? randomNonce();
     const body = await this.post("/v1/authorize", {
       requested,
       nonce,
@@ -320,15 +344,22 @@ export async function createLicenseClient(options: LicenseClientOptions): Promis
 /**
  * Canonical bytes the server signs and the client verifies.
  *
- * FORM (v2): `kid|key|granted|remaining|resetAt|nonce`. The leading `kid`
- * (defaulting to "v1" when the server omits it) lets the server rotate signing
- * keys: the client reads `kid` from the response, selects the matching public
- * key, and reconstructs the SAME string that begins with that kid. Must stay
- * byte-for-byte identical to the server's `signAuthorize` canonical form.
+ * FORM (v3): `kid|key|granted|remaining|resetAt|nonce|watermark|watermarkText`.
+ * The leading `kid` (defaulting to "v1" when the server omits it) lets the
+ * server rotate signing keys: the client reads `kid` from the response,
+ * selects the matching public key, and reconstructs the SAME string that
+ * begins with that kid. v3 folds the watermark flag (`1`/`0`) and text into
+ * the signature so a tampering proxy cannot strip a trial watermark; the text
+ * is last so embedded `|` cannot shift earlier fields. Must stay byte-for-byte
+ * identical to the server's `signAuthorize` canonical form.
  */
-export function canonicalAuthPayload(key: string, r: Pick<AuthorizeResponse, "granted" | "remaining" | "resetAt" | "nonce" | "kid">): Uint8Array {
+export function canonicalAuthPayload(
+  key: string,
+  r: Pick<AuthorizeResponse, "granted" | "remaining" | "resetAt" | "nonce" | "kid" | "watermark" | "watermarkText">,
+): Uint8Array {
   const kid = r.kid ?? "v1";
-  const text = `${kid}|${key}|${r.granted}|${r.remaining}|${r.resetAt ?? ""}|${r.nonce}`;
+  const text =
+    `${kid}|${key}|${r.granted}|${r.remaining}|${r.resetAt ?? ""}|${r.nonce}|${r.watermark ? 1 : 0}|${r.watermarkText ?? ""}`;
   return new TextEncoder().encode(text);
 }
 

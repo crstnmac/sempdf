@@ -105,7 +105,18 @@ machine.post("/authorize", async (c) => {
 
   try {
     const result = await authorize(key, requested, { nonce, jobId, jobDescription, endpoint: "/v1/authorize", meta });
-    const { signature, kid } = signAuthorize({ key, granted: result.granted, remaining: result.remaining, resetAt: result.resetAt, nonce });
+    const watermarkText = result.watermark ? TRIAL_WATERMARK_TEXT : null;
+    // Canonical v3: watermark flag + text are inside the signed payload, so a
+    // tampering proxy cannot strip the trial watermark from a valid response.
+    const { signature, kid } = signAuthorize({
+      key,
+      granted: result.granted,
+      remaining: result.remaining,
+      resetAt: result.resetAt,
+      nonce,
+      watermark: result.watermark,
+      watermarkText,
+    });
     return c.json({
       granted: result.granted,
       remaining: result.remaining,
@@ -114,7 +125,7 @@ machine.post("/authorize", async (c) => {
       kid,
       signature,
       watermark: result.watermark,
-      watermarkText: result.watermark ? TRIAL_WATERMARK_TEXT : null,
+      watermarkText,
       status: result.status,
       hardBlockAt: result.hardBlockAt,
     });
