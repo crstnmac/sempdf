@@ -92,7 +92,7 @@ docker run -d --name sempdf-dev-db \
 [Secrets](#secrets--generation-reference)); point `DATABASE_URL` at the dev
 container:
 
-```
+```sh
 DATABASE_URL=postgres://sempdf:sempdf@localhost:5433/sempdf_license
 ```
 
