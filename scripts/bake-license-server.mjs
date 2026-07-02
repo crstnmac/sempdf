@@ -2,31 +2,61 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// Bakes release-time licensing constants into src/internal/license-server.ts:
+//   A11YDOCS_LICENSE_SERVER   → bakedServerUrl (license server base URL)
+//   A11YDOCS_LICENSE_PUBKEYS  → bakedServerPubkeys, JSON map {kid: "SPKI PEM"}
+//   A11YDOCS_LICENSE_PUBKEY   → single-PEM shorthand; kid from
+//                               A11YDOCS_LICENSE_KID (default "v1")
+// Values not provided are preserved from the existing file, so local rebuilds
+// never wipe what a release build baked.
+
 const server = process.env.A11YDOCS_LICENSE_SERVER;
+const pubkeysJson = process.env.A11YDOCS_LICENSE_PUBKEYS;
+const pubkeyPem = process.env.A11YDOCS_LICENSE_PUBKEY;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const target = resolve(__dirname, "../src/internal/license-server.ts");
 
 const pkg = JSON.parse(readFileSync(resolve(__dirname, "../package.json"), "utf8"));
 const versionLine = `export const bakedLibVersion = ${JSON.stringify(pkg.version)};\n`;
 
-// Preserve previously baked server URL when env var is not set.
-let currentUrl = "undefined";
-if (!server) {
-  try {
-    const src = readFileSync(target, "utf8");
-    const m = src.match(/export const bakedServerUrl\s*=\s*(.+);/);
-    if (m && m[1]) currentUrl = m[1];
-  } catch { /* file doesn't exist or can't be read */ }
+let existing = "";
+try {
+  existing = readFileSync(target, "utf8");
+} catch { /* file doesn't exist yet */ }
+
+function preserved(name, fallback) {
+  const m = existing.match(new RegExp(`export const ${name}(?::[^=]+)?\\s*=\\s*([\\s\\S]+?);\\n`));
+  return m?.[1]?.trim() ?? fallback;
 }
 
 const serverLine = server
   ? `export const bakedServerUrl = ${JSON.stringify(server)};\n`
-  : `export const bakedServerUrl = ${currentUrl};\n`;
+  : `export const bakedServerUrl = ${preserved("bakedServerUrl", "undefined")};\n`;
 
-writeFileSync(target, serverLine + versionLine);
+let pubkeys;
+if (pubkeysJson) {
+  pubkeys = JSON.parse(pubkeysJson); // {kid: pem}
+} else if (pubkeyPem) {
+  pubkeys = { [process.env.A11YDOCS_LICENSE_KID ?? "v1"]: pubkeyPem };
+}
+const preservedKeys = preserved("bakedServerPubkeys", "{}");
+const pubkeysLine = pubkeys
+  ? `export const bakedServerPubkeys: Record<string, string> = ${JSON.stringify(pubkeys)};\n`
+  : `export const bakedServerPubkeys: Record<string, string> = ${preservedKeys};\n`;
 
-if (server) {
-  console.log(`[bake-license-server] Baked server URL: ${server}`);
-} else {
-  console.log(`[bake-license-server] Preserved existing server URL (${currentUrl === "undefined" ? "none" : currentUrl})`);
+writeFileSync(target, serverLine + versionLine + pubkeysLine);
+
+console.log(`[bake-license-server] server URL: ${server ?? `preserved (${preserved("bakedServerUrl", "none")})`}`);
+console.log(`[bake-license-server] pubkeys: ${pubkeys ? Object.keys(pubkeys).join(", ") : preservedKeys === "{}" ? "none" : "preserved"}`);
+
+// A production build with a real server URL but no verification keys silently
+// downgrades to transport trust — make that mistake loud.
+const finalUrl = server ? JSON.stringify(server) : preserved("bakedServerUrl", "undefined");
+const keysEmpty = pubkeys ? Object.keys(pubkeys).length === 0 : preservedKeys === "{}";
+if (finalUrl.includes("https://") && keysEmpty) {
+  console.warn(
+    "[bake-license-server] WARNING: production server URL baked WITHOUT " +
+      "A11YDOCS_LICENSE_PUBKEYS — authorize responses will NOT be signature-" +
+      "verified. Bake the server's Ed25519 public key(s) for release builds.",
+  );
 }

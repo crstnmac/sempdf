@@ -173,7 +173,10 @@ resizerEl.addEventListener("keydown", (event) => {
 (async () => {
   // The library is secure-by-default: with no license guard installed it
   // refuses to serialize. The playground is a public demo, so install a
-  // permissive guard that allows unlimited local generation.
+  // permissive guard that allows unlimited local generation. Guards installed
+  // through the public API are unverified, so every playground PDF carries the
+  // fixed "UNLICENSED — evaluation only" watermark; clean output requires the
+  // server-backed auto-guard (A11YDOCS_LICENSE_KEY).
   const { setLicenseGuard } = await import("@barrierbreak/a11ydocs-pdf/license-guard");
   setLicenseGuard({ consume() {} });
 
