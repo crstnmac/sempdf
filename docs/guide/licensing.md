@@ -5,9 +5,9 @@ Generation is refused with `PdfErrorCode.LICENSE_REQUIRED` unless a license
 guard is installed — and only the server-backed auto-guard (a valid
 `SEMPDF_LICENSE_KEY`) produces watermark-free output. Everything else is
 visibly stamped: `SEMPDF_LICENSE_DEV=1` (Node only) allows generation for
-local development but marks every page `DEVELOPMENT — not for distribution`,
+local development but marks every page `DEVELOPMENT - NOT FOR DISTRIBUTION`,
 and any guard installed through the public `setLicenseGuard()` marks every page
-`UNLICENSED — evaluation only` (the text is fixed; a guard cannot override it).
+`UNLICENSED - EVALUATION ONLY` (the text is fixed; a guard cannot override it).
 In the browser there is no `process.env`, so a guard must be installed
 explicitly — its output carries the unlicensed watermark.
 :::
@@ -19,7 +19,7 @@ Licensing has two parts:
 
 You normally use the **auto-guard** (below) — it is the only path that produces
 watermark-free output. A guard you install yourself allows generation but the
-output is always stamped `UNLICENSED — evaluation only` (fine for demos and
+output is always stamped `UNLICENSED - EVALUATION ONLY` (fine for demos and
 internal previews):
 
 ```ts

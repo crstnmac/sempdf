@@ -74,10 +74,10 @@ let installChallenge: string | null = null;
  * the verified path (the server-backed auto-guard, or internal callers via
  * {@link setVerifiedLicenseGuard}).
  */
-const UNVERIFIED_WATERMARK = "UNLICENSED — evaluation only";
+const UNVERIFIED_WATERMARK = "UNLICENSED - EVALUATION ONLY";
 
 /** Watermark stamped when generating under the SEMPDF_LICENSE_DEV bypass. */
-const DEV_WATERMARK = "DEVELOPMENT — not for distribution";
+const DEV_WATERMARK = "DEVELOPMENT - NOT FOR DISTRIBUTION";
 
 /**
  * Installs (or clears, with `undefined`) the process-wide license guard. Called

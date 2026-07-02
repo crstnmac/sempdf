@@ -256,7 +256,13 @@ function applyLicenseWatermark(pages: readonly InternalPageModel[], text: string
       continue;
     }
     const lines = text.split(/\r?\n/).filter((line) => line.length > 0);
-    const fontSize = Math.max(28, Math.min(page.size.width, page.size.height) * 0.07);
+    // Size the mark to the page, then shrink so the longest line still fits the
+    // diagonal band (~0.6em average glyph width for Helvetica-Bold). Long texts
+    // previously ran off the page edge at the fixed size.
+    const longestLine = Math.max(...lines.map((line) => line.length), 1);
+    const baseSize = Math.max(28, Math.min(page.size.width, page.size.height) * 0.07);
+    const maxLineWidth = page.size.width * 0.78;
+    const fontSize = Math.max(14, Math.min(baseSize, maxLineWidth / (longestLine * 0.6)));
     const startY = ((lines.length - 1) * fontSize * 0.58);
     const radians = -28 * Math.PI / 180;
     const watermarkOps: PdfOp[] = [{
@@ -280,7 +286,8 @@ function applyLicenseWatermark(pages: readonly InternalPageModel[], text: string
         type: "text",
         text: line,
         options: {
-          x: -page.size.width * 0.34,
+          // Center the line on the page middle using the same width estimate.
+          x: -(line.length * 0.6 * fontSize) / 2,
           y: startY - index * fontSize * 1.16,
           font: "Helvetica-Bold",
           fontSize,
