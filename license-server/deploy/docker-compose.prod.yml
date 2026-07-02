@@ -1,0 +1,42 @@
+# Production compose — runs on EACH b3-8 instance (api + web pair per host).
+# Postgres is the OVH managed cluster (external), never a container here.
+#
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d
+#
+# Requires .env next to this file (see .env.example). REGISTRY + TAG select
+# the images pushed by scripts/push.sh.
+name: zeropdf-license
+
+services:
+  api:
+    image: ${REGISTRY}/license-api:${TAG:-latest}
+    container_name: zeropdf-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: "8787"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8787/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+
+  web:
+    image: ${REGISTRY}/license-web:${TAG:-latest}
+    container_name: zeropdf-web
+    restart: unless-stopped
+    environment:
+      API_UPSTREAM: http://api:8787
+    ports:
+      # LB backend targets this port on the instance's private IP.
+      - "80:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
