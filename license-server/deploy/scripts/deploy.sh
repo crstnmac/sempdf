@@ -19,8 +19,9 @@ REMOTE_DIR="${REMOTE_DIR:-/opt/sempdf}"
 
 for host in $HOSTS; do
   echo "── Deploying ${TAG} to ${host} ──"
-  # Ship the compose file (env stays on the host — it holds secrets).
-  scp -q docker-compose.prod.yml "${SSH_USER}@${host}:${REMOTE_DIR}/docker-compose.prod.yml"
+  # Ship compose + collector config (env stays on the host — it holds secrets).
+  scp -q docker-compose.prod.yml otel-collector-config.yaml \
+    "${SSH_USER}@${host}:${REMOTE_DIR}/"
   ssh "${SSH_USER}@${host}" "
     set -euo pipefail
     cd '${REMOTE_DIR}'
