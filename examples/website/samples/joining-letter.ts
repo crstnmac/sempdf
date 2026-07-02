@@ -1,22 +1,47 @@
 import { createDocument, rgb } from "@zeropdf/zeropdf-pdf";
 
+async function ttf(url: string): Promise<Uint8Array> {
+  return new Uint8Array(await (await fetch(url)).arrayBuffer());
+}
+
+const cdn = "https://cdn.jsdelivr.net/npm/@expo-google-fonts";
+const FONTS = {
+  inter400: `${cdn}/inter/400Regular/Inter_400Regular.ttf`,
+  inter700: `${cdn}/inter/700Bold/Inter_700Bold.ttf`,
+};
+
+const companyLogo = fetch("examples/assets/company-logo.png");
+const logo = await companyLogo.then((res) => res.arrayBuffer());
+
 const doc = createDocument({
-  title: "Joining Letter - John Adam",
   language: "en-US",
-  info: { author: "Star Solutions" },
+  conformance: "pdfua-1",
+  tagged: true,
   structureRoot: "Document",
-  defaults: { font: "Helvetica", fontSize: 11, color: rgb(0.1, 0.1, 0.15) },
+  title: "Joining Letter - John Doe",
+  info: { author: "Lorem Ipsum" },
+  defaults: { fontSize: 11, color: rgb(0.1, 0.1, 0.15) },
 });
+
+const [inter400, inter700] = await Promise.all([
+  ttf(FONTS.inter400),
+  ttf(FONTS.inter700),
+]);
 
 const BRAND = rgb(0.05, 0.25, 0.55);
 const MUTED = rgb(0.45, 0.45, 0.5);
 const TABLE_BORDER = rgb(0.72, 0.76, 0.82);
 const TABLE_HEADER = rgb(0.92, 0.94, 0.98);
 
+doc.registerFontFamily("Inter", { regular: inter400, bold: inter700 });
+
 doc.renderTemplate({
+  autoOutline: { maxLevel: 6 },
+
   page: {
     size: "A4",
     margin: 56,
+    font: "Inter",
     spacing: {
       paragraphAfter: 8,
       headingBefore: { 2: 18, 3: 12 },
@@ -25,9 +50,9 @@ doc.renderTemplate({
       tableAfter: 14,
     },
   },
-  autoOutline: { maxLevel: 6 },
+
   styles: {
-    heading1: { fontSize: 22, color: BRAND },
+    heading1: { fontSize: 22, color: BRAND, marginTop: 20 },
     heading2: { fontSize: 16, color: BRAND },
     paragraph: { fontSize: 11, lineHeight: 17 },
     muted: { fontSize: 9, color: MUTED, lineHeight: 14 },
@@ -35,34 +60,32 @@ doc.renderTemplate({
 
   blocks: [
     {
+      type: "png",
+      data: logo,
+      options: { altText: "Lorem Ipsum Logo", maxWidth: 100 },
+    },
+    {
       type: "heading",
-      text: "Star Solutions",
+      text: "Lorem Ipsum",
       options: { level: 1 },
     },
-    {
-      type: "paragraph",
-      text: "42, Tech Park Avenue, Whitefield, Bengaluru - 560066  |  hr@starsolutions.in  |  www.starsolutions.in",
-      class: "muted",
-    },
 
     {
       type: "paragraph",
-      text: "To,\nMr. John Adam\n47, Rose Garden Apartments\nKoramangala, Bengaluru - 560034",
-      options: { marginBottom: 20 }
+      text: "To,\nMr. John Doe\n47, Lorem ipsum dolor sit amet",
+      options: { marginBottom: 20 },
     },
     {
       type: "paragraph",
-      text: "Dear Mr. John Adam,",
+      text: "Dear Mr. John Doe,",
     },
-
     {
       type: "paragraph",
       text: "Subject: Offer of Employment - Senior Software Engineer",
     },
-
     {
       type: "paragraph",
-      text: "We are delighted to welcome you to Star Solutions Pvt. Ltd. Following the successful completion of our selection process, we are pleased to offer you the position of Senior Software Engineer within our Engineering department. This letter confirms the terms and conditions of your employment with us.",
+      text: "We are delighted to welcome you to Lorem Ipsum. Following the successful completion of our selection process, we are pleased to offer you the position of Senior Software Engineer within our Engineering department. This letter confirms the terms and conditions of your employment with us.",
     },
 
     {
@@ -75,7 +98,7 @@ doc.renderTemplate({
       rows: [
         [
           { text: "Full Name", header: true, bold: true },
-          { text: "Mr. John Adam" },
+          { text: "Mr. John Doe" },
         ],
         [
           { text: "Employee ID", header: true, bold: true },
@@ -90,10 +113,6 @@ doc.renderTemplate({
           { text: "Engineering - Platform Team" },
         ],
         [
-          { text: "Reporting To", header: true, bold: true },
-          { text: "Ms. Priya Sharma, Engineering Manager" },
-        ],
-        [
           { text: "Date of Joining", header: true, bold: true },
           { text: "01 July 2026" },
         ],
@@ -103,7 +122,7 @@ doc.renderTemplate({
         ],
         [
           { text: "Work Location", header: true, bold: true },
-          { text: "42, Tech Park Avenue, Whitefield, Bengaluru - 560066" },
+          { text: "47, Lorem ipsum dolor sit amet" },
         ],
         [
           { text: "Work Mode", header: true, bold: true },
@@ -135,16 +154,40 @@ doc.renderTemplate({
           { text: "Monthly (Rs.)", header: true, bold: true },
           { text: "Annual (Rs.)", header: true, bold: true },
         ],
-        ["Basic Salary",              "75,000.00",   "9,00,000.00"],
-        ["House Rent Allowance (HRA)", "30,000.00",  "3,60,000.00"],
-        ["Special Allowance",          "20,000.00",  "2,40,000.00"],
-        ["Transport Allowance",         "3,200.00",    "38,400.00"],
-        ["Medical Allowance",           "1,250.00",    "15,000.00"],
-        ["Employer PF Contribution",    "9,000.00",  "1,08,000.00"],
         [
-          { text: "Gross CTC", bold: true, header: true },
-          { text: "1,38,450.00", bold: true, header: true },
-          { text: "16,61,400.00", bold: true, header: true },
+          { text: "Basic Pay", header: true, scope: "row" },
+          { text: "Rs. 75,000.00" },
+          { text: "Rs. 9,00,000.00" },
+        ],
+        [
+          { text: "House Rent Allowance", header: true, scope: "row" },
+          { text: "Rs. 30,000.00" },
+          { text: "Rs. 3,60,000.00" },
+        ],
+        [
+          { text: "Special Allowance", header: true, scope: "row" },
+          { text: "Rs. 20,000.00" },
+          { text: "Rs. 2,40,000.00" },
+        ],
+        [
+          { text: "Transport Allowance", header: true, scope: "row" },
+          { text: "Rs. 3,200.00" },
+          { text: "Rs. 38,400.00" },
+        ],
+        [
+          { text: "Medical Allowance", header: true, scope: "row" },
+          { text: "Rs. 1,250.00" },
+          { text: "Rs. 15,000.00" },
+        ],
+        [
+          { text: "Employer PF Contribution", header: true, scope: "row" },
+          { text: "Rs. 9,000.00" },
+          { text: "Rs. 1,08,000.00" },
+        ],
+        [
+          { text: "Gross CTC", header: true, scope: "row" },
+          { text: "Rs. 1,38,450.00" },
+          { text: "Rs. 16,61,400.00" },
         ],
       ],
       options: {
@@ -168,13 +211,11 @@ doc.renderTemplate({
     {
       type: "list",
       items: [
-        { body: "Group Health Insurance: Coverage of Rs. 5,00,000 for employee and immediate family members." },
         { body: "Group Term Life Insurance: Coverage of Rs. 50,00,000." },
-        { body: "Annual Leave: 18 days of paid annual leave per calendar year." },
+        {
+          body: "Annual Leave: 18 days of paid annual leave per calendar year.",
+        },
         { body: "Sick Leave: 12 days per calendar year." },
-        { body: "Learning & Development Budget: Rs. 30,000 per year for certifications and courses." },
-        { body: "Internet Reimbursement: Rs. 1,000 per month for remote working days." },
-        { body: "Laptop and accessories provided by the company from Day 1." },
       ],
     },
 
@@ -186,12 +227,15 @@ doc.renderTemplate({
     {
       type: "list",
       items: [
-        { body: "This offer is contingent upon the satisfactory verification of your educational qualifications, previous employment records, and background check." },
-        { body: "You are required to submit all original documents for verification on or before your date of joining." },
-        { body: "During the probation period, either party may terminate employment with 15 days written notice. Post-confirmation, the notice period is 60 days." },
-        { body: "You will be bound by the company's Code of Conduct, Confidentiality Agreement, and Non-Disclosure Agreement, copies of which will be provided during onboarding." },
-        { body: "Any intellectual property developed in the course of your employment will remain the property of Star Solutions Pvt. Ltd." },
-        { body: "This offer lapses if not accepted in writing by 25 June 2026." },
+        {
+          body: "This offer is contingent upon the satisfactory verification of your educational qualifications, previous employment records, and background check.",
+        },
+        {
+          body: "You are required to submit all original documents for verification on or before your date of joining.",
+        },
+        {
+          body: "During the probation period, either party may terminate employment with 15 days written notice. Post-confirmation, the notice period is 60 days.",
+        },
       ],
     },
 
@@ -202,23 +246,33 @@ doc.renderTemplate({
     },
     {
       type: "paragraph",
-      text: "Please report to the HR department at our Bengaluru office on 01 July 2026 at 9:30 AM. Kindly carry the following documents in original along with one set of self-attested photocopies:",
+      text: "Please report to the HR department at our office on 01 July 2026 at 9:30 AM. Kindly carry the following documents in original along with one set of self-attested photocopies:",
     },
     {
       type: "list",
       items: [
-        { body: "Government-issued photo ID (Aadhaar Card / Passport / Driving Licence)" },
-        { body: "PAN Card" },
-        { body: "Educational qualification certificates (10th, 12th, Degree, Post-graduation)" },
+        {
+          body: "Government-issued photo ID",
+        },
         { body: "Last 3 months' salary slips and latest Form 16" },
-        { body: "Experience letters and relieving letters from all previous employers" },
+        {
+          body: "Experience letters and relieving letters from all previous employers",
+        },
         { body: "2 recent passport-size photographs" },
-        { body: "Cancelled cheque or bank passbook for salary account setup" },
       ],
     },
     {
-      type: "paragraph",
-      text: "For any queries regarding onboarding, please contact our HR team at onboarding@starsolutions.in or call +91-80-4567-8910.",
+      type: "richParagraph",
+      runs: [
+        {
+          text: "For any queries regarding joining, please contact our HR team at ",
+        },
+        {
+          text: "hr@loremipsum.in",
+          link: "mailto:hr@loremipsum.in",
+          underline: true,
+        },
+      ],
     },
 
     {
@@ -228,18 +282,22 @@ doc.renderTemplate({
     },
     {
       type: "paragraph",
-      text: "Please indicate your acceptance of this offer by signing and returning a copy of this letter to hr@starsolutions.in on or before 25 June 2026. By accepting this offer, you confirm that you are not bound by any non-compete or other restrictive agreements that would prevent you from joining Star Solutions Pvt. Ltd.",
+      text: "Please indicate your acceptance of this offer by signing and returning a copy of this letter on or before 25 June 2026. By accepting this offer, you confirm that you are not bound by any non-compete or other restrictive agreements that would prevent you from joining Lorem Ipsum.",
     },
     {
       type: "table",
       rows: [
         [
-          { text: "For Star Solutions Pvt. Ltd.", header: true, bold: true },
+          {
+            text: "For Lorem Ipsum.",
+            header: true,
+            bold: true,
+          },
           { text: "Accepted by Employee", header: true, bold: true },
         ],
         [
-          "Signature: ___________________\nName: Ms. Kavita Rao\nDesignation: Chief HR Officer\nDate: 16 June 2026",
-          "Signature: ___________________\nName: Mr. John Adam\nDate: ___________________",
+          "Signature: ___________________\nName: Ms. Jane Doe\nDesignation: Chief HR Officer\nDate: 16 June 2026",
+          "Signature: ___________________\nName: Mr. John Doe\nDate: ___________________",
         ],
       ],
       options: {
@@ -253,8 +311,10 @@ doc.renderTemplate({
     {
       type: "richParagraph",
       runs: [
-        { text: "We look forward to having you on board and wish you a rewarding career at " },
-        { text: "Star Solutions", bold: true, color: BRAND },
+        {
+          text: "We look forward to having you on board and wish you a rewarding career at ",
+        },
+        { text: "Lorem Ipsum", bold: true, color: BRAND },
         { text: ". Welcome to the team!" },
       ],
     },
@@ -263,15 +323,15 @@ doc.renderTemplate({
   footer: ({ pageNumber, totalPages }) => [
     {
       type: "paragraph",
-      text: `Star Solutions - Confidential  |  Joining Letter - Mr. John Adam  |  Ref: SS/HR/JL/2026/0148  |  Page ${pageNumber} of ${totalPages}`,
+      text: "Generated by Lorem Ipsum",
       options: {
-        fontSize: 8,
-        color: MUTED,
-        align: "center",
+        fontSize: 10,
         tag: pageNumber === totalPages ? "P" : "Artifact",
       },
     },
   ],
+
+  pageNumber: { region: "footer", align: "right" },
 });
 
 export default doc;

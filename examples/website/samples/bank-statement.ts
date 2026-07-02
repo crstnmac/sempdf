@@ -18,8 +18,19 @@ const doc = createDocument({
   conformance: "pdfua-1",
   tagged: true,
   structureRoot: "Document",
-  info: { author: "NovaBanc" },
-  defaults: { font: "Helvetica", fontSize: 11, color: rgb(0.1, 0.1, 0.15) },
+  title: "Bank Statement",
+  info: { author: "Lorem Ipsum" },
+  defaults: { fontSize: 11, color: rgb(0.1, 0.1, 0.15) },
+  encryption: {
+    algorithm: "rc4-128",
+    userPassword: "admin123",
+    permissions: {
+      printing: false,
+      modifying: false,
+      copying: false,
+      annotating: false,
+    },
+  },
 });
 
 const BRAND  = rgb(0.05, 0.25, 0.55);
