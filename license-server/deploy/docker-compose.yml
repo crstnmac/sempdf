@@ -1,0 +1,92 @@
+# Local full-stack test: postgres + api + web.
+# From license-server/deploy/:  docker compose up --build
+# Then: web http://localhost:8080, api via proxy (http://localhost:8080/healthz).
+# One-off jobs (profiles):
+#   docker compose run --rm migrate       # drizzle-kit push (app + auth tables)
+#   docker compose run --rm superadmin    # bootstrap superadmin from SUPERADMIN_* env
+name: sempdf-license
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: sempdf
+      POSTGRES_PASSWORD: sempdf
+      POSTGRES_DB: sempdf
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sempdf"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/api.Dockerfile
+    environment:
+      DATABASE_URL: postgres://sempdf:sempdf@db:5432/sempdf
+      PORT: "8787"
+      APP_URL: http://localhost:8080
+      BETTER_AUTH_URL: http://localhost:8080
+      TRUSTED_ORIGINS: http://localhost:8080
+      # Dev-only placeholder secrets — real values come from .env in prod.
+      BETTER_AUTH_SECRET: dev-only-secret-change-me
+      LICENSE_SIGNING_KEY: ${LICENSE_SIGNING_KEY:-dev-only-signing-key}
+      LICENSE_SIGNING_KID: v1
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8787/healthz || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/web.Dockerfile
+    environment:
+      API_UPSTREAM: http://api:8787
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+  # Runs drizzle-kit from the dev-dependency build stage; prod images stay lean.
+  migrate:
+    profiles: [tools]
+    build:
+      context: ..
+      dockerfile: deploy/api.Dockerfile
+      target: build
+    working_dir: /repo/apps/api
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://sempdf:sempdf@db:5432/sempdf}
+    command: npx drizzle-kit push
+    depends_on:
+      db:
+        condition: service_healthy
+
+  superadmin:
+    profiles: [tools]
+    build:
+      context: ..
+      dockerfile: deploy/api.Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://sempdf:sempdf@db:5432/sempdf}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-dev-only-secret-change-me}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:8080}
+      LICENSE_SIGNING_KEY: ${LICENSE_SIGNING_KEY:-dev-only-signing-key}
+      SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL:-}
+      SUPERADMIN_NAME: ${SUPERADMIN_NAME:-}
+      SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD:-}
+    command: node apps/api/dist/scripts/create-superadmin.js
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
