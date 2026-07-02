@@ -54,3 +54,4 @@ Thumbs.db
 
 # Test build output for the licensing package.
 dist-test
+.trust-model-demo/
