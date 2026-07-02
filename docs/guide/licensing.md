@@ -2,9 +2,14 @@
 
 ::: danger Secure by default
 Generation is refused with `PdfErrorCode.LICENSE_REQUIRED` unless a license
-guard is installed. For the library's own tests, examples, and local trials, set
-`SEMPDF_LICENSE_DEV=1` (Node only) to allow unlicensed generation. In the
-browser there is no `process.env`, so you must install a guard explicitly.
+guard is installed — and only the server-backed auto-guard (a valid
+`SEMPDF_LICENSE_KEY`) produces watermark-free output. Everything else is
+visibly stamped: `SEMPDF_LICENSE_DEV=1` (Node only) allows generation for
+local development but marks every page `DEVELOPMENT — not for distribution`,
+and any guard installed through the public `setLicenseGuard()` marks every page
+`UNLICENSED — evaluation only` (the text is fixed; a guard cannot override it).
+In the browser there is no `process.env`, so a guard must be installed
+explicitly — its output carries the unlicensed watermark.
 :::
 
 Licensing has two parts:
@@ -12,13 +17,19 @@ Licensing has two parts:
 - The **core library** exposes a guard hook at `@sempdf/sempdf-pdf/license-guard` (`setLicenseGuard`, `isLicenseDevBypass`). It has no network code.
 - The **licensing client** that talks to your license server ships separately as the private package `@sempdf/sempdf-pdf-licensing` (installed from the sempdf registry). It installs a guard via the hook above.
 
-You normally just use the client; it wires the guard for you. To allow generation
-without the client (e.g. an internal tool), install a permissive guard yourself:
+You normally use the **auto-guard** (below) — it is the only path that produces
+watermark-free output. A guard you install yourself allows generation but the
+output is always stamped `UNLICENSED — evaluation only` (fine for demos and
+internal previews):
 
 ```ts
 import { setLicenseGuard } from "@sempdf/sempdf-pdf/license-guard";
-setLicenseGuard({ consume() {} }); // allow unlimited generation
+setLicenseGuard({ consume() {} }); // unlimited generation, watermarked output
 ```
+
+The same currently applies to guards installed by the licensing client package:
+until the signed-proof handshake ships, use the auto-guard for production
+(clean) output.
 
 ## Zero-config auto-guard (Node only)
 
