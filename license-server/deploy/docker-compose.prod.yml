@@ -25,6 +25,26 @@ services:
       driver: json-file
       options: { max-size: "20m", max-file: "5" }
 
+  # Ships api /metrics + all container logs to self-hosted SigNoz (OTLP gRPC).
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.116.1
+    container_name: a11ydocs-otel
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    environment:
+      SIGNOZ_OTLP_ENDPOINT: ${SIGNOZ_OTLP_ENDPOINT}
+      SIGNOZ_OTLP_INSECURE: ${SIGNOZ_OTLP_INSECURE:-true}
+      # host.name tags every metric/log line with which b3-8 it came from.
+      OTEL_RESOURCE_ATTRIBUTES: host.name=${HOST_TAG:-unknown},service.namespace=a11ydocs
+    depends_on:
+      - api
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
   web:
     image: ${REGISTRY}/license-web:${TAG:-latest}
     container_name: a11ydocs-web
