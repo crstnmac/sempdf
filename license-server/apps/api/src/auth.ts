@@ -43,10 +43,12 @@ export const auth = betterAuth({
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean),
-  // No self-serve signup: accounts are provisioned by Sales via the operator
-  // portal (POST /v1/admin/customers). Disabling signUp closes the public
-  // `/api/auth/sign-up/email` route so the DB can't be spammed with accounts.
-  emailAndPassword: { enabled: true, disableSignUp: true },
+  // Signup stays enabled: invited teammates self-register when accepting an org
+  // invitation (apps/web accept-invitation flow calls sign-up/email). A stray
+  // signup with no invitation lands in no organization and has no role, so it
+  // sees an empty portal; the abuse surface (junk account rows) is bounded by
+  // the auth rate limiter below rather than by disabling signup outright.
+  emailAndPassword: { enabled: true },
   // Throttle better-auth's own endpoints (sign-in, etc.) to blunt password
   // brute-force. The machine-route limiter does NOT cover /api/auth/*.
   rateLimit: {
