@@ -7,6 +7,7 @@ import { apiKeys, apiTelemetry, licenses, notificationSettings } from "../db/sch
 import { invitation, member, organization, user } from "../db/auth-schema.js";
 import { generateKey, hashKey, keyPrefix } from "../domain/keys.js";
 import { createApiKey, windowResetAt } from "../domain/licenses.js";
+import { assertSafeWebhookUrl, UnsafeUrlError } from "../domain/net-guard.js";
 import { sendEmail } from "../domain/email/mailer.js";
 import { renderInvitationEmail } from "../domain/email/templates.js";
 import { env } from "../env.js";
@@ -374,10 +375,22 @@ portalRoutes.put("/orgs/:orgId/notification-settings", async (c) => {
     return c.json({ error: "forbidden" }, 403);
   }
   const body = await c.req.json().catch(() => ({}));
+  // Validate the customer-supplied webhook URL up front (SSRF guard): the server
+  // POSTs to this URL out of band, so it must be an external https endpoint —
+  // never an internal/loopback/metadata address. Empty string clears it.
+  let webhookUrl: string | null = null;
+  if (body.webhookUrl !== undefined && body.webhookUrl !== null && String(body.webhookUrl).trim() !== "") {
+    try {
+      webhookUrl = assertSafeWebhookUrl(String(body.webhookUrl).trim()).toString();
+    } catch (err) {
+      if (err instanceof UnsafeUrlError) return c.json({ error: "invalid_webhook_url", reason: err.message }, 400);
+      throw err;
+    }
+  }
   const values = {
     accountId: orgId,
     emailTo: body.emailTo === undefined ? null : String(body.emailTo),
-    webhookUrl: body.webhookUrl === undefined ? null : String(body.webhookUrl),
+    webhookUrl,
     usageSummaryFrequency: body.usageSummaryFrequency === "monthly" ? ("monthly" as const) : ("weekly" as const),
     usageAlertsEnabled: body.usageAlertsEnabled !== false,
     overageAlertsEnabled: body.overageAlertsEnabled !== false,
@@ -442,11 +455,15 @@ portalRoutes.get("/orgs/:orgId/members", async (c) => {
 portalRoutes.post("/orgs/:orgId/invitations", async (c) => {
   const userId = c.get("userId");
   const orgId = c.req.param("orgId");
-  if (!isOrgAdmin(await userOrgRole(userId, orgId))) return c.json({ error: "forbidden" }, 403);
+  const callerRole = await userOrgRole(userId, orgId);
+  if (!isOrgAdmin(callerRole)) return c.json({ error: "forbidden" }, 403);
 
   const body = await c.req.json().catch(() => ({}));
   const email = String(body.email ?? "").trim().toLowerCase();
   const role = body.role === "admin" || body.role === "owner" ? body.role : "member";
+  // Only an owner may grant ownership. An org admin inviting as "owner" would be
+  // a privilege escalation (admin → owner), so reject it.
+  if (role === "owner" && callerRole !== "owner") return c.json({ error: "owner_role_requires_owner" }, 403);
   if (!email) return c.json({ error: "email_required" }, 400);
 
   const [row] = await db
@@ -495,10 +512,15 @@ portalRoutes.delete("/orgs/:orgId/invitations/:invId", async (c) => {
 portalRoutes.patch("/orgs/:orgId/members/:memberId", async (c) => {
   const userId = c.get("userId");
   const orgId = c.req.param("orgId");
-  if (!isOrgAdmin(await userOrgRole(userId, orgId))) return c.json({ error: "forbidden" }, 403);
+  const callerRole = await userOrgRole(userId, orgId);
+  if (!isOrgAdmin(callerRole)) return c.json({ error: "forbidden" }, 403);
   const body = await c.req.json().catch(() => ({}));
   const role = body.role === "admin" || body.role === "owner" || body.role === "member" ? body.role : null;
   if (!role) return c.json({ error: "invalid_role" }, 400);
+  // Promoting a member to owner is an ownership grant — owner-only. Without this
+  // an org admin could mint additional owners (or escalate themselves via a
+  // second account) past the admin/owner boundary.
+  if (role === "owner" && callerRole !== "owner") return c.json({ error: "owner_role_requires_owner" }, 403);
 
   const memberId = c.req.param("memberId");
   const [target] = await db

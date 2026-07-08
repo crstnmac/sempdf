@@ -5,6 +5,7 @@ import { notificationEvents, notificationSettings } from "../db/schema.js";
 import { organization } from "../db/auth-schema.js";
 import type { NotificationEventType } from "./policy.js";
 import { renderNotificationEmail, type NotificationData } from "./email/templates.js";
+import { assertResolvableSafeWebhookUrl } from "./net-guard.js";
 import { sendEmail } from "./email/mailer.js";
 
 export interface DeliveryResult {
@@ -144,10 +145,14 @@ async function drainOnce(): Promise<DeliveryResult> {
 
 async function postWebhook(url: string, body: string): Promise<boolean> {
   try {
-    const res = await fetch(url, {
+    // Re-validate + DNS-resolve at delivery time (defense in depth vs. DNS
+    // rebinding / a record that flipped to an internal IP after set-time).
+    const safeUrl = await assertResolvableSafeWebhookUrl(url);
+    const res = await fetch(safeUrl, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body,
+      redirect: "error", // a redirect could bounce us to an internal address
       signal: AbortSignal.timeout(10_000),
     });
     return res.ok;
