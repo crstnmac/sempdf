@@ -43,7 +43,22 @@ export const auth = betterAuth({
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean),
-  emailAndPassword: { enabled: true },
+  // No self-serve signup: accounts are provisioned by Sales via the operator
+  // portal (POST /v1/admin/customers). Disabling signUp closes the public
+  // `/api/auth/sign-up/email` route so the DB can't be spammed with accounts.
+  emailAndPassword: { enabled: true, disableSignUp: true },
+  // Throttle better-auth's own endpoints (sign-in, etc.) to blunt password
+  // brute-force. The machine-route limiter does NOT cover /api/auth/*.
+  rateLimit: {
+    enabled: process.env.AUTH_RATE_LIMIT_ENABLED !== "false",
+    window: Number(process.env.AUTH_RATE_LIMIT_WINDOW_S ?? 60),
+    max: Number(process.env.AUTH_RATE_LIMIT_MAX ?? 30),
+  },
+  advanced: {
+    // Mark session cookies Secure in production so they are never sent over
+    // plaintext http. Locally (http) this stays off so dev sign-in works.
+    useSecureCookies: process.env.NODE_ENV === "production",
+  },
   // `superadmin` is the global maintainer role for this SaaS (the operator
   // portal). Organization-level roles (owner/admin/member) are separate and
   // handled by the organization plugin.
