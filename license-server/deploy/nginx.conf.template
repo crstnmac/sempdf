@@ -7,6 +7,19 @@ server {
     root         /usr/share/nginx/html;
     index        index.html;
 
+    # Security headers for the SPA. `always` so they are sent on error responses
+    # too. CSP is the main XSS defense-in-depth: everything loads from 'self',
+    # the API is same-origin (connect-src 'self'), and framing is forbidden.
+    # style-src allows 'unsafe-inline' because React inline styles + the charting
+    # component emit inline <style>/style attributes; scripts have no such need.
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    # Enable when TLS terminates at/above this nginx (harmless behind an
+    # HTTPS-terminating LB since it only takes effect over HTTPS).
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
     # API + auth routes proxied to the license API container so the load
     # balancer needs a single backend. Preserve client IP for rate limiting.
     location /v1/ {
