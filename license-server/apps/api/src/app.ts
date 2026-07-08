@@ -1,3 +1,5 @@
+import { timingSafeEqual } from "node:crypto";
+
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
@@ -61,7 +63,17 @@ app.get("/readyz", async (c) => {
 });
 
 // Prometheus metrics: pool stats, request counters/latency, sweep freshness.
+// Optionally guarded by METRICS_TOKEN so operational internals aren't public.
 app.get("/metrics", async (c) => {
+  if (env.metricsToken) {
+    const presented = (c.req.header("authorization") ?? "").replace(/^Bearer\s+/i, "");
+    const expected = env.metricsToken;
+    const a = Buffer.from(presented);
+    const b = Buffer.from(expected);
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+      return c.json({ error: "unauthorized" }, 401);
+    }
+  }
   c.header("Content-Type", "text/plain; version=0.0.4");
   return c.body(await renderPrometheus());
 });

@@ -1,4 +1,5 @@
 import type { Context, MiddlewareHandler } from "hono";
+import { getConnInfo } from "@hono/node-server/conninfo";
 
 import { env } from "../env.js";
 import { recordRateLimited } from "../observability/metrics.js";
@@ -34,11 +35,30 @@ function sweepExpired(now: number): void {
   }
 }
 
-/** Best-effort client IP from common proxy headers, falling back to a constant. */
+/**
+ * Client IP for rate-limiting. `X-Forwarded-For` is client-controllable, so we
+ * only trust it up to the number of proxies we actually run in front of the app
+ * (TRUSTED_PROXY_COUNT). We take the Nth value from the RIGHT — the address the
+ * outermost trusted proxy observed — which a client cannot forge by prepending
+ * extra hops. With 0 trusted proxies we ignore XFF entirely and use the socket
+ * peer address, so a direct client can't rotate buckets by spoofing the header.
+ */
 function clientIp(c: Context): string {
-  const xff = c.req.header("x-forwarded-for");
-  if (xff) return xff.split(",")[0]!.trim();
-  return c.req.header("x-real-ip") ?? "unknown";
+  const hops = env.trustedProxyCount;
+  if (hops > 0) {
+    const xff = c.req.header("x-forwarded-for");
+    if (xff) {
+      const parts = xff.split(",").map((p) => p.trim()).filter(Boolean);
+      const idx = parts.length - hops;
+      const ip = parts[idx] ?? parts[0];
+      if (ip) return ip;
+    }
+  }
+  try {
+    return getConnInfo(c).remote.address ?? "unknown";
+  } catch {
+    return "unknown";
+  }
 }
 
 /** Identifies the caller for rate-limiting: api-key (from Bearer) + client IP. */

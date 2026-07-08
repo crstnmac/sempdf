@@ -68,8 +68,8 @@ export const env = {
 
   /** Rate limiting for machine routes (/v1 authorize/usage/license). */
   rateLimit: {
-    /** Disabled by default; explicitly opt in with RATE_LIMIT_ENABLED=true. */
-    enabled: process.env.RATE_LIMIT_ENABLED === "true",
+    /** Enabled by default; opt out only for local dev with RATE_LIMIT_ENABLED=false. */
+    enabled: process.env.RATE_LIMIT_ENABLED !== "false",
     /** Sliding-window length in milliseconds. */
     windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS ?? 1_000),
     /** Max requests per window per (api-key + client IP). */
@@ -93,7 +93,28 @@ export const env = {
 
   /** Enable HSTS header (only meaningful when served behind TLS). */
   hstsEnabled: process.env.HSTS_ENABLED === "true",
+
+  /**
+   * Optional bearer token guarding the /metrics endpoint. When set, scrapers
+   * must send `Authorization: Bearer <token>`. Unset leaves /metrics open (fine
+   * when the scrape port is only reachable on a private network), so set it if
+   * /metrics is exposed publicly.
+   */
+  metricsToken: process.env.METRICS_TOKEN ?? "",
+
+  /**
+   * Number of trusted reverse proxies in front of this app. Used to pick the
+   * real client IP from `X-Forwarded-For` (the Nth value from the right). 0 =
+   * do not trust XFF at all (use the socket peer address), which prevents a
+   * client from forging XFF to evade the per-IP rate limit.
+   */
+  trustedProxyCount: Math.max(0, Number(process.env.TRUSTED_PROXY_COUNT ?? 0)),
 } as const;
+
+/** True when running in production (stricter cookie/secret requirements). */
+export function isProduction(): boolean {
+  return process.env.NODE_ENV === "production";
+}
 
 /** True once enough SMTP config is present to actually send mail. */
 export function isSmtpConfigured(): boolean {
@@ -114,5 +135,16 @@ export function assertRequiredSecrets(): void {
       `Missing required secret(s): ${missing.join(", ")}. ` +
         `Set them in the environment (production: inject via the platform secret store, not a committed .env).`,
     );
+  }
+
+  // Production must not silently fall back to localhost trust or plaintext auth.
+  if (isProduction()) {
+    if (!process.env.TRUSTED_ORIGINS) {
+      throw new Error("TRUSTED_ORIGINS must be set in production (browser origins allowed to call the dashboard).");
+    }
+    const authUrl = process.env.BETTER_AUTH_URL ?? "";
+    if (!authUrl.startsWith("https://")) {
+      throw new Error("BETTER_AUTH_URL must be an https URL in production so session cookies are Secure.");
+    }
   }
 }
