@@ -6,6 +6,7 @@ import { deflateSync } from "node:zlib";
 import { appendPages, BufferSink, cmyk, createDocument, deviceN, editDocument, extractPages, mergeDocuments, PAGE_SIZES, parseDocument, PdfEngineError, PdfErrorCode, rgb, separation, splitDocument } from "../src/index.js";
 import { StreamingByteWriter } from "../src/internal/streaming-byte-writer.js";
 import { inspectPdf } from "../src/internal/inspect.js";
+import { computeParagraphRegionBreaks } from "../src/document.js";
 import { makeKerningPairKey, measureTextWidth } from "../src/internal/text-layout.js";
 import type { PdfValue } from "../src/internal/pdf-primitives.js";
 import { parseTrueTypeFont } from "../src/internal/truetype.js";
@@ -1303,6 +1304,476 @@ test("template headers, footers, and page numbers receive total page count", () 
 
   const [root] = parseDocument(doc.toUint8Array()).listStructureElements();
   assert.deepEqual(root?.children?.map((element) => element.role), ["H1", "H1"]);
+});
+
+test("computeParagraphRegionBreaks: no break when the paragraph fits", () => {
+  assert.deepEqual(computeParagraphRegionBreaks(5, 10, 10, 1, 1), []);
+  assert.deepEqual(computeParagraphRegionBreaks(10, 10, 10, 1, 1), []);
+});
+
+test("computeParagraphRegionBreaks: defaults reproduce greedy fill", () => {
+  // firstCap 4, fullCap 10 → 4 | 10 | 10 → breaks after 4 and 14.
+  assert.deepEqual(computeParagraphRegionBreaks(24, 4, 10, 1, 1), [4, 14]);
+  // Exact multiples: 10 | 10 → break after 10 only (last region full).
+  assert.deepEqual(computeParagraphRegionBreaks(20, 10, 10, 1, 1), [10]);
+});
+
+test("computeParagraphRegionBreaks: widow control pulls a lone trailing line down", () => {
+  // Greedy would place 10 | 1 (a widow). widows=2 pulls one line down → 9 | 2.
+  assert.deepEqual(computeParagraphRegionBreaks(11, 10, 10, 1, 2), [9]);
+  // The previous region is never dropped below the orphan minimum: with the prev
+  // region already at the minimum (10), the widow cannot be fixed.
+  assert.deepEqual(computeParagraphRegionBreaks(11, 10, 10, 10, 2), [10]);
+});
+
+test("orphans move a paragraph to the next column instead of stranding lines", () => {
+  const stranded = createDocument();
+  // Two columns, ~10 lines each. A heading eats most of column 1, leaving a
+  // small sliver, then a multi-line paragraph follows.
+  const build = (orphans: number | undefined) => {
+    const doc = createDocument();
+    doc.renderTemplate({
+      page: {
+        size: { width: 240, height: 170 },
+        margin: 20,
+        columns: { count: 2, gap: 20 },
+        fontSize: 10,
+        lineHeight: 12,
+        spacing: { paragraphAfter: 0, paragraphBefore: 0 },
+      },
+      blocks: [
+        { type: "paragraph", text: Array.from({ length: 24 }, (_, i) => `head${i}`).join(" ") },
+        {
+          type: "paragraph",
+          text: Array.from({ length: 30 }, (_, i) => `body${i}`).join(" "),
+          ...(orphans !== undefined ? { options: { orphans } } : {}),
+        },
+      ],
+    });
+    return parseDocument(doc.toUint8Array());
+  };
+  void stranded;
+  const bodyInCol1 = (doc: ReturnType<typeof build>) =>
+    doc.extractText()[0]!.runs.filter((run) => run.text.startsWith("body") && run.x < 100).length;
+  // With a high orphan minimum, fewer (ideally zero) body lines are stranded in
+  // the narrow tail of column 1 than with the default greedy fill.
+  assert.ok(bodyInCol1(build(5)) <= bodyInCol1(build(undefined)));
+});
+
+test("breakBefore forces a block onto a new page and is a no-op at the top", () => {
+  const withoutBreak = createDocument();
+  withoutBreak.renderTemplate({
+    page: { size: { width: 300, height: 400 }, margin: 24 },
+    blocks: [
+      { type: "heading", text: "First" },
+      { type: "heading", text: "Second" },
+    ],
+  });
+  // Two short headings comfortably share one page by default.
+  assert.equal(parseDocument(withoutBreak.toUint8Array()).getPageCount(), 1);
+
+  const withBreak = createDocument();
+  withBreak.renderTemplate({
+    page: { size: { width: 300, height: 400 }, margin: 24 },
+    blocks: [
+      // breakBefore on the first block is a no-op (already at the top) — no blank page.
+      { type: "heading", text: "First", breakBefore: true },
+      { type: "heading", text: "Second", breakBefore: true },
+    ],
+  });
+  const parsed = parseDocument(withBreak.toUint8Array());
+  assert.equal(parsed.getPageCount(), 2);
+  const pages = parsed.extractText();
+  assert.ok(pages[0]!.runs.some((run) => run.text.includes("First")));
+  assert.ok(pages[1]!.runs.some((run) => run.text.includes("Second")));
+});
+
+test("breakAfter pushes the following block onto a new page", () => {
+  const doc = createDocument();
+  doc.renderTemplate({
+    page: { size: { width: 300, height: 400 }, margin: 24 },
+    blocks: [
+      { type: "heading", text: "Alpha", breakAfter: true },
+      { type: "heading", text: "Beta" },
+    ],
+  });
+  const parsed = parseDocument(doc.toUint8Array());
+  assert.equal(parsed.getPageCount(), 2);
+  const pages = parsed.extractText();
+  assert.ok(pages[0]!.runs.some((run) => run.text.includes("Alpha")));
+  assert.ok(pages[1]!.runs.some((run) => run.text.includes("Beta")));
+});
+
+test("footerRows repeat at the bottom of every table slice", () => {
+  const doc = createDocument();
+  const rows = [
+    [{ text: "Item" }, { text: "Qty" }],
+    ...Array.from({ length: 24 }, (_, i) => [{ text: `Row ${i}` }, { text: String(i) }]),
+    [{ text: "TOTAL" }, { text: "300" }],
+  ];
+  doc.renderTemplate({
+    page: { size: { width: 300, height: 150 }, margin: 20, fontSize: 10, lineHeight: 12 },
+    blocks: [{ type: "table", rows, options: { headerRows: 1, footerRows: 1 } }],
+  });
+  const parsed = parseDocument(doc.toUint8Array());
+  const pageCount = parsed.getPageCount();
+  assert.ok(pageCount >= 2, `expected a split table, got ${pageCount} page(s)`);
+  const pages = parsed.extractText();
+  // Both the header row and the footer row repeat on every page.
+  const totalPages = pages.filter((p) => p.runs.some((r) => r.text.includes("TOTAL"))).length;
+  const headerPages = pages.filter((p) => p.runs.some((r) => r.text.includes("Item"))).length;
+  assert.equal(totalPages, pageCount);
+  assert.equal(headerPages, pageCount);
+});
+
+test("columnWidths auto sizes columns to their content", () => {
+  const build = (columnWidths: readonly number[] | "auto" | undefined) => {
+    const doc = createDocument();
+    doc.renderTemplate({
+      page: { size: { width: 400, height: 300 }, margin: 20, fontSize: 10, lineHeight: 12 },
+      blocks: [
+        {
+          type: "table",
+          rows: [[{ text: "A" }, { text: "This column holds substantially more text than the first one" }]],
+          options: columnWidths ? { columnWidths } : {},
+        },
+      ],
+    });
+    return parseDocument(doc.toUint8Array()).extractText();
+  };
+  // The second column starts at tableX + column-0 width; every run other than the
+  // lone "A" in column 0 sits there, so its min x reveals column 0's width.
+  const col1Start = (pages: ReturnType<typeof build>) =>
+    Math.min(...pages[0]!.runs.filter((r) => r.text.trim() !== "A").map((r) => r.x));
+  const auto = col1Start(build("auto"));
+  const equal = col1Start(build(undefined));
+  // Auto shrinks the tiny first column, so column 2 starts well left of the
+  // equal-width layout's midpoint.
+  assert.ok(auto < equal, `auto column start ${auto} should be < equal-width start ${equal}`);
+});
+
+test("toc block lists headings with resolved page numbers and links", () => {
+  const doc = createDocument();
+  doc.renderTemplate({
+    page: { size: { width: 320, height: 220 }, margin: 20, fontSize: 10, lineHeight: 12 },
+    blocks: [
+      { type: "paragraph", text: "Table of Contents" },
+      { type: "toc", options: { maxLevel: 2 } },
+      { type: "pageBreak" },
+      { type: "heading", text: "Chapter One", options: { level: 1 } },
+      { type: "pageBreak" },
+      { type: "heading", text: "Chapter Two", options: { level: 1 } },
+    ],
+  });
+  const bytes = doc.toUint8Array();
+  const parsed = parseDocument(bytes);
+  assert.equal(parsed.getPageCount(), 3);
+  const pages = parsed.extractText();
+
+  // The TOC (page 1) lists both chapter titles even though the chapters render
+  // on later pages.
+  const tocRuns = pages[0]!.runs.map((r) => r.text).join(" ");
+  assert.match(tocRuns, /Chapter One/);
+  assert.match(tocRuns, /Chapter Two/);
+  // Backfilled page numbers: Chapter One is on page 2, Chapter Two on page 3.
+  assert.ok(pages[0]!.runs.some((r) => r.text.trim() === "2"), "expected page number 2 in TOC");
+  assert.ok(pages[0]!.runs.some((r) => r.text.trim() === "3"), "expected page number 3 in TOC");
+
+  // The real headings are on their own pages.
+  assert.ok(pages[1]!.runs.some((r) => r.text.includes("Chapter One")));
+  assert.ok(pages[2]!.runs.some((r) => r.text.includes("Chapter Two")));
+
+  // TOC entries emit navigation links.
+  assert.match(new TextDecoder("latin1").decode(bytes), /\/Link/);
+});
+
+test("toc, footnotes, and cross-refs inherit the selected font from every source", () => {
+  // The font can be selected via page.font, the document defaults, or the
+  // stylesheet body style. In all three the TOC/footnote/cross-ref must use it
+  // rather than leaking the built-in Helvetica default.
+  const render = (docOptions: object, templateExtra: object) => {
+    const doc = createDocument({ compress: false, ...docOptions });
+    doc.renderTemplate({
+      page: { size: "A4", margin: 56 },
+      ...templateExtra,
+      blocks: [
+        { type: "toc" },
+        { type: "crossRef", to: "ch", text: "see page {page}" },
+        { type: "pageBreak" },
+        { type: "heading", text: "Chapter", options: { level: 1 }, anchor: "ch" },
+        { type: "paragraph", text: "Body", footnote: "A note." },
+      ],
+    });
+    return new TextDecoder("latin1").decode(doc.toUint8Array());
+  };
+  const cases = [
+    render({}, { page: { size: "A4", margin: 56, font: "Times-Roman" } }),
+    render({ defaults: { font: "Times-Roman" } }, {}),
+    render({}, { styles: { paragraph: { font: "Times-Roman" }, heading: { font: "Times-Roman" }, heading1: { font: "Times-Roman" } } }),
+  ];
+  for (const text of cases) {
+    assert.match(text, /\/BaseFont \/Times-Roman/);
+    assert.doesNotMatch(text, /\/BaseFont \/Helvetica\b/);
+  }
+});
+
+test("page.container inherits the document's default font", () => {
+  const doc = createDocument({ compress: false, tagged: true, defaults: { font: "Courier" } });
+  doc.addPage().container("Sect", (c) => {
+    c.text("Inside a container", { x: 56, y: 700 });
+  });
+  const text = new TextDecoder("latin1").decode(doc.toUint8Array());
+  // Text drawn through a page-level structure container uses the document
+  // default font, not the built-in Helvetica fallback.
+  assert.match(text, /\/BaseFont \/Courier/);
+  assert.doesNotMatch(text, /\/BaseFont \/Helvetica\b/);
+});
+
+test("toc numbering adds hierarchical Lbl labels", () => {
+  const doc = createDocument({ tagged: true, structureRoot: "Document" });
+  doc.renderTemplate({
+    page: { size: { width: 360, height: 400 }, margin: 20, fontSize: 10, lineHeight: 12 },
+    blocks: [
+      { type: "toc", options: { maxLevel: 2, numbering: true } },
+      { type: "pageBreak" },
+      { type: "heading", text: "Alpha", options: { level: 1 } },
+      { type: "heading", text: "Beta", options: { level: 2 } },
+      { type: "heading", text: "Gamma", options: { level: 2 } },
+    ],
+  });
+  const parsed = parseDocument(doc.toUint8Array());
+  // Section numbers are tagged as Lbl inside each TOCI.
+  const [root] = parsed.listStructureElements();
+  const toc = root?.children?.find((el) => el.role === "TOC");
+  const firstItem = toc?.children?.[0];
+  assert.ok((firstItem?.children ?? []).some((c) => c.role === "Lbl"), "TOCI should start with a Lbl");
+  // Hierarchical numbering: 1, 1.1, 1.2.
+  const toc0 = parsed.extractText()[0]!.runs.map((r) => r.text).join("");
+  assert.match(toc0, /1\.1/);
+  assert.match(toc0, /1\.2/);
+});
+
+test("toc levelStyles renders entries at per-level font sizes", () => {
+  const doc = createDocument();
+  doc.renderTemplate({
+    page: { size: { width: 360, height: 400 }, margin: 20, fontSize: 10, lineHeight: 16 },
+    blocks: [
+      { type: "toc", options: { maxLevel: 2, levelStyles: { 1: { fontSize: 18 }, 2: { fontSize: 9 } } } },
+      { type: "pageBreak" },
+      { type: "heading", text: "BigChapter", options: { level: 1 } },
+      { type: "heading", text: "SmallSection", options: { level: 2 } },
+    ],
+  });
+  const runs = parseDocument(doc.toUint8Array()).extractText()[0]!.runs;
+  const big = runs.find((r) => r.text.includes("BigChapter"));
+  const small = runs.find((r) => r.text.includes("SmallSection"));
+  assert.ok(big && small);
+  // The level-1 entry is rendered larger than the level-2 entry.
+  assert.ok((big!.fontSize ?? 0) > (small!.fontSize ?? 0), `expected L1 > L2, got ${big!.fontSize} vs ${small!.fontSize}`);
+});
+
+test("toc draws a dotted leader by default as a decorative artifact", () => {
+  const build = (leader?: "dots" | "line" | "none") => {
+    const doc = createDocument({ compress: false });
+    doc.renderTemplate({
+      page: { size: { width: 320, height: 220 }, margin: 20, fontSize: 10, lineHeight: 12 },
+      blocks: [
+        { type: "toc", ...(leader ? { options: { leader } } : {}) },
+        { type: "pageBreak" },
+        { type: "heading", text: "Chapter One" },
+      ],
+    });
+    return new TextDecoder("latin1").decode(doc.toUint8Array());
+  };
+  // Default: a dotted leader, emitted inside an /Artifact marked-content run.
+  const dflt = build();
+  assert.match(dflt, /\. \. \./);
+  assert.match(dflt, /\/Artifact BMC/);
+  // Opt out.
+  assert.doesNotMatch(build("none"), /\. \. \. \./);
+  // A rule leader strokes a line instead of drawing dots.
+  const line = build("line");
+  assert.doesNotMatch(line, /\. \. \. \./);
+  assert.match(line, / l\n/); // a lineto in the stroked leader path
+});
+
+test("toc emits a TOC/TOCI/Reference/Link structure hierarchy", () => {
+  const doc = createDocument({ tagged: true, language: "en-US", structureRoot: "Document" });
+  doc.renderTemplate({
+    page: { size: { width: 320, height: 220 }, margin: 20, fontSize: 10, lineHeight: 12 },
+    blocks: [
+      { type: "toc", options: { maxLevel: 2 } },
+      { type: "pageBreak" },
+      { type: "heading", text: "Chapter One", options: { level: 1 } },
+      { type: "heading", text: "Section 1.1", options: { level: 2 } },
+    ],
+  });
+  const [root] = parseDocument(doc.toUint8Array()).listStructureElements();
+  const toc = root?.children?.find((el) => el.role === "TOC");
+  assert.ok(toc, "expected a TOC structure element");
+  const tocis = toc!.children ?? [];
+  // One TOCI per heading entry (two headings within maxLevel 2).
+  assert.equal(tocis.length, 2);
+  for (const toci of tocis) {
+    assert.equal(toci.role, "TOCI");
+    // PDF/UA-1 nesting: TOCI -> Reference -> Link -> (text content).
+    const reference = (toci.children ?? []).find((c) => c.role === "Reference");
+    assert.ok(reference, `TOCI should contain a Reference, got ${(toci.children ?? []).map((c) => c.role)}`);
+    const linkEl = (reference!.children ?? []).find((c) => c.role === "Link");
+    assert.ok(linkEl, "Reference should contain a Link");
+    // The Link must enclose its own text content (accessible name), not be empty.
+    assert.ok((linkEl!.children ?? []).length > 0, "Link must contain text content");
+  }
+});
+
+test("crossRef resolves a forward anchor to its page number and links to it", () => {
+  const doc = createDocument();
+  doc.renderTemplate({
+    page: { size: { width: 320, height: 200 }, margin: 20, fontSize: 10, lineHeight: 12 },
+    blocks: [
+      { type: "paragraph", text: "Intro" },
+      { type: "crossRef", to: "appendix", text: "Details are on page {page}." },
+      { type: "pageBreak" },
+      { type: "heading", text: "Appendix", anchor: "appendix" },
+    ],
+  });
+  const bytes = doc.toUint8Array();
+  const parsed = parseDocument(bytes);
+  const pages = parsed.extractText();
+  // The appendix lands on page 2 (one forced break after page 1).
+  assert.ok(pages[1]!.runs.some((r) => r.text.includes("Appendix")));
+  // The cross-reference on page 1 shows the resolved page number.
+  const page1 = pages[0]!.runs.map((r) => r.text).join(" ");
+  assert.match(page1, /Details are on page 2\./);
+  // And emits a navigation link.
+  assert.match(new TextDecoder("latin1").decode(bytes), /\/Link/);
+});
+
+test("footnote appends a marker and renders the note at the page bottom", () => {
+  const doc = createDocument();
+  doc.renderTemplate({
+    page: { size: { width: 320, height: 260 }, margin: 20, fontSize: 10, lineHeight: 12 },
+    blocks: [
+      { type: "paragraph", text: "Referencing a source", footnote: "Smith 2020, p. 42." },
+      { type: "paragraph", text: "Another claim", footnote: "Jones 2019." },
+    ],
+  });
+  const pages = parseDocument(doc.toUint8Array()).extractText();
+  const runs = pages[0]!.runs;
+  const joined = runs.map((r) => r.text).join(" ");
+  // Markers appended in the body text.
+  assert.match(joined, /\[1\]/);
+  assert.match(joined, /\[2\]/);
+  // Note text rendered at the page bottom.
+  assert.match(joined, /1\. Smith 2020, p\. 42\./);
+  assert.match(joined, /2\. Jones 2019\./);
+  // Notes sit below the body: the note runs have the smallest y on the page.
+  const noteRun = runs.find((r) => r.text.includes("Smith 2020"))!;
+  const bodyRun = runs.find((r) => r.text.includes("Referencing"))!;
+  assert.ok(noteRun.y < bodyRun.y, "footnote should render below its reference");
+});
+
+test("master-page background renders on every page behind the content", () => {
+  const doc = createDocument({ compress: false });
+  doc.renderTemplate({
+    page: { size: { width: 300, height: 200 }, margin: 20, fontSize: 10, lineHeight: 12 },
+    background: () => [{ type: "paragraph", text: "WATERMARK", options: { tag: "Artifact", fontSize: 8 } }],
+    blocks: [
+      { type: "paragraph", text: "Body one" },
+      { type: "pageBreak" },
+      { type: "paragraph", text: "Body two" },
+    ],
+  });
+  const bytes = doc.toUint8Array();
+  const parsed = parseDocument(bytes);
+  assert.equal(parsed.getPageCount(), 2);
+  const pages = parsed.extractText();
+  // The background appears on both pages...
+  const wm0 = pages[0]!.runs.find((r) => r.text.includes("WATERMARK"));
+  assert.ok(wm0);
+  assert.ok(pages[1]!.runs.some((r) => r.text.includes("WATERMARK")));
+  // ...and lands on the page (below the top edge), not clipped above it.
+  assert.ok(wm0!.y > 0 && wm0!.y <= 200 - 10, `background text should be on-page, got y=${wm0!.y}`);
+  // It is drawn behind the body: on page 1 the watermark op precedes the body op.
+  const text = new TextDecoder("latin1").decode(bytes);
+  assert.ok(text.indexOf("WATERMARK") < text.indexOf("Body one"), "background must draw before body");
+});
+
+test("document pageBackground fills manually added pages behind their content", () => {
+  const doc = createDocument({ compress: false, pageBackground: rgb(0.95, 0.97, 1) });
+  const page = doc.addPage({ size: { width: 200, height: 300 } });
+  page.text("Hello", { x: 20, y: 260 });
+  const text = new TextDecoder("latin1").decode(doc.toUint8Array());
+  const fill = text.search(/0 0 200 300 re/);
+  assert.ok(fill >= 0, "expected a full-page fill");
+  assert.ok(fill < text.indexOf("(Hello)"), "page background must draw before content");
+});
+
+test("document pageBackground applies to template pages exactly once", () => {
+  const doc = createDocument({ compress: false, pageBackground: rgb(0.95, 0.97, 1) });
+  doc.renderTemplate({
+    page: { size: { width: 200, height: 300 }, margin: 20 },
+    watermark: "DRAFT",
+    blocks: [{ type: "paragraph", text: "Body" }],
+  });
+  const text = new TextDecoder("latin1").decode(doc.toUint8Array());
+  // Inherited by the template, drawn once per page and back-most.
+  assert.equal((text.match(/0 0 200 300 re/g) ?? []).length, 1);
+  const fill = text.search(/0 0 200 300 re/);
+  assert.ok(fill < text.indexOf("(DRAFT)") && fill < text.indexOf("(Body)"));
+});
+
+test("pageBackground fills every page behind all content as an artifact", () => {
+  const doc = createDocument({ compress: false });
+  doc.renderTemplate({
+    page: { size: { width: 200, height: 300 }, margin: 20 },
+    pageBackground: rgb(0.9, 0.95, 1),
+    watermark: "DRAFT",
+    blocks: [{ type: "paragraph", text: "Body one" }, { type: "pageBreak" }, { type: "paragraph", text: "Body two" }],
+  });
+  const text = new TextDecoder("latin1").decode(doc.toUint8Array());
+  // A full-page fill rect on each page.
+  assert.equal((text.match(/0 0 200 300 re/g) ?? []).length, 2);
+  // Behind everything: the fill precedes the watermark and body on page 1.
+  const fill = text.indexOf("0 0 200 300 re");
+  assert.ok(fill >= 0 && fill < text.indexOf("(DRAFT)") && fill < text.indexOf("(Body one)"), "page background must draw first");
+});
+
+test("watermark renders a rotated, centered artifact behind content on every page", () => {
+  const doc = createDocument({ compress: false });
+  doc.renderTemplate({
+    page: { size: { width: 300, height: 400 }, margin: 30 },
+    watermark: { text: "DRAFT", rotation: 30, opacity: 0.2, fontSize: 60 },
+    blocks: [
+      { type: "paragraph", text: "Body one" },
+      { type: "pageBreak" },
+      { type: "paragraph", text: "Body two" },
+    ],
+  });
+  const bytes = doc.toUint8Array();
+  const text = new TextDecoder("latin1").decode(bytes);
+  // One watermark per page.
+  assert.equal((text.match(/\(DRAFT\)/g) ?? []).length, 2);
+  // Tagged as an artifact, rotated, and alpha-blended via an ExtGState.
+  assert.match(text, /\/Artifact BMC/);
+  assert.match(text, / gs\n/);
+  assert.match(text, /0\.86602[0-9]* /); // cos(30deg) in the rotation matrix
+  // Drawn behind the body: the watermark precedes the body text on page 1.
+  assert.ok(text.indexOf("(DRAFT)") < text.indexOf("(Body one)"), "watermark must draw behind content");
+  // Not in the reading order (artifact) — the structure tree has no watermark text.
+  assert.equal(parseDocument(bytes).getPageCount(), 2);
+});
+
+test("crossRef throws when the target anchor is missing", () => {
+  const doc = createDocument();
+  assert.throws(
+    () =>
+      doc.renderTemplate({
+        page: { size: { width: 320, height: 200 }, margin: 20 },
+        blocks: [{ type: "crossRef", to: "nope", text: "see {page}" }],
+      }),
+    /anchor does not exist/,
+  );
 });
 
 test("renderTemplate applies document info and structured XMP metadata", () => {

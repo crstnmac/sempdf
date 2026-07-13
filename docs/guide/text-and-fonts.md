@@ -61,6 +61,35 @@ Options: `weight` (1–1000, default 400), `italic` (default false), `text` (res
 The Google Fonts API serves **woff2** (Brotli-compressed) to clients that advertise woff2 support — including browsers. `loadGoogleFont()` detects a woff2 response and decodes it with the zero-dependency `@zeropdf/zeropdf-pdf/woff2` decoder, loaded lazily so Node users (who receive a plain `.ttf`/`.otf`) never pay for it.
 :::
 
+## Bundled fonts (offline, PDF/A-ready)
+
+The PDF **Standard-14** fonts (Helvetica/Times/Courier) are never embedded — the viewer supplies them — which **PDF/A and PDF/UA forbid**. For accessible or archival output you must embed a real font. `registerBundledFonts()` registers a bundled, openly-licensed family set so this works offline with no font sourcing:
+
+```ts
+import { createDocument, registerBundledFonts } from "@zeropdf/zeropdf-pdf";
+
+const doc = createDocument({ conformance: "pdf/a-2a" });
+const fonts = await registerBundledFonts(doc);
+
+doc.addPage().text("Accessible heading", { x: 56, y: 760, font: fonts.sans, bold: true });
+```
+
+`fonts` is `{ sans, serif, mono }` — the **Liberation Sans/Serif/Mono** families (SIL OFL 1.1). They are **metric-compatible** with Helvetica/Times/Courier (and Arial/Times New Roman/Courier New), so swapping a built-in font for the bundled one embeds cleanly **without reflowing** your layout. Each family resolves `bold`/`italic`/`boldItalic` by flag, exactly like a font you register yourself.
+
+The fonts ship in the package under `fonts/liberation/`. They are OFL-licensed (redistributable, embeddable); the license travels with them. If you build from source, fetch them once with:
+
+```sh
+npm run fetch-fonts
+```
+
+In the browser (where the on-disk default reader isn't available), pass `read` to supply the bytes:
+
+```ts
+await registerBundledFonts(doc, {
+  read: (file) => fetch(`/fonts/${file}`).then((r) => r.arrayBuffer()),
+});
+```
+
 ## WOFF2 fonts
 
 `decodeWoff2()` converts a `.woff2` file — the format browsers download and most font CDNs serve — into standard TTF/OTF bytes ready for `embedTrueTypeFont()` or `registerFontFamily()`:
@@ -228,7 +257,7 @@ page.richText(
 );
 ```
 
-Each run carries its own `font`, `bold`, `italic`, `fontSize`, `color`, `kerning`, and `characterSpacing`; anything omitted inherits from the block `options`, then the document defaults. A run with a `link` becomes a clickable URI annotation covering exactly that span (contiguous linked runs on a line merge into one rectangle). Include spaces in the run `text` where you want them between adjacent runs.
+Each run carries its own `font`, `bold`, `italic`, `underline`, `strike`, `fontSize`, `color`, `kerning`, `characterSpacing`, `superscript`/`subscript` (or `rise`), `renderMode` (`strokeColor`/`strokeWidth`), `horizontalScaling`, and `highlight`; anything omitted inherits from the block `options`, then the document defaults. A run with a `link` becomes a clickable URI annotation covering exactly that span (contiguous linked runs on a line merge into one rectangle). Include spaces in the run `text` where you want them between adjacent runs.
 
 In the flow/template layout, the same thing is `flow.richParagraph(runs, options)`, or a `richParagraph` template block:
 
@@ -270,6 +299,75 @@ page.richText(
   { x: 56, y: 660, width: 200 }
 );
 ```
+
+## Superscript, subscript, and baseline shift
+
+`superscript` and `subscript` raise or lower the baseline and shrink the text to ~62% — the usual treatment for exponents, footnote markers, ordinals, and chemical formulas. For manual control, set `rise` (PDF points; positive lifts, negative drops) and an explicit `fontSize`.
+
+```ts
+page.richText(
+  [
+    { text: "E = mc" },
+    { text: "2", superscript: true },
+  ],
+  { x: 56, y: 700, width: 200, fontSize: 16 }
+);
+
+page.richText(
+  [
+    { text: "H" },
+    { text: "2", subscript: true },
+    { text: "O" },
+  ],
+  { x: 56, y: 676, width: 200, fontSize: 16 }
+);
+
+// Raw baseline shift, no auto-resize:
+page.text("™", { x: 120, y: 700, fontSize: 8, rise: 6 });
+```
+
+## Outlined and invisible text (render modes)
+
+`renderMode` chooses how glyphs are painted (the PDF `Tr` operator):
+
+- `"fill"` — fill with the text color (the default).
+- `"stroke"` — outline only, using `strokeColor` (defaults to the text color) and `strokeWidth` (defaults to 1).
+- `"fillStroke"` — fill **and** outline.
+- `"invisible"` — render nothing (useful for an OCR text layer over a scanned image so it stays selectable/searchable).
+
+```ts
+page.text("OUTLINE", {
+  x: 56, y: 700, fontSize: 36, bold: true,
+  renderMode: "stroke", strokeWidth: 0.75, strokeColor: "red",
+});
+```
+
+## Horizontal scaling
+
+`horizontalScaling` stretches or condenses glyphs horizontally as a percentage (100 = normal; the `Tz` operator). Useful for fitting a label to a fixed width without changing the font size.
+
+```ts
+page.text("CONDENSED", { x: 56, y: 700, fontSize: 18, horizontalScaling: 75 });
+page.text("EXPANDED",  { x: 56, y: 676, fontSize: 18, horizontalScaling: 130 });
+```
+
+## Highlighting text
+
+`highlight` paints a filled rectangle behind the text (a tagged artifact), like a marker pen. It works on whole text calls and per-run in `richText`:
+
+```ts
+page.text("Action required", { x: 56, y: 700, highlight: "yellow" });
+
+page.richText(
+  [
+    { text: "Status: " },
+    { text: "APPROVED", bold: true, highlight: rgb(0.8, 1, 0.8) },
+  ],
+  { x: 56, y: 676, width: 240 }
+);
+```
+
+> For a highlight that behaves as a reviewable PDF **annotation** (rather than baked-in page content), use the `highlight` text-markup annotation or the `{ type: "highlight", match }` paragraph annotation instead — see [Forms and annotations](./forms-and-annotations).
 
 ## Measuring text
 

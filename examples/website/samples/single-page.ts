@@ -7,9 +7,21 @@ const doc = createDocument({
     creator: "zeropdf playground"
   }
 });
-const page = doc.addPage({ size: "A4" });
 
-page.text("Hello from zeropdf", { x: 56, y: 760, fontSize: 28, color: rgb(0.11, 0.22, 0.45) });
-page.text("Drawn at absolute coordinates on a single page.", { x: 56, y: 730, fontSize: 12 });
+doc.renderTemplate({
+  page: { size: "A4", margin: 56 },
+  blocks: [
+    {
+      type: "heading",
+      text: "Hello from zeropdf",
+      options: { level: 1, fontSize: 28, color: rgb(0.11, 0.22, 0.45) }
+    },
+    {
+      type: "paragraph",
+      text: "Rendered from a declarative template on a single page.",
+      options: { fontSize: 12 }
+    }
+  ]
+});
 
 export default doc;

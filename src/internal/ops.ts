@@ -1,4 +1,4 @@
-import type { BmpImageOptions, ExtGStateOptions, Jbig2ImageOptions, JpegImageOptions, Jp2ImageOptions, PathCommand, PathStyle, PdfColor, PdfFigureStructureTag, PdfFont, PdfStructureOptions, PdfStructureTag, PngImageOptions, TiffImageOptions, Transform } from "../types.js";
+import type { BmpImageOptions, ExtGStateOptions, Jbig2ImageOptions, JpegImageOptions, Jp2ImageOptions, PathCommand, PathStyle, PdfColor, PdfFigureStructureTag, PdfFont, PdfStructureOptions, PdfStructureTag, PngImageOptions, TextRenderMode, TiffImageOptions, Transform } from "../types.js";
 import type { EmbeddedImageAsset } from "./image.js";
 
 export interface EmbeddedTextGlyph {
@@ -23,6 +23,18 @@ export interface NormalizedTextOptions {
   encoding?: "winansi" | "macroman" | "pdfdoc" | undefined;
   underline?: boolean | undefined;
   strike?: boolean | undefined;
+  /** Baseline shift in PDF points (Ts). Set by `rise`/`superscript`/`subscript`. */
+  rise?: number | undefined;
+  /** Glyph painting mode (Tr). Undefined renders as plain fill. */
+  renderMode?: TextRenderMode | undefined;
+  /** Stroke color for stroking render modes; defaults to the text color. */
+  strokeColor?: PdfColor | undefined;
+  /** Stroke width in PDF points for stroking render modes. */
+  strokeWidth?: number | undefined;
+  /** Horizontal glyph scaling percentage (Tz); 100 is normal. */
+  horizontalScaling?: number | undefined;
+  /** Background highlight fill drawn behind the run (a rect op, not a text op). */
+  highlight?: PdfColor | undefined;
 }
 
 export interface NormalizedPathStyle {
@@ -51,6 +63,9 @@ export interface NormalizedImageOptions {
   tag?: PdfFigureStructureTag | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;
   structureGroupId?: number | undefined;
+  fit?: import("../types.js").ImageFit | undefined;
+  position?: import("../types.js").ImagePosition | undefined;
+  clip?: import("../types.js").ImageClip | undefined;
 }
 
 export type PdfOp =

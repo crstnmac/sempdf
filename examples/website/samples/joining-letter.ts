@@ -30,6 +30,8 @@ const [inter400, inter700] = await Promise.all([
 
 const BRAND = rgb(0.05, 0.25, 0.55);
 const MUTED = rgb(0.45, 0.45, 0.5);
+const TABLE_BORDER = rgb(0.72, 0.76, 0.82);
+const TABLE_HEADER = rgb(0.92, 0.94, 0.98);
 
 doc.registerFontFamily("Inter", { regular: inter400, bold: inter700 });
 
@@ -131,7 +133,12 @@ doc.renderTemplate({
           { text: "6 months (01 Jul 2026 - 31 Dec 2026)" },
         ],
       ],
-      options: { headerRows: 0 },
+      options: {
+        headerRows: 0,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     {
@@ -183,7 +190,17 @@ doc.renderTemplate({
           { text: "Rs. 16,61,400.00" },
         ],
       ],
-      options: { headerRows: 1, headerColumns: 1 },
+      options: {
+        headerRows: 1,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
+    },
+    {
+      type: "paragraph",
+      text: "In addition to the above, you will be eligible for an annual performance bonus of up to 15% of your annual basic salary, subject to individual and company performance. All statutory deductions (PF, TDS, Professional Tax) will be applied as per applicable laws.",
+      class: "muted",
     },
 
     {
@@ -283,7 +300,12 @@ doc.renderTemplate({
           "Signature: ___________________\nName: Mr. John Doe\nDate: ___________________",
         ],
       ],
-      options: { headerRows: 1 },
+      options: {
+        headerRows: 1,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     {
@@ -313,3 +335,4 @@ doc.renderTemplate({
 });
 
 export default doc;
+

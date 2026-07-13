@@ -25,10 +25,10 @@ const [inter400, inter700] = await Promise.all([
   ttf(FONTS.inter700),
 ]);
 
-const BRAND = rgb(0.05, 0.25, 0.55);
-const MUTED = rgb(0.45, 0.45, 0.5);
-
-doc.registerFontFamily("Inter", { regular: inter400, bold: inter700 });
+const BRAND  = rgb(0.05, 0.25, 0.55);
+const MUTED  = rgb(0.45, 0.45, 0.5);
+const TABLE_BORDER = rgb(0.72, 0.76, 0.82);
+const TABLE_HEADER = rgb(0.92, 0.94, 0.98);
 
 doc.renderTemplate({
   autoOutline: { maxLevel: 6 },
@@ -108,7 +108,12 @@ doc.renderTemplate({
           },
         ],
       ],
-      options: { headerColumns: 1 },
+      options: {
+        headerRows: 1,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     {
@@ -140,7 +145,12 @@ doc.renderTemplate({
           "npm install @zeropdf/zeropdf-pdf",
         ],
       ],
-      options: { headerRows: 1, headerColumns: 1 },
+      options: {
+        headerRows: 1,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     {
@@ -180,7 +190,12 @@ doc.renderTemplate({
           },
         ],
       ],
-      options: { headerRows: 1 },
+      options: {
+        headerRows: 1,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     { type: "pageBreak" },
@@ -223,7 +238,12 @@ doc.renderTemplate({
           { text: "Maintains context reference on layout splits" },
         ],
       ],
-      options: { headerRows: 1 },
+      options: {
+        headerRows: 1,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     {
@@ -265,3 +285,4 @@ doc.renderTemplate({
 });
 
 export default doc;
+

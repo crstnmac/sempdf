@@ -33,15 +33,10 @@ const doc = createDocument({
   },
 });
 
-const [inter400, inter700] = await Promise.all([
-  ttf(FONTS.inter400),
-  ttf(FONTS.inter700),
-]);
-
-const BRAND = rgb(0.05, 0.25, 0.55);
-const MUTED = rgb(0.45, 0.45, 0.5);
-
-doc.registerFontFamily("Inter", { regular: inter400, bold: inter700 });
+const BRAND  = rgb(0.05, 0.25, 0.55);
+const MUTED  = rgb(0.45, 0.45, 0.5);
+const TABLE_BORDER = rgb(0.72, 0.76, 0.82);
+const TABLE_HEADER = rgb(0.92, 0.94, 0.98);
 
 doc.renderTemplate({
   autoOutline: { maxLevel: 6 },
@@ -108,7 +103,12 @@ doc.renderTemplate({
           { text: "STM-2026-05-0042" },
         ],
       ],
-      options: { headerColumns: 1, width: 650 },
+      options: {
+        headerRows: 1,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     {
@@ -127,7 +127,12 @@ doc.renderTemplate({
         ],
         ["$ 42,500.00", "$ 1,15,000.00", "$ 78,340.50", "$ 79,159.50"],
       ],
-      options: { headerRows: 1 },
+      options: {
+        headerRows: 1,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     {
@@ -194,7 +199,12 @@ doc.renderTemplate({
           { text: "47,704.00", bold: true },
         ],
       ],
-      options: { headerRows: 1, headerColumns: 1 },
+      options: {
+        headerRows: 1,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     { type: "pageBreak" },
@@ -406,7 +416,12 @@ doc.renderTemplate({
           { text: "79,159.50" },
         ],
       ],
-      options: { headerRows: 1, headerColumns: 1 },
+      options: {
+        headerRows: 1,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     {
@@ -442,3 +457,4 @@ doc.renderTemplate({
 });
 
 export default doc;
+

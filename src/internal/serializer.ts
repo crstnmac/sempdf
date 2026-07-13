@@ -4894,6 +4894,30 @@ function* serializePageContentLines(
         if (op.options.leading !== undefined) {
           opLines.push(`${formatPdfNumber(op.options.leading)} TL`);
         }
+        if (op.options.horizontalScaling !== undefined) {
+          opLines.push(`${formatPdfNumber(op.options.horizontalScaling)} Tz`);
+        }
+        if (op.options.rise !== undefined) {
+          opLines.push(`${formatPdfNumber(op.options.rise)} Ts`);
+        }
+        if (op.options.renderMode !== undefined && op.options.renderMode !== 'fill') {
+          const trMode =
+            op.options.renderMode === 'stroke'
+              ? 1
+              : op.options.renderMode === 'fillStroke'
+                ? 2
+                : 3; // invisible
+          opLines.push(`${trMode} Tr`);
+          if (trMode === 1 || trMode === 2) {
+            opLines.push(`${formatPdfNumber(op.options.strokeWidth ?? 1)} w`);
+            opLines.push(
+              serializeStrokeColor(
+                op.options.strokeColor ?? op.options.color,
+                new Map([...resources.colorSpaces].map(([k, v]) => [k, v.name])),
+              ),
+            );
+          }
+        }
         opLines.push(
           `1 0 0 1 ${formatPdfNumber(op.options.x)} ${formatPdfNumber(op.options.y)} Tm`,
         );
@@ -4906,6 +4930,13 @@ function* serializePageContentLines(
             op.glyphs,
           ),
         );
+        // Text-state parameters (Tz/Ts/Tr) persist in the graphics state past ET,
+        // so reset any non-default value to avoid leaking into later text ops.
+        if (op.options.horizontalScaling !== undefined) opLines.push('100 Tz');
+        if (op.options.rise !== undefined) opLines.push('0 Ts');
+        if (op.options.renderMode !== undefined && op.options.renderMode !== 'fill') {
+          opLines.push('0 Tr');
+        }
         opLines.push('ET');
         break;
       case 'path':
@@ -4917,35 +4948,42 @@ function* serializePageContentLines(
           ),
         );
         break;
-      case 'image':
-        if ((op.image.kind === 'jpeg' || op.image.kind === 'png') && op.image.orientation !== 1) {
-          opLines.push('q');
-          const { x, y, width, height } = op.options;
-          const rot = op.image.orientation;
-          if (rot === 6) {
-            opLines.push(
-              `0 ${formatPdfNumber(height)} ${formatPdfNumber(-width)} 0 ${formatPdfNumber(x + width)} ${formatPdfNumber(y)} cm`,
-            );
-          } else if (rot === 8) {
-            opLines.push(
-              `0 ${formatPdfNumber(-height)} ${formatPdfNumber(width)} 0 ${formatPdfNumber(x)} ${formatPdfNumber(y + height)} cm`,
-            );
-          } else if (rot === 3) {
-            opLines.push(
-              `${formatPdfNumber(-width)} 0 0 ${formatPdfNumber(-height)} ${formatPdfNumber(x + width)} ${formatPdfNumber(y + height)} cm`,
-            );
-          }
-          opLines.push(`/${resources.images.get(op.image.key)!} Do`);
-          opLines.push('Q');
-        } else {
-          opLines.push('q');
-          opLines.push(
-            `${formatPdfNumber(op.options.width)} 0 0 ${formatPdfNumber(op.options.height)} ${formatPdfNumber(op.options.x)} ${formatPdfNumber(op.options.y)} cm`,
-          );
-          opLines.push(`/${resources.images.get(op.image.key)!} Do`);
-          opLines.push('Q');
+      case 'image': {
+        const { x, y, width, height } = op.options;
+        const orientation =
+          op.image.kind === 'jpeg' || op.image.kind === 'png' ? op.image.orientation : 1;
+        // JPEG/PNG orientation 6/8 rotate by 90°, swapping the displayed aspect.
+        const swapAspect = orientation === 6 || orientation === 8;
+        const intrinsicW = swapAspect ? op.image.pixelHeight : op.image.pixelWidth;
+        const intrinsicH = swapAspect ? op.image.pixelWidth : op.image.pixelHeight;
+        const clip = op.options.clip ?? 'none';
+        const { dx, dy, dw, dh } = imageFitRect(
+          op.options.fit,
+          op.options.position,
+          x, y, width, height,
+          intrinsicW, intrinsicH,
+        );
+        const f = formatPdfNumber;
+        opLines.push('q');
+        if (clip === 'circle' || clip === 'ellipse') {
+          opLines.push(...ellipseClipLines(x, y, width, height, clip));
+        } else if (op.options.fit === 'cover' && (dw > width + 1e-6 || dh > height + 1e-6)) {
+          // `cover` overflows the box; clip the excess to the box rectangle.
+          opLines.push(`${f(x)} ${f(y)} ${f(width)} ${f(height)} re`, 'W', 'n');
         }
+        if (orientation === 6) {
+          opLines.push(`0 ${f(dh)} ${f(-dw)} 0 ${f(dx + dw)} ${f(dy)} cm`);
+        } else if (orientation === 8) {
+          opLines.push(`0 ${f(-dh)} ${f(dw)} 0 ${f(dx)} ${f(dy + dh)} cm`);
+        } else if (orientation === 3) {
+          opLines.push(`${f(-dw)} 0 0 ${f(-dh)} ${f(dx + dw)} ${f(dy + dh)} cm`);
+        } else {
+          opLines.push(`${f(dw)} 0 0 ${f(dh)} ${f(dx)} ${f(dy)} cm`);
+        }
+        opLines.push(`/${resources.images.get(op.image.key)!} Do`);
+        opLines.push('Q');
         break;
+      }
       case 'extGState': {
         const entry = resources.extGStates.get(extGStateKey(op.options));
         if (entry !== undefined) {
@@ -5608,6 +5646,67 @@ function formatMatrix(matrix: Transform): string {
     formatPdfNumber(matrix.e),
     formatPdfNumber(matrix.f),
   ].join(' ');
+}
+
+/**
+ * Computes the drawn rectangle for an image inside its `x,y,w,h` box given the
+ * `fit` mode and `position`. `iw`/`ih` are the intrinsic (display-oriented)
+ * dimensions used for aspect ratio. `fill` (or unknown intrinsic size) returns
+ * the box unchanged.
+ */
+function imageFitRect(
+  fit: 'fill' | 'contain' | 'cover' | undefined,
+  position: string | undefined,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  iw: number,
+  ih: number,
+): { dx: number; dy: number; dw: number; dh: number } {
+  if (fit === undefined || fit === 'fill' || iw <= 0 || ih <= 0) {
+    return { dx: x, dy: y, dw: w, dh: h };
+  }
+  const scale = fit === 'cover' ? Math.max(w / iw, h / ih) : Math.min(w / iw, h / ih);
+  const dw = iw * scale;
+  const dh = ih * scale;
+  const pos = position ?? 'center';
+  const left = pos === 'left' || pos === 'top-left' || pos === 'bottom-left';
+  const right = pos === 'right' || pos === 'top-right' || pos === 'bottom-right';
+  const top = pos === 'top' || pos === 'top-left' || pos === 'top-right';
+  const bottom = pos === 'bottom' || pos === 'bottom-left' || pos === 'bottom-right';
+  const dx = left ? x : right ? x + (w - dw) : x + (w - dw) / 2;
+  // PDF y grows upward, so "top" aligns the image's top edge to the box top.
+  const dy = bottom ? y : top ? y + (h - dh) : y + (h - dh) / 2;
+  return { dx, dy, dw, dh };
+}
+
+/**
+ * Emits a clip path (ending in `W n`) for an ellipse/circle inscribed in the
+ * `x,y,w,h` box using the standard 4-segment Bézier approximation.
+ */
+function ellipseClipLines(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  clip: 'circle' | 'ellipse',
+): string[] {
+  const rx = clip === 'circle' ? Math.min(w, h) / 2 : w / 2;
+  const ry = clip === 'circle' ? Math.min(w, h) / 2 : h / 2;
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const k = 0.5522847498307936;
+  const f = formatPdfNumber;
+  return [
+    `${f(cx + rx)} ${f(cy)} m`,
+    `${f(cx + rx)} ${f(cy + ry * k)} ${f(cx + rx * k)} ${f(cy + ry)} ${f(cx)} ${f(cy + ry)} c`,
+    `${f(cx - rx * k)} ${f(cy + ry)} ${f(cx - rx)} ${f(cy + ry * k)} ${f(cx - rx)} ${f(cy)} c`,
+    `${f(cx - rx)} ${f(cy - ry * k)} ${f(cx - rx * k)} ${f(cy - ry)} ${f(cx)} ${f(cy - ry)} c`,
+    `${f(cx + rx * k)} ${f(cy - ry)} ${f(cx + rx)} ${f(cy - ry * k)} ${f(cx + rx)} ${f(cy)} c`,
+    'W',
+    'n',
+  ];
 }
 
 function collectRetainedAcroFormFieldRefs(

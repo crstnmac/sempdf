@@ -1,0 +1,45 @@
+{
+  "name": "@zeropdf/license-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Hono API for ZeroPDF license, trials, page metering, telemetry, and admin routes.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch --env-file=.env src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node --env-file=.env dist/index.js",
+    "sweep": "tsx --env-file=.env src/scripts/sweep.ts",
+    "emails:test": "tsx --env-file=.env src/scripts/send-test-emails.ts",
+    "sweep:prod": "node --env-file=.env dist/scripts/sweep.js",
+    "telemetry:prune": "tsx --env-file=.env src/scripts/prune-telemetry.ts",
+    "telemetry:prune:prod": "node --env-file=.env dist/scripts/prune-telemetry.js",
+    "keygen": "tsx --env-file=.env src/scripts/keygen.ts",
+    "create-superadmin": "tsx --env-file=.env src/scripts/create-superadmin.ts",
+    "stress:seed": "tsx --env-file=.env stress/seed.ts",
+    "stress:clean": "STRESS_CLEAN=1 tsx --env-file=.env stress/seed.ts",
+    "stress": "k6 run stress/k6-stress.js",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push",
+    "auth:generate": "better-auth-cli generate --config src/auth.ts",
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/test/**/*.test.js"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.0.6",
+    "better-auth": "^1.6.20",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.12.27",
+    "nodemailer": "^6.10.1",
+    "pg": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/nodemailer": "^8.0.1",
+    "@types/pg": "^8.11.10",
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.8.3"
+  }
+}

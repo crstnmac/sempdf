@@ -50,6 +50,8 @@ export interface InlineDecoration {
   readonly color: import("../types.js").PdfColor;
   readonly underline: boolean;
   readonly strike: boolean;
+  /** Background highlight fill, drawn behind the run before the text/decorations. */
+  readonly highlight?: import("../types.js").PdfColor | undefined;
 }
 
 export interface InlineLayoutResult {
@@ -270,7 +272,11 @@ export function placeInlineLine(
         activeFontSize = piece.run.options.fontSize;
       }
     }
-    if (piece.run.options.underline === true || piece.run.options.strike === true) {
+    if (
+      piece.run.options.underline === true ||
+      piece.run.options.strike === true ||
+      piece.run.options.highlight !== undefined
+    ) {
       decorations.push({
         x: cursorX,
         baselineY,
@@ -279,6 +285,7 @@ export function placeInlineLine(
         color: piece.run.options.color,
         underline: piece.run.options.underline === true,
         strike: piece.run.options.strike === true,
+        ...(piece.run.options.highlight !== undefined ? { highlight: piece.run.options.highlight } : {}),
       });
     }
     cursorX += piece.mainSize + (piece.isSpace ? extraPerGap : 0);

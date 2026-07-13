@@ -1,0 +1,33 @@
+{
+  "name": "@zeropdf/zeropdf-pdf-licensing",
+  "version": "0.1.0",
+  "description": "Private licensing / usage-metering client for @zeropdf/zeropdf-pdf.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "tsc --noEmit",
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/test/**/*.test.js",
+    "prepublishOnly": "npm run build"
+  },
+  "publishConfig": {
+    "registry": "https://npm.zeropdf.net"
+  },
+  "peerDependencies": {
+    "@zeropdf/zeropdf-pdf": ">=2.0.0"
+  },
+  "devDependencies": {
+    "@zeropdf/zeropdf-pdf": "file:..",
+    "@types/node": "^25.6.0",
+    "typescript": "^6.0.2"
+  }
+}
