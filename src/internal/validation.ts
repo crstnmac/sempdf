@@ -1,5 +1,5 @@
 import { PdfEngineError, PdfErrorCode } from "../errors.js";
-import type { AttachmentOptions, BmpImageOptions, BuiltInPageSize, CheckBoxOptions, ChoiceFieldMode, ChoiceFieldOptions, CustomPageSize, DocumentConformanceProfile, DocumentEncryptionAlgorithm, DocumentEncryptionOptions, DocumentInfo, DocumentPermissions, ExtGStateOptions, FieldActions, FillStyle, FontName, FreeTextAnnotationOptions, HighlightAnnotationOptions, JpegImageOptions, LineCap, LineJoin, ListItem, ListOptions, NoteAnnotationOptions, OutlineOptions, PageLabelOptions, PageLabelStyle, PageLinkOptions, PageSize, ParagraphTextAnnotation, PathCommand, PathStyle, PdfColor, PdfComplianceIssue, PdfContainerTag, PdfFigureStructureTag, PdfFont, PdfRoleMap, PdfStandardStructureTag, PdfStructureAttributeValue, PdfStructureOptions, PdfStructureTag, PdfTextStructureTag, PngImageOptions, PushButtonOptions, RadioGroupOptions, SignatureFieldOptions, SquigglyAnnotationOptions, StrikeOutAnnotationOptions, StrokeStyle, TableCell, TableHeaderScope, TableOptions, TextAlign, TextBlockOptions, TextDirection, TextFieldOptions, TextOptions, Transform, UnderlineAnnotationOptions, UriLinkOptions, VerticalAlign, ColorInput, XmpMetadataInput } from "../types.js";
+import type { AttachmentOptions, BmpImageOptions, BuiltInPageSize, CheckBoxOptions, ChoiceFieldMode, ChoiceFieldOptions, CustomPageSize, DocumentConformanceProfile, DocumentEncryptionAlgorithm, DocumentEncryptionOptions, DocumentInfo, DocumentPermissions, ExtGStateOptions, FieldActions, FillStyle, FontName, FreeTextAnnotationOptions, HighlightAnnotationOptions, JpegImageOptions, LineCap, LineJoin, ListItem, ListOptions, NoteAnnotationOptions, OutlineOptions, PageLabelOptions, PageLabelStyle, PageLinkOptions, PageSize, ParagraphTextAnnotation, PathCommand, PathStyle, PdfColor, PdfComplianceIssue, PdfContainerTag, PdfFigureStructureTag, PdfFont, PdfRoleMap, PdfStandardStructureTag, PdfStructureAttributeValue, PdfStructureOptions, PdfStructureTag, PdfTextStructureTag, PngImageOptions, PushButtonOptions, RadioGroupOptions, SignatureFieldOptions, SquigglyAnnotationOptions, StrikeOutAnnotationOptions, StrokeStyle, TableCell, TableCellBorders, TableCellBorderSide, TableHeaderScope, TableOptions, TextAlign, TextBlockOptions, TextDirection, TextFieldOptions, TextOptions, Transform, UnderlineAnnotationOptions, UriLinkOptions, VerticalAlign, ColorInput, XmpMetadataInput } from "../types.js";
 import { PAGE_SIZES, gray, color as resolveColorName } from "../types.js";
 import type { InlineTextRun } from "../types.js";
 import type { NormalizedImageOptions, NormalizedPathStyle, NormalizedTextOptions } from "./ops.js";
@@ -321,6 +321,21 @@ export interface NormalizedTableCell {
   color?: PdfColor | undefined;
   align?: TextAlign | undefined;
   background?: PdfColor | undefined;
+  border?: NormalizedCellBorders | undefined;
+}
+
+/** A resolved single cell-edge border. */
+export interface NormalizedCellBorderSide {
+  color: PdfColor;
+  width: number;
+}
+
+/** Resolved per-edge borders for a cell; absent sides are not drawn. */
+export interface NormalizedCellBorders {
+  top?: NormalizedCellBorderSide | undefined;
+  right?: NormalizedCellBorderSide | undefined;
+  bottom?: NormalizedCellBorderSide | undefined;
+  left?: NormalizedCellBorderSide | undefined;
 }
 
 export type NormalizedTableRow = NormalizedTableCell[];
@@ -333,6 +348,7 @@ export interface NormalizedTableOptions extends NormalizedTextBaseOptions {
   cellPadding: number;
   borderColor?: PdfColor | undefined;
   borderWidth?: number | undefined;
+  borderStyle?: "all" | "horizontal" | "outer" | undefined;
   headerBackground?: PdfColor | undefined;
   zebraColor?: PdfColor | undefined;
   rowGap: number;
@@ -1027,7 +1043,14 @@ export function normalizeTextOptions(text: string, options: TextOptions): Normal
     ...(normalized.characterSpacing !== undefined ? { characterSpacing: normalized.characterSpacing } : {}),
     ...(normalized.wordSpacing !== undefined ? { wordSpacing: normalized.wordSpacing } : {}),
     ...(normalized.leading !== undefined ? { leading: normalized.leading } : {}),
-    ...(normalized.encoding !== undefined ? { encoding: normalized.encoding } : {})
+    ...(normalized.encoding !== undefined ? { encoding: normalized.encoding } : {}),
+    ...(normalized.underline !== undefined ? { underline: normalized.underline } : {}),
+    ...(normalized.strike !== undefined ? { strike: normalized.strike } : {}),
+    ...(normalized.rise !== undefined ? { rise: normalized.rise } : {}),
+    ...(normalized.renderMode !== undefined ? { renderMode: normalized.renderMode } : {}),
+    ...(normalized.strokeColor !== undefined ? { strokeColor: normalized.strokeColor } : {}),
+    ...(normalized.strokeWidth !== undefined ? { strokeWidth: normalized.strokeWidth } : {}),
+    ...(normalized.horizontalScaling !== undefined ? { horizontalScaling: normalized.horizontalScaling } : {})
   };
 }
 
@@ -1047,13 +1070,29 @@ export function normalizeTextBaseOptions(options: TextOptions | TextBlockOptions
   const resolvedFont = resolveStyledFont(options.font ?? DEFAULT_FONT, options.bold, options.italic);
   assertKnownBuiltInFont(resolvedFont);
 
+  // Superscript / subscript are conveniences over `rise` + a reduced font size.
+  // An explicit `rise` overrides the computed shift; superscript wins over
+  // subscript when both are set. The size shrinks to ~62% (typographic norm).
+  let effectiveFontSize = fontSize;
+  let rise = normalizeOptionalNumber(options.rise, "rise");
+  if (options.superscript === true || options.subscript === true) {
+    effectiveFontSize = fontSize * 0.62;
+    if (rise === undefined) {
+      rise = options.superscript === true ? fontSize * 0.33 : -(fontSize * 0.18);
+    }
+  }
+
+  const renderMode = options.renderMode;
+  const strokeWidth = normalizeOptionalNumber(options.strokeWidth, "strokeWidth");
+  const horizontalScaling = normalizeOptionalNumber(options.horizontalScaling, "horizontalScaling");
+
   const normalized: NormalizedTextBaseOptions = {
     x: options.x,
     y: options.y,
     font: resolvedFont,
     fallbackFonts: options.fallbackFonts ? [...options.fallbackFonts] : [],
     direction: options.direction ?? "ltr",
-    fontSize,
+    fontSize: effectiveFontSize,
     color: normalizeColor(options.color ?? DEFAULT_COLOR),
     kerning: options.kerning ?? true,
     ...(options.writingMode !== undefined ? { writingMode: options.writingMode } : {}),
@@ -1063,6 +1102,12 @@ export function normalizeTextBaseOptions(options: TextOptions | TextBlockOptions
     ...(('artifactType' in options && options.artifactType !== undefined) ? { artifactType: options.artifactType } : {}),
     ...(options.underline !== undefined ? { underline: options.underline } : {}),
     ...(options.strike !== undefined ? { strike: options.strike } : {}),
+    ...(rise !== undefined ? { rise } : {}),
+    ...(renderMode !== undefined ? { renderMode } : {}),
+    ...(options.strokeColor !== undefined ? { strokeColor: normalizeColor(options.strokeColor) } : {}),
+    ...(strokeWidth !== undefined ? { strokeWidth } : {}),
+    ...(horizontalScaling !== undefined ? { horizontalScaling } : {}),
+    ...(options.highlight !== undefined ? { highlight: normalizeColor(options.highlight) } : {}),
     tateChuYoko: options.writingMode === "vertical" ? true : undefined,
   };
 
@@ -1245,7 +1290,20 @@ export function normalizeTableOptions(rows: readonly NormalizedTableRow[], optio
   if (borderWidth !== undefined && borderWidth < 0) {
     throw new PdfEngineError(PdfErrorCode.INVALID_TEXT, "Table borderWidth must be zero or greater.", { borderWidth });
   }
-  const hasBorder = options.borderColor !== undefined || (borderWidth !== undefined && borderWidth > 0);
+  if (
+    options.borders !== undefined &&
+    options.borders !== "all" &&
+    options.borders !== "horizontal" &&
+    options.borders !== "outer" &&
+    options.borders !== "none"
+  ) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_TEXT, 'Table borders must be "all", "horizontal", "outer", or "none".', {
+      borders: options.borders
+    });
+  }
+  const hasBorderInput = options.borderColor !== undefined || (borderWidth !== undefined && borderWidth > 0);
+  const hasBorder = options.borders !== undefined ? options.borders !== "none" : hasBorderInput;
+  const borderStyle: "all" | "horizontal" | "outer" = options.borders !== undefined && options.borders !== "none" ? options.borders : "all";
 
   return {
     ...normalizedText,
@@ -1257,7 +1315,8 @@ export function normalizeTableOptions(rows: readonly NormalizedTableRow[], optio
     ...(hasBorder
       ? {
           borderColor: normalizeColor(options.borderColor ?? gray(0.6)),
-          borderWidth: borderWidth ?? 0.75
+          borderWidth: borderWidth ?? 0.75,
+          borderStyle
         }
       : {}),
     ...(options.headerBackground !== undefined ? { headerBackground: normalizeColor(options.headerBackground) } : {}),
@@ -1327,7 +1386,51 @@ function normalizeTableCell(cell: TableCell, rowIndex: number, cellIndex: number
     ...(definition.font !== undefined ? { font: definition.font } : {}),
     ...(definition.color !== undefined ? { color: normalizeColor(definition.color) } : {}),
     ...(definition.align !== undefined ? { align: definition.align } : {}),
-    ...(definition.background !== undefined ? { background: normalizeColor(definition.background) } : {})
+    ...(definition.background !== undefined ? { background: normalizeColor(definition.background) } : {}),
+    ...(definition.border !== undefined
+      ? (() => {
+          const border = normalizeCellBorders(definition.border!, rowIndex, cellIndex);
+          return border !== undefined ? { border } : {};
+        })()
+      : {})
+  };
+}
+
+function normalizeCellBorderSide(
+  side: boolean | TableCellBorderSide | undefined,
+  name: string
+): NormalizedCellBorderSide | undefined {
+  if (side === undefined || side === false) {
+    return undefined;
+  }
+  if (side === true) {
+    return { color: normalizeColor(gray(0.6)), width: 0.75 };
+  }
+  const width = normalizeOptionalNumber(side.width, `${name}.width`) ?? 0.75;
+  if (width < 0) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_TEXT, "Table cell border width must be zero or greater.", { name, width });
+  }
+  return { color: normalizeColor(side.color ?? gray(0.6)), width };
+}
+
+function normalizeCellBorders(
+  border: TableCellBorders,
+  rowIndex: number,
+  cellIndex: number
+): NormalizedCellBorders | undefined {
+  const prefix = `border[row ${rowIndex}, cell ${cellIndex}]`;
+  const top = normalizeCellBorderSide(border.top, `${prefix}.top`);
+  const right = normalizeCellBorderSide(border.right, `${prefix}.right`);
+  const bottom = normalizeCellBorderSide(border.bottom, `${prefix}.bottom`);
+  const left = normalizeCellBorderSide(border.left, `${prefix}.left`);
+  if (top === undefined && right === undefined && bottom === undefined && left === undefined) {
+    return undefined;
+  }
+  return {
+    ...(top !== undefined ? { top } : {}),
+    ...(right !== undefined ? { right } : {}),
+    ...(bottom !== undefined ? { bottom } : {}),
+    ...(left !== undefined ? { left } : {})
   };
 }
 
@@ -1860,6 +1963,9 @@ export function normalizeImageOptions(options: JpegImageOptions | PngImageOption
   altText?: string | undefined;
   tag?: import("../types.js").PdfFigureStructureTag | "Artifact" | undefined;
   structure?: import("../types.js").PdfStructureOptions | undefined;
+  fit?: import("../types.js").ImageFit | undefined;
+  position?: import("../types.js").ImagePosition | undefined;
+  clip?: import("../types.js").ImageClip | undefined;
 }): NormalizedImageOptions {
   assertFinite(options.x, "x");
   assertFinite(options.y, "y");
@@ -1882,8 +1988,38 @@ export function normalizeImageOptions(options: JpegImageOptions | PngImageOption
       ? { altText: options.altText.trim() }
       : {}),
     ...("tag" in options && options.tag !== undefined ? { tag: normalizeFigureStructureTag(options.tag) } : {}),
-    ...("structure" in options && options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {})
+    ...("structure" in options && options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {}),
+    ...("fit" in options && options.fit !== undefined ? { fit: normalizeImageFit(options.fit) } : {}),
+    ...("position" in options && options.position !== undefined ? { position: normalizeImagePosition(options.position) } : {}),
+    ...("clip" in options && options.clip !== undefined ? { clip: normalizeImageClip(options.clip) } : {})
   };
+}
+
+const IMAGE_FIT_VALUES: ReadonlySet<string> = new Set(["fill", "contain", "cover"]);
+const IMAGE_POSITION_VALUES: ReadonlySet<string> = new Set([
+  "center", "top", "bottom", "left", "right", "top-left", "top-right", "bottom-left", "bottom-right"
+]);
+const IMAGE_CLIP_VALUES: ReadonlySet<string> = new Set(["none", "circle", "ellipse"]);
+
+function normalizeImageFit(value: string): import("../types.js").ImageFit {
+  if (!IMAGE_FIT_VALUES.has(value)) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Image fit must be 'fill', 'contain', or 'cover'.", { fit: value });
+  }
+  return value as import("../types.js").ImageFit;
+}
+
+function normalizeImagePosition(value: string): import("../types.js").ImagePosition {
+  if (!IMAGE_POSITION_VALUES.has(value)) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Invalid image position.", { position: value });
+  }
+  return value as import("../types.js").ImagePosition;
+}
+
+function normalizeImageClip(value: string): import("../types.js").ImageClip {
+  if (!IMAGE_CLIP_VALUES.has(value)) {
+    throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Image clip must be 'none', 'circle', or 'ellipse'.", { clip: value });
+  }
+  return value as import("../types.js").ImageClip;
 }
 
 export function normalizeUriLinkOptions(url: string, options: UriLinkOptions): NormalizedUriLinkOptions {

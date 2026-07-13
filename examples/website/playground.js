@@ -171,6 +171,15 @@ resizerEl.addEventListener("keydown", (event) => {
 
 // Boot Monaco, wire TypeScript, then render the default document.
 (async () => {
+  // The library is secure-by-default: with no license guard installed it
+  // refuses to serialize. The playground is a public demo, so install a
+  // permissive guard that allows unlimited local generation. Guards installed
+  // through the public API are unverified, so every playground PDF carries the
+  // fixed "UNLICENSED - EVALUATION ONLY" watermark; clean output requires the
+  // server-backed auto-guard (SEMPDF_LICENSE_KEY).
+  const { setLicenseGuard } = await import("@sempdf/sempdf-pdf/license-guard");
+  setLicenseGuard({ consume() {} });
+
   monaco = await window.monacoReady;
 
   monaco.languages.typescript.typescriptDefaults.setCompilerOptions({

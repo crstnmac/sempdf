@@ -34,6 +34,8 @@ export { loadExtensionFont, loadExtensionFontBytes, loadExtensionFontFaces } fro
 export type { ExtensionFontPaths } from "./chrome-extension-fonts.js";
 export { loadGoogleFont } from "./google-fonts.js";
 export type { LoadGoogleFontOptions } from "./google-fonts.js";
+export { registerBundledFonts } from "./bundled-fonts.js";
+export type { BundledFonts, FontByteReader, RegisterBundledFontsOptions } from "./bundled-fonts.js";
 export {
   appendPages,
   extractPages,
@@ -54,7 +56,7 @@ export { validatePdf2Conformance } from "./internal/pdf2-validation.js";
 export type { Pdf2ComplianceIssue } from "./internal/pdf2-validation.js";
 export { validateWithVeraPdf, parseVeraPdfReport } from "./internal/verapdf-validate.js";
 export type { VeraPdfValidateOptions, VeraPdfValidateResult } from "./internal/verapdf-validate.js";
-export { cm, cmyk, color, deviceN, gray, hex, inch, mm, PAGE_SIZES, pt, rgb, separation } from "./types.js";
+export { cm, cmyk, color, deviceN, gray, hex, hsl, inch, mm, PAGE_SIZES, pt, rgb, separation } from "./types.js";
 export type {
   BinaryData,
   BmpImageOptions,
@@ -107,6 +109,10 @@ export type {
   FieldActions,
   FreeTextAnnotationOptions,
   GifImageOptions,
+  ImageFit,
+  ImageFitOptions,
+  ImagePosition,
+  ImageClip,
   GrayColor,
   HighlightAnnotationOptions,
   ImageOptions,
@@ -172,12 +178,16 @@ export type {
   SignatureFieldOptions,
   StrokeStyle,
   SvgImageOptions,
+  TableBorderStyle,
   TableCell,
+  TableCellBorders,
+  TableCellBorderSide,
   TableCellDefinition,
   TableHeaderScope,
   TableOptions,
   TableRow,
   TemplateBlock,
+  TemplateBlockControls,
   TemplateAutoOutlineOptions,
   TemplateCheckBoxBlock,
   TemplateChoiceFieldBlock,
@@ -191,6 +201,12 @@ export type {
   TemplateListBlock,
   TemplateNoteBlock,
   TemplatePageBreakBlock,
+  TemplateTocBlock,
+  TemplateTocOptions,
+  TemplateTocEntryStyle,
+  TemplateWatermarkOptions,
+  TemplateCrossRefBlock,
+  TemplateCrossRefOptions,
   TemplatePageLinkBlock,
   TemplatePageNumberAlign,
   TemplatePageNumberOptions,

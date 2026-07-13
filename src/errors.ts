@@ -84,6 +84,10 @@ export enum PdfErrorCode {
   UNREACHABLE = "UNREACHABLE",
   /** A script (e.g. Devanagari, Thai) cannot be shaped by the current shaper. */
   UNSUPPORTED_SCRIPT = "UNSUPPORTED_SCRIPT",
+  /** A licensed-usage guard refused generation (no quota / no valid lease). */
+  LICENSE_QUOTA_EXCEEDED = "LICENSE_QUOTA_EXCEEDED",
+  /** Generation was attempted with no license guard installed (secure-by-default). */
+  LICENSE_REQUIRED = "LICENSE_REQUIRED",
 }
 
 /**

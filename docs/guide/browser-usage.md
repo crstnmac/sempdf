@@ -48,6 +48,15 @@ The core engine — generation, parsing, editing, fonts, images, tables, templat
 
 The Node-only sinks load `node:fs` through a lazy dynamic `import()`, so bundlers building for the browser will not pull them into the core path.
 
+**Generation requires a license guard (secure by default).** The library refuses to serialize unless a guard is installed, and the `SEMPDF_LICENSE_DEV` env bypass does not exist in the browser. Install a guard before generating — either the licensing client, or a permissive one for unrestricted use:
+
+```ts
+import { setLicenseGuard } from "@sempdf/sempdf-pdf/license-guard";
+setLicenseGuard({ consume() {} });
+```
+
+See [Licensing and Usage Limits](./licensing.md).
+
 ## Chrome Extensions
 
 When running inside a Chrome extension, use [`loadExtensionFont()`](./text-and-fonts#chrome-extension-fonts) to load font files bundled with the extension. Fonts bundled as `.ttf`/`.otf` files are fetched via `chrome.runtime.getURL()` and registered in one call.

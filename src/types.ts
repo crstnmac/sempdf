@@ -460,6 +460,13 @@ export interface DocumentOptions {
    * override these.
    */
   shapeDefaults?: ShapeStyle | undefined;
+  /**
+   * Solid background color filled behind every page's content (drawn as the
+   * first thing on each page, tagged as an artifact). Applies to pages created
+   * via {@link PdfDocument.addPage} and {@link PdfDocument.renderTemplate}. A
+   * template's own `pageBackground` option overrides this.
+   */
+  pageBackground?: ColorInput | undefined;
   /** Document information dictionary values. */
   info?: DocumentInfo;
   /** XMP metadata packet or structured XMP metadata input. */
@@ -757,6 +764,15 @@ export interface SoftMaskHandle {
 export type TextDirection = "ltr" | "rtl" | "auto";
 
 /**
+ * Glyph painting mode (the PDF `Tr` text rendering operator):
+ * - `"fill"` — fill glyphs with the text color (default).
+ * - `"stroke"` — outline glyphs with the stroke color/width (no fill).
+ * - `"fillStroke"` — fill and outline.
+ * - `"invisible"` — render nothing (e.g. text over a scanned image for search).
+ */
+export type TextRenderMode = "fill" | "stroke" | "fillStroke" | "invisible";
+
+/**
  * Options for placing a single line of text.
  */
 export interface TextOptions {
@@ -820,6 +836,29 @@ export interface TextOptions {
    * the default encoding is used.
    */
   encoding?: "winansi" | "macroman" | "pdfdoc" | undefined;
+  /**
+   * Raises (positive) or lowers (negative) the text baseline, in PDF points
+   * (the `Ts` operator). Set directly for fine control, or use the
+   * {@link superscript} / {@link subscript} shortcuts.
+   */
+  rise?: number | undefined;
+  /**
+   * Renders the text as superscript — raised above the baseline and reduced in
+   * size. Convenience over {@link rise} + a smaller {@link fontSize}.
+   */
+  superscript?: boolean | undefined;
+  /** Renders the text as subscript — lowered below the baseline and reduced in size. */
+  subscript?: boolean | undefined;
+  /** Glyph painting mode (fill, stroke/outline, fillStroke, invisible). Defaults to fill. */
+  renderMode?: TextRenderMode | undefined;
+  /** Stroke color for `stroke`/`fillStroke` render modes. Defaults to the text color. */
+  strokeColor?: ColorInput | undefined;
+  /** Stroke width in PDF points for `stroke`/`fillStroke` render modes. Defaults to 1. */
+  strokeWidth?: number | undefined;
+  /** Horizontal glyph scaling as a percentage (100 = normal; the `Tz` operator). */
+  horizontalScaling?: number | undefined;
+  /** Background color drawn as a filled rectangle behind the text (inline highlight). */
+  highlight?: ColorInput | undefined;
 }
 
 /**
@@ -899,6 +938,22 @@ export interface TextBlockOptions {
    * the default encoding is used.
    */
   encoding?: "winansi" | "macroman" | "pdfdoc" | undefined;
+  /** Raises (+) or lowers (−) the baseline in PDF points. See {@link TextOptions.rise}. */
+  rise?: number | undefined;
+  /** Renders the block as superscript. See {@link TextOptions.superscript}. */
+  superscript?: boolean | undefined;
+  /** Renders the block as subscript. See {@link TextOptions.subscript}. */
+  subscript?: boolean | undefined;
+  /** Glyph painting mode. See {@link TextOptions.renderMode}. */
+  renderMode?: TextRenderMode | undefined;
+  /** Stroke color for stroking render modes. See {@link TextOptions.strokeColor}. */
+  strokeColor?: ColorInput | undefined;
+  /** Stroke width for stroking render modes. See {@link TextOptions.strokeWidth}. */
+  strokeWidth?: number | undefined;
+  /** Horizontal glyph scaling percentage. See {@link TextOptions.horizontalScaling}. */
+  horizontalScaling?: number | undefined;
+  /** Background highlight color drawn behind the text. See {@link TextOptions.highlight}. */
+  highlight?: ColorInput | undefined;
 }
 
 /**
@@ -934,6 +989,22 @@ export interface InlineTextRun {
   characterSpacing?: number | undefined;
   /** When set, wraps this run in a clickable URI link annotation. */
   link?: string | undefined;
+  /** Raises (+) or lowers (−) this run's baseline in PDF points. See {@link TextOptions.rise}. */
+  rise?: number | undefined;
+  /** Renders this run as superscript. See {@link TextOptions.superscript}. */
+  superscript?: boolean | undefined;
+  /** Renders this run as subscript. See {@link TextOptions.subscript}. */
+  subscript?: boolean | undefined;
+  /** Glyph painting mode for this run. See {@link TextOptions.renderMode}. */
+  renderMode?: TextRenderMode | undefined;
+  /** Stroke color for stroking render modes. See {@link TextOptions.strokeColor}. */
+  strokeColor?: ColorInput | undefined;
+  /** Stroke width for stroking render modes. See {@link TextOptions.strokeWidth}. */
+  strokeWidth?: number | undefined;
+  /** Horizontal glyph scaling percentage for this run. See {@link TextOptions.horizontalScaling}. */
+  horizontalScaling?: number | undefined;
+  /** Background highlight color drawn behind this run. See {@link TextOptions.highlight}. */
+  highlight?: ColorInput | undefined;
 }
 
 /**
@@ -1154,6 +1225,20 @@ export interface FlowTextOptions
   blockWidth?: number | undefined;
   /** Alignment of the block inside the flow column. */
   blockAlign?: "left" | "center" | "right" | undefined;
+  /**
+   * Minimum number of lines to keep together at the bottom of a region before
+   * this paragraph is allowed to break across a column or page. If fewer than
+   * this many lines would remain at the bottom, the whole paragraph moves to the
+   * next region. Only applies to multi-column flows (single-column paragraphs
+   * are never split). Defaults to 1 (no constraint). Fractions are floored.
+   */
+  orphans?: number | undefined;
+  /**
+   * Minimum number of lines this paragraph must carry into a new region after a
+   * break, so a lone trailing line is never left stranded. Only applies to
+   * multi-column flows. Defaults to 1 (no constraint). Fractions are floored.
+   */
+  widows?: number | undefined;
 }
 
 /**
@@ -1641,6 +1726,102 @@ export interface TemplatePageBreakBlock {
 }
 
 /**
+ * Per-heading-level style overrides for TOC entries. Keyed by level (1-6);
+ * unset fields fall back to the TOC's base options.
+ */
+export interface TemplateTocEntryStyle {
+  /** Font for entries at this level. */
+  font?: PdfFont | undefined;
+  /** Font size in points for entries at this level. */
+  fontSize?: number | undefined;
+  /** Text color for the title and page number at this level. */
+  color?: ColorInput | undefined;
+}
+
+/**
+ * Options for a table-of-contents block.
+ */
+export interface TemplateTocOptions {
+  /** Deepest heading level to include (1-6). Defaults to 3. */
+  maxLevel?: 1 | 2 | 3 | 4 | 5 | 6 | undefined;
+  /** Font used for entries. Defaults to the flow font. */
+  font?: PdfFont | undefined;
+  /** Entry font size in points. Defaults to 11. */
+  fontSize?: number | undefined;
+  /** Per-level style overrides (e.g. a larger, darker level 1). Keyed by heading level. */
+  levelStyles?: { readonly [level: number]: TemplateTocEntryStyle } | undefined;
+  /**
+   * When true, each entry is prefixed with a hierarchical section number (e.g.
+   * "1", "1.2") tagged as a `Lbl`. Defaults to false.
+   */
+  numbering?: boolean | undefined;
+  /** Vertical space per entry in points. Defaults to `fontSize * 1.6`. */
+  lineHeight?: number | undefined;
+  /** Points of indentation added per heading level below level 1. Defaults to 16. */
+  indent?: number | undefined;
+  /** Whether each entry links to its heading's page. Defaults to true. */
+  link?: boolean | undefined;
+  /** Whether to show the resolved page number for each entry. Defaults to true. */
+  pageNumbers?: boolean | undefined;
+  /**
+   * Decorative leader drawn between the entry title and its page number:
+   * `"dots"` (default) a dotted leader, `"line"` a thin rule, `"none"` nothing.
+   * The leader is emitted as an artifact, so it is not announced by AT.
+   */
+  leader?: "dots" | "line" | "none" | undefined;
+  /** Color of the leader dots/rule. Defaults to a light gray. */
+  leaderColor?: ColorInput | undefined;
+}
+
+/**
+ * Options for a cross-reference block.
+ */
+export interface TemplateCrossRefOptions {
+  /** Font used for the reference text. Defaults to the flow font. */
+  font?: PdfFont | undefined;
+  /** Font size in points. Defaults to the flow font size. */
+  fontSize?: number | undefined;
+  /** Whether the reference links to its target's page. Defaults to true. */
+  link?: boolean | undefined;
+  /**
+   * Whether the resolved target page number is appended. When `text` contains
+   * the placeholder `{page}`, the number is substituted there instead. Defaults
+   * to true.
+   */
+  pageNumbers?: boolean | undefined;
+}
+
+/**
+ * Template block that renders a cross-reference to a named {@link
+ * TemplateBlockControls.anchor} elsewhere in the document. The target page
+ * number is resolved after the whole document is laid out, so a reference may
+ * point forward or backward.
+ */
+export interface TemplateCrossRefBlock {
+  readonly type: "crossRef";
+  /** Name of the target {@link TemplateBlockControls.anchor}. */
+  readonly to: string;
+  /**
+   * Reference text. May contain the placeholder `{page}`, replaced by the
+   * resolved page number. Defaults to `"see page {page}"`.
+   */
+  readonly text?: string | undefined;
+  readonly options?: TemplateCrossRefOptions | undefined;
+}
+
+/**
+ * Template block that renders a table of contents from the document's
+ * top-level heading blocks. Entries are collected from the surrounding
+ * template's headings (up to `maxLevel`); page numbers and links are resolved
+ * after the whole document has been laid out, so a TOC may appear before the
+ * content it references.
+ */
+export interface TemplateTocBlock {
+  readonly type: "toc";
+  readonly options?: TemplateTocOptions | undefined;
+}
+
+/**
  * Template block for rendering a text form field.
  */
 export interface TemplateTextFieldBlock {
@@ -1785,9 +1966,43 @@ export interface TemplateCustomBlock {
 }
 
 /**
+ * Pagination controls carried by every template block. Applied by the
+ * document-level template paginator ({@link PdfDocument.renderTemplate}).
+ * Merged into {@link TemplateBlock} by intersection so each block type gains
+ * them without redeclaring.
+ */
+export interface TemplateBlockControls {
+  /**
+   * Force a page break (or advance to the next column) before this block,
+   * unless the flow cursor is already at the top of a fresh region.
+   */
+  readonly breakBefore?: boolean | undefined;
+  /** Force a page break (or advance to the next column) after this block. */
+  readonly breakAfter?: boolean | undefined;
+  /**
+   * Keep this block whole — never split its content across a page or column
+   * boundary. Paragraphs, which may otherwise split line-by-line across
+   * columns, are placed as a unit instead.
+   */
+  readonly keepTogether?: boolean | undefined;
+  /**
+   * Registers a named destination at this block's page, referenceable by a
+   * {@link TemplateCrossRefBlock}. The name must be unique within the template.
+   */
+  readonly anchor?: string | undefined;
+  /**
+   * Footnote text anchored to this block. A numbered marker is appended to the
+   * block (for text blocks: `heading`/`paragraph`), and the note is rendered at
+   * the bottom of the page the block lands on. Notes are numbered document-wide
+   * in reading order.
+   */
+  readonly footnote?: string | undefined;
+}
+
+/**
  * Union of block types accepted by template rendering.
  */
-export type TemplateBlock =
+export type TemplateBlock = (
   | TemplateHeadingBlock
   | TemplateParagraphBlock
   | TemplateRichParagraphBlock
@@ -1796,6 +2011,8 @@ export type TemplateBlock =
   | TemplateLinkBlock
   | TemplateSectionBlock
   | TemplatePageBreakBlock
+  | TemplateTocBlock
+  | TemplateCrossRefBlock
   | TemplateTextFieldBlock
   | TemplateCheckBoxBlock
   | TemplateChoiceFieldBlock
@@ -1809,7 +2026,8 @@ export type TemplateBlock =
   | TemplatePathBlock
   | TemplateRectBlock
   | TemplateListBlock
-  | TemplateCustomBlock;
+  | TemplateCustomBlock
+) & TemplateBlockControls;
 
 /**
  * Top-level options for rendering a reusable document template.
@@ -1898,6 +2116,24 @@ export interface TemplateStylesheet {
 }
 
 /**
+ * Options for a document watermark drawn behind every page's content.
+ */
+export interface TemplateWatermarkOptions {
+  /** Watermark text. */
+  text: string;
+  /** Font size in points. Defaults to an automatic size that spans the page diagonally. */
+  fontSize?: number | undefined;
+  /** Font. Defaults to Helvetica-Bold. */
+  font?: PdfFont | undefined;
+  /** Text color. Defaults to a medium gray. */
+  color?: ColorInput | undefined;
+  /** Fill opacity (0-1). Defaults to 0.15. */
+  opacity?: number | undefined;
+  /** Rotation in degrees, counter-clockwise about the page center. Defaults to 45. */
+  rotation?: number | undefined;
+}
+
+/**
  * Top-level options for rendering template blocks into a complete document.
  */
 export interface TemplateDocumentOptions {
@@ -1937,6 +2173,28 @@ export interface TemplateDocumentOptions {
    * See {@link TemplateStylesheet} for the selector and cascade rules.
    */
   styles?: TemplateStylesheet | undefined;
+  /**
+   * Fills every page with a solid background color, drawn behind all other
+   * content (including the watermark and background blocks). Emitted as an
+   * artifact so it stays out of the reading order.
+   */
+  pageBackground?: ColorInput | undefined;
+  /**
+   * A diagonal watermark drawn centered behind every page's content (e.g.
+   * "DRAFT", "CONFIDENTIAL"). Pass a string for defaults, or an options object
+   * to control size, color, opacity, and rotation. Always tagged as an artifact.
+   */
+  watermark?: string | TemplateWatermarkOptions | undefined;
+  /**
+   * Callback that returns master-page background blocks for each page (e.g. a
+   * full-bleed tint, rule, or logo). Rendered as a flow from the top content
+   * edge and drawn behind all other content. Tag background blocks as
+   * `"Artifact"` to keep them out of the reading order. For a centered text
+   * watermark prefer {@link TemplateDocumentOptions.watermark}.
+   */
+  background?:
+    | ((context: TemplateRenderContext) => readonly TemplateBlock[])
+    | undefined;
   /** Callback that returns header blocks for each page. */
   header?:
     | ((context: TemplateRenderContext) => readonly TemplateBlock[])
@@ -2069,6 +2327,12 @@ export interface TableCellDefinition {
   align?: TextAlign | undefined;
   /** Background fill for this cell, overriding `headerBackground`/`zebra` striping. */
   background?: ColorInput | undefined;
+  /**
+   * Per-edge borders for this cell, drawn on top of the table-level
+   * {@link TableOptions.borders}. Use it to add a border on any specific cell,
+   * or rule a whole row by setting the same side on each cell in that row.
+   */
+  border?: TableCellBorders | undefined;
 }
 
 /**
@@ -2081,6 +2345,39 @@ export type TableCell = string | TableCellDefinition;
 export type TableRow = readonly TableCell[];
 
 /**
+ * Selects which border lines a table draws.
+ */
+export type TableBorderStyle = "all" | "horizontal" | "outer" | "none";
+
+/**
+ * Styling for one edge of a table cell. `width` defaults to 0.75; `color`
+ * defaults to a medium gray.
+ */
+export interface TableCellBorderSide {
+  /** Line color. Defaults to a medium gray. */
+  color?: ColorInput | undefined;
+  /** Line width in PDF points. Defaults to 0.75. */
+  width?: number | undefined;
+}
+
+/**
+ * Per-edge borders for a single table cell, overriding (and drawn on top of)
+ * the table-level {@link TableOptions.borders}. Each side accepts `true` (draw
+ * with the default gray/0.75 line) or a {@link TableCellBorderSide} for an
+ * explicit color and width. Set borders on a row's cells to rule that row.
+ */
+export interface TableCellBorders {
+  /** Top edge. */
+  top?: boolean | TableCellBorderSide | undefined;
+  /** Right edge. */
+  right?: boolean | TableCellBorderSide | undefined;
+  /** Bottom edge. */
+  bottom?: boolean | TableCellBorderSide | undefined;
+  /** Left edge. */
+  left?: boolean | TableCellBorderSide | undefined;
+}
+
+/**
  * Options for rendering tagged tables.
  */
 export interface TableOptions {
@@ -2090,10 +2387,21 @@ export interface TableOptions {
   y: number;
   /** Width in PDF points. */
   width: number;
-  /** Explicit table column widths in PDF points. */
-  columnWidths?: readonly number[] | undefined;
+  /**
+   * Table column widths in PDF points. Provide an explicit array (must sum to
+   * `width`), or `"auto"` to size columns to their content — each column takes
+   * its natural un-wrapped width scaled to fill `width`, shrinking toward its
+   * longest-word width when content is too wide. Defaults to equal columns.
+   */
+  columnWidths?: readonly number[] | "auto" | undefined;
   /** Number of leading rows treated as table headers. */
   headerRows?: number | undefined;
+  /**
+   * Number of trailing rows treated as a table footer. When a table is split
+   * across pages by the template paginator, these rows repeat at the bottom of
+   * every slice (mirroring how `headerRows` repeat at the top). Defaults to 0.
+   */
+  footerRows?: number | undefined;
   /** Number of leading columns treated as table headers. */
   headerColumns?: number | undefined;
   /** Padding inside table cells in PDF points. */
@@ -2134,13 +2442,23 @@ export interface TableOptions {
    */
   summary?: string | undefined;
   /**
-   * Color of the cell grid lines. Setting this (or `borderWidth`) draws a
-   * border around every cell. Drawn as an artifact (not part of the
-   * structure tree).
+   * Color of the border lines. Setting this (or `borderWidth`, or `borders`)
+   * draws borders. Drawn as an artifact (not part of the structure tree).
+   * Defaults to a medium gray when borders are enabled without a color.
    */
   borderColor?: ColorInput | undefined;
-  /** Width of the cell grid lines in PDF points. Defaults to 0.75 when `borderColor` is set. */
+  /** Width of the border lines in PDF points. Defaults to 0.75 when borders are enabled. */
   borderWidth?: number | undefined;
+  /**
+   * Which border lines to draw:
+   * - `"all"` — full grid around every cell (default when a border color/width is set).
+   * - `"horizontal"` — horizontal rules between rows plus top and bottom edges; no vertical lines.
+   * - `"outer"` — a single frame around the whole table.
+   * - `"none"` — no borders, even if `borderColor`/`borderWidth` are set.
+   *
+   * When omitted, defaults to `"all"` if `borderColor`/`borderWidth` is set, otherwise `"none"`.
+   */
+  borders?: TableBorderStyle | undefined;
   /** Background fill behind header cells (header rows/columns and cells marked `header: true`). */
   headerBackground?: ColorInput | undefined;
   /**
@@ -2150,10 +2468,49 @@ export interface TableOptions {
   zebra?: boolean | ColorInput | undefined;
 }
 
+/** How an image fills its placement box. See {@link ImageFitOptions.fit}. */
+export type ImageFit = "fill" | "contain" | "cover";
+
+/** Alignment of an image within its box for `contain`/`cover`. */
+export type ImagePosition =
+  | "center"
+  | "top"
+  | "bottom"
+  | "left"
+  | "right"
+  | "top-left"
+  | "top-right"
+  | "bottom-left"
+  | "bottom-right";
+
+/** Shape an image is clipped to within its box. */
+export type ImageClip = "none" | "circle" | "ellipse";
+
+/**
+ * Fit, positioning, and clipping controls shared by all raster image
+ * placements. The image is always laid out inside its `width`×`height` box.
+ */
+export interface ImageFitOptions {
+  /**
+   * How the image fills its box:
+   * - `"fill"` (default) — stretch to the box, ignoring aspect ratio.
+   * - `"contain"` — scale to fit inside the box, preserving aspect (letterboxed).
+   * - `"cover"` — scale to cover the box, preserving aspect (overflow cropped).
+   */
+  fit?: ImageFit | undefined;
+  /** Alignment within the box when `fit` leaves slack or overflow. Defaults to `"center"`. */
+  position?: ImagePosition | undefined;
+  /**
+   * Clip the image to a shape inscribed in its box: `"ellipse"` fills the box,
+   * `"circle"` uses the smaller box dimension (centered). Defaults to `"none"`.
+   */
+  clip?: ImageClip | undefined;
+}
+
 /**
  * Options for placing JPEG images on a page.
  */
-export interface JpegImageOptions {
+export interface JpegImageOptions extends ImageFitOptions {
   /** Horizontal position in PDF points. */
   x: number;
   /** Vertical position in PDF points. */
@@ -2179,7 +2536,7 @@ export interface JpegImageOptions {
 /**
  * Options for placing PNG images on a page.
  */
-export interface PngImageOptions {
+export interface PngImageOptions extends ImageFitOptions {
   /** Horizontal position in PDF points. */
   x: number;
   /** Vertical position in PDF points. */
@@ -2203,7 +2560,7 @@ export interface PngImageOptions {
 /**
  * Options for placing BMP images on a page.
  */
-export interface BmpImageOptions {
+export interface BmpImageOptions extends ImageFitOptions {
   /** Horizontal position in PDF points. */
   x: number;
   /** Vertical position in PDF points. */
@@ -2227,7 +2584,7 @@ export interface BmpImageOptions {
 /**
  * Options for placing JBIG2 images on a page.
  */
-export interface Jbig2ImageOptions {
+export interface Jbig2ImageOptions extends ImageFitOptions {
   /** Horizontal position in PDF points. */
   x: number;
   /** Vertical position in PDF points. */
@@ -2287,7 +2644,7 @@ export interface PageLinkOptions {
 /**
  * Options for placing TIFF images on a page.
  */
-export interface TiffImageOptions {
+export interface TiffImageOptions extends ImageFitOptions {
   /** Horizontal position in PDF points. */
   x: number;
   /** Vertical position in PDF points. */
@@ -2312,7 +2669,7 @@ export interface TiffImageOptions {
  * Options for placing JPEG 2000 (JP2) images on a page.
  * PDF spec supports JPXDecode filter for JPEG 2000 image data.
  */
-export interface Jp2ImageOptions {
+export interface Jp2ImageOptions extends ImageFitOptions {
   /** Horizontal position in PDF points. */
   x: number;
   /** Vertical position in PDF points. */
@@ -2336,7 +2693,7 @@ export interface Jp2ImageOptions {
 /**
  * Options for placing WebP images on a page.
  */
-export interface WebpImageOptions {
+export interface WebpImageOptions extends ImageFitOptions {
   /** Horizontal position in PDF points. */
   x: number;
   /** Vertical position in PDF points. */
@@ -2360,7 +2717,7 @@ export interface WebpImageOptions {
 /**
  * Options for placing GIF images on a page.
  */
-export interface GifImageOptions {
+export interface GifImageOptions extends ImageFitOptions {
   /** Horizontal position in PDF points. */
   x: number;
   /** Vertical position in PDF points. */
@@ -3240,6 +3597,14 @@ export function color(name: NamedColor | string): RgbColor {
   if (name.startsWith("#")) {
     return hex(name);
   }
+  if (/^hsla?\(/i.test(name.trim())) {
+    const parts = name.match(/-?\d*\.?\d+/g);
+    if (parts === null || parts.length < 3) {
+      throw new PdfEngineError(PdfErrorCode.INVALID_COLOR, `Invalid HSL color: "${name}".`);
+    }
+    // CSS HSL: hue in degrees, saturation and lightness as 0–100 (percent).
+    return hsl(parseFloat(parts[0]!), parseFloat(parts[1]!) / 100, parseFloat(parts[2]!) / 100);
+  }
   const rgb255 = NAMED_COLORS[name as NamedColor];
   if (rgb255 === undefined) {
     throw new PdfEngineError(
@@ -3248,6 +3613,52 @@ export function color(name: NamedColor | string): RgbColor {
     );
   }
   return { kind: "rgb", r: rgb255[0] / 255, g: rgb255[1] / 255, b: rgb255[2] / 255 };
+}
+
+/**
+ * Normalizes an HSL saturation/lightness component. Accepts a `0–1` fraction, a
+ * percentage string (`"87%"`), or a `0–100` number (values above 1 are treated
+ * as percentages). Clamped to `[0, 1]`.
+ */
+function normalizeHslComponent(value: number | string): number {
+  const parsed =
+    typeof value === "string"
+      ? value.trim().endsWith("%")
+        ? parseFloat(value) / 100
+        : parseFloat(value)
+      : value > 1
+        ? value / 100
+        : value;
+  return Math.min(1, Math.max(0, Number.isFinite(parsed) ? parsed : 0));
+}
+
+/**
+ * Creates a color from HSL. Converted to an {@link RgbColor} for output (HSL is
+ * not a native PDF color space).
+ *
+ * @param h Hue in degrees; wrapped into [0, 360).
+ * @param s Saturation as a `0–1` fraction, a percentage string (`"87%"`), or a `0–100` number.
+ * @param l Lightness as a `0–1` fraction, a percentage string (`"80%"`), or a `0–100` number.
+ *
+ * @returns The equivalent RGB color.
+ */
+export function hsl(h: number, s: number | string, l: number | string): RgbColor {
+  const hue = ((h % 360) + 360) % 360;
+  const sat = normalizeHslComponent(s);
+  const light = normalizeHslComponent(l);
+  const c = (1 - Math.abs(2 * light - 1)) * sat;
+  const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const m = light - c / 2;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  if (hue < 60) { r = c; g = x; }
+  else if (hue < 120) { r = x; g = c; }
+  else if (hue < 180) { g = c; b = x; }
+  else if (hue < 240) { g = x; b = c; }
+  else if (hue < 300) { r = x; b = c; }
+  else { r = c; b = x; }
+  return { kind: "rgb", r: r + m, g: g + m, b: b + m };
 }
 
 /**

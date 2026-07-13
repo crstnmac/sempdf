@@ -30,6 +30,8 @@ const [inter400, inter700] = await Promise.all([
 
 const BRAND = rgb(0.05, 0.35, 0.75);
 const MUTED = rgb(0.45, 0.45, 0.5);
+const TABLE_BORDER = rgb(0.72, 0.76, 0.82);
+const TABLE_HEADER = rgb(0.92, 0.94, 0.98);
 
 doc.registerFontFamily("Inter", { regular: inter400, bold: inter700 });
 
@@ -89,7 +91,12 @@ doc.renderTemplate({
         ],
         ["Lorem Ipsum, \n New York, USA", "John Doe, \n Lorem Ipsum Team"],
       ],
-      options: { headerRows: 1 },
+      options: {
+        headerRows: 1,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     {
@@ -125,7 +132,12 @@ doc.renderTemplate({
           { text: "$49.00" },
         ],
       ],
-      options: { headerRows: 1, headerColumns: 1, width: 530 },
+      options: {
+        headerRows: 1,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     {
@@ -143,7 +155,12 @@ doc.renderTemplate({
         ],
         [{ text: "Total Due", header: true, bold: true }, { text: "$345.80" }],
       ],
-      options: { headerRows: 0, width: 800 },
+      options: {
+        headerRows: 0,
+        borders: "all",
+        borderColor: TABLE_BORDER,
+        headerBackground: TABLE_HEADER,
+      },
     },
 
     {
@@ -169,3 +186,4 @@ doc.renderTemplate({
 });
 
 export default doc;
+

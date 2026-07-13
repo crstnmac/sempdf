@@ -1,4 +1,4 @@
-import type { PdfDocument, PdfFlow, PdfPage } from '../document.js';
+import type { PdfDocument, PdfFlow, PdfPage, PdfStructureContainer } from '../document.js';
 import { PdfEngineError, PdfErrorCode } from '../errors.js';
 import type {
   FlowCheckBoxOptions,
@@ -9,8 +9,10 @@ import type {
   FlowRadioGroupOptions,
   FlowSignatureFieldOptions,
   FlowTableOptions,
+  ColorInput,
   FlowTextFieldOptions,
   PageLinkOptions,
+  PdfFont,
   TableRow,
   TemplateBlock,
   TemplateDocumentOptions,
@@ -20,6 +22,9 @@ import type {
   TemplateStyle,
   TemplateStylesheet,
   TemplateTableBlock,
+  TemplateTocBlock,
+  TemplateCrossRefBlock,
+  TemplateWatermarkOptions,
 } from '../types.js';
 import type { ResolvedPageSize } from './validation.js';
 
@@ -115,6 +120,26 @@ export function renderTemplateDocument(
   pages.push({ pageNumber: current.pageNumber, page: current.page });
   const headings: CollectedHeading[] = [];
   const deferredPageLinks: DeferredPageLink[] = [];
+  const tocBackfills: TocBackfill[] = [];
+  const crossRefBackfills: CrossRefBackfill[] = [];
+  const anchors = new Map<string, PdfPage>();
+  const footnotes: FootnoteEntry[] = [];
+  // The bottom content boundary of each page before any footnote reservation,
+  // used to lay footnotes out at the page bottom afterward.
+  const pageBaseBottom = new Map<PdfPage, number>();
+  let footnoteCounter = 0;
+  pageBaseBottom.set(current.page, current.flow.bottomMargin);
+  // Headings feed both the outline and any TOC block, so collect them whenever
+  // either is requested.
+  const hasToc = options.blocks.some((block) => block.type === 'toc');
+  const collectHeadings = Boolean(options.autoOutline) || hasToc;
+  const measureLineWidth = (text: string, fontSize: number, font: PdfFont | undefined): number =>
+    doc.measureText(text, { fontSize, ...(font ? { font } : {}) }).width;
+  // The document's body font — `page.font`, else the stylesheet's `paragraph`
+  // font. Inherited by the TOC, footnotes, and cross-references so they match
+  // the selected font. (The `createDocument` default font is already applied by
+  // the containers when no font is passed.)
+  const templateFont = options.page?.font ?? options.styles?.paragraph?.font;
 
   const attachOverflowHandler = (): void => {
     current.flow.setOverflowHandler(() => {
@@ -126,6 +151,7 @@ export function renderTemplateDocument(
   const advanceToNewPage = (): void => {
     current = createTemplatePage(doc, options, current.pageNumber + 1);
     pages.push({ pageNumber: current.pageNumber, page: current.page });
+    pageBaseBottom.set(current.page, current.flow.bottomMargin);
     assertPageCountWithinStrictLimit(strict, pages.length);
     attachOverflowHandler();
   };
@@ -138,8 +164,22 @@ export function renderTemplateDocument(
     }
   };
 
+  // Set when the previous block requested `breakAfter`; consumed at the top of
+  // the next iteration so it composes correctly with `pageBreak`/`breakBefore`.
+  let pendingBreakAfter = false;
+
   for (let index = 0; index < options.blocks.length; index += 1) {
     const block = options.blocks[index]!;
+
+    // Explicit break rules: a pending `breakAfter` from the previous block, or a
+    // `breakBefore` on this one, advances to a fresh region. Both are no-ops when
+    // the cursor is already at the top of a region (nothing to break away from).
+    if ((pendingBreakAfter || block.breakBefore === true) && current.flow.cursorY < current.startY) {
+      advanceToNextFlowRegion();
+    }
+    pendingBreakAfter = false;
+    const breakAfter = block.breakAfter === true;
+
     if (block.type === 'pageBreak') {
       if (current.flow.cursorY < current.startY) {
         advanceToNewPage();
@@ -149,11 +189,27 @@ export function renderTemplateDocument(
 
     if (block.type === 'pageLink') {
       renderPageLinkBlock(current.flow, current.page, block.target, block.options, deferredPageLinks);
+      pendingBreakAfter = breakAfter;
       continue;
     }
 
     if (block.type === 'table') {
+      if (block.anchor !== undefined) anchors.set(block.anchor, current.page);
       renderTableWithSplits(block, index, strict, () => current, advanceToNextFlowRegion, options.styles);
+      pendingBreakAfter = breakAfter;
+      continue;
+    }
+
+    if (block.type === 'toc') {
+      if (block.anchor !== undefined) anchors.set(block.anchor, current.page);
+      renderTocBlock(block, options.blocks, () => current, advanceToNextFlowRegion, tocBackfills, measureLineWidth, templateFont);
+      pendingBreakAfter = breakAfter;
+      continue;
+    }
+
+    if (block.type === 'crossRef') {
+      renderCrossRefBlock(block, () => current, advanceToNextFlowRegion, crossRefBackfills, templateFont);
+      pendingBreakAfter = breakAfter;
       continue;
     }
 
@@ -165,8 +221,11 @@ export function renderTemplateDocument(
         ? estimateTemplateBlockHeight(options.blocks[index + 1]!, current.flow, options.styles)
         : 0;
     const balanceTarget = resolveColumnBalanceTarget(options.blocks, index, current, options.styles);
+    // `keepTogether` forbids splitting a paragraph line-by-line across columns,
+    // forcing it to be placed whole (breaking before it if it does not fit).
     const canSplitTextAcrossColumn =
       block.type === 'paragraph' &&
+      block.keepTogether !== true &&
       current.flow.columnIndex + 1 < current.flow.columnCount;
 
     if (
@@ -185,17 +244,43 @@ export function renderTemplateDocument(
       advanceToNextFlowRegion();
     }
 
-    if (block.type === 'heading' && options.autoOutline) {
+    if (block.type === 'heading' && collectHeadings) {
       const level = block.options?.level ?? 1;
       headings.push({ level, text: block.text, page: current.page });
     }
 
-    renderTemplateBlockToFlow(current.flow, block, options.styles);
+    if (block.anchor !== undefined) anchors.set(block.anchor, current.page);
+
+    let blockToRender: TemplateBlock = block;
+    if (block.footnote !== undefined) {
+      footnoteCounter += 1;
+      const marker = ` [${footnoteCounter}]`;
+      // Reserve a line at the page bottom so the note does not overlap content.
+      current.flow.reserveBottomSpace(FOOTNOTE_LINE_HEIGHT);
+      footnotes.push({
+        page: current.page,
+        baseBottom: pageBaseBottom.get(current.page) ?? current.flow.bottomMargin,
+        x: current.flow.contentX,
+        number: footnoteCounter,
+        text: block.footnote,
+        ...(templateFont ? { font: templateFont } : {}),
+      });
+      // Append the marker to text-bearing blocks so the reference is visible.
+      if (block.type === 'heading' || block.type === 'paragraph') {
+        blockToRender = { ...block, text: block.text + marker };
+      }
+    }
+
+    renderTemplateBlockToFlow(current.flow, blockToRender, options.styles);
+    pendingBreakAfter = breakAfter;
   }
 
   assertPageCountWithinStrictLimit(strict, pages.length);
   resolveDeferredPageLinks(deferredPageLinks, pages);
-  renderTemplateRunningRegions(pages, options, metadata);
+  resolveTocBackfills(tocBackfills, headings, pages, measureLineWidth);
+  resolveCrossRefBackfills(crossRefBackfills, anchors, pages);
+  renderPageFootnotes(footnotes);
+  renderTemplateRunningRegions(pages, options, metadata, measureLineWidth);
 
   if (options.autoOutline && headings.length > 0) {
     buildOutlineFromHeadings(doc, headings, options.autoOutline);
@@ -349,6 +434,366 @@ interface CurrentPageRef {
   readonly pageNumber: number;
 }
 
+interface TocBackfill {
+  /**
+   * The structure container the entry's text and link annotation attach to —
+   * the `Link` element when linking (so its content gives the link an
+   * accessible name), otherwise the `Reference`.
+   */
+  readonly content: PdfStructureContainer;
+  readonly rect: { x: number; y: number; width: number; height: number };
+  readonly baselineY: number;
+  readonly fontSize: number;
+  readonly font: PdfFont | undefined;
+  readonly color?: ColorInput | undefined;
+  /** Index of this entry among headings filtered to `maxLevel`; aligns with the collected headings. */
+  readonly ordinal: number;
+  readonly maxLevel: number;
+  readonly link: boolean;
+  readonly pageNumbers: boolean;
+}
+
+/** Collects TOC entries from the template's top-level heading blocks. */
+function collectTocEntries(
+  blocks: readonly TemplateBlock[],
+  maxLevel: number,
+): Array<{ level: number; text: string }> {
+  const entries: Array<{ level: number; text: string }> = [];
+  for (const block of blocks) {
+    if (block.type !== 'heading') continue;
+    const level = block.options?.level ?? 1;
+    if (level <= maxLevel) entries.push({ level, text: block.text });
+  }
+  return entries;
+}
+
+/**
+ * Renders a TOC block. Entry titles and their positions are laid out now (so
+ * the TOC paginates like any other content), but page numbers and links are
+ * left for {@link resolveTocBackfills} once every page exists.
+ */
+function renderTocBlock(
+  block: TemplateTocBlock,
+  allBlocks: readonly TemplateBlock[],
+  getCurrent: () => CurrentPageRef,
+  advancePage: () => void,
+  backfills: TocBackfill[],
+  measure: (text: string, fontSize: number, font: PdfFont | undefined) => number,
+  defaultFont: PdfFont | undefined,
+): void {
+  const opts = block.options ?? {};
+  const maxLevel = opts.maxLevel ?? 3;
+  const entries = collectTocEntries(allBlocks, maxLevel);
+  if (entries.length === 0) return;
+
+  const baseFontSize = opts.fontSize ?? 11;
+  const indentStep = opts.indent ?? 16;
+  const showNumbers = opts.pageNumbers !== false;
+  const link = opts.link !== false;
+  // Inherit the template's body font unless the TOC (or a level style) overrides it.
+  const baseFont = opts.font ?? defaultFont;
+  const leader = opts.leader ?? 'dots';
+  const leaderColor: ColorInput = opts.leaderColor ?? { kind: 'gray', value: 0.6 };
+  const levelStyles = opts.levelStyles;
+  const numbering = opts.numbering === true;
+  // Hierarchical section counters; index i tracks the current level (i+1) count.
+  const counters: number[] = [];
+
+  // One `TOC` structure container per page the TOC occupies (structure nodes
+  // belong to a page, so a TOC that flows onto a new page starts a new TOC
+  // container there). Entries become `TOCI` children.
+  const tocByPage = new Map<PdfPage, PdfStructureContainer>();
+  const tocContainerFor = (page: PdfPage): PdfStructureContainer => {
+    let container = tocByPage.get(page);
+    if (!container) {
+      container = page.container('TOC');
+      tocByPage.set(page, container);
+    }
+    return container;
+  };
+
+  let ordinal = 0;
+  for (const entry of entries) {
+    const style = levelStyles?.[entry.level];
+    const fontSize = style?.fontSize ?? baseFontSize;
+    const font = style?.font ?? baseFont;
+    const color = style?.color;
+    const lineHeight = opts.lineHeight ?? fontSize * 1.6;
+    // Room reserved on the right for the right-aligned page number.
+    const numberSlot = fontSize * 2.5;
+    const textStyle = { fontSize, ...(font ? { font } : {}), ...(color ? { color } : {}) };
+
+    if (
+      getCurrent().flow.remainingHeight < lineHeight &&
+      getCurrent().flow.cursorY < getCurrent().startY
+    ) {
+      advancePage();
+    }
+    const rect = getCurrent().flow.reservePageLinkRect({
+      width: Number.MAX_SAFE_INTEGER,
+      height: lineHeight,
+      borderWidth: 0,
+      tag: 'Artifact',
+      marginTop: 0,
+      marginBottom: 0,
+    });
+    const baselineY = rect.y + lineHeight * 0.25;
+    const indent = (entry.level - 1) * indentStep;
+    let textX = rect.x + indent;
+    const toci = tocContainerFor(getCurrent().page).container('TOCI');
+
+    // Optional hierarchical section number (TOCI → Lbl), e.g. "1", "1.2".
+    if (numbering) {
+      counters[entry.level - 1] = (counters[entry.level - 1] ?? 0) + 1;
+      counters.length = entry.level; // reset deeper levels
+      const label = `${counters.map((count) => count ?? 0).join('.')}  `;
+      toci.structure('Lbl').text(label, { x: textX, y: baselineY, ...textStyle, tag: 'Span' });
+      textX += measure(label, fontSize, font);
+    }
+
+    // PDF/UA structure: TOC → TOCI → Reference → Link → (text + OBJR). The text
+    // lives inside the Link so the link has an accessible name; the page number
+    // and the link annotation are added to the same Link during backfill. When
+    // linking is disabled the text sits directly in the Reference (no Link).
+    const reference = toci.structure('Reference');
+    const content = link ? reference.structure('Link') : reference;
+    content.text(entry.text, { x: textX, y: baselineY, ...textStyle, tag: 'Span' });
+
+    // Decorative leader between the title and the page-number slot. Drawn as an
+    // artifact on the host page so it stays out of the reading order.
+    if (leader !== 'none' && showNumbers) {
+      const titleWidth = measure(entry.text, fontSize, font);
+      const leaderStart = textX + titleWidth + fontSize * 0.5;
+      const leaderEnd = rect.x + rect.width - numberSlot - fontSize * 0.3;
+      if (leaderEnd - leaderStart > fontSize * 0.5) {
+        const host = getCurrent().page;
+        if (leader === 'dots') {
+          const unit = '. ';
+          const unitWidth = measure(unit, fontSize, font) || fontSize * 0.5;
+          const count = Math.floor((leaderEnd - leaderStart) / unitWidth);
+          if (count > 0) {
+            host.text(unit.repeat(count), {
+              x: leaderStart,
+              y: baselineY,
+              fontSize,
+              ...(font ? { font } : {}),
+              color: leaderColor,
+              tag: 'Artifact',
+            });
+          }
+        } else {
+          const ruleY = baselineY + fontSize * 0.15;
+          host.line(leaderStart, ruleY, leaderEnd, ruleY, {
+            stroke: leaderColor,
+            lineWidth: 0.5,
+            tag: 'Artifact',
+          });
+        }
+      }
+    }
+
+    backfills.push({
+      content,
+      rect,
+      baselineY,
+      fontSize,
+      font,
+      ...(color ? { color } : {}),
+      ordinal,
+      maxLevel,
+      link,
+      pageNumbers: showNumbers,
+    });
+    ordinal += 1;
+  }
+}
+
+/**
+ * Fills in each TOC entry's resolved page number and page link now that every
+ * page exists. Entries align by order with the collected headings filtered to
+ * the same `maxLevel`.
+ */
+function resolveTocBackfills(
+  backfills: readonly TocBackfill[],
+  headings: readonly CollectedHeading[],
+  pages: ReadonlyArray<{ pageNumber: number; page: PdfPage }>,
+  measure: (text: string, fontSize: number, font: PdfFont | undefined) => number,
+): void {
+  for (const entry of backfills) {
+    const matches = headings.filter((heading) => heading.level <= entry.maxLevel);
+    const heading = matches[entry.ordinal];
+    if (!heading) continue;
+    const target = pages.find((candidate) => candidate.page === heading.page);
+    if (!target) continue;
+    if (entry.pageNumbers) {
+      // The page number is part of the link's (or reference's) content, and is
+      // right-aligned to the table's right edge so numbers line up in a column.
+      const numberText = String(target.pageNumber);
+      const numberX = entry.rect.x + entry.rect.width - measure(numberText, entry.fontSize, entry.font);
+      entry.content.text(numberText, {
+        x: numberX,
+        y: entry.baselineY,
+        fontSize: entry.fontSize,
+        ...(entry.font ? { font: entry.font } : {}),
+        ...(entry.color ? { color: entry.color } : {}),
+        tag: 'Span',
+      });
+    }
+    if (entry.link) {
+      // Attaching to the Link container reuses its Link node for the OBJR, so
+      // the annotation nests inside the same Link element as the text.
+      entry.content.linkToPage(target.page, {
+        x: entry.rect.x,
+        y: entry.rect.y,
+        width: entry.rect.width,
+        height: entry.rect.height,
+        borderWidth: 0,
+        tag: 'Link',
+      });
+    }
+  }
+}
+
+/** Point height reserved and used per footnote line. */
+const FOOTNOTE_LINE_HEIGHT = 12;
+const FOOTNOTE_FONT_SIZE = 8;
+
+interface FootnoteEntry {
+  readonly page: PdfPage;
+  /** The page's bottom content boundary before footnote reservation. */
+  readonly baseBottom: number;
+  /** Left content edge of the page's flow frame. */
+  readonly x: number;
+  readonly number: number;
+  readonly text: string;
+  readonly font?: PdfFont | undefined;
+}
+
+/**
+ * Draws collected footnotes at the bottom of each page they belong to, stacked
+ * upward from the page's base bottom margin in the band reserved during layout.
+ */
+function renderPageFootnotes(footnotes: readonly FootnoteEntry[]): void {
+  const byPage = new Map<PdfPage, FootnoteEntry[]>();
+  for (const note of footnotes) {
+    const list = byPage.get(note.page) ?? [];
+    list.push(note);
+    byPage.set(note.page, list);
+  }
+  for (const notes of byPage.values()) {
+    notes.sort((a, b) => a.number - b.number);
+    // Lay notes out bottom-up: the last note sits just above the base margin.
+    notes.forEach((note, index) => {
+      const fromBottom = notes.length - 1 - index;
+      const y = note.baseBottom + fromBottom * FOOTNOTE_LINE_HEIGHT + FOOTNOTE_LINE_HEIGHT * 0.25;
+      note.page.text(`${note.number}. ${note.text}`, {
+        x: note.x,
+        y,
+        fontSize: FOOTNOTE_FONT_SIZE,
+        ...(note.font ? { font: note.font } : {}),
+        tag: 'Note',
+      });
+    });
+  }
+}
+
+interface CrossRefBackfill {
+  readonly hostPage: PdfPage;
+  readonly rect: { x: number; y: number; width: number; height: number };
+  readonly baselineY: number;
+  readonly fontSize: number;
+  readonly font: PdfFont | undefined;
+  readonly to: string;
+  readonly template: string;
+  readonly pageNumbers: boolean;
+  readonly link: boolean;
+}
+
+/**
+ * Reserves a line for a cross-reference. The visible text depends on the
+ * resolved target page number, so the whole line is drawn later in
+ * {@link resolveCrossRefBackfills}.
+ */
+function renderCrossRefBlock(
+  block: TemplateCrossRefBlock,
+  getCurrent: () => CurrentPageRef,
+  advancePage: () => void,
+  backfills: CrossRefBackfill[],
+  defaultFont: PdfFont | undefined,
+): void {
+  const opts = block.options ?? {};
+  const fontSize = opts.fontSize ?? 11;
+  const lineHeight = fontSize * 1.4;
+  if (
+    getCurrent().flow.remainingHeight < lineHeight &&
+    getCurrent().flow.cursorY < getCurrent().startY
+  ) {
+    advancePage();
+  }
+  const rect = getCurrent().flow.reservePageLinkRect({
+    width: Number.MAX_SAFE_INTEGER,
+    height: lineHeight,
+    borderWidth: 0,
+    tag: 'Artifact',
+    marginTop: 0,
+    marginBottom: 0,
+  });
+  backfills.push({
+    hostPage: getCurrent().page,
+    rect,
+    baselineY: rect.y + lineHeight * 0.25,
+    fontSize,
+    font: opts.font ?? defaultFont,
+    to: block.to,
+    template: block.text ?? 'see page {page}',
+    pageNumbers: opts.pageNumbers !== false,
+    link: opts.link !== false,
+  });
+}
+
+/** Resolves each cross-reference's target page, then draws its text and link. */
+function resolveCrossRefBackfills(
+  backfills: readonly CrossRefBackfill[],
+  anchors: ReadonlyMap<string, PdfPage>,
+  pages: ReadonlyArray<{ pageNumber: number; page: PdfPage }>,
+): void {
+  for (const entry of backfills) {
+    const targetPage = anchors.get(entry.to);
+    if (!targetPage) {
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_TEXT,
+        'crossRef target anchor does not exist in the rendered document.',
+        { anchor: entry.to },
+      );
+    }
+    const target = pages.find((candidate) => candidate.page === targetPage);
+    if (!target) continue;
+    let text = entry.template;
+    if (text.includes('{page}')) {
+      text = text.split('{page}').join(String(target.pageNumber));
+    } else if (entry.pageNumbers) {
+      text = `${text} ${target.pageNumber}`;
+    }
+    entry.hostPage.text(text, {
+      x: entry.rect.x,
+      y: entry.baselineY,
+      fontSize: entry.fontSize,
+      ...(entry.font ? { font: entry.font } : {}),
+      tag: 'Reference',
+    });
+    if (entry.link) {
+      entry.hostPage.linkToPage(targetPage, {
+        x: entry.rect.x,
+        y: entry.rect.y,
+        width: entry.rect.width,
+        height: entry.rect.height,
+        borderWidth: 0,
+        tag: 'Link',
+      });
+    }
+  }
+}
+
 function resolveColumnBalanceTarget(
   blocks: readonly TemplateBlock[],
   startIndex: number,
@@ -392,24 +837,41 @@ function renderTableWithSplits(
   if (allRows.length === 0) return;
 
   const styled = resolveBlockStyles(block, stylesheet) as TemplateTableBlock;
-  const opts: FlowTableOptions = styled.options ?? {};
+  // Resolve `columnWidths: "auto"` once over the whole table so every split
+  // slice sizes its columns identically (per-slice re-measurement would drift).
+  const rawOpts: FlowTableOptions = styled.options ?? {};
+  const resolvedWidths = getCurrent().flow.resolveTableColumnWidths(allRows, rawOpts);
+  const opts: FlowTableOptions = resolvedWidths ? { ...rawOpts, columnWidths: resolvedWidths } : rawOpts;
   const headerRowCount = Math.max(0, Math.min(opts.headerRows ?? 0, allRows.length));
+  // Footer rows never overlap header rows: the two together cannot exceed the
+  // total row count, and headers win the leading rows.
+  const footerRowCount = Math.max(0, Math.min(opts.footerRows ?? 0, allRows.length - headerRowCount));
+  const bodyStart = headerRowCount;
+  const bodyEnd = allRows.length - footerRowCount;
   const headers = allRows.slice(0, headerRowCount);
+  const footers = allRows.slice(bodyEnd);
+
+  const sumHeights = (heights: readonly number[]): number => heights.reduce((s, h) => s + h, 0);
 
   let rowHeights = getCurrent().flow.estimateTableRowHeights(allRows, opts);
-  let headerHeight = rowHeights.slice(0, headerRowCount).reduce((s, h) => s + h, 0);
+  let headerHeight = sumHeights(rowHeights.slice(0, headerRowCount));
+  let footerHeight = sumHeights(rowHeights.slice(bodyEnd));
 
-  let cursor = 0;
-  let isFirstSlice = true;
+  // A table with no body rows (only header/footer) never splits — render whole.
+  if (bodyStart >= bodyEnd) {
+    getCurrent().flow.table(allRows, opts);
+    return;
+  }
 
-  while (cursor < allRows.length) {
-    const isContinuation = !isFirstSlice;
+  let cursor = bodyStart;
+  while (cursor < bodyEnd) {
     const flow = getCurrent().flow;
-    let available = flow.remainingHeight;
-    if (isContinuation) available -= headerHeight;
+    // Headers and footers repeat on every slice, so their height is reserved up
+    // front and body rows are packed into what remains.
+    let available = flow.remainingHeight - headerHeight - footerHeight;
 
     let endCursor = cursor;
-    while (endCursor < allRows.length && rowHeights[endCursor]! <= available) {
+    while (endCursor < bodyEnd && rowHeights[endCursor]! <= available) {
       available -= rowHeights[endCursor]!;
       endCursor += 1;
     }
@@ -418,8 +880,8 @@ function renderTableWithSplits(
       if (flow.cursorY < getCurrent().startY) {
         advancePage();
         rowHeights = getCurrent().flow.estimateTableRowHeights(allRows, opts);
-        headerHeight = rowHeights.slice(0, headerRowCount).reduce((s, h) => s + h, 0);
-        isFirstSlice = false;
+        headerHeight = sumHeights(rowHeights.slice(0, headerRowCount));
+        footerHeight = sumHeights(rowHeights.slice(bodyEnd));
         continue;
       }
       assertTableRowFitsStrictLayout(
@@ -428,23 +890,25 @@ function renderTableWithSplits(
         cursor,
         getCurrent(),
         rowHeights[cursor]!,
-        isContinuation ? headerHeight : 0,
+        headerHeight + footerHeight,
       );
       // At start of a fresh page and even one row exceeds height: force-place that row.
       endCursor = cursor + 1;
     }
 
-    const sliceRows: readonly TableRow[] = isContinuation
-      ? [...headers, ...allRows.slice(cursor, endCursor)]
-      : allRows.slice(0, endCursor);
+    const sliceRows: readonly TableRow[] = [
+      ...headers,
+      ...allRows.slice(cursor, endCursor),
+      ...footers,
+    ];
     getCurrent().flow.table(sliceRows, opts);
     cursor = endCursor;
 
-    if (cursor < allRows.length) {
+    if (cursor < bodyEnd) {
       advancePage();
       rowHeights = getCurrent().flow.estimateTableRowHeights(allRows, opts);
-      headerHeight = rowHeights.slice(0, headerRowCount).reduce((s, h) => s + h, 0);
-      isFirstSlice = false;
+      headerHeight = sumHeights(rowHeights.slice(0, headerRowCount));
+      footerHeight = sumHeights(rowHeights.slice(bodyEnd));
     }
   }
 }
@@ -486,10 +950,20 @@ function renderTemplateRunningRegions(
   pages: ReadonlyArray<{ pageNumber: number; page: PdfPage }>,
   options: TemplateDocumentOptions,
   metadata: Pick<TemplateRenderContext, 'title' | 'author'>,
+  measure: (text: string, fontSize: number, font: PdfFont | undefined) => number,
 ): void {
   const totalPages = pages.length;
+  const watermark = options.watermark === undefined
+    ? undefined
+    : typeof options.watermark === 'string'
+      ? { text: options.watermark }
+      : options.watermark;
   for (const { pageNumber, page } of pages) {
     const context = { pageNumber, totalPages, ...metadata };
+    // Draw the watermark first so that, once every "behind" layer is hoisted to
+    // the front, a background tint (hoisted last) ends up furthest back and the
+    // watermark sits just above it — both still behind the body content.
+    if (watermark) renderPageWatermark(page, watermark, measure);
     if (options.header) {
       // The body is rendered before running regions, so the header's structure
       // roots and content ops would otherwise land last in the page. Hoist both
@@ -510,7 +984,91 @@ function renderTemplateRunningRegions(
         .render(options.footer(context), options.styles);
     }
     renderTemplatePageNumber(page, context, options);
+
+    if (options.background) {
+      // Rendered last and hoisted front-most so it is drawn first — behind the
+      // body, header, footer, and page number.
+      const rootsBeforeBackground = page.structureRootCount();
+      const opsBeforeBackground = page.contentOpCount();
+      page
+        .flow(backgroundFlowOptions(page.size, options.page))
+        .render(options.background(context), options.styles);
+      page.hoistStructureRootsToFront(rootsBeforeBackground);
+      page.hoistContentOpsToFront(opsBeforeBackground);
+    }
+
+    if (options.pageBackground !== undefined) {
+      // A solid page fill, hoisted last so it sits behind every other layer
+      // (page background < watermark < background blocks < body/header/footer).
+      const opsBeforeFill = page.contentOpCount();
+      page.rect(0, 0, page.size.width, page.size.height, { fill: options.pageBackground, tag: 'Artifact' });
+      page.hoistContentOpsToFront(opsBeforeFill);
+    }
   }
+}
+
+/**
+ * Draws a diagonal, centered, semi-transparent watermark behind the page's
+ * content. Uses a save/rotate/alpha graphics-state scope and is tagged as an
+ * artifact, then hoisted to the front of the content stream so it draws first.
+ */
+function renderPageWatermark(
+  page: PdfPage,
+  watermark: TemplateWatermarkOptions,
+  measure: (text: string, fontSize: number, font: PdfFont | undefined) => number,
+): void {
+  const { width, height } = page.size;
+  const rotation = watermark.rotation ?? 45;
+  const font = watermark.font;
+  const opacity = Math.min(1, Math.max(0, watermark.opacity ?? 0.15));
+  const color: ColorInput = watermark.color ?? { kind: 'gray', value: 0.5 };
+  const fontSize = watermark.fontSize ?? autoWatermarkFontSize(watermark.text, width, height, rotation, font, measure);
+  const textWidth = measure(watermark.text, fontSize, font);
+
+  const rootsBefore = page.structureRootCount();
+  const opsBefore = page.contentOpCount();
+  page.saveState();
+  page.setExtGState({ fillAlpha: opacity });
+  page.translate(width / 2, height / 2);
+  page.rotate(rotation);
+  page.text(watermark.text, {
+    x: -textWidth / 2,
+    y: -fontSize * 0.35,
+    fontSize,
+    font: font ?? 'Helvetica-Bold',
+    color,
+    tag: 'Artifact',
+  });
+  page.restoreState();
+  page.hoistStructureRootsToFront(rootsBefore);
+  page.hoistContentOpsToFront(opsBefore);
+}
+
+/** Picks a watermark font size whose rotated footprint spans ~90% of the page. */
+function autoWatermarkFontSize(
+  text: string,
+  width: number,
+  height: number,
+  rotation: number,
+  font: PdfFont | undefined,
+  measure: (text: string, fontSize: number, font: PdfFont | undefined) => number,
+): number {
+  const widthAt100 = measure(text, 100, font) || 100;
+  const radians = (rotation * Math.PI) / 180;
+  const cos = Math.max(Math.abs(Math.cos(radians)), 0.15);
+  const sin = Math.max(Math.abs(Math.sin(radians)), 0.15);
+  const targetTextWidth = Math.min((width * 0.9) / cos, (height * 0.9) / sin);
+  return (100 * targetTextWidth) / widthAt100;
+}
+
+function backgroundFlowOptions(
+  pageSize: ResolvedPageSize,
+  options: TemplatePageOptions | undefined,
+): FlowOptions {
+  // Start at the top content edge (below the top margin), like the body flow, so
+  // the first line's ascenders land on the page instead of above the top edge.
+  const m = resolvePageMargins(options, pageSize);
+  return { x: 0, y: pageSize.height - m.top, width: pageSize.width, marginBottom: 0 };
 }
 
 const DEFAULT_HEADER_OFFSET = 24;
@@ -733,6 +1291,10 @@ function renderTemplateBlockToFlow(
       return;
     case 'pageBreak':
       flow.moveDown(flow.remainingHeight);
+      return;
+    case 'toc':
+    case 'crossRef':
+      // Handled by the document paginator (self-paginating); no-op here.
       return;
     // Form fields default to tag: "Annot" so their widgets are referenced from
     // the structure tree (via an OBJR), consistent with the template tagging
