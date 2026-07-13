@@ -22,6 +22,12 @@ noted.
 
 ## Architecture & OVH resource map
 
+**Region: `US-EAST-VA-1` (Virginia, OVHcloud US account).** US-targeted
+customer base; managed Postgres confirmed available there. Note the US account
+is a separate entity from international OVH — resources cannot span the two.
+Create ALL resources below in the same region so the private network reaches
+everything.
+
 | Resource | Role |
 | --- | --- |
 | 2× `b3-8` | Docker hosts, each runs the `api` + `web` containers (`docker-compose.prod.yml`) |
@@ -34,11 +40,55 @@ noted.
 | Object Storage (optional) | Offsite `pg_dump` backups |
 | Secret Manager (optional, recommended) | `LICENSE_SIGNING_KEY`, `BETTER_AUTH_SECRET`, `SMTP_PASS`, `DATABASE_URL` — render into `/opt/zeropdf/.env` at deploy time |
 
+```mermaid
+flowchart TB
+  clients["Customer libraries (auto-guard /v1/authorize)<br/>+ dashboard users"] -->|HTTPS :443| fip["Floating IPv4<br/>(DNS A record)"]
+
+  subgraph region["OVHcloud US — US-EAST-VA-1"]
+    fip --> lb["Load Balancer S<br/>TLS (Let's Encrypt)<br/>health check: GET /readyz"]
+
+    subgraph vrack["vRack private network 10.0.0.0/24 — instances have NO public IP"]
+      lb -->|":80"| web1
+      lb -->|":80"| web2
+
+      subgraph host1["b3-8 'lic-1' (10.0.0.11)"]
+        web1["nginx (web)<br/>SPA + proxy"] -->|"/v1/* , /api/auth/*<br/>/healthz , /readyz"| api1["api (Hono) :8787"]
+        otel1["otel-collector"]
+        cron1["cron: hourly sweep,<br/>daily telemetry prune"] -.-> api1
+      end
+
+      subgraph host2["b3-8 'lic-2' (10.0.0.12)"]
+        web2["nginx (web)"] --> api2["api (Hono) :8787"]
+        otel2["otel-collector"]
+      end
+
+      api1 -->|"TLS, sslmode=require"| pg[("Managed PostgreSQL<br/>Business DB1-4 — 2 nodes,<br/>auto-failover, IP-allowlisted")]
+      api2 --> pg
+
+      host1 --> gw["Gateway S (egress only)"]
+      host2 --> gw
+    end
+
+    reg["Managed Private Registry<br/>(license-api / license-web images)"]
+    sm["Secret Manager<br/>(signing key, auth secret,<br/>DB URL, SMTP pass)"]
+  end
+
+  gw -->|"docker pull"| reg
+  gw -->|"SMTP :587 (STARTTLS)"| mail["Email provider"]
+  otel1 -->|"OTLP gRPC :4317"| signoz["Self-hosted SigNoz<br/>(metrics + logs, alerts)"]
+  otel2 --> signoz
+  sm -.->|"rendered into /opt/zeropdf/.env<br/>at deploy time"| host1
+  sm -.-> host2
+```
+
+Compact text version (for terminals):
+
 ```text
-Internet → Floating IP → LB S (TLS) ──► b3-8 #1 / #2 :80 (nginx `web`)
-                                          web proxies /v1 + /api/auth → api:8787
-                                          hosts → Gateway S (egress)
-                                          hosts → Postgres DB1-4 (private, TLS)
+Internet → Floating IP → LB S (TLS, /readyz) ──► b3-8 #1 / #2 :80 (nginx `web`)
+                                                   web proxies /v1 + /api/auth → api:8787
+                                                   hosts → Gateway S (egress: registry, SMTP 587)
+                                                   hosts → Postgres DB1-4 (private, TLS)
+                                                   otel-collector per host → SigNoz (OTLP)
 ```
 
 The `web` container's nginx proxies API paths to the `api` container, so the LB
