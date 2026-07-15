@@ -33,10 +33,17 @@ const doc = createDocument({
   },
 });
 
-const BRAND  = rgb(0.05, 0.25, 0.55);
-const MUTED  = rgb(0.45, 0.45, 0.5);
+const [inter400, inter700] = await Promise.all([
+  ttf(FONTS.inter400),
+  ttf(FONTS.inter700),
+]);
+
+const BRAND = rgb(0.05, 0.25, 0.55);
+const MUTED = rgb(0.45, 0.45, 0.5);
 const TABLE_BORDER = rgb(0.72, 0.76, 0.82);
 const TABLE_HEADER = rgb(0.92, 0.94, 0.98);
+
+doc.registerFontFamily("Inter", { regular: inter400, bold: inter700 });
 
 doc.renderTemplate({
   autoOutline: { maxLevel: 6 },
@@ -49,14 +56,14 @@ doc.renderTemplate({
       paragraphAfter: 5,
       headingBefore: { 2: 18, 3: 12 },
       headingAfter: { 1: 4, 2: 8, 3: 6 },
-      tableBefore: 6,
-      tableAfter: 14,
+      tableBefore: 0,
+      tableAfter: 24,
     },
   },
 
   styles: {
     heading1: { fontSize: 22, color: BRAND, marginTop: 20 },
-    heading2: { fontSize: 16, color: BRAND, marginTop: 1 },
+    heading2: { fontSize: 16, color: BRAND, marginTop: 16, marginBottom: 0 },
     paragraph: { fontSize: 10, lineHeight: 15 },
     muted: { fontSize: 9, color: MUTED, lineHeight: 14 },
   },
@@ -104,7 +111,7 @@ doc.renderTemplate({
         ],
       ],
       options: {
-        headerRows: 1,
+        headerColumns: 1,
         borders: "all",
         borderColor: TABLE_BORDER,
         headerBackground: TABLE_HEADER,
@@ -201,6 +208,7 @@ doc.renderTemplate({
       ],
       options: {
         headerRows: 1,
+        headerColumns: 1,
         borders: "all",
         borderColor: TABLE_BORDER,
         headerBackground: TABLE_HEADER,
@@ -418,6 +426,7 @@ doc.renderTemplate({
       ],
       options: {
         headerRows: 1,
+        headerColumns: 1,
         borders: "all",
         borderColor: TABLE_BORDER,
         headerBackground: TABLE_HEADER,
@@ -457,4 +466,3 @@ doc.renderTemplate({
 });
 
 export default doc;
-
