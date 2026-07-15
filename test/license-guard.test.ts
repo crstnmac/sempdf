@@ -110,3 +110,24 @@ test("re-serializing the same document does not double-count", () => {
   doc.toUint8Array(); // cached; no new serialize
   assert.equal(documents, 1);
 });
+
+test("watermark reuses an embedded font so conformance profiles stay valid", async () => {
+  const { readFile } = await import("node:fs/promises");
+  // Resolved from the repo root: the compiled test runs from dist/test, where
+  // an import.meta.url-relative path would miss the fonts/ directory.
+  const bytes = new Uint8Array(await readFile("fonts/liberation/LiberationSans-Regular.ttf"));
+  setLicenseGuard({ consume() {} }); // unverified guard → forced UNLICENSED watermark
+
+  // PDF/UA-1 requires embedded fonts for all visible text; the watermark must
+  // not reintroduce a built-in font and fail validation.
+  const doc = createDocument({ title: "t", language: "en-US", conformance: "pdfua-1", compress: false });
+  const sans = doc.registerFontFamily("Sans", { regular: bytes });
+  doc.addPage({ size: "A4" }).text("customer content", { x: 24, y: 700, font: sans, tag: "P" });
+  const pdf = new TextDecoder("latin1").decode(doc.toUint8Array());
+  assert.doesNotMatch(pdf, /Helvetica-Bold/);
+
+  // Without any embedded font the watermark still falls back to Helvetica-Bold.
+  const plain = createDocument({ title: "t", compress: false });
+  plain.addPage({ size: "A4" }).text("x", { x: 24, y: 700 });
+  assert.match(new TextDecoder("latin1").decode(plain.toUint8Array()), /Helvetica-Bold/);
+});
