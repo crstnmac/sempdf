@@ -46,14 +46,14 @@ doc.renderTemplate({
       paragraphAfter: 8,
       headingBefore: { 2: 18, 3: 12 },
       headingAfter: { 1: 4, 2: 8, 3: 6 },
-      tableBefore: 6,
-      tableAfter: 14,
+      tableBefore: 0,
+      tableAfter: 24,
     },
   },
 
   styles: {
     heading1: { fontSize: 22, color: BRAND, marginTop: 20 },
-    heading2: { fontSize: 16, color: BRAND },
+    heading2: { fontSize: 16, color: BRAND, marginTop: 16, marginBottom: 0 },
     paragraph: { fontSize: 11, lineHeight: 17 },
     muted: { fontSize: 9, color: MUTED, lineHeight: 14 },
   },
@@ -156,42 +156,43 @@ doc.renderTemplate({
         ],
         [
           { text: "Basic Pay", header: true, scope: "row" },
-          { text: "Rs. 75,000.00" },
-          { text: "Rs. 9,00,000.00" },
+          { text: "75,000.00" },
+          { text: "9,00,000.00" },
         ],
         [
           { text: "House Rent Allowance", header: true, scope: "row" },
-          { text: "Rs. 30,000.00" },
-          { text: "Rs. 3,60,000.00" },
+          { text: "30,000.00" },
+          { text: "3,60,000.00" },
         ],
         [
           { text: "Special Allowance", header: true, scope: "row" },
-          { text: "Rs. 20,000.00" },
-          { text: "Rs. 2,40,000.00" },
+          { text: "20,000.00" },
+          { text: "2,40,000.00" },
         ],
         [
           { text: "Transport Allowance", header: true, scope: "row" },
-          { text: "Rs. 3,200.00" },
-          { text: "Rs. 38,400.00" },
+          { text: "3,200.00" },
+          { text: "38,400.00" },
         ],
         [
           { text: "Medical Allowance", header: true, scope: "row" },
-          { text: "Rs. 1,250.00" },
-          { text: "Rs. 15,000.00" },
+          { text: "1,250.00" },
+          { text: "15,000.00" },
         ],
         [
           { text: "Employer PF Contribution", header: true, scope: "row" },
-          { text: "Rs. 9,000.00" },
-          { text: "Rs. 1,08,000.00" },
+          { text: "9,000.00" },
+          { text: "1,08,000.00" },
         ],
         [
           { text: "Gross CTC", header: true, scope: "row" },
-          { text: "Rs. 1,38,450.00" },
-          { text: "Rs. 16,61,400.00" },
+          { text: "1,38,450.00" },
+          { text: "16,61,400.00" },
         ],
       ],
       options: {
         headerRows: 1,
+        headerColumns: 1,
         borders: "all",
         borderColor: TABLE_BORDER,
         headerBackground: TABLE_HEADER,
@@ -335,4 +336,3 @@ doc.renderTemplate({
 });
 
 export default doc;
-
