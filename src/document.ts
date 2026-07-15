@@ -250,7 +250,11 @@ const fontCache = new Map<string, ParsedTrueTypeFont>();
  */
 const pageModelRegistry = new WeakMap<PdfPage, InternalPageModel>();
 
-function applyLicenseWatermark(pages: readonly InternalPageModel[], text: string): void {
+function applyLicenseWatermark(
+  pages: readonly InternalPageModel[],
+  text: string,
+  watermarkFont?: ParsedTrueTypeFont,
+): void {
   for (const page of pages) {
     if (page.ops.some((op) => op.type === "text" && op.options.structure?.actualText === "license-watermark")) {
       continue;
@@ -289,7 +293,10 @@ function applyLicenseWatermark(pages: readonly InternalPageModel[], text: string
           // Center the line on the page middle using the same width estimate.
           x: -(line.length * 0.6 * fontSize) / 2,
           y: startY - index * fontSize * 1.16,
-          font: "Helvetica-Bold",
+          // Reuse an embedded document font when one exists so conformance
+          // profiles that require embedded fonts (PDF/UA, PDF/A) stay valid
+          // on watermarked output; Helvetica-Bold otherwise.
+          font: watermarkFont ?? "Helvetica-Bold",
           fontSize,
           color: { kind: "gray", value: 0.35 },
           tag: "Artifact",
@@ -5658,7 +5665,13 @@ export class PdfDocument {
       language: this.accessibility.language,
       conformance: this.accessibility.conformance,
     });
-    if (decision?.watermarkText) applyLicenseWatermark(this.pages, decision.watermarkText);
+    if (decision?.watermarkText) {
+      applyLicenseWatermark(
+        this.pages,
+        decision.watermarkText,
+        this.embeddedFonts.values().next().value,
+      );
+    }
   }
 
   /**
@@ -7077,6 +7090,7 @@ export class PdfEditableDocument {
           ...this.editedPages.values(),
         ],
         decision.watermarkText,
+        this.embeddedFonts.values().next().value,
       );
     }
   }
