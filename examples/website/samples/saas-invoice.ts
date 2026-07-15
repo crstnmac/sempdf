@@ -46,14 +46,14 @@ doc.renderTemplate({
       paragraphAfter: 6,
       headingBefore: { 2: 20, 3: 14 },
       headingAfter: { 1: 6, 2: 8, 3: 6 },
-      tableBefore: 8,
-      tableAfter: 16,
+      tableBefore: 0,
+      tableAfter: 24,
     },
   },
 
   styles: {
     heading1: { fontSize: 26, color: BRAND, marginTop: 40 },
-    heading2: { fontSize: 14, color: BRAND, marginTop: 1 },
+    heading2: { fontSize: 14, color: BRAND, marginTop: 16, marginBottom: 0 },
     heading3: { fontSize: 11, color: rgb(0.2, 0.2, 0.25) },
     paragraph: { fontSize: 11, lineHeight: 17 },
     muted: { fontSize: 10, color: MUTED, lineHeight: 15 },
@@ -89,7 +89,7 @@ doc.renderTemplate({
           { text: "Bill From:", header: true, bold: true },
           { text: "Bill To:", header: true, bold: true },
         ],
-        ["Lorem Ipsum, \n New York, USA", "John Doe, \n Lorem Ipsum Team"],
+        ["Lorem Ipsum, New York, USA", "John Doe, Lorem Ipsum Team"],
       ],
       options: {
         headerRows: 1,
@@ -109,7 +109,7 @@ doc.renderTemplate({
       rows: [
         [
           { text: "Description", header: true, bold: true },
-          { text: "Qty", header: true, bold: true },
+          { text: "Quantity", header: true, bold: true },
           { text: "Unit Price", header: true, bold: true },
           { text: "Amount", header: true, bold: true },
         ],
@@ -134,6 +134,7 @@ doc.renderTemplate({
       ],
       options: {
         headerRows: 1,
+        headerColumns: 1,
         borders: "all",
         borderColor: TABLE_BORDER,
         headerBackground: TABLE_HEADER,
@@ -186,4 +187,3 @@ doc.renderTemplate({
 });
 
 export default doc;
-
