@@ -439,7 +439,8 @@ export function addRichTextToPage(
   embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>,
   runs: readonly RichRunInput[],
   block: RichTextBlock,
-  parent?: InternalStructureNode
+  parent?: InternalStructureNode,
+  intoNode?: InternalStructureNode
 ): number {
   const normalizedRuns = normalizeRichRuns(runs);
   const geometry: InlineBlockGeometry = {
@@ -458,9 +459,10 @@ export function addRichTextToPage(
       ? verticalAlignOffset(block.verticalAlign, block.height, result.height)
       : 0;
   const structureNode =
-    block.tag !== undefined && block.tag !== "Artifact"
+    intoNode
+    ?? (block.tag !== undefined && block.tag !== "Artifact"
       ? createStructureNode(page, block.tag, block.structure, parent)
-      : undefined;
+      : undefined);
   const shiftedDecorations =
     offset === 0 ? result.decorations : result.decorations.map((d) => ({ ...d, baselineY: d.baselineY - offset }));
   pushInlineHighlights(page, shiftedDecorations);
@@ -882,7 +884,26 @@ export function layoutList(
     const bodyNode = createStructureNode(page, "LBody", undefined, itemNode);
     let bodyHeight = 0;
 
-    if (item.body.length > 0) {
+    if (item.richRuns !== undefined && item.richRuns.length > 0) {
+      bodyHeight = addRichTextToPage(
+        page,
+        embeddedFonts,
+        item.richRuns,
+        {
+          x: bodyX,
+          y,
+          width: bodyWidth,
+          // Undefined when the caller gave no lineHeight, so the inline
+          // layout auto-expands to the largest run font size.
+          lineHeight: options.explicitLineHeight,
+          align: options.align,
+          direction: listDirection,
+          writingMode: "horizontal"
+        },
+        undefined,
+        bodyNode
+      );
+    } else if (item.body.length > 0) {
       const bodyRuns = layoutTextBlock(
         item.body,
         {

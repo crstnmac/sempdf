@@ -2222,8 +2222,12 @@ export interface TemplateDocumentOptions {
  * Detailed list item object with optional nested children.
  */
 export interface ListItemDefinition {
-  /** Primary list item text. */
-  body?: string | undefined;
+  /**
+   * Primary list item text. A plain string renders with the list's base
+   * style; an array of {@link InlineTextRun} renders a rich paragraph
+   * (mixed bold/italic/font/size/color/link runs) inside the item's LBody.
+   */
+  body?: string | readonly InlineTextRun[] | undefined;
   /** Explicit list marker or button label text. */
   label?: string | undefined;
   /** Nested child list items or structure elements. */

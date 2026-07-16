@@ -111,6 +111,7 @@ import {
   type NormalizedDocumentEncryption,
   type NormalizedDocumentInfo,
   type NormalizedHighlightAnnotationOptions,
+  type NormalizedListItem,
   type NormalizedPageLabelOptions,
   type NormalizedTableRow,
   type ResolvedPageSize,
@@ -790,6 +791,31 @@ function buildRichRunInputs(
 }
 
 /**
+ * Recursively converts rich list-item bodies (InlineTextRun[]) into prepared
+ * rich-run inputs, inheriting the list's base style and resolving registered
+ * font families. Must run before {@link layoutList} so it can render the runs
+ * inside each item's LBody.
+ */
+function prepareListRichRuns(
+  items: readonly NormalizedListItem[],
+  block: RichBlockStyle,
+  families: ReadonlyMap<string, FontFamilyFaces>,
+  defaults: TextDefaults | undefined,
+): void {
+  // Runs must carry the LBody tag so the tagged-content serializer emits
+  // marked content owned by the item's LBody structure node.
+  const bodyStyle: RichBlockStyle = { ...block, tag: "LBody" };
+  for (const item of items) {
+    if (item.richBody !== undefined) {
+      item.richRuns = buildRichRunInputs(item.richBody, bodyStyle, families, defaults);
+    }
+    if (item.children.length > 0) {
+      prepareListRichRuns(item.children, block, families, defaults);
+    }
+  }
+}
+
+/**
  *
  * A builder for grouping tagged PDF content under a shared structure element. It can add text, blocks, lists, tables, images, and nested sections to the same semantic container.
  */
@@ -855,13 +881,15 @@ export class PdfStructureContainer {
    */
   list(items: readonly ListItem[], options: ListOptions): this {
     const normalizedItems = normalizeListItems(items);
-    const normalizedOptions = normalizeListOptions(normalizedItems, {
+    const baseOptions = {
       ...options,
       font: options.font ?? this.textDefaults?.font,
       fontSize: options.fontSize ?? this.textDefaults?.fontSize,
       color: options.color ?? this.textDefaults?.color,
       kerning: options.kerning ?? this.textDefaults?.kerning,
-    });
+    };
+    const normalizedOptions = normalizeListOptions(normalizedItems, baseOptions);
+    prepareListRichRuns(normalizedItems, baseOptions, this.fontFamilies, this.textDefaults);
     const listNode = createStructureNode(this.page, "L", undefined, this.node);
     layoutList(
       this.page,
@@ -2775,6 +2803,15 @@ export class PdfFlow {
     let height = 0;
     for (const item of normalizedItems) {
       const text = typeof item === "string" ? item : (item.body ?? item.label ?? "");
+      // Rich bodies may carry larger per-run font sizes than the list base
+      // style; scale the estimated line height to the largest run so the
+      // column-advance check doesn't undershoot.
+      const maxRichFontSize = item.richBody?.reduce(
+        (max, run) => Math.max(max, run.fontSize ?? 0),
+        0,
+      ) ?? 0;
+      const lineHeight = normalizedOptions.explicitLineHeight
+        ?? Math.max(normalizedOptions.lineHeight, maxRichFontSize * 1.2);
       const runs = layoutTextBlock(
         text,
         {
@@ -2785,7 +2822,7 @@ export class PdfFlow {
         },
         this.embeddedFonts,
       );
-      height += measurePositionedRunHeight(runs, normalizedOptions.lineHeight) + itemSpacing;
+      height += measurePositionedRunHeight(runs, lineHeight) + itemSpacing;
     }
     return height;
   }
@@ -3629,14 +3666,16 @@ export class PdfFlow {
     const normalizedItems = normalizeListItems(items);
     const x = options.x ?? this.state.x + spacing.left;
     const width = options.width ?? Math.max(this.state.width - spacing.left - spacing.right, 1);
-    const normalizedOptions = normalizeListOptions(normalizedItems, resolveFontFamilyOptions({
+    const resolvedOptions = resolveFontFamilyOptions({
       ...(this.textDefaults ?? {}),
       ...flowTextDefaults(this.state),
       ...options,
       x,
       y: this.state.y,
       width,
-    }, this.fontFamilies));
+    }, this.fontFamilies);
+    const normalizedOptions = normalizeListOptions(normalizedItems, resolvedOptions);
+    prepareListRichRuns(normalizedItems, resolvedOptions, this.fontFamilies, this.textDefaults);
     const listNode = createStructureNode(
       this.page,
       "L",
@@ -3901,13 +3940,15 @@ export class PdfPage {
    */
   list(items: readonly ListItem[], options: ListOptions): this {
     const normalizedItems = normalizeListItems(items);
-    const normalizedOptions = normalizeListOptions(normalizedItems, {
+    const baseOptions = {
       ...options,
       font: options.font ?? this.textDefaults?.font,
       fontSize: options.fontSize ?? this.textDefaults?.fontSize,
       color: options.color ?? this.textDefaults?.color,
       kerning: options.kerning ?? this.textDefaults?.kerning,
-    });
+    };
+    const normalizedOptions = normalizeListOptions(normalizedItems, baseOptions);
+    prepareListRichRuns(normalizedItems, baseOptions, this.fontFamilies, this.textDefaults);
     const listNode = createStructureNode(this.page, "L");
     layoutList(
       this.page,

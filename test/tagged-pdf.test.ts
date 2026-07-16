@@ -1566,3 +1566,103 @@ test("richParagraph keeps leading text before an inline link in reading order", 
   // And the link's own text precedes its OBJR annotation.
   assert.match(text, /\/S\s*\/Link[^>]*?\/K\s*\[\s*\d+\s*<<\s*\/Type\s*\/OBJR/);
 });
+
+test("list items accept rich InlineTextRun bodies tagged inside LBody", () => {
+  const doc = createDocument({ tagged: true, language: "en-US" });
+  const page = doc.addPage({ size: "Letter" });
+
+  page.list(
+    [
+      {
+        body: [
+          { text: "Read the " },
+          { text: "terms", bold: true, link: "https://example.com/terms" },
+          { text: " carefully." }
+        ]
+      },
+      "Plain second item"
+    ],
+    { x: 36, y: 720, width: 300, fontSize: 12 }
+  );
+
+  const parsed = parseDocument(doc.toUint8Array());
+  const list = parsed.listStructureElements()[0];
+  assert.equal(list?.role, "L");
+  assert.deepEqual(list?.children?.map((child) => child.role), ["LI", "LI"]);
+  const firstBody = list?.children?.[0]?.children?.[1];
+  assert.equal(firstBody?.role, "LBody");
+  // Rich runs paint as marked content owned directly by LBody (no extra P).
+  assert.equal((firstBody?.mcids?.length ?? 0) > 0, true);
+  // The link run becomes a Link child of the same LBody.
+  assert.equal(firstBody?.children?.some((child) => child.role === "Link"), true);
+
+  const raw = new TextDecoder("latin1").decode(doc.toUint8Array());
+  assert.match(raw, /Helvetica-Bold/, "bold run should resolve the bold font variant");
+});
+
+test("nested list children under a rich body keep the L-in-LBody structure", () => {
+  const doc = createDocument({ tagged: true, language: "en-US" });
+  const page = doc.addPage({ size: "Letter" });
+
+  page.list(
+    [
+      {
+        body: [{ text: "Parent ", italic: true }, { text: "item" }],
+        children: ["Nested child"]
+      }
+    ],
+    { x: 36, y: 720, width: 260, fontSize: 11 }
+  );
+
+  const parsed = parseDocument(doc.toUint8Array());
+  const list = parsed.listStructureElements()[0];
+  const body = list?.children?.[0]?.children?.[1];
+  assert.equal(body?.role, "LBody");
+  assert.equal(body?.children?.some((child) => child.role === "L"), true);
+});
+
+test("rich list bodies reject substring annotations", () => {
+  const doc = createDocument({ tagged: true, language: "en-US" });
+  const page = doc.addPage({ size: "Letter" });
+
+  assert.throws(
+    () =>
+      page.list(
+        [
+          {
+            body: [{ text: "styled" }],
+            annotations: [{ type: "highlight", match: "styled" }]
+          }
+        ],
+        { x: 36, y: 720, width: 200 }
+      ),
+    (error: unknown) =>
+      error instanceof PdfEngineError && error.code === PdfErrorCode.INVALID_TEXT
+  );
+});
+
+test("rich list bodies auto-expand line height when lineHeight is omitted", () => {
+  const secondItemY = (bigFirstRun: boolean): number => {
+    const doc = createDocument({ tagged: true, language: "en-US" });
+    const page = doc.addPage({ size: "Letter" });
+    page.list(
+      [
+        { body: [{ text: "Lead ", fontSize: bigFirstRun ? 24 : 12 }, { text: "rest of the item" }] },
+        "Second"
+      ],
+      { x: 36, y: 720, width: 220, fontSize: 12 }
+    );
+    const internal = Object.values(page as unknown as Record<string, unknown>).find(
+      (value): value is { ops: { type: string; text?: string; options: { y: number } }[] } =>
+        typeof value === "object" && value !== null && Array.isArray((value as { ops?: unknown }).ops)
+    );
+    const second = internal?.ops.find((op) => op.type === "text" && op.text === "Second");
+    assert.ok(second, "expected the second item's text op");
+    return second.options.y;
+  };
+
+  assert.ok(
+    secondItemY(true) < secondItemY(false),
+    "a 24pt run in the first item should push the second item further down"
+  );
+});

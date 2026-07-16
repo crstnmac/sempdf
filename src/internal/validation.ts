@@ -283,7 +283,16 @@ export interface NormalizedTextBlockOptions extends NormalizedTextBaseOptions {
 }
 
 export interface NormalizedListItem {
+  /** Plain body text; for rich items this is the runs' concatenated text. */
   body: string;
+  /** Raw inline runs when the item body was given as InlineTextRun[]. */
+  richBody?: readonly InlineTextRun[] | undefined;
+  /**
+   * Prepared rich-run inputs (style precedence and font families resolved).
+   * Filled by the document layer before layout; layoutList renders these
+   * instead of `body` when present.
+   */
+  richRuns?: readonly RichRunInput[] | undefined;
   label?: string | undefined;
   children: NormalizedListItem[];
   annotations?: readonly ParagraphTextAnnotation[] | undefined;
@@ -292,6 +301,12 @@ export interface NormalizedListItem {
 export interface NormalizedListOptions extends NormalizedTextBaseOptions {
   width: number;
   lineHeight: number;
+  /**
+   * The caller's lineHeight, when one was given. Rich item bodies pass this
+   * (not the computed default) to the inline layout so an omitted lineHeight
+   * auto-expands to the largest run font size, matching richParagraph.
+   */
+  explicitLineHeight?: number | undefined;
   align: TextAlign;
   ordered: boolean;
   startAt: number;
@@ -1207,6 +1222,7 @@ export function normalizeListOptions(items: readonly NormalizedListItem[], optio
     ...normalizedText,
     width: options.width,
     lineHeight,
+    ...(options.lineHeight !== undefined ? { explicitLineHeight: options.lineHeight } : {}),
     align: options.align ?? (resolveTextDirection(sampleText, normalizedText.direction) === "rtl" ? "right" : "left"),
     ordered: options.ordered ?? false,
     startAt,
@@ -1483,13 +1499,22 @@ function normalizeListItem(item: ListItem, index: number): NormalizedListItem {
     };
   }
 
-  const body = item.body ?? "";
+  const richBody = Array.isArray(item.body) ? (item.body as readonly InlineTextRun[]) : undefined;
+  const body = richBody !== undefined ? richBody.map((run) => run.text).join("") : ((item.body as string | undefined) ?? "");
   const normalizedLabel = item.label?.trim();
   const children = item.children ? item.children.map((child, childIndex) => normalizeListItem(child, childIndex)) : [];
   if (body.length === 0 && children.length === 0) {
     throw new PdfEngineError(PdfErrorCode.INVALID_TEXT, "List items must include body text or nested children.", {
       itemIndex: index
     });
+  }
+
+  if (richBody !== undefined && item.annotations !== undefined && item.annotations.length > 0) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_TEXT,
+      "List items with a rich (InlineTextRun[]) body cannot also use annotations; set link/underline/highlight on the runs instead.",
+      { itemIndex: index }
+    );
   }
 
   if (body.length > 0) {
@@ -1508,6 +1533,7 @@ function normalizeListItem(item: ListItem, index: number): NormalizedListItem {
 
   return {
     body,
+    ...(richBody !== undefined ? { richBody } : {}),
     ...(normalizedLabel !== undefined ? { label: normalizedLabel } : {}),
     children,
     ...(item.annotations !== undefined ? { annotations: item.annotations } : {})
