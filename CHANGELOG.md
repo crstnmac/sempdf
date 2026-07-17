@@ -2,7 +2,7 @@
 
 All notable changes to `@sempdf/sempdf-pdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.1.0] - 2026-07-17
 
 ### Changed
 
