@@ -35,7 +35,7 @@ everything.
 | Gateway S | Egress for the private-only instances (registry pulls, SMTP :587, apt) |
 | Floating IPv4 | Attached to the LB; DNS A record for `APP_URL` points here |
 | Private network / vRack | Instances, LB backend, and Postgres all attach here; instances have **no public IP** |
-| PostgreSQL Business DB1-4 (2 nodes) | `DATABASE_URL` (TLS enforced → `sslmode=require`); restrict authorised IPs to the private subnet |
+| PostgreSQL 18 Business DB1-4 (2 nodes) | `DATABASE_URL` (TLS enforced → `sslmode=require`); restrict authorised IPs to the private subnet. Same major (18) as the dev/compose containers |
 | Managed Private Registry S | Hosts `license-api` / `license-web` images (`scripts/push.sh`) |
 | Object Storage (optional) | Offsite `pg_dump` backups |
 | Secret Manager (optional, recommended) | `LICENSE_SIGNING_KEY`, `BETTER_AUTH_SECRET`, `SMTP_PASS`, `DATABASE_URL` — render into `/opt/sempdf/.env` at deploy time |
@@ -133,8 +133,15 @@ native Postgres already occupying 5432 (see [Troubleshooting](#troubleshooting))
 docker run -d --name sempdf-dev-db \
   -e POSTGRES_USER=sempdf -e POSTGRES_PASSWORD=sempdf \
   -e POSTGRES_DB=sempdf_license \
-  -p 5433:5432 -v sempdf-dev-pgdata:/var/lib/postgresql/data \
-  postgres:16-alpine
+  -p 5433:5432 -v sempdf-dev-pgdata:/var/lib/postgresql \
+  postgres:18-alpine
+```
+
+Note the volume mounts at `/var/lib/postgresql` (not `.../data`) — the
+postgres:18 image requires the parent-directory convention and exits at boot
+with the old-style mount.
+
+```sh
 ```
 
 **2. Environment** — create `license-server/apps/api/.env` from
