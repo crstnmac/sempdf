@@ -4,7 +4,7 @@
 # nginx proxies /v1 + /api/auth to the API container (API_UPSTREAM env),
 # so the OVH load balancer only needs one backend (web:80).
 
-FROM node:22-alpine AS build
+FROM node:24-alpine AS build
 WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/
