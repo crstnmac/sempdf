@@ -1,6 +1,6 @@
 # Playground: static HTML/JS + built lib served from repo root by server.mjs.
 # Multi-stage: install/build in a throwaway stage, ship only the built app.
-FROM node:22-alpine AS build
+FROM node:24-alpine AS build
 WORKDIR /app
 # The registry token is a BuildKit build secret. Dokploy exposes it under the
 # env/secret name NPM_TOKEN -> /run/secrets/NPM_TOKEN. The repo `.npmrc` is
@@ -16,7 +16,7 @@ COPY . .
 RUN npm run build
 
 # Final image carries only the built app — no token in its history.
-FROM node:22-alpine
+FROM node:24-alpine
 WORKDIR /app
 COPY --from=build /app .
 ENV PORT=4173
