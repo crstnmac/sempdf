@@ -21,8 +21,11 @@ COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 RUN npm ci -w @sempdf/license-api --omit=dev && npm cache clean --force
 COPY --from=build /repo/apps/api/dist apps/api/dist
+# SQL migrations + journal, applied by dist/scripts/migrate.js (drizzle-orm's
+# built-in migrator — idempotent, tracked in drizzle.__drizzle_migrations).
+# Run as a one-off per deploy, never at container start:
+#   docker compose run --rm api node apps/api/dist/scripts/migrate.js
+COPY apps/api/drizzle apps/api/drizzle
 EXPOSE 8787
 USER node
-# Migrations (drizzle-kit push) run as a one-off deploy step (scripts/migrate.sh),
-# never at container start.
 CMD ["node", "apps/api/dist/index.js"]

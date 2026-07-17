@@ -23,6 +23,7 @@
     "stress": "k6 run stress/k6-stress.js",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
+    "db:migrate": "tsx --env-file=.env src/scripts/migrate.ts",
     "auth:generate": "better-auth-cli generate --config src/auth.ts",
     "test": "tsc -p tsconfig.test.json && node --test dist-test/test/**/*.test.js"
   },
