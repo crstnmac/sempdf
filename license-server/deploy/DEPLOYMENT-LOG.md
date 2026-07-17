@@ -3,8 +3,9 @@
 The full, concrete sequence for deploying the license server to OVHcloud US
 (`US-EAST-VA-1`), with the real values of this deployment. `README.md` is the
 generic runbook; this is the as-built guide — every step below was executed
-and verified on 2026-07-17; the server is LIVE at `http://40.160.68.111`
-(`/readyz` green through the LB, both hosts serving, sweep cron running).
+and verified on 2026-07-17; the server is LIVE at
+**`https://zeropdf.zeropdf.net`** (HTTP/2 + HSTS, Let's Encrypt,
+`/readyz` green through the LB, both hosts serving, sweep cron running).
 
 **As-built values used throughout:**
 
@@ -20,7 +21,7 @@ and verified on 2026-07-17; the server is LIVE at `http://40.160.68.111`
 | DB user | `avnadmin` for now (see ownership debt in launch blockers — the `zeropdf` role was accidentally deleted mid-setup) |
 | Images | no registry — `docker save | ssh docker load`, `REGISTRY=local` |
 | TLS to Postgres | OVH private CA at `/opt/zeropdf/ovh-ca.pem` on each host, mounted into the api container via `NODE_EXTRA_CA_CERTS` (compose does this) |
-| TLS public | deferred — HTTP-only phase (see launch blockers) |
+| TLS public | LIVE — Let's Encrypt on LB :443 (TERMINATED_HTTPS via Barbican; renewal ~2026-10-15, runbook in launch-blockers section) |
 
 ---
 
@@ -168,11 +169,11 @@ LICENSE_SIGNING_KEY="<PRIVATE_PEM>"
 BETTER_AUTH_SECRET=<RAND48>
 LICENSE_SIGNING_KID=v1
 
-# ── URLs (HTTP-only phase; flip to https://<domain> at TLS cutover) ─────────
-APP_URL=http://40.160.68.111
-BETTER_AUTH_URL=http://40.160.68.111
-TRUSTED_ORIGINS=http://40.160.68.111
-HSTS_ENABLED=false
+# ── URLs ─────────────────────────────────────────────────────────────────────
+APP_URL=https://zeropdf.zeropdf.net
+BETTER_AUTH_URL=https://zeropdf.zeropdf.net
+TRUSTED_ORIGINS=https://zeropdf.zeropdf.net
+HSTS_ENABLED=true
 
 # ── Tuning ───────────────────────────────────────────────────────────────────
 PG_POOL_MAX=15
