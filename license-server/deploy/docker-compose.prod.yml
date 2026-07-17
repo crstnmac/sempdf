@@ -16,6 +16,12 @@ services:
     environment:
       NODE_ENV: production
       PORT: "8787"
+      # OVH managed Postgres signs with a private CA; node-pg verifies the
+      # chain (its sslmode=require acts as verify-full), so Node must trust it.
+      # Download from the DB service page → place at /opt/zeropdf/ovh-ca.pem.
+      NODE_EXTRA_CA_CERTS: /etc/ssl/certs/ovh-ca.pem
+    volumes:
+      - ./ovh-ca.pem:/etc/ssl/certs/ovh-ca.pem:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8787/healthz || exit 1"]
       interval: 10s

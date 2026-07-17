@@ -222,8 +222,12 @@ Rules:
    sweep and daily telemetry prune). Then `docker login <registry>` with a
    Harbor robot account and place the filled-in `.env` at `/opt/zeropdf/.env`.
 3. **Build & push** (from your machine): `scripts/build.sh && REGISTRY=... scripts/push.sh`.
-4. **Schema**: from a host that can reach the managed PG (inside the vRack):
-   `DATABASE_URL='postgres://...sslmode=require' scripts/migrate.sh`.
+4. **Schema**: migrations are baked into the api image (generated offline with
+   `npm run db:generate`, applied by drizzle-orm's idempotent migrator). On an
+   instance: `docker compose -f docker-compose.prod.yml --env-file .env run
+   --rm api node apps/api/dist/scripts/migrate.js`. Run it before every deploy
+   that carries new migrations. (`scripts/migrate.sh` remains the local-dev
+   equivalent for the bundled compose db.)
 5. **Superadmin** (once): on an instance,
    `docker compose -f docker-compose.prod.yml --env-file .env run --rm api node apps/api/dist/scripts/create-superadmin.js`.
 6. **Deploy**: `HOSTS="10.0.0.11 10.0.0.12" scripts/deploy.sh <tag>` — rolls one
@@ -331,6 +335,8 @@ back.
 | `npm ci` in Docker fails with `E401 Unable to authenticate` | A lockfile entry resolves to the private registry (`npm.zeropdf.net`). Public packages should resolve from npmjs — rewrite the `resolved` URLs or authenticate the build. |
 | `COPY apps/web` fails with `cannot replace ... node_modules` | Host `node_modules` entered the build context. `license-server/.dockerignore` must exclude `**/node_modules` and `**/dist`. |
 | `drizzle-kit push` hangs at "Pulling schema" / connects nowhere | drizzle-kit does **not** read `.env` — `export DATABASE_URL=...` before running it. |
+| api/migrator: `self-signed certificate in certificate chain` | OVH managed PG signs with a private CA and node-pg verifies the chain (its `sslmode=require` acts as verify-full). NOTE: `psql` connecting fine proves nothing — libpq's `require` skips verification. Fix: download the CA from the DB service page to `/opt/zeropdf/ovh-ca.pem`; prod compose mounts it and sets `NODE_EXTRA_CA_CERTS`. |
+| Migration fails `permission denied for database` / `CREATE SCHEMA` refused | The app user lacks `CREATE` on the database. As `avnadmin`: `GRANT CREATE ON DATABASE licensedb TO zeropdf;` — and verify with `SELECT has_database_privilege('zeropdf','licensedb','CREATE');`. Grants must run as the admin, on the same database the `.env` URL names. |
 | Dev DB: `role "zeropdf" does not exist` but the container looks fine | Another Postgres owns `localhost:5432` (macOS: Postgres.app/homebrew service). The dev container maps **5433** for exactly this reason — check `lsof -nP -iTCP:5432 -sTCP:LISTEN`. |
 | API exits at boot: `Missing required secret(s)` | `DATABASE_URL`, `LICENSE_SIGNING_KEY`, or `BETTER_AUTH_SECRET` unset — the server fails fast by design. Generate via the [secrets reference](#secrets--generation-reference). |
 | `/readyz` shows `sweep: { stale: true }` | The hourly sweep cron hasn't completed within `SWEEP_STALE_SECONDS`. Check `/etc/cron.d/zeropdf` on the cron host and `docker exec zeropdf-api node apps/api/dist/scripts/sweep.js` manually. |
