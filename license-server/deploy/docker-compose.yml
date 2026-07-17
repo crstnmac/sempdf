@@ -8,13 +8,15 @@ name: zeropdf-license
 
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: zeropdf
       POSTGRES_PASSWORD: zeropdf
       POSTGRES_DB: zeropdf
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # postgres:18 images moved the mount point up a level (data lives in a
+      # subdirectory) so pg_upgrade --link works across versions.
+      - pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U zeropdf"]
       interval: 3s
