@@ -22,6 +22,11 @@ All notable changes to `@sempdf/sempdf-pdf` are documented here. This project fo
 - **Page background color.** `createDocument` accepts a `pageBackground` color that fills every page (via `addPage` and `renderTemplate`) behind all content, tagged as an artifact; `renderTemplate` also accepts a `pageBackground` that overrides it per template.
 - **Watermarks.** `renderTemplate` accepts a `watermark` option (a string or `TemplateWatermarkOptions`) that draws a diagonal, centered, semi-transparent mark behind every page, auto-sized to span the page and always tagged as an artifact.
 - **Master-page backgrounds.** `renderTemplate` accepts a `background` callback returning blocks drawn behind every page's content (tints, rules, logos).
+- **Rich text in list items.** List items accept `InlineTextRun[]` bodies (mixed fonts, sizes, colors, bold/italic, links) in addition to plain strings, across page-level `list()`, flow lists, and template list blocks — with layout estimation handling the rich runs correctly.
+- **Text formatting run options.** Superscript/subscript, baseline `rise`, render modes (`stroke` outline, `fillStroke`, `invisible`), and inline `highlight` (marker-pen fill behind text) — on whole text calls, `richText`/`richParagraph` runs, and template paragraphs.
+- **Per-cell table borders.** Cells accept individual border overrides (per-side width/color) on top of the table-wide `borders`/`borderColor` options.
+- **Liberation fonts bundled.** Metric-compatible embedded replacements for Helvetica/Times/Courier (SIL OFL) ship in the package with fetch/verify scripts — the recommended fonts for PDF/UA output, where standard-14 name references don't satisfy the embedded-font requirement.
+- **Host metadata telemetry.** The licensing auto-guard reports best-effort host context (hostname, OS, CPU/memory, cloud provider hints, job id/description via `setJobContext()` or `SEMPDF_JOB_*` env) with authorize/usage calls, so operators can slice usage by workload. Node-only, never includes document content.
 
 ### Fixed
 
