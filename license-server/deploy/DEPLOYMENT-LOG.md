@@ -384,14 +384,30 @@ Rules that keep releases boring:
 
 ## Launch blockers (clear before first real customer)
 
-- [ ] **DNS + TLS** — domain decided: **`sempdf.sempdf.net`**.
-      A record `sempdf` → `40.160.68.111` (TTL 300); Let's Encrypt cert on
-      LB :443 listener (console-managed if offered, else certbot DNS-01 +
-      upload — manual certs renew every 90 days); :80 → HTTPS redirect; flip
-      the four `.env` URLs to `https://sempdf.sempdf.net` +
-      `HSTS_ENABLED=true` on BOTH hosts; `up -d --force-recreate api`.
-      License keys must never travel over plain HTTP. Release bake:
-      `SEMPDF_LICENSE_SERVER=https://sempdf.sempdf.net`.
+- [x] **DNS + TLS — DONE 2026-07-17.** `https://sempdf.sempdf.net`
+      live: HTTP/2, HSTS on, Let's Encrypt cert (expires **2026-10-15** —
+      ⏰ RENEWAL every ~90 days, see below). How it was built (console cannot
+      do this on OVH US — CLI only):
+      1. certbot DNS-01 on workstation (`docker run certbot/certbot certonly
+         --manual --preferred-challenges dns -d sempdf.sempdf.net`).
+      2. fullchain+privkey → PKCS12 (empty pass) → Barbican:
+         `openstack secret store --name='LE-sempdf-2026-10'
+         -t 'application/octet-stream' -e 'base64' --payload="$(base64 < sempdf.p12)"`.
+      3. `openstack loadbalancer listener create --protocol-port 443
+         --protocol TERMINATED_HTTPS --default-tls-container=<secret href>
+         --default-pool <existing pool id> A11yDocLib-LB`.
+      4. RENEWAL: repeat 1–2 with a new secret name, then
+         `openstack loadbalancer listener set --default-tls-container=<new> https-listener`.
+      OpenStack creds: `~/openrc.sh` (chmod 600, password via edited line or
+      macOS Keychain lookup).
+      **Architecture bug found & fixed during this step:** the DNS floating IP
+      `40.160.68.111` had been attached to lic-1's port, NOT the LB VIP — the
+      domain was bypassing the load balancer entirely (and :443 was refused
+      because instances terminate no TLS). Fixed: `40.160.68.111` → LB VIP
+      (port of `10.0.0.22`), `40.160.10.34` → lic-1 for SSH (ssh config
+      updated). Real load-balancing effective only since this fix.
+      Console :80→HTTPS redirect policy: not yet added (HSTS covers repeat
+      visitors) — optional follow-up.
 - [ ] **Postgres Essential → Business** (2-node HA). Fail-closed client means
       DB downtime stops customer generation. Check console for in-place
       upgrade; else schedule a dump/restore switchover.
