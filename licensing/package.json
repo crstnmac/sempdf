@@ -1,6 +1,6 @@
 {
   "name": "@zeropdf/zeropdf-pdf-licensing",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "Private licensing / usage-metering client for @zeropdf/zeropdf-pdf.",
   "type": "module",
   "main": "./dist/index.js",
@@ -11,8 +11,13 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md"],
-  "engines": { "node": ">=22" },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "tsc --noEmit",
