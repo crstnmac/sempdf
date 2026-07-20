@@ -2,6 +2,24 @@
 
 All notable changes to `@sempdf/sempdf-pdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.1.3] - 2026-07-20
+
+### Fixed
+
+- **Security: retrying a document after a rejected license check bypassed
+  metering entirely.** Every serialize entrypoint (`toUint8Array`,
+  `toArrayBuffer`, `toBlob`, `writeTo`, on both `PdfDocument` and
+  `PdfEditableDocument`) marked the document "finalized" *before* the license
+  guard ran. If the guard threw (quota exceeded, blocked license, a
+  transient error), the document was left finalized-but-unlicensed: any
+  retry of any output method on that same instance serialized directly with
+  no license check, no metering, no watermark — free output, triggered by
+  exactly the retry pattern the library's own error messages recommend.
+  Fixed by finalizing only after the license-gated operation actually
+  succeeds; a rejected attempt can now be retried and is re-checked every
+  time, just like a document that was never serialized. Legitimate caching
+  (repeat calls after a *successful* serialize) is unaffected.
+
 ## [2.1.2] - 2026-07-20
 
 ### Fixed
