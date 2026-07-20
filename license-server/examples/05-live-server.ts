@@ -1,68 +1,36 @@
 /**
- * Demo 5 — End-to-end against the real license server (auto-guard).
+ * Demo 5 — Zero-config licensing: only `SEMPDF_LICENSE_KEY`.
  *
- * This is the production path: with `SEMPDF_LICENSE_KEY` set (and a server URL
- * baked in at build time, or `SEMPDF_LICENSE_SERVER` provided), the library
- * installs its auto-guard on first generation — no client code required. It
- * leases pages from POST /v1/authorize, debits as you generate, and flushes
- * reconciled usage to POST /v1/usage. Job context is attached for telemetry.
+ * No licensing code at all. Set the key and generate — the library's async
+ * output methods authorize with the license server, meter the pages, and flush
+ * usage on their own. Once the limit is reached the same call throws
+ * `LICENSE_QUOTA_EXCEEDED` — the hard block, straight from the server.
+ * (Release builds have the server URL baked in; running from this monorepo's
+ * source there is no baked URL, so export SEMPDF_LICENSE_SERVER too.)
  *
- * Setup:
- *   1. Start the API:        (in apps/api)  npm run dev
- *   2. Create a license and copy its key — admins provision customers (and
- *      their trial + API key) via the dashboard or POST /v1/admin/customers;
- *      there is no self-serve signup. Then:
+ * Setup: start the API (apps/api: npm run dev) and create a license + key from
+ * the admin dashboard or POST /v1/admin/customers (no self-serve signup). Then:
  *
- *   SEMPDF_LICENSE_SERVER=http://localhost:8787 \
- *   SEMPDF_LICENSE_KEY=<your-key> \
- *   npx tsx examples/05-live-server.ts
+ *   SEMPDF_LICENSE_KEY=<your-key> npx tsx examples/05-live-server.ts
  *
- * Watch it in the operator dashboard (Recent telemetry) and on the org portal
- * (Page usage, Recent activity). Generate enough pages to cross 90/95/100% and
- * you will see the usage alerts queued and, at 100%, generation hard-blocked.
+ * Watch usage and telemetry land in the dashboard / portal.
  */
-import { checkout, setJobContext, shutdownAutoGuard } from "../../src/license-guard.js";
 import { banner, buildSampleDoc, save } from "./_shared.js";
 
-const key = process.env.SEMPDF_LICENSE_KEY;
-const server = process.env.SEMPDF_LICENSE_SERVER;
-if (!key) {
-  console.error("Set SEMPDF_LICENSE_KEY (and SEMPDF_LICENSE_SERVER) first. See the header of this file.");
+if (!process.env.SEMPDF_LICENSE_KEY) {
+  console.error("Set SEMPDF_LICENSE_KEY first. See the header of this file.");
   process.exit(1);
 }
 
-banner(`Demo 5: live metering against ${server ?? "(baked server URL)"}`);
+banner("Demo 5: zero-config metering against the license server");
 
-// Attach job metadata — surfaces in the telemetry tables as job id / description.
-setJobContext({ id: `demo-${Date.now()}`, description: "License demo batch" });
+const doc = buildSampleDoc("Live Server Output", 30);
 
-// Small defaults so the demo finishes in seconds; raise them (or lower the
-// license limit) to watch the 90/95/100% alerts fire and the hard block land.
-const BATCHES = Number(process.env.DEMO_BATCHES ?? 8);
-const PAGES_PER_BATCH = Number(process.env.DEMO_PAGES ?? 30);
-
-let generated = 0;
-for (let i = 1; i <= BATCHES; i++) {
-  try {
-    // Pre-authorize the batch synchronously with the server. The server charges
-    // the pages now and rejects here once the limit is reached (hard block).
-    const remaining = await checkout(PAGES_PER_BATCH);
-    console.log(`Batch ${i}: authorized ${PAGES_PER_BATCH} page(s); lease now ${remaining}.`);
-
-    const doc = buildSampleDoc(`Live batch ${i}`, PAGES_PER_BATCH);
-    const bytes = doc.toUint8Array();
-    generated += PAGES_PER_BATCH;
-    await save(`05-live-batch-${i}.pdf`, bytes);
-  } catch (err) {
-    const e = err as { code?: string; message?: string };
-    console.log(`Batch ${i} blocked by the server: [${e.code}] ${e.message}`);
-    break;
-  }
+try {
+  // toUint8ArrayAsync() authorizes, meters and flushes usage automatically.
+  await save("05-live-server.pdf", await doc.toUint8ArrayAsync());
+  console.log("Generated 30 page(s) — metered by the server, no guard code involved.");
+} catch (err) {
+  const e = err as { code?: string; message?: string };
+  console.log(`Blocked by the server: [${e.code}] ${e.message}`);
 }
-
-console.log(`\nGenerated ${generated} page(s). Flushing usage to the server...`);
-// Flush any buffered usage and tear down the background timer before exit.
-shutdownAutoGuard();
-// Give the final flush a moment to reach the server.
-await new Promise((r) => setTimeout(r, 1500));
-console.log("Done. Check the dashboard / portal for telemetry and usage.");
