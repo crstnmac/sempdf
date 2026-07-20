@@ -15,7 +15,7 @@ and limits come from the license itself, not from app code.
 | 2 | `02-dev-bypass.ts` | `ZEROPDF_LICENSE_DEV=1` bypass for local dev/CI (pages stamped "DEVELOPMENT - NOT FOR DISTRIBUTION"). |
 | 3 | `03-custom-guard-quota.ts` | Page metering + **hard block at the limit** (no grace). Unverified guard ⇒ pages stamped "UNLICENSED - EVALUATION ONLY". |
 | 4 | `04-trial-watermark.ts` | **Trial watermark applied by the license** (server-driven, not hardcoded). |
-| 5 | `05-live-server.ts` | End-to-end auto-guard: authorize/usage, telemetry, 90/95/100% alerts, block. |
+| 5 | `05-live-server.ts` | Zero-config: only `ZEROPDF_LICENSE_KEY` set — the library authorizes, meters and flushes usage itself; hard-blocks at the limit. |
 
 ## Running
 
