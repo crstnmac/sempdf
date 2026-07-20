@@ -9,8 +9,9 @@
  *
  * Setup:
  *   1. Start the API:        (in apps/api)  npm run dev
- *   2. Create a license and copy its key — via the portal trial, or the admin
- *      "Create license" action. Then:
+ *   2. Create a license and copy its key — admins provision customers (and
+ *      their trial + API key) via the dashboard or POST /v1/admin/customers;
+ *      there is no self-serve signup. Then:
  *
  *   SEMPDF_LICENSE_SERVER=http://localhost:8787 \
  *   SEMPDF_LICENSE_KEY=<your-key> \
@@ -35,8 +36,10 @@ banner(`Demo 5: live metering against ${server ?? "(baked server URL)"}`);
 // Attach job metadata — surfaces in the telemetry tables as job id / description.
 setJobContext({ id: `demo-${Date.now()}`, description: "License demo batch" });
 
-const BATCHES = Number(process.env.DEMO_BATCHES ?? 500);
-const PAGES_PER_BATCH = Number(process.env.DEMO_PAGES ?? 5000);
+// Small defaults so the demo finishes in seconds; raise them (or lower the
+// license limit) to watch the 90/95/100% alerts fire and the hard block land.
+const BATCHES = Number(process.env.DEMO_BATCHES ?? 8);
+const PAGES_PER_BATCH = Number(process.env.DEMO_PAGES ?? 30);
 
 let generated = 0;
 for (let i = 1; i <= BATCHES; i++) {
