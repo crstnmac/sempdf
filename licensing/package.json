@@ -1,6 +1,6 @@
 {
   "name": "@sempdf/sempdf-pdf-licensing",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Private licensing / usage-metering client for @sempdf/sempdf-pdf.",
   "type": "module",
   "main": "./dist/index.js",
