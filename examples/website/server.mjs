@@ -53,7 +53,7 @@ const server = http.createServer(async (request, response) => {
   const safePath = path.normalize(requestPath).replace(/^(\.\.[/\\])+/, "");
   const filePath = path.resolve(rootDir, safePath);
 
-  if (!filePath.startsWith(rootDir)) {
+  if (filePath !== rootDir && !filePath.startsWith(rootDir + path.sep)) {
     response.writeHead(403);
     response.end("Forbidden");
     return;
