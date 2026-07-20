@@ -430,9 +430,49 @@ Rules that keep releases boring:
       Never bake the bare IP; never skip the keys (bake script warns).
 - [ ] Licensing companion package publishes as **0.2.1+** (0.2.0 sits
       deprecated on the registry from a rolled-back release).
-- [ ] SigNoz: set `SIGNOZ_OTLP_ENDPOINT` + alerts (5xx rate,
+- [x] ~~SigNoz~~ **Done 2026-07-20 as Loki + Prometheus + Grafana** (SigNoz
+      dropped — was never wired; otel-collector had been crash-looping with an
+      empty endpoint since day one). See "Observability (as-built)" below.
+      Still TODO inside it: Grafana alerts (5xx rate,
       `license_sweep_age_seconds` > 7200, pg pool saturation, missing host);
       external uptime check on `/readyz`.
+
+## Observability (as-built, 2026-07-20)
+
+Grafana Alloy on each instance (service `alloy` in `docker-compose.prod.yml`)
+tails all docker containers → Loki and scrapes `api:8787/metrics` →
+Prometheus remote-write. The Loki/Prometheus/Grafana stack runs **on lic-1**
+at `~/monitoring/` (no separate monitoring server), bound to `10.0.0.4` only
+via `BIND_IP` — nothing on a public interface.
+
+| Thing | Value |
+| --- | --- |
+| Loki | `http://10.0.0.4:3100` (`LOKI_ENDPOINT` in both `/opt/zeropdf/.env`) |
+| Prometheus | `http://10.0.0.4:9090` (`PROM_ENDPOINT`) |
+| Grafana | `10.0.0.4:3000` — SSH tunnel only |
+| Grafana login | `admin` / `GRAFANA_ADMIN_PASSWORD` in `lic-1:~/monitoring/.env` |
+| Host labels | `HOST_TAG=lic-1` / `lic-2` → `host` label on every log/metric |
+
+Access:
+
+```bash
+ssh -L 3000:10.0.0.4:3000 lic-1   # then http://localhost:3000
+```
+
+Logs: Explore → Loki → `{host="lic-2", container="zeropdf-api"}`.
+Metrics: Explore → Prometheus → `up{job="license-api"}`.
+
+Verified at deploy: both hosts streaming to Loki (api/web/alloy containers),
+`up{job="license-api"} == 1` for lic-1 and lic-2. The old
+`otel-collector-config.yaml`/`SIGNOZ_*` vars are gone from repo and hosts.
+
+Dashboard **"ZeroPDF License Server"** (`/d/zeropdf-overview`) is
+file-provisioned from `monitoring/dashboards/zeropdf-overview.json`
+(provider `grafana-dashboards.yaml`, mounted in compose) — the repo JSON is
+source of truth; UI edits don't persist back. 12 panels: up/sweep-age/
+in-flight/5xx stats, request rate + status classes, p50/p95/p99 latency,
+pg pool, rate-limited, log volume, error + api log panels. Grafana alert
+rules still TODO (see checklist above).
 
 ## Parked (deliberate)
 

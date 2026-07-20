@@ -1,0 +1,9 @@
+# No scrape targets — metrics arrive via remote-write from Alloy on each
+# license instance (--web.enable-remote-write-receiver in compose).
+global:
+  scrape_interval: 30s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
