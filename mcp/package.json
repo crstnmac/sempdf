@@ -1,6 +1,6 @@
 {
   "name": "@sempdf/sempdf-pdf-mcp",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Model Context Protocol server exposing @sempdf/sempdf-pdf PDF generation and manipulation as tools.",
   "type": "module",
   "bin": {
