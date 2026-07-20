@@ -83,10 +83,9 @@ app.get("/metrics", async (c) => {
 // better-auth's own trustedOrigins logic — we do not wrap them.
 app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 
-// --- Machine routes (server-to-server) ----------------------------------------
-// Body size + per-request timeout guards, then the rate limiter. These are
-// server-to-server (no browser), so no CORS is applied. 413 on oversize body,
-// 504 on timeout, 429 when rate-limited.
+// --- Machine routes (server-to-server AND browser/extension callers) ---------
+// Body size + per-request timeout guards, then the rate limiter. 413 on
+// oversize body, 504 on timeout, 429 when rate-limited.
 app.use(
   "/v1/*",
   bodyLimit({
@@ -99,6 +98,21 @@ app.use(
   timeout(env.limits.requestTimeoutMs, () => new HTTPException(504, { message: "request_timeout" })),
 );
 app.use("/v1/*", machineRateLimit);
+
+// Auth here is a Bearer API key, never a cookie, so a wildcard CORS origin
+// does not weaken access control — the key (and, when pinned, the origin
+// allowlist enforced in domain/licenses.ts) is what actually gates a request.
+// Without this, a browser/extension caller's fetch to /v1/authorize|usage|
+// license fails at the CORS layer before any response is seen, which
+// LicenseClient (fail-closed) reports as "License server unreachable".
+const machineCors = cors({
+  origin: "*",
+  allowMethods: ["GET", "POST", "OPTIONS"],
+  allowHeaders: ["Content-Type", "Authorization"],
+});
+app.use("/v1/authorize", machineCors);
+app.use("/v1/usage", machineCors);
+app.use("/v1/license", machineCors);
 
 // --- Dashboard routes (browser, credentialed) ---------------------------------
 // CORS scoped to the trusted origins (NOT wildcard, credentials enabled) for the
