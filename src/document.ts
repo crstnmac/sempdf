@@ -5560,6 +5560,17 @@ export class PdfDocument {
    * @returns The serialized or collected bytes.
    */
   toUint8Array(): Uint8Array {
+    if (this._writing) {
+      // writeTo() is mid-flight on this same instance (past its `_finalized`
+      // check, awaiting license authorization). Without this guard, a sync
+      // call landing in that gap would run its own full license check and
+      // finalize the document first, and writeTo() would then still charge
+      // AGAIN when it resumes — one logical output, billed twice.
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_OPERATION,
+        "Another write is already in progress.",
+      );
+    }
     if (this._finalized) {
       if (this.pages.length !== this._finalizedPageCount) {
         throw new PdfEngineError(
@@ -5627,6 +5638,13 @@ export class PdfDocument {
    * @returns The serialized PDF data as an ArrayBuffer.
    */
   toArrayBuffer(): ArrayBuffer {
+    if (this._writing) {
+      // See toUint8Array() for why a concurrent writeTo() must block this.
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_OPERATION,
+        "Another write is already in progress.",
+      );
+    }
     if (this._finalized) {
       if (this.pages.length !== this._finalizedPageCount) {
         throw new PdfEngineError(
@@ -5658,6 +5676,13 @@ export class PdfDocument {
    * @returns The serialized PDF data as a Blob.
    */
   toBlob(): Blob {
+    if (this._writing) {
+      // See toUint8Array() for why a concurrent writeTo() must block this.
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_OPERATION,
+        "Another write is already in progress.",
+      );
+    }
     if (this._finalized) {
       if (this.pages.length !== this._finalizedPageCount) {
         throw new PdfEngineError(
@@ -6952,6 +6977,14 @@ export class PdfEditableDocument {
    * @returns The serialized or collected bytes.
    */
   toUint8Array(): Uint8Array {
+    if (this._writing) {
+      // See PdfDocument.toUint8Array() for why a concurrent writeTo() on
+      // this same instance must block this rather than double-charge.
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_OPERATION,
+        "Another write is already in progress.",
+      );
+    }
     if (this._finalized) {
       if (this.pageOrder.length !== this._finalizedPageCount) {
         throw new PdfEngineError(
@@ -7050,6 +7083,13 @@ export class PdfEditableDocument {
    * @returns The serialized PDF data as an ArrayBuffer.
    */
   toArrayBuffer(): ArrayBuffer {
+    if (this._writing) {
+      // See PdfDocument.toUint8Array() for why this must block.
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_OPERATION,
+        "Another write is already in progress.",
+      );
+    }
     if (this._finalized) {
       if (this.pageOrder.length !== this._finalizedPageCount) {
         throw new PdfEngineError(
@@ -7081,6 +7121,13 @@ export class PdfEditableDocument {
    * @returns The serialized PDF data as a Blob.
    */
   toBlob(): Blob {
+    if (this._writing) {
+      // See PdfDocument.toUint8Array() for why this must block.
+      throw new PdfEngineError(
+        PdfErrorCode.INVALID_OPERATION,
+        "Another write is already in progress.",
+      );
+    }
     if (this._finalized) {
       if (this.pageOrder.length !== this._finalizedPageCount) {
         throw new PdfEngineError(
