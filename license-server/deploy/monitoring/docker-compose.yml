@@ -51,12 +51,22 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set in .env}
       GF_USERS_ALLOW_SIGN_UP: "false"
+      # Alert delivery. Same SMTP account as the api; set in .env.
+      GF_SMTP_ENABLED: ${SMTP_ENABLED:-false}
+      GF_SMTP_HOST: ${SMTP_HOST:-}:${SMTP_PORT:-587}
+      GF_SMTP_USER: ${SMTP_USER:-}
+      GF_SMTP_PASSWORD: ${SMTP_PASS:-}
+      GF_SMTP_FROM_ADDRESS: ${SMTP_FROM:-alerts@localhost}
+      GF_SMTP_FROM_NAME: SemPDF Alerts
+      # Where alert emails go (alerting/contact-points.yaml).
+      ALERT_EMAIL: ${ALERT_EMAIL:-criston@sempdf.com}
     ports:
       - "${BIND_IP:-0.0.0.0}:3000:3000"
     volumes:
       - ./grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
       - ./grafana-dashboards.yaml:/etc/grafana/provisioning/dashboards/provider.yaml:ro
       - ./dashboards:/etc/grafana/provisioning/dashboards/json:ro
+      - ./alerting:/etc/grafana/provisioning/alerting:ro
       - grafana-data:/var/lib/grafana
     depends_on:
       - loki
