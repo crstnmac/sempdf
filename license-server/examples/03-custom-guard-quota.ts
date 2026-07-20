@@ -6,6 +6,11 @@
  * It mirrors production policy: pages are charged per generation, and once the
  * limit is reached generation is hard-blocked — there is no grace period.
  *
+ * Note: guards installed via the public setLicenseGuard() are UNVERIFIED, so
+ * every page this demo produces is stamped "UNLICENSED - EVALUATION ONLY".
+ * Watermark-free output requires the server-backed auto-guard (demo 5) or a
+ * server-signed install proof (setLicenseGuardWithProof).
+ *
  * Run:  npx tsx examples/03-custom-guard-quota.ts
  */
 import {
@@ -25,7 +30,7 @@ setLicenseGuard({
   consume(usage: GenerationUsage) {
     if (used >= PAGE_LIMIT) {
       throw licenseQuotaError(`Page limit reached: ${used}/${PAGE_LIMIT} used.`, {
-        remaining: PAGE_LIMIT - used,
+        remaining: Math.max(0, PAGE_LIMIT - used),
       });
     }
     used += usage.pages;

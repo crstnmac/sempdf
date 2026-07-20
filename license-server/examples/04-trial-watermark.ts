@@ -6,8 +6,10 @@
  * auto-guard applies it, so every generated page is stamped automatically. This
  * is the real path — the watermark comes from the license, not from the caller.
  *
- * Setup: start the API (apps/api: npm run dev) and use a TRIAL license key
- * (sign up on the portal — it auto-provisions a trial). Then:
+ * Setup: start the API (apps/api: npm run dev) and use a TRIAL license key.
+ * There is no self-serve signup — an admin creates the customer (dashboard
+ * "Create customer" or POST /v1/admin/customers), which provisions the trial
+ * and its API key. Then:
  *
  *   ZEROPDF_LICENSE_SERVER=http://localhost:8787 \
  *   ZEROPDF_LICENSE_KEY=<trial-key> \

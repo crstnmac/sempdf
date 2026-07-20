@@ -12,8 +12,8 @@ and limits come from the license itself, not from app code.
 | # | File | Shows |
 |---|------|-------|
 | 1 | `01-no-license.ts` | Fail-closed: no license ⇒ generation refused (`LICENSE_REQUIRED`). |
-| 2 | `02-dev-bypass.ts` | `ZEROPDF_LICENSE_DEV=1` bypass for local dev/CI. |
-| 3 | `03-custom-guard-quota.ts` | Page metering + **hard block at the limit** (no grace). |
+| 2 | `02-dev-bypass.ts` | `ZEROPDF_LICENSE_DEV=1` bypass for local dev/CI (pages stamped "DEVELOPMENT - NOT FOR DISTRIBUTION"). |
+| 3 | `03-custom-guard-quota.ts` | Page metering + **hard block at the limit** (no grace). Unverified guard ⇒ pages stamped "UNLICENSED - EVALUATION ONLY". |
 | 4 | `04-trial-watermark.ts` | **Trial watermark applied by the license** (server-driven, not hardcoded). |
 | 5 | `05-live-server.ts` | End-to-end auto-guard: authorize/usage, telemetry, 90/95/100% alerts, block. |
 
@@ -28,6 +28,14 @@ npx tsx examples/03-custom-guard-quota.ts
 ```
 
 Generated PDFs are written to `examples/out/`.
+
+Only the server-backed auto-guard produces watermark-free output (paid keys).
+`setLicenseGuard()` installs an **unverified** guard — it can meter and block,
+but its output always carries the fixed evaluation watermark; verified installs
+go through `setLicenseGuardWithProof()` with a server-signed challenge.
+
+For demos 4–5 there is no self-serve signup: create the customer (org + trial
+license + API key) from the admin dashboard or `POST /v1/admin/customers`.
 
 ### Demos 4 & 5 (live server)
 
