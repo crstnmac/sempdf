@@ -70,11 +70,14 @@ async function loadTypes() {
 
     const dir = relPath.includes("/") ? `${relPath.slice(0, relPath.lastIndexOf("/"))}/` : "";
     const re = /from\s+["'](\.[^"']+)["']/g;
+    const targets = [];
     let match;
     while ((match = re.exec(text))) {
-      const target = resolve(dir, match[1].replace(/\.js$/, ".d.ts"));
-      await add(target);
+      targets.push(resolve(dir, match[1].replace(/\.js$/, ".d.ts")));
     }
+    // Fetch this file's imports concurrently rather than one at a time —
+    // with ~70 .d.ts files, a serial chain adds up to seconds of latency.
+    await Promise.all(targets.map(add));
   }
 
   try {
@@ -197,7 +200,10 @@ resizerEl.addEventListener("keydown", (event) => {
     lib: ["esnext", "dom"]
   });
 
-  await loadTypes();
+  // IntelliSense types and samples don't depend on each other — load them
+  // together instead of one after the other. Types are best-effort and
+  // shouldn't block the editor from appearing, so it isn't awaited here.
+  loadTypes();
 
   try {
     SAMPLES = await loadSamples();
