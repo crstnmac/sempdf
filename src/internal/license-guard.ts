@@ -729,8 +729,17 @@ export async function checkout(requested: number = REFILL_AMOUNT): Promise<numbe
 export async function ensureLicenseAuthorized(pages: number): Promise<void> {
   if (autoGuardState === null) {
     if (activeGuard !== undefined) return; // a manual guard governs enforcement
-    if (isLicenseDevBypass()) return; // development bypass, nothing to authorize
-    if (!tryAutoInstallGuard()) return; // no key configured — let sync consume error
+    // Auto-install must be tried BEFORE the dev-bypass check, matching the
+    // precedence the synchronous consumeLicense() applies right after this
+    // call returns. Checking dev bypass first would no-op here whenever both
+    // a real key and ZEROPDF_LICENSE_DEV are set, but consumeLicense() still
+    // installs the real auto-guard (its own precedence is auto-guard over dev
+    // bypass) with a fresh zero lease — throwing "not yet authorized" instead
+    // of the pre-authorize this function exists to perform.
+    if (!tryAutoInstallGuard()) {
+      if (isLicenseDevBypass()) return; // no key configured; dev bypass covers the sync consume
+      return; // no guard at all — let sync consume produce the standard LICENSE_REQUIRED error
+    }
   }
   if (autoGuardState === null) return;
   await checkout(Math.max(1, Math.floor(pages)));
