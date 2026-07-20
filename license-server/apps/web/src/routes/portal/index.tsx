@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import {
   CheckCircle2Icon,
   CopyIcon,
+  GlobeIcon,
   PlusIcon,
   RocketIcon,
   RotateCwIcon,
@@ -20,6 +21,8 @@ import {
   UsageMeter,
 } from "#/components/page-shell.tsx";
 import { Button } from "#/components/ui/button.tsx";
+import { Badge } from "#/components/ui/badge.tsx";
+import { OriginsInput } from "#/components/origins-input.tsx";
 import { Input } from "#/components/ui/input.tsx";
 import {
   Card,
@@ -32,6 +35,7 @@ import { ScrollFade } from "#/components/ui/scroll-fade.tsx";
 import { useAsync } from "#/hooks/use-async.ts";
 import {
   ApiError,
+  type PortalApiKey,
   type PortalLicense,
   type TenantStatus,
   formatDate,
@@ -96,10 +100,10 @@ function PortalOverviewPage() {
     );
   }, [data]);
 
-  async function createKey(licenseId: string, name: string) {
+  async function createKey(licenseId: string, name: string, allowedOrigins?: string[]) {
     setBusyId(licenseId);
     try {
-      const { key } = await portalApi.createKey(licenseId, name);
+      const { key } = await portalApi.createKey(licenseId, name, allowedOrigins);
       setIssued({ licenseId, key });
       toast.success("API key created. Copy it now — it is shown once.");
       refetch();
@@ -109,6 +113,24 @@ function PortalOverviewPage() {
       );
     } finally {
       setBusyId(null);
+    }
+  }
+
+  async function saveKeyOrigins(keyId: string, allowedOrigins: string[]) {
+    try {
+      await portalApi.updateKeyOrigins(keyId, allowedOrigins);
+      toast.success(
+        allowedOrigins.length > 0
+          ? "Origin restrictions saved."
+          : "Origin restrictions removed — key now works from anywhere.",
+      );
+      refetch();
+      return true;
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError ? err.message : "Could not save origins.",
+      );
+      return false;
     }
   }
 
@@ -201,6 +223,7 @@ function PortalOverviewPage() {
                 onCreate={createKey}
                 onRevoke={revokeKey}
                 onRotate={rotateKey}
+                onSaveOrigins={saveKeyOrigins}
               />
             </>
           )
@@ -327,14 +350,16 @@ function LicensesSection({
   onCreate,
   onRevoke,
   onRotate,
+  onSaveOrigins,
 }: {
   licenses: PortalLicense[];
   roleByOrg: Map<string, string>;
   issued: { licenseId: string; key: string } | null;
   busyId: string | null;
-  onCreate: (licenseId: string, name: string) => void;
+  onCreate: (licenseId: string, name: string, allowedOrigins?: string[]) => void;
   onRevoke: (keyId: string, name: string, isLast: boolean) => void;
   onRotate: (keyId: string, name: string, licenseId: string) => void;
+  onSaveOrigins: (keyId: string, allowedOrigins: string[]) => Promise<boolean>;
 }) {
   return (
     <Card>
@@ -363,6 +388,7 @@ function LicensesSection({
             onCreate={onCreate}
             onRevoke={onRevoke}
             onRotate={onRotate}
+            onSaveOrigins={onSaveOrigins}
           />
         ))}
         <QuickStart />
@@ -383,6 +409,7 @@ function LicenseKeys({
   onCreate,
   onRevoke,
   onRotate,
+  onSaveOrigins,
 }: {
   lic: PortalLicense;
   canManage: boolean;
@@ -390,9 +417,10 @@ function LicenseKeys({
   separated: boolean;
   issuedKey: string | null;
   busy: boolean;
-  onCreate: (licenseId: string, name: string) => void;
+  onCreate: (licenseId: string, name: string, allowedOrigins?: string[]) => void;
   onRevoke: (keyId: string, name: string, isLast: boolean) => void;
   onRotate: (keyId: string, name: string, licenseId: string) => void;
+  onSaveOrigins: (keyId: string, allowedOrigins: string[]) => Promise<boolean>;
 }) {
   return (
     <div className={separated ? "border-t border-border pt-6" : undefined}>
@@ -412,6 +440,7 @@ function LicenseKeys({
         onCreate={onCreate}
         onRevoke={onRevoke}
         onRotate={onRotate}
+        onSaveOrigins={onSaveOrigins}
       />
     </div>
   );
@@ -428,21 +457,27 @@ function KeysManager({
   onCreate,
   onRevoke,
   onRotate,
+  onSaveOrigins,
 }: {
   lic: PortalLicense;
   canManage: boolean;
   issuedKey: string | null;
   busy: boolean;
-  onCreate: (licenseId: string, name: string) => void;
+  onCreate: (licenseId: string, name: string, allowedOrigins?: string[]) => void;
   onRevoke: (keyId: string, name: string, isLast: boolean) => void;
   onRotate: (keyId: string, name: string, licenseId: string) => void;
+  onSaveOrigins: (keyId: string, allowedOrigins: string[]) => Promise<boolean>;
 }) {
   const [name, setName] = useState("");
+  const [createOrigins, setCreateOrigins] = useState<string[]>([]);
+  const [restrictNew, setRestrictNew] = useState(false);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    onCreate(lic.id, name.trim() || "New key");
+    onCreate(lic.id, name.trim() || "New key", restrictNew ? createOrigins : undefined);
     setName("");
+    setCreateOrigins([]);
+    setRestrictNew(false);
   }
 
   return (
@@ -452,48 +487,16 @@ function KeysManager({
       {lic.keys.length > 0 ? (
         <ul className="divide-y divide-border rounded-md border border-border bg-card">
           {lic.keys.map((k) => (
-            <li
+            <KeyRow
               key={k.id}
-              className="flex items-center justify-between gap-3 px-3 py-2.5"
-            >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{k.name}</p>
-                <p className="font-mono text-xs text-muted-foreground">
-                  {k.keyPrefix}••••••••
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="hidden whitespace-nowrap text-xs text-muted-foreground sm:inline">
-                  {k.lastUsedAt
-                    ? `Used ${relativeDays(k.lastUsedAt)}`
-                    : "Never used"}
-                </span>
-                {canManage ? (
-                  <>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={!lic.active || busy}
-                      onClick={() => onRotate(k.id, k.name, lic.id)}
-                    >
-                      <RotateCwIcon />
-                      Rotate
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() =>
-                        onRevoke(k.id, k.name, lic.keys.length === 1)
-                      }
-                    >
-                      <Trash2Icon />
-                      Revoke
-                    </Button>
-                  </>
-                ) : null}
-              </div>
-            </li>
+              k={k}
+              lic={lic}
+              canManage={canManage}
+              busy={busy}
+              onRevoke={onRevoke}
+              onRotate={onRotate}
+              onSaveOrigins={onSaveOrigins}
+            />
           ))}
         </ul>
       ) : (
@@ -533,19 +536,33 @@ function KeysManager({
       ) : null}
 
       {canManage ? (
-        <form className="flex flex-col gap-2 sm:flex-row" onSubmit={submit}>
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Name this key (e.g. production)"
-            maxLength={60}
-            disabled={!lic.active || busy}
-            className="sm:max-w-xs"
-          />
-          <Button type="submit" size="sm" disabled={!lic.active || busy}>
-            <PlusIcon />
-            {busy ? "Creating…" : "Create key"}
-          </Button>
+        <form className="flex flex-col gap-2" onSubmit={submit}>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Name this key (e.g. production)"
+              maxLength={60}
+              disabled={!lic.active || busy}
+              className="sm:max-w-xs"
+            />
+            <Button type="submit" size="sm" disabled={!lic.active || busy}>
+              <PlusIcon />
+              {busy ? "Creating…" : "Create key"}
+            </Button>
+          </div>
+          <label className="flex w-fit items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={restrictNew}
+              onChange={(e) => setRestrictNew(e.target.checked)}
+              disabled={!lic.active || busy}
+            />
+            Restrict to specific origins (browser / Chrome extension keys)
+          </label>
+          {restrictNew ? (
+            <OriginsInput value={createOrigins} onChange={setCreateOrigins} disabled={busy} />
+          ) : null}
         </form>
       ) : (
         <p className="text-xs text-muted-foreground">
@@ -553,6 +570,118 @@ function KeysManager({
         </p>
       )}
     </div>
+  );
+}
+
+/** One active key: name/prefix, origin chips, and an inline origins editor. */
+function KeyRow({
+  k,
+  lic,
+  canManage,
+  busy,
+  onRevoke,
+  onRotate,
+  onSaveOrigins,
+}: {
+  k: PortalApiKey;
+  lic: PortalLicense;
+  canManage: boolean;
+  busy: boolean;
+  onRevoke: (keyId: string, name: string, isLast: boolean) => void;
+  onRotate: (keyId: string, name: string, licenseId: string) => void;
+  onSaveOrigins: (keyId: string, allowedOrigins: string[]) => Promise<boolean>;
+}) {
+  const pinned = (k.allowedOrigins ?? []).length > 0;
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<string[]>(k.allowedOrigins ?? []);
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    const ok = await onSaveOrigins(k.id, draft);
+    setSaving(false);
+    if (ok) setEditing(false);
+  }
+
+  return (
+    <li className="flex flex-col gap-2 px-3 py-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium">{k.name}</p>
+          <p className="font-mono text-xs text-muted-foreground">
+            {k.keyPrefix}••••••••
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="hidden whitespace-nowrap text-xs text-muted-foreground sm:inline">
+            {k.lastUsedAt ? `Used ${relativeDays(k.lastUsedAt)}` : "Never used"}
+          </span>
+          {canManage ? (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy || saving}
+                onClick={() => {
+                  setDraft(k.allowedOrigins ?? []);
+                  setEditing((v) => !v);
+                }}
+              >
+                <GlobeIcon />
+                Origins
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!lic.active || busy}
+                onClick={() => onRotate(k.id, k.name, lic.id)}
+              >
+                <RotateCwIcon />
+                Rotate
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                onClick={() => onRevoke(k.id, k.name, lic.keys.length === 1)}
+              >
+                <Trash2Icon />
+                Revoke
+              </Button>
+            </>
+          ) : null}
+        </div>
+      </div>
+
+      {!editing && pinned ? (
+        <div className="flex flex-wrap gap-1.5">
+          {(k.allowedOrigins ?? []).map((origin) => (
+            <Badge key={origin} variant="secondary" className="h-auto max-w-full py-0.5">
+              <span className="truncate font-mono">{origin}</span>
+            </Badge>
+          ))}
+        </div>
+      ) : null}
+
+      {editing ? (
+        <div className="flex flex-col gap-2 rounded-md border border-border bg-muted/30 p-3">
+          <p className="text-xs text-muted-foreground">
+            Only requests from these origins can use this key. Adding any origin
+            makes the key browser-only — it will stop working from servers and
+            tools that send no Origin header.
+          </p>
+          <OriginsInput value={draft} onChange={setDraft} disabled={saving} />
+          <div className="flex gap-2">
+            <Button size="sm" onClick={save} disabled={saving}>
+              {saving ? "Saving…" : "Save origins"}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setEditing(false)} disabled={saving}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </li>
   );
 }
 

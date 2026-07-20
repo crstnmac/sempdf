@@ -444,6 +444,20 @@ Rules that keep releases boring:
       `license_sweep_age_seconds` > 7200, pg pool saturation, missing host);
       external uptime check on `/readyz`.
 
+## Origin pinning for API keys (2026-07-20)
+
+New migration `0001_quick_cannonball.sql` adds `api_keys.allowed_origins`
+(nullable `text[]`; null/empty = unrestricted — every existing key is
+unaffected). Follows the standard additive-migration release flow above:
+migration ships in the image, applied automatically by `migrate.js` on deploy.
+
+Lets browser/extension keys be pinned to specific origins from the customer
+portal (API keys → "Origins"); `/v1/authorize`, `/v1/usage`, `/v1/license` all
+reject a pinned key when the request's `Origin` header doesn't match —
+including requests with no `Origin` at all, so a pinned key only ever works
+from a browser. Documented as abuse mitigation, not cryptographic protection,
+in `docs/guide/licensing.md#origin-pinning-browser-chrome-extension-keys`.
+
 ## Observability (as-built, 2026-07-20)
 
 Grafana Alloy on each instance (service `alloy` in `docker-compose.prod.yml`)

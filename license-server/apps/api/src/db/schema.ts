@@ -62,6 +62,10 @@ export const apiKeys = pgTable(
     keyPrefix: text("key_prefix").notNull(),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    // Origin pinning: when non-empty, machine routes reject requests whose
+    // Origin header (normalized) is not in this list — including requests with
+    // no Origin at all. Null/empty = unrestricted (server-side keys).
+    allowedOrigins: text("allowed_origins").array(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
