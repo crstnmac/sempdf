@@ -1,6 +1,6 @@
 {
   "name": "@zeropdf/zeropdf-pdf-licensing",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Private licensing / usage-metering client for @zeropdf/zeropdf-pdf.",
   "type": "module",
   "main": "./dist/index.js",
