@@ -31,20 +31,27 @@ services:
       driver: json-file
       options: { max-size: "20m", max-file: "5" }
 
-  # Ships api /metrics + all container logs to self-hosted SigNoz (OTLP gRPC).
-  otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.116.1
-    container_name: sempdf-otel
+  # Ships all container logs (→ Loki) + api /metrics (→ Prometheus
+  # remote-write) to the monitoring server. See monitoring/ for that stack.
+  alloy:
+    image: grafana/alloy:v1.17.1
+    container_name: sempdf-alloy
     restart: unless-stopped
-    command: ["--config=/etc/otelcol/config.yaml"]
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=127.0.0.1:12345
     volumes:
-      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ./alloy-config.alloy:/etc/alloy/config.alloy:ro
+      # Log tailing + container discovery both go through the docker socket.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy/data
     environment:
-      SIGNOZ_OTLP_ENDPOINT: ${SIGNOZ_OTLP_ENDPOINT}
-      SIGNOZ_OTLP_INSECURE: ${SIGNOZ_OTLP_INSECURE:-true}
-      # host.name tags every metric/log line with which b3-8 it came from.
-      OTEL_RESOURCE_ATTRIBUTES: host.name=${HOST_TAG:-unknown},service.namespace=sempdf
+      LOKI_ENDPOINT: ${LOKI_ENDPOINT}
+      PROM_ENDPOINT: ${PROM_ENDPOINT}
+      # host label tells the two b3-8 instances apart in Grafana.
+      HOST_TAG: ${HOST_TAG:-unknown}
     depends_on:
       - api
     logging:
@@ -66,3 +73,7 @@ services:
     logging:
       driver: json-file
       options: { max-size: "20m", max-file: "5" }
+
+volumes:
+  # Tail positions — lets alloy resume where it left off across restarts.
+  alloy-data:

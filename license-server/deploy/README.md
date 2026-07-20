@@ -53,13 +53,13 @@ flowchart TB
 
       subgraph host1["b3-8 'lic-1' (10.0.0.11)"]
         web1["nginx (web)<br/>SPA + proxy"] -->|"/v1/* , /api/auth/*<br/>/healthz , /readyz"| api1["api (Hono) :8787"]
-        otel1["otel-collector"]
+        otel1["alloy"]
         cron1["cron: hourly sweep,<br/>daily telemetry prune"] -.-> api1
       end
 
       subgraph host2["b3-8 'lic-2' (10.0.0.12)"]
         web2["nginx (web)"] --> api2["api (Hono) :8787"]
-        otel2["otel-collector"]
+        otel2["alloy"]
       end
 
       api1 -->|"TLS, sslmode=require"| pg[("Managed PostgreSQL<br/>Business DB1-4 — 2 nodes,<br/>auto-failover, IP-allowlisted")]
@@ -75,8 +75,8 @@ flowchart TB
 
   gw -->|"docker pull"| reg
   gw -->|"SMTP :587 (STARTTLS)"| mail["Email provider"]
-  otel1 -->|"OTLP gRPC :4317"| signoz["Self-hosted SigNoz<br/>(metrics + logs, alerts)"]
-  otel2 --> signoz
+  otel1 -->|"Loki push :3100<br/>Prom remote-write :9090"| mon["Monitoring server<br/>Loki + Prometheus + Grafana"]
+  otel2 --> mon
   sm -.->|"rendered into /opt/sempdf/.env<br/>at deploy time"| host1
   sm -.-> host2
 ```
@@ -88,7 +88,7 @@ Internet → Floating IP → LB S (TLS, /readyz) ──► b3-8 #1 / #2 :80 (ngi
                                                    web proxies /v1 + /api/auth → api:8787
                                                    hosts → Gateway S (egress: registry, SMTP 587)
                                                    hosts → Postgres DB1-4 (private, TLS)
-                                                   otel-collector per host → SigNoz (OTLP)
+                                                   alloy per host → Loki + Prometheus (Grafana UI)
 ```
 
 The `web` container's nginx proxies API paths to the `api` container, so the LB
@@ -103,8 +103,9 @@ connection is dead and reports notification-sweep staleness.
 - `nginx.conf.template` — SPA serving + API proxy (envsubst `API_UPSTREAM`).
 - `docker-compose.yml` — local full-stack test (bundled Postgres).
 - `docker-compose.prod.yml` — per-instance prod stack (external managed PG) +
-  OTel collector.
-- `otel-collector-config.yaml` — metrics + log shipping to SigNoz.
+  Grafana Alloy.
+- `alloy-config.alloy` — metrics + log shipping to the monitoring server.
+- `monitoring/` — Loki + Prometheus + Grafana stack for the monitoring server.
 - `.env.example` — every runtime variable, annotated. Copy to `.env` per host.
 - `scripts/` — `build.sh`, `push.sh`, `migrate.sh`, `deploy.sh`, `provision-host.sh`.
 
@@ -284,13 +285,35 @@ fail-closed against valid `v2` responses.
 
 ## Observability
 
-Each instance runs an OTel Collector (`otel-collector-config.yaml`) shipping
-the api's Prometheus `/metrics` and all container logs to self-hosted SigNoz
-via OTLP (`SIGNOZ_OTLP_ENDPOINT` in `.env`, plus `HOST_TAG` to tell the two
-instances apart). `/metrics` is scraped over the internal docker network and is
-never exposed publicly.
+Each instance runs Grafana Alloy (`alloy-config.alloy`) shipping all container
+logs to Loki and the api's Prometheus `/metrics` to Prometheus via
+remote-write (`LOKI_ENDPOINT` / `PROM_ENDPOINT` in `.env`, plus `HOST_TAG` to
+tell the two instances apart). `/metrics` is scraped over the internal docker
+network and is never exposed publicly.
 
-Suggested SigNoz alerts:
+The `monitoring/` compose stack (Loki :3100, Prometheus :9090, Grafana :3000)
+runs **on lic-1** at `~/monitoring/` — there is no separate monitoring server.
+Its `.env` sets `BIND_IP=10.0.0.4` (lic-1's private IP) so nothing listens on
+a public interface, plus `GRAFANA_ADMIN_PASSWORD`. lic-2 pushes over the
+vRack. Datasources are provisioned automatically.
+
+Access Grafana through an SSH tunnel (it is deliberately not reachable any
+other way):
+
+```bash
+ssh -L 3000:10.0.0.4:3000 lic-1
+# then browse http://localhost:3000
+# user: admin — password: lic-1:~/monitoring/.env (GRAFANA_ADMIN_PASSWORD)
+```
+
+Query logs in Explore → Loki, e.g. `{host="lic-1", container="sempdf-api"}`;
+metrics in Explore → Prometheus, e.g. `up{job="license-api"}`.
+
+If the stack ever moves to its own server: copy `monitoring/` there, set
+`BIND_IP` to that host's private IP, point `LOKI_ENDPOINT`/`PROM_ENDPOINT` in
+both instances' `.env` at it, `up -d` the instances.
+
+Suggested Grafana alerts:
 
 - 5xx rate over threshold (`license_requests_total` by status class).
 - `license_sweep_age_seconds` > 7200 — the notification cron is wedged
