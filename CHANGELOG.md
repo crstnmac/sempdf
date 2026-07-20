@@ -2,6 +2,29 @@
 
 All notable changes to `@zeropdf/zeropdf-pdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.1.1] - 2026-07-20
+
+### Fixed
+
+- **`renderDocumentJson()` now auto-authorizes.** It's `async` (real font/image
+  loading) but its final serialize used the document's synchronous
+  `toUint8Array()`, so — unlike every other async output method — it never
+  awaited license authorization. Zero-config (Node env vars) and browser
+  callers had to know to call `checkout(pages)` manually first, undocumented.
+  Fixed by authorizing once layout has run and the real page count is known.
+  `renderDocumentJsonSync()` is unaffected: it genuinely cannot await, same
+  as `PdfDocument.toUint8Array()` — call `checkout()` first as documented.
+- **Dev-bypass / auto-guard precedence.** `ensureLicenseAuthorized()` (the
+  async pre-check before serialize) checked `ZEROPDF_LICENSE_DEV` before
+  attempting to install the zero-config auto-guard, but the synchronous
+  consume step right after it checks the auto-guard first. With both a real
+  `ZEROPDF_LICENSE_KEY` and `ZEROPDF_LICENSE_DEV=1` set — an easy
+  dev/staging misconfiguration — the async pre-check silently skipped
+  authorization (thinking dev bypass covered it) while the sync step
+  installed the real auto-guard with a fresh zero lease and threw "not yet
+  authorized," on every async output method, not just `renderDocumentJson`.
+  Reordered to match.
+
 ## [2.1.0] - 2026-07-17
 
 ### Changed

@@ -185,6 +185,27 @@ const bytes = renderDocumentJsonSync({
 
 `path`, `url`, and `google` sources require loading and throw `INVALID_DOCUMENT_JSON` in the sync variant — use `renderDocumentJson` for those.
 
+## Licensing
+
+`renderDocumentJson()` authorizes with the license server itself — the same
+zero-config auto-guard as everywhere else (`ZEROPDF_LICENSE_KEY` +
+`ZEROPDF_LICENSE_SERVER` in Node, or an installed licensing client in the
+browser); no extra code needed.
+
+`renderDocumentJsonSync()` **cannot** do this — like
+`PdfDocument.toUint8Array()`, it has no way to await the authorize round
+trip. Call `checkout()` first:
+
+```ts
+import { renderDocumentJsonSync } from "@zeropdf/zeropdf-pdf";
+import { checkout } from "@zeropdf/zeropdf-pdf/license-guard";
+
+await checkout(); // reserves a default batch of pages
+const bytes = renderDocumentJsonSync({ blocks: [...] });
+```
+
+See [Licensing and Usage Limits](./licensing) for the full model.
+
 ## Node and the browser
 
 `base64`, `url` (fetch), and `google` sources work in both Node and the browser. A `path` source reads from the filesystem and is Node-only; `node:fs` is imported lazily, only when a `path` appears, so the browser bundle stays clean. See [Browser Usage](./browser-usage).
