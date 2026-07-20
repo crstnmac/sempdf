@@ -2,6 +2,20 @@
 
 All notable changes to `@sempdf/sempdf-pdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.1.4] - 2026-07-20
+
+### Fixed
+
+- **A synchronous output method could double-charge a document mid-flight
+  `writeTo()`.** `writeTo()` is async and stays un-finalized across its
+  authorize await gap. If `toUint8Array()`/`toArrayBuffer()`/`toBlob()` was
+  called on the same instance during that gap (`writeTo()` started but not
+  awaited), it ran its own full license check and finalized the document
+  first; `writeTo()` then still charged again when it resumed — one logical
+  document, billed twice. The reentrancy guard `writeTo()` already used
+  against itself now also blocks the three sync methods, on both
+  `PdfDocument` and `PdfEditableDocument`.
+
 ## [2.1.3] - 2026-07-20
 
 ### Fixed

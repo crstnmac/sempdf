@@ -1,6 +1,6 @@
 {
   "name": "@sempdf/sempdf-pdf",
-  "version": "2.1.3",
+  "version": "2.1.4",
   "description": "Zero-dependency PDF generation engine built in TypeScript.",
   "type": "module",
   "author": {
