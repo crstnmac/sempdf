@@ -590,6 +590,36 @@ pooled connections across both instances). Verified live: cold call 75ms,
 then three more 20s apart at 8/5/4ms (would have gone cold again under the
 old default).
 
+## Core library security fix: retry-after-rejection licensing bypass (2026-07-20)
+
+Found by a `/loop`-scheduled recurring bug hunt over the licensing code paths
+(`aaf2cb2`). Every serialize entrypoint (`toUint8Array`, `toArrayBuffer`,
+`toBlob`, `writeTo`, on both `PdfDocument` and `PdfEditableDocument`) marked
+the document `_finalized = true` **before** the license guard ran. If the
+guard threw (quota exceeded, blocked license, even a transient error), the
+document was left finalized-but-unlicensed: any retry of any output method on
+that same instance took the already-finalized branch, which serializes
+directly with **no license check, no metering, no watermark** — a full,
+unmetered bypass, triggered by exactly the retry pattern the library's own
+error messages recommend (customers naturally retry a failed generation).
+
+Reproduced live before fixing: a guard that throws once then allows
+generation produced valid, unwatermarked PDF bytes on the second
+`toUint8Array()` call, with the guard's `consume()` invoked only once (the
+failed first attempt) — the successful second serialize was never metered.
+Fixed by moving finalization to after the license-gated operation actually
+succeeds, on all 8 entrypoints across both document classes; a rejected
+attempt now re-enters the guard on retry instead of silently succeeding.
+Legitimate caching (repeat calls after a *successful* serialize) is
+unaffected — verified live both before and after the fix.
+
+Released as **core library `2.1.3`** (`e1882a1`, published + verified against
+the actual registry tarball, not just the local build — per the `2.1.1`
+lesson above). 537/538 tests pass (1 pre-existing unrelated skip); two new
+regression tests cover `toUint8Array` and `writeTo` retry behavior.
+**Customers on `2.1.0`/`2.1.1`/`2.1.2` should upgrade** — this is a real,
+exploitable metering bypass, not a cosmetic bug.
+
 ## Observability (as-built, 2026-07-20)
 
 Grafana Alloy on each instance (service `alloy` in `docker-compose.prod.yml`)
