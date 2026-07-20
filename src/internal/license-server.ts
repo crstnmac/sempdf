@@ -1,3 +1,3 @@
-export const bakedServerUrl = "http://localhost:8787";
-export const bakedLibVersion = "2.1.1";
-export const bakedServerPubkeys: Record<string, string> = {};
+export const bakedServerUrl = "https://zeropdf.zeropdf.net";
+export const bakedLibVersion = "2.1.2";
+export const bakedServerPubkeys: Record<string, string> = {"v1":"-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAgK5Bz1avqD5BlksvjHNdwgjtijW0UCSK2ULE3Mb7jDQ=\n-----END PUBLIC KEY-----\n"};
