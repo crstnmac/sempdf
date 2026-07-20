@@ -1,7 +1,7 @@
 import { and, eq, isNull } from "drizzle-orm";
 
 import { db } from "../db/client.js";
-import { generateKey, hashKey, keyPrefix } from "./keys.js";
+import { generateKey, hashKey, keyPrefix, normalizeOrigin, originAllowed } from "./keys.js";
 import { apiKeys, apiTelemetry, licenses, requestNonces, type HostMeta, type License } from "../db/schema.js";
 import { evaluateLicensePolicy } from "./policy.js";
 import { queueUsageNotifications } from "./notifications.js";
@@ -60,7 +60,15 @@ function windowExpired(window: License["window"], startedAt: Date, now: Date): b
 export async function authorize(
   key: string,
   requested: number,
-  options: { nonce?: string; jobId?: string | undefined; jobDescription?: string | undefined; endpoint?: string; meta?: TelemetryMeta } = {},
+  options: {
+    nonce?: string;
+    jobId?: string | undefined;
+    jobDescription?: string | undefined;
+    endpoint?: string;
+    meta?: TelemetryMeta;
+    /** Request Origin header, checked against the key's allowlist when pinned. */
+    origin?: string | undefined;
+  } = {},
 ): Promise<AuthorizeResult> {
   const keyHash = hashKey(key);
   const nonce = options.nonce ?? "";
@@ -80,6 +88,9 @@ export async function authorize(
       .from(apiKeys)
       .where(and(eq(apiKeys.keyHash, keyHash), isNull(apiKeys.revokedAt)));
     if (!apiKey) throw new HttpError(404, "unknown_license");
+    if (!originAllowed(apiKey.allowedOrigins, options.origin)) {
+      throw new HttpError(403, "origin_not_allowed");
+    }
     const [lic] = await tx.select().from(licenses).where(eq(licenses.id, apiKey.licenseId)).for("update");
     if (!lic) throw new HttpError(404, "unknown_license");
 
@@ -242,9 +253,10 @@ export async function recordUsage(
     status?: "success" | "fail" | "watermarked" | "blocked";
     endpoint?: string;
     meta?: TelemetryMeta;
+    origin?: string | undefined;
   } = {},
 ): Promise<void> {
-  const lic = await getLicense(key);
+  const lic = await getLicense(key, options.origin);
   if (!lic) throw new HttpError(404, "unknown_license");
 
   // Audit/reconcile only. Consumption is charged at /v1/authorize (reserve-as-
@@ -296,14 +308,18 @@ function sameInstant(a: Date | null, b: Date | null): boolean {
  * Single round trip: join api_keys → licenses instead of two sequential SELECTs,
  * halving DB latency and pool occupancy on /v1/license and /v1/usage.
  */
-export async function getLicense(key: string): Promise<License | undefined> {
+export async function getLicense(key: string, origin?: string): Promise<License | undefined> {
   const [row] = await db
-    .select({ lic: licenses })
+    .select({ lic: licenses, allowedOrigins: apiKeys.allowedOrigins })
     .from(apiKeys)
     .innerJoin(licenses, eq(licenses.id, apiKeys.licenseId))
     .where(and(eq(apiKeys.keyHash, hashKey(key)), isNull(apiKeys.revokedAt)))
     .limit(1);
-  return row?.lic;
+  if (!row) return undefined;
+  // A pinned key must not leak license state (or record usage) from a
+  // disallowed context either — same rule as authorize.
+  if (!originAllowed(row.allowedOrigins, origin)) throw new HttpError(403, "origin_not_allowed");
+  return row.lic;
 }
 
 /**
@@ -314,14 +330,48 @@ export async function getLicense(key: string): Promise<License | undefined> {
 export async function createApiKey(
   licenseId: string,
   name: string,
-): Promise<{ id: string; name: string; keyPrefix: string; key: string }> {
+  allowedOrigins?: string[],
+): Promise<{ id: string; name: string; keyPrefix: string; key: string; allowedOrigins: string[] | null }> {
   const key = generateKey();
+  const origins = allowedOrigins && allowedOrigins.length > 0 ? normalizeOriginList(allowedOrigins) : null;
   const [row] = await db
     .insert(apiKeys)
-    .values({ licenseId, name: name.trim() || "Default", keyHash: hashKey(key), keyPrefix: keyPrefix(key) })
+    .values({
+      licenseId,
+      name: name.trim() || "Default",
+      keyHash: hashKey(key),
+      keyPrefix: keyPrefix(key),
+      allowedOrigins: origins,
+    })
     .returning();
   if (!row) throw new HttpError(500, "key_creation_failed");
-  return { id: row.id, name: row.name, keyPrefix: row.keyPrefix, key };
+  return { id: row.id, name: row.name, keyPrefix: row.keyPrefix, key, allowedOrigins: row.allowedOrigins };
+}
+
+/** Max origins per key / max characters per origin entry. */
+export const MAX_ORIGINS_PER_KEY = 8;
+const MAX_ORIGIN_LENGTH = 200;
+
+/**
+ * Validates + normalizes an origin allowlist for storage. Throws
+ * HttpError(400) naming the first invalid entry.
+ */
+export function normalizeOriginList(input: string[]): string[] {
+  if (input.length > MAX_ORIGINS_PER_KEY) {
+    throw new HttpError(400, "bad_request", { reason: "too_many_origins", max: MAX_ORIGINS_PER_KEY });
+  }
+  const out: string[] = [];
+  for (const entry of input) {
+    if (typeof entry !== "string" || entry.length > MAX_ORIGIN_LENGTH) {
+      throw new HttpError(400, "bad_request", { reason: "invalid_origin", origin: String(entry).slice(0, 80) });
+    }
+    const normalized = normalizeOrigin(entry);
+    if (!normalized) {
+      throw new HttpError(400, "bad_request", { reason: "invalid_origin", origin: entry.slice(0, 80) });
+    }
+    if (!out.includes(normalized)) out.push(normalized);
+  }
+  return out;
 }
 
 /** Client + runtime metadata captured from the library, stored on telemetry. */

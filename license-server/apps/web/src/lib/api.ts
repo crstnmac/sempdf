@@ -404,6 +404,8 @@ export interface PortalApiKey {
   id: string
   name: string
   keyPrefix: string
+  /** Origin allowlist; null/empty = key works from anywhere. */
+  allowedOrigins?: string[] | null
   lastUsedAt: string | null
   createdAt: string
 }
@@ -533,10 +535,20 @@ export const portalApi = {
       method: 'PUT',
       body: JSON.stringify(body),
     }),
-  createKey: (licenseId: string, name: string) =>
+  createKey: (licenseId: string, name: string, allowedOrigins?: string[]) =>
     portalRequest<{ id: string; name: string; keyPrefix: string; key: string }>(
       `/licenses/${licenseId}/keys`,
-      { method: 'POST', body: JSON.stringify({ name }) },
+      {
+        method: 'POST',
+        body: JSON.stringify(
+          allowedOrigins && allowedOrigins.length > 0 ? { name, allowedOrigins } : { name },
+        ),
+      },
+    ),
+  updateKeyOrigins: (keyId: string, allowedOrigins: string[]) =>
+    portalRequest<{ id: string; name: string; keyPrefix: string; allowedOrigins: string[] | null }>(
+      `/keys/${keyId}`,
+      { method: 'PATCH', body: JSON.stringify({ allowedOrigins }) },
     ),
   revokeKey: (keyId: string) =>
     portalRequest<{ ok: boolean }>(`/keys/${keyId}`, { method: 'DELETE' }),

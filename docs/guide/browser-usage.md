@@ -61,6 +61,13 @@ See [Licensing and Usage Limits](./licensing.md).
 
 When running inside a Chrome extension, use [`loadExtensionFont()`](./text-and-fonts#chrome-extension-fonts) to load font files bundled with the extension. Fonts bundled as `.ttf`/`.otf` files are fetched via `chrome.runtime.getURL()` and registered in one call.
 
+An extension's `host_permissions` bypass CORS entirely, so the licensing
+client's `fetch` calls to your license server work without any server-side
+configuration. Because the extension package can be unpacked and its license
+key read out, restrict that key to your extension's origin
+(`chrome-extension://<extension-id>`) from the customer portal — see
+[Origin pinning](./licensing#origin-pinning-browser-chrome-extension-keys).
+
 ## Playground
 
 The repo includes a browser playground in `examples/website`: write template code on the left and see the rendered PDF on the right, all in-browser.

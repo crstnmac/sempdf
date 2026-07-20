@@ -182,6 +182,39 @@ try {
 | `jobId` | — | Optional application-level job id sent to telemetry. |
 | `jobDescription` | — | Optional application-level description, e.g. `"August bank statement, 200000 pages"`. |
 
+## Origin pinning (browser / Chrome extension keys)
+
+A key shipped in client-visible code (a browser bundle, a Chrome extension
+package) can be extracted by anyone who opens devtools or unzips the package.
+**Origin pinning** doesn't stop that extraction, but it stops the extracted key
+from being reused anywhere else: from the customer portal, a key can be
+restricted to one or more origins (`https://app.example.com`,
+`chrome-extension://<extension-id>`) — the license server then rejects any
+`/v1/authorize` (and `/v1/usage`, `/v1/license`) request whose browser-set
+`Origin` header isn't in that list, **including requests with no `Origin`
+header at all**. A pinned key is therefore browser/extension-only: it will not
+work from a Node backend, `curl`, or any server-to-server call.
+
+::: warning This is abuse mitigation, not cryptographic protection
+`Origin` is asserted by the browser for real page/extension requests, but any
+non-browser client can set an arbitrary `Origin` header — `curl -H "Origin:
+https://app.example.com"` bypasses pinning trivially. The real protections, in
+order of strength, are: (1) keep the key server-side and never ship it to a
+client at all, (2) issue **per-user, revocable** pinned keys (a license can
+have many keys sharing one quota — see [Model: lease / batch](#model-lease-batch))
+so a leaked key can be revoked without affecting other users, (3) an unpinned
+key baked into a widely distributed client, which pinning turns into (2) at
+minimum. Pinning is the same model as Google Maps API key referrer
+restrictions: it stops casual reuse and gives you a clear signal (repeated
+`origin_not_allowed` errors) that a specific key has leaked, so you can revoke
+it — it is not a vault.
+:::
+
+Manage origins for a key from the customer portal (API keys → a key's
+"Origins" control). Leaving the list empty (the default for every existing
+key) leaves the key unrestricted. Rotating a pinned key carries its origin
+list over to the new key.
+
 ## What's metered: documents and pages
 
 Both dimensions are always tracked, but hosted licensing enforces **pages**.

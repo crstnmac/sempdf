@@ -6,7 +6,7 @@ import { db } from "../db/client.js";
 import { apiKeys, apiTelemetry, licenses, notificationSettings } from "../db/schema.js";
 import { invitation, member, organization, user } from "../db/auth-schema.js";
 import { generateKey, hashKey, keyPrefix } from "../domain/keys.js";
-import { createApiKey, windowResetAt } from "../domain/licenses.js";
+import { createApiKey, HttpError, normalizeOriginList, windowResetAt } from "../domain/licenses.js";
 import { assertSafeWebhookUrl, UnsafeUrlError } from "../domain/net-guard.js";
 import { sendEmail } from "../domain/email/mailer.js";
 import { renderInvitationEmail } from "../domain/email/templates.js";
@@ -125,6 +125,7 @@ portalRoutes.get("/overview", async (c) => {
           id: k.id,
           name: k.name,
           keyPrefix: k.keyPrefix,
+          allowedOrigins: k.allowedOrigins,
           lastUsedAt: k.lastUsedAt?.toISOString() ?? null,
           createdAt: k.createdAt.toISOString(),
         })),
@@ -273,6 +274,8 @@ portalRoutes.post("/licenses/:id/keys", async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json().catch(() => ({}));
   const name = typeof body.name === "string" && body.name.trim() ? body.name.trim().slice(0, 60) : "New key";
+  const allowedOrigins = readOriginsBody(body);
+  if (allowedOrigins === false) return c.json({ error: "bad_request", reason: "invalid_origin" }, 400);
 
   const [lic] = await db.select().from(licenses).where(eq(licenses.id, id));
   if (!lic) return c.json({ error: "unknown_license" }, 404);
@@ -281,8 +284,59 @@ portalRoutes.post("/licenses/:id/keys", async (c) => {
   }
   if (!lic.active) return c.json({ error: "license_inactive" }, 409);
 
-  const apiKey = await createApiKey(id, name);
-  return c.json(apiKey, 201);
+  try {
+    const apiKey = await createApiKey(id, name, allowedOrigins);
+    return c.json(apiKey, 201);
+  } catch (err) {
+    if (err instanceof HttpError) return c.json({ error: err.message, ...err.details }, err.status as 400);
+    throw err;
+  }
+});
+
+/**
+ * Reads an optional allowedOrigins array from a request body. Returns
+ * undefined when absent, false when it is present but not a string array.
+ * (Content validation/normalization happens in normalizeOriginList.)
+ */
+function readOriginsBody(body: Record<string, unknown>): string[] | undefined | false {
+  if (body.allowedOrigins === undefined || body.allowedOrigins === null) return undefined;
+  if (!Array.isArray(body.allowedOrigins)) return false;
+  if (!body.allowedOrigins.every((o) => typeof o === "string")) return false;
+  return body.allowedOrigins as string[];
+}
+
+/**
+ * Updates one API key's origin allowlist. An empty array clears the pinning
+ * (key becomes unrestricted). Scoped to the caller's orgs; owners/admins only.
+ */
+portalRoutes.patch("/keys/:keyId", async (c) => {
+  const userId = c.get("userId");
+  const keyId = c.req.param("keyId");
+  const body = await c.req.json().catch(() => ({}));
+  const allowedOrigins = readOriginsBody(body);
+  if (allowedOrigins === undefined || allowedOrigins === false) {
+    return c.json({ error: "bad_request", reason: "invalid_origin" }, 400);
+  }
+
+  const [row] = await db
+    .select({ id: apiKeys.id, name: apiKeys.name, keyPrefix: apiKeys.keyPrefix, accountId: licenses.accountId })
+    .from(apiKeys)
+    .innerJoin(licenses, eq(apiKeys.licenseId, licenses.id))
+    .where(and(eq(apiKeys.id, keyId), isNull(apiKeys.revokedAt)));
+  if (!row) return c.json({ error: "unknown_key" }, 404);
+  if (!isOrgAdmin(await userOrgRole(userId, row.accountId))) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+
+  let origins: string[] | null;
+  try {
+    origins = allowedOrigins.length > 0 ? normalizeOriginList(allowedOrigins) : null;
+  } catch (err) {
+    if (err instanceof HttpError) return c.json({ error: err.message, ...err.details }, err.status as 400);
+    throw err;
+  }
+  await db.update(apiKeys).set({ allowedOrigins: origins }).where(eq(apiKeys.id, keyId));
+  return c.json({ id: row.id, name: row.name, keyPrefix: row.keyPrefix, allowedOrigins: origins });
 });
 
 /**
@@ -323,6 +377,7 @@ portalRoutes.post("/keys/:keyId/rotate", async (c) => {
       id: apiKeys.id,
       name: apiKeys.name,
       licenseId: apiKeys.licenseId,
+      allowedOrigins: apiKeys.allowedOrigins,
       accountId: licenses.accountId,
       active: licenses.active,
     })
@@ -336,7 +391,9 @@ portalRoutes.post("/keys/:keyId/rotate", async (c) => {
   if (!row.active) return c.json({ error: "license_inactive" }, 409);
 
   await db.update(apiKeys).set({ revokedAt: new Date() }).where(eq(apiKeys.id, keyId));
-  const apiKey = await createApiKey(row.licenseId, row.name);
+  // The replacement inherits the origin pinning — rotation swaps the secret,
+  // not the key's identity or its restrictions.
+  const apiKey = await createApiKey(row.licenseId, row.name, row.allowedOrigins ?? undefined);
   return c.json(apiKey, 200);
 });
 

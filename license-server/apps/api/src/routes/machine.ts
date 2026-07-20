@@ -104,7 +104,14 @@ machine.post("/authorize", async (c) => {
   }
 
   try {
-    const result = await authorize(key, requested, { nonce, jobId, jobDescription, endpoint: "/v1/authorize", meta });
+    const result = await authorize(key, requested, {
+      nonce,
+      jobId,
+      jobDescription,
+      endpoint: "/v1/authorize",
+      meta,
+      origin: c.req.header("origin"),
+    });
     const watermarkText = result.watermark ? TRIAL_WATERMARK_TEXT : null;
     // Canonical v3: watermark flag + text are inside the signed payload, so a
     // tampering proxy cannot strip the trial watermark from a valid response.
@@ -146,7 +153,7 @@ machine.post("/usage", async (c) => {
   const status = body.status === "fail" || body.status === "watermarked" || body.status === "blocked" ? body.status : "success";
   if (!key || (documents <= 0 && pages <= 0)) return c.json({ error: "bad_request" }, 400);
   try {
-    await recordUsage(key, { documents, pages }, { jobId, jobDescription, status, endpoint: "/v1/usage", meta });
+    await recordUsage(key, { documents, pages }, { jobId, jobDescription, status, endpoint: "/v1/usage", meta, origin: c.req.header("origin") });
   } catch (err) {
     if (err instanceof HttpError) return c.json({ error: err.message }, err.status as 400);
     throw err;
@@ -158,7 +165,13 @@ machine.post("/usage", async (c) => {
 machine.get("/license", async (c) => {
   const key = keyFromRequest(c, {});
   if (!key) return c.json({ error: "bad_request" }, 400);
-  const lic = await getLicense(key);
+  let lic;
+  try {
+    lic = await getLicense(key, c.req.header("origin"));
+  } catch (err) {
+    if (err instanceof HttpError) return c.json({ error: err.message, ...err.details }, err.status as 400);
+    throw err;
+  }
   if (!lic) return c.json({ error: "unknown_license" }, 404);
   return c.json({
     id: lic.id,
