@@ -433,8 +433,10 @@ Rules that keep releases boring:
       `SEMPDF_LICENSE_SERVER=https://<domain>` +
       `SEMPDF_LICENSE_PUBKEYS='{"v1":"<PEM from /v1/public-key>"}'`.
       Never bake the bare IP; never skip the keys (bake script warns).
-- [ ] Licensing companion package publishes as **0.2.1+** (0.2.0 sits
-      deprecated on the registry from a rolled-back release).
+- [x] Licensing companion package publishes as **0.2.1+** — **Done
+      2026-07-17**: `0.2.1` live on `npm.sempdf.net` (release `a5cd44f`,
+      includes the canonical-v3 client). `0.2.0` stays deprecated on the
+      registry from the rolled-back release.
 - [x] ~~SigNoz~~ **Done 2026-07-20 as Loki + Prometheus + Grafana** (SigNoz
       dropped — was never wired; otel-collector had been crash-looping with an
       empty endpoint since day one). See "Observability (as-built)" below.
