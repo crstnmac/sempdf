@@ -58,7 +58,7 @@ function populateFixtures() {
 function populateDataSets() {
   const fixture = selectedFixture();
   els.dataSetSelect.replaceChildren(
-    ...fixture.dataSets.map((dataSet) => option(dataSet.id, dataSet.label)),
+    ...(fixture?.dataSets ?? []).map((dataSet) => option(dataSet.id, dataSet.label)),
   );
 }
 
@@ -94,6 +94,7 @@ async function updateBaseline() {
 
 function draw() {
   const result = state.current;
+  if (!result) return;
   const page = result.pages[state.pageIndex];
   els.pageTabs.replaceChildren(
     ...result.pages.map((item, index) => {

@@ -31,16 +31,17 @@ import {
 // Largest PDF this server will read into memory.
 const MAX_PDF_BYTES = 100 * 1024 * 1024;
 
-// When a workspace root is configured (WORKSPACE_DIR env, set by the MCPB
-// manifest, or the host's first roots/list entry) every path is resolved
-// against it and may not escape it. Unset = unscoped (local stdio / dev).
-let workspaceRoot: string | null = process.env.WORKSPACE_DIR
+// Every path is resolved against a workspace root and may not escape it —
+// WORKSPACE_DIR env (set by the MCPB manifest) wins; otherwise the host's
+// first approved root (roots/list) is adopted once available; failing both,
+// the boundary defaults to the process's cwd. Never unscoped.
+const explicitWorkspaceRoot: string | null = process.env.WORKSPACE_DIR
   ? resolve(process.env.WORKSPACE_DIR)
   : null;
+let workspaceRoot: string = explicitWorkspaceRoot ?? process.cwd();
 
-/** Resolves a user-supplied path, enforcing containment when a root is set. */
+/** Resolves a user-supplied path, enforcing containment within the workspace root. */
 function resolvePath(userPath: string): string {
-  if (!workspaceRoot) return resolve(userPath);
   const full = resolve(workspaceRoot, userPath);
   const rel = relative(workspaceRoot, full);
   if (rel.startsWith("..") || isAbsolute(rel)) {
@@ -506,7 +507,7 @@ async function loadTypeDeclarations(): Promise<string> {
 // If no WORKSPACE_DIR was configured, adopt the host's first approved root
 // (roots/list) as the workspace boundary once the session initializes.
 server.server.oninitialized = async () => {
-  if (workspaceRoot) return;
+  if (explicitWorkspaceRoot) return;
   const caps = server.server.getClientCapabilities();
   if (!caps?.roots) return;
   try {

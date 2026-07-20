@@ -14,6 +14,8 @@ setVerifiedLicenseGuard({ consume() {} });
 const DEFAULT_FIXTURE_DIR = "examples/visual-fixtures";
 const DEFAULT_OUTPUT_DIR = ".visual-output";
 const HOMEBREW_POPPLER_DYLIB = "/usr/local/Cellar/poppler/0.66.0/lib/libpoppler.77.dylib";
+const TRUSTED_BIN_DIRS = ["/usr/bin", "/bin", "/usr/local/bin", "/opt/homebrew/bin", "/usr/sbin", "/sbin"];
+const SAFE_SPAWN_ENV = { ...process.env, PATH: TRUSTED_BIN_DIRS.join(":") };
 
 export async function renderFixtures({
   fixtureDir = DEFAULT_FIXTURE_DIR,
@@ -50,6 +52,7 @@ export async function renderFixtures({
 
         const result = spawnSync(renderer, ["-r", String(dpi), pdfPath, prefix], {
           encoding: "utf8",
+          env: SAFE_SPAWN_ENV,
         });
         if (result.status !== 0) {
           throw new Error(
@@ -96,7 +99,7 @@ function loadFixturePaths(fixtureDir) {
 
 function ensureRenderer(renderer) {
   prepareBundledRenderer(renderer);
-  const result = spawnSync(renderer, ["-h"], { encoding: "utf8" });
+  const result = spawnSync(renderer, ["-h"], { encoding: "utf8", env: SAFE_SPAWN_ENV });
   if (result.error?.code === "ENOENT") {
     throw new Error(
       `Unable to find ${renderer}. Install dev dependencies, install Poppler (macOS: brew install poppler; Debian/Ubuntu: apt-get install poppler-utils), or set PDF_VISUAL_RENDERER.`,
@@ -120,7 +123,7 @@ function findBundledRenderer() {
 }
 
 function findSystemRenderer() {
-  const result = spawnSync("pdftoppm", ["-h"], { encoding: "utf8" });
+  const result = spawnSync("pdftoppm", ["-h"], { encoding: "utf8", env: SAFE_SPAWN_ENV });
   return result.status === 0 ? "pdftoppm" : undefined;
 }
 
@@ -137,6 +140,7 @@ function prepareBundledRenderer(renderer) {
   if (!existsSync(bundledDylib)) return;
   spawnSync("install_name_tool", ["-change", HOMEBREW_POPPLER_DYLIB, bundledDylib, resolved], {
     encoding: "utf8",
+    env: SAFE_SPAWN_ENV,
   });
 }
 

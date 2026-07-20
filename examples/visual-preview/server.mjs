@@ -28,6 +28,8 @@ const DEFAULT_DPI = 144;
 const MAX_CHANNEL_DELTA = 2;
 const MAX_DIFF_RATIO = 0.001;
 const HOMEBREW_POPPLER_DYLIB = "/usr/local/Cellar/poppler/0.66.0/lib/libpoppler.77.dylib";
+const TRUSTED_BIN_DIRS = ["/usr/bin", "/bin", "/usr/local/bin", "/opt/homebrew/bin", "/usr/sbin", "/sbin"];
+const SAFE_SPAWN_ENV = { ...process.env, PATH: TRUSTED_BIN_DIRS.join(":") };
 
 const renderer = process.env.PDF_VISUAL_RENDERER ?? findSystemRenderer() ?? findBundledRenderer() ?? "pdftoppm";
 const port = Number(process.env.PORT ?? readArg("--port") ?? 4174);
@@ -39,40 +41,66 @@ mkdirSync(OUTPUT_DIR, { recursive: true });
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
-    if (request.method === "GET" && url.pathname === "/") {
-      return sendFile(response, join(STATIC_DIR, "index.html"));
-    }
-    if (request.method === "GET" && url.pathname === "/favicon.ico") {
-      response.writeHead(204);
-      response.end();
-      return;
-    }
-    if (request.method === "GET" && url.pathname.startsWith("/static/")) {
-      return sendFile(response, join(STATIC_DIR, url.pathname.slice("/static/".length)));
-    }
-    if (request.method === "GET" && url.pathname.startsWith("/artifacts/")) {
-      return sendSafeFile(response, OUTPUT_DIR, url.pathname.slice("/artifacts/".length));
-    }
-    if (request.method === "GET" && url.pathname === "/api/fixtures") {
-      return sendJson(response, await listFixtures());
-    }
-    if (request.method === "POST" && url.pathname === "/api/render") {
-      return sendJson(response, await renderSelection(await readJson(request)));
-    }
-    if (request.method === "POST" && url.pathname === "/api/update-baseline") {
-      return sendJson(response, await updateBaseline(await readJson(request)));
-    }
-    response.writeHead(404);
-    response.end("Not found");
+    await routeRequest(request, response, url);
   } catch (error) {
     sendJson(response, { error: error instanceof Error ? error.message : String(error) }, 500);
   }
 });
 
+async function routeRequest(request, response, url) {
+  if (request.method === "GET") {
+    const handled = await routeGet(request, response, url);
+    if (handled) return;
+  }
+  if (request.method === "POST") {
+    const handled = await routePost(request, response, url);
+    if (handled) return;
+  }
+  response.writeHead(404);
+  response.end("Not found");
+}
+
+async function routeGet(request, response, url) {
+  if (url.pathname === "/") {
+    sendFile(response, join(STATIC_DIR, "index.html"));
+    return true;
+  }
+  if (url.pathname === "/favicon.ico") {
+    response.writeHead(204);
+    response.end();
+    return true;
+  }
+  if (url.pathname.startsWith("/static/")) {
+    sendSafeFile(response, STATIC_DIR, url.pathname.slice("/static/".length));
+    return true;
+  }
+  if (url.pathname.startsWith("/artifacts/")) {
+    sendSafeFile(response, OUTPUT_DIR, url.pathname.slice("/artifacts/".length));
+    return true;
+  }
+  if (url.pathname === "/api/fixtures") {
+    sendJson(response, await listFixtures());
+    return true;
+  }
+  return false;
+}
+
+async function routePost(request, response, url) {
+  if (url.pathname === "/api/render") {
+    sendJson(response, await renderSelection(await readJson(request)));
+    return true;
+  }
+  if (url.pathname === "/api/update-baseline") {
+    sendJson(response, await updateBaseline(await readJson(request)));
+    return true;
+  }
+  return false;
+}
+
 server.listen(port, "127.0.0.1", () => {
   const url = `http://127.0.0.1:${port}`;
   console.log(`Visual preview running at ${url}`);
-  if (shouldOpen) spawn("open", [url], { stdio: "ignore", detached: true }).unref();
+  if (shouldOpen) spawn("open", [url], { stdio: "ignore", detached: true, env: SAFE_SPAWN_ENV }).unref();
 });
 
 async function listFixtures() {
@@ -104,7 +132,7 @@ async function renderSelection(input) {
 
   const pdfBytes = await fixtureEntry.fixture.render(dataSet.data, { dataSet });
   if (!(pdfBytes instanceof Uint8Array)) {
-    throw new Error(`Fixture ${fixtureName} render() must return Uint8Array.`);
+    throw new TypeError(`Fixture ${fixtureName} render() must return Uint8Array.`);
   }
 
   const actual = renderPdfPages(pdfBytes, outputDir, "actual", dpi);
@@ -218,7 +246,12 @@ function copyRenderedPages(fromDir, toDir, prefix, extension) {
 function readBaselinePpm(fixtureName, dataSetId, pageNumber) {
   const nested = join(BASELINE_DIR, fixtureName, dataSetId, `page-${pageNumber}.ppm.gz`);
   const legacy = join(BASELINE_DIR, fixtureName, `page-${pageNumber}.ppm.gz`);
-  const path = existsSync(nested) ? nested : dataSetId === "default" && existsSync(legacy) ? legacy : undefined;
+  let path;
+  if (existsSync(nested)) {
+    path = nested;
+  } else if (dataSetId === "default" && existsSync(legacy)) {
+    path = legacy;
+  }
   return path ? gunzipSync(readFileSync(path)) : undefined;
 }
 
@@ -288,7 +321,7 @@ function dataSetById(fixture, id = "default") {
 
 function ensureRenderer() {
   prepareBundledRenderer(renderer);
-  const result = spawnSync(renderer, ["-h"], { encoding: "utf8" });
+  const result = spawnSync(renderer, ["-h"], { encoding: "utf8", env: SAFE_SPAWN_ENV });
   if (result.error?.code === "ENOENT") {
     throw new Error("pdftoppm is required. Install Poppler or set PDF_VISUAL_RENDERER.");
   }
@@ -298,18 +331,21 @@ function ensureRenderer() {
 }
 
 function findSystemRenderer() {
-  const result = spawnSync("pdftoppm", ["-h"], { encoding: "utf8" });
+  const result = spawnSync("pdftoppm", ["-h"], { encoding: "utf8", env: SAFE_SPAWN_ENV });
   return result.status === 0 ? "pdftoppm" : undefined;
 }
 
 function findBundledRenderer() {
-  const candidates =
-    process.platform === "darwin"
-      ? ["node_modules/pdf-poppler/lib/osx/poppler-0.66/bin/pdftoppm"]
-      : process.platform === "win32"
-        ? ["node_modules/pdf-poppler/lib/win/poppler-0.51/bin/pdftoppm.exe"]
-        : [];
-  return candidates.map((candidate) => resolve(ROOT, candidate)).find((candidate) => existsSync(candidate));
+  let relativePath;
+  if (process.platform === "darwin") {
+    relativePath = "node_modules/pdf-poppler/lib/osx/poppler-0.66/bin/pdftoppm";
+  } else if (process.platform === "win32") {
+    relativePath = "node_modules/pdf-poppler/lib/win/poppler-0.51/bin/pdftoppm.exe";
+  } else {
+    return undefined;
+  }
+  const candidate = resolve(ROOT, relativePath);
+  return existsSync(candidate) ? candidate : undefined;
 }
 
 function prepareBundledRenderer(rendererPath) {
@@ -325,11 +361,12 @@ function prepareBundledRenderer(rendererPath) {
   if (!existsSync(bundledDylib)) return;
   spawnSync("install_name_tool", ["-change", HOMEBREW_POPPLER_DYLIB, bundledDylib, resolved], {
     encoding: "utf8",
+    env: SAFE_SPAWN_ENV,
   });
 }
 
 function runRenderer(args) {
-  const result = spawnSync(renderer, args, { encoding: "utf8" });
+  const result = spawnSync(renderer, args, { encoding: "utf8", env: SAFE_SPAWN_ENV });
   if (result.status !== 0) {
     throw new Error(`pdftoppm failed: ${(result.stderr || result.stdout || "").trim()}`);
   }
@@ -392,8 +429,16 @@ function crc32(buffer) {
 }
 
 function sendSafeFile(response, root, relativePath) {
+  const segments = relativePath.split(/[/\\]/);
+  const hasTraversal = segments.some((segment) => segment === "..");
+  if (hasTraversal) {
+    response.writeHead(404);
+    response.end("Not found");
+    return;
+  }
   const target = resolve(root, normalize(relativePath));
-  if (!target.startsWith(root) || !existsSync(target)) {
+  const withinRoot = target === root || target.startsWith(root + "/");
+  if (!withinRoot || !existsSync(target) || !statSync(target).isFile()) {
     response.writeHead(404);
     response.end("Not found");
     return;
@@ -433,7 +478,9 @@ function artifactUrl(path) {
 }
 
 function sanitizeName(name) {
-  return String(name).trim().replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "fixture";
+  const cleaned = String(name).trim().replace(/[^a-zA-Z0-9._-]+/g, "-");
+  const trimmed = cleaned.replace(/^-+/, "").replace(/-+$/, "");
+  return trimmed || "fixture";
 }
 
 function readArg(name) {
