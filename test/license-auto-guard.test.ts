@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign as edSign } from "node:crypto";
 
-import { createDocument, PdfErrorCode } from "../src/index.js";
+import { createDocument, PdfErrorCode, renderDocumentJson, renderDocumentJsonSync, type PdfDocumentJson } from "../src/index.js";
 import { setLicenseGuard, getLicenseInstallChallenge, setLicenseGuardWithProof } from "../src/license-guard.js";
 import {
   checkout,
@@ -179,6 +179,35 @@ test("a tampered proof (signature over different data) is rejected", async () =>
     setLicenseGuard(undefined);
     overrideServerPublicKeys(undefined);
   }
+});
+
+test("renderDocumentJson auto-authorizes with the zero-config guard (no explicit checkout needed)", async () => {
+  const doc: PdfDocumentJson = {
+    title: "Auto Guard",
+    blocks: [{ type: "paragraph", text: "Zero-config JSON render." }],
+  };
+  await withAutoGuard({}, async () => {
+    // No checkout() call — renderDocumentJson must authorize itself, unlike
+    // renderDocumentJsonSync below, since it's async and can await it.
+    const bytes = await renderDocumentJson(doc);
+    assert.equal(Buffer.from(bytes.subarray(0, 5)).toString(), "%PDF-");
+  });
+});
+
+test("renderDocumentJsonSync cannot auto-authorize (sync path); requires a prior checkout", async () => {
+  const doc: PdfDocumentJson = {
+    title: "Sync Guard",
+    blocks: [{ type: "paragraph", text: "Sync JSON render." }],
+  };
+  await withAutoGuard({}, async () => {
+    assert.throws(
+      () => renderDocumentJsonSync(doc),
+      (err: unknown) => err instanceof Error && (err as { code?: string }).code === PdfErrorCode.LICENSE_QUOTA_EXCEEDED,
+    );
+    await checkout(5);
+    const bytes = renderDocumentJsonSync(doc);
+    assert.equal(Buffer.from(bytes.subarray(0, 5)).toString(), "%PDF-");
+  });
 });
 
 test("with no baked keys the auto-guard still works (dev transport trust)", async () => {
