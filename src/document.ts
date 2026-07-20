@@ -5572,10 +5572,16 @@ export class PdfDocument {
       }
       return this._finalizedBytes!;
     }
+    // _finalized is set only after a successful license check + serialize:
+    // if _serializeToBytes() throws (quota exceeded, blocked license), the
+    // document stays un-finalized so a retry re-enters the guard instead of
+    // falling into the "already finalized" branch above, which serializes
+    // with no license check at all.
+    const bytes = this._serializeToBytes();
     this._finalized = true;
     this._finalizedPageCount = this.pages.length;
-    this._finalizedBytes = this._serializeToBytes();
-    return this._finalizedBytes;
+    this._finalizedBytes = bytes;
+    return bytes;
   }
 
   /**
@@ -5602,11 +5608,13 @@ export class PdfDocument {
       await serializeDocumentToSink(this.toModel(), sink);
       return;
     }
-    this._finalized = true;
-    this._finalizedPageCount = this.pages.length;
+    // See toUint8Array(): finalize only after authorize + serialize succeed,
+    // so a rejected/failed attempt can be retried through the guard again.
     await ensureLicenseAuthorized(this.pages.length);
     this._applyLicenseDecision();
     await serializeDocumentToSink(this.toModel(), sink);
+    this._finalized = true;
+    this._finalizedPageCount = this.pages.length;
     await flushLicenseUsage();
     } finally {
       this._writing = false;
@@ -5634,11 +5642,13 @@ export class PdfDocument {
       new Uint8Array(buffer).set(bytes);
       return buffer;
     }
+    // See toUint8Array() for why finalization happens only after success.
+    const bytes = this._serializeToBytes();
     this._finalized = true;
     this._finalizedPageCount = this.pages.length;
-    this._finalizedBytes = this._serializeToBytes();
-    const buffer = new ArrayBuffer(this._finalizedBytes.byteLength);
-    new Uint8Array(buffer).set(this._finalizedBytes);
+    this._finalizedBytes = bytes;
+    const buffer = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(buffer).set(bytes);
     return buffer;
   }
 
@@ -5660,10 +5670,12 @@ export class PdfDocument {
       }
       return new Blob([this._finalizedBytes! as BlobPart], { type: "application/pdf" });
     }
+    // See toUint8Array() for why finalization happens only after success.
+    const bytes = this._serializeToBytes();
     this._finalized = true;
     this._finalizedPageCount = this.pages.length;
-    this._finalizedBytes = this._serializeToBytes();
-    return new Blob([this._finalizedBytes as BlobPart], { type: "application/pdf" });
+    this._finalizedBytes = bytes;
+    return new Blob([bytes as BlobPart], { type: "application/pdf" });
   }
 
   /**
@@ -6952,10 +6964,14 @@ export class PdfEditableDocument {
       }
       return this._finalizedBytes!;
     }
+    // See PdfDocument.toUint8Array(): finalize only after a successful
+    // license check + serialize, so a rejected attempt can be retried
+    // through the guard instead of falling into the unlicensed branch above.
+    const bytes = this._serializeToBytes();
     this._finalized = true;
     this._finalizedPageCount = this.pageOrder.length;
-    this._finalizedBytes = this._serializeToBytes();
-    return this._finalizedBytes;
+    this._finalizedBytes = bytes;
+    return bytes;
   }
 
   /**
@@ -6998,8 +7014,9 @@ export class PdfEditableDocument {
       await serializeIncrementalUpdateToSink(this.toIncrementalModel(), sink);
       return;
     }
-    this._finalized = true;
-    this._finalizedPageCount = this.pageOrder.length;
+    // See PdfDocument.writeTo(): finalize only after the license check (and
+    // the actual write) succeeds, so a rejected attempt can be retried
+    // through the guard instead of falling into the unlicensed branch above.
     this._applyLicenseDecision();
     if (
       !hasEditablePageChanges(this.base, this.pageOrder) &&
@@ -7015,9 +7032,13 @@ export class PdfEditableDocument {
     ) {
       await sink.write(this.base.getSourceBytes());
       await sink.close();
+      this._finalized = true;
+      this._finalizedPageCount = this.pageOrder.length;
       return;
     }
     await serializeIncrementalUpdateToSink(this.toIncrementalModel(), sink);
+    this._finalized = true;
+    this._finalizedPageCount = this.pageOrder.length;
     } finally {
       this._writing = false;
     }
@@ -7044,11 +7065,13 @@ export class PdfEditableDocument {
       new Uint8Array(buffer).set(bytes);
       return buffer;
     }
+    // See toUint8Array() for why finalization happens only after success.
+    const bytes = this._serializeToBytes();
     this._finalized = true;
     this._finalizedPageCount = this.pageOrder.length;
-    this._finalizedBytes = this._serializeToBytes();
-    const buffer = new ArrayBuffer(this._finalizedBytes.byteLength);
-    new Uint8Array(buffer).set(this._finalizedBytes);
+    this._finalizedBytes = bytes;
+    const buffer = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(buffer).set(bytes);
     return buffer;
   }
 
@@ -7070,10 +7093,12 @@ export class PdfEditableDocument {
       }
       return new Blob([this._finalizedBytes! as BlobPart], { type: "application/pdf" });
     }
+    // See toUint8Array() for why finalization happens only after success.
+    const bytes = this._serializeToBytes();
     this._finalized = true;
     this._finalizedPageCount = this.pageOrder.length;
-    this._finalizedBytes = this._serializeToBytes();
-    return new Blob([this._finalizedBytes as BlobPart], { type: "application/pdf" });
+    this._finalizedBytes = bytes;
+    return new Blob([bytes as BlobPart], { type: "application/pdf" });
   }
 
   /**

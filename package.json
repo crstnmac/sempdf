@@ -1,6 +1,6 @@
 {
   "name": "@zeropdf/zeropdf-pdf",
-  "version": "2.1.2",
+  "version": "2.1.3",
   "description": "Zero-dependency PDF generation engine built in TypeScript.",
   "type": "module",
   "author": {

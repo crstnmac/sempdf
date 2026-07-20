@@ -111,6 +111,44 @@ test("re-serializing the same document does not double-count", () => {
   assert.equal(documents, 1);
 });
 
+test("retrying the same document after a rejected attempt re-checks the guard (no free bypass)", () => {
+  // A prior version marked the document "finalized" before the guard ran, so
+  // a rejected first call (quota exceeded, blocked license) left the
+  // document able to serialize on retry with NO further guard check at all —
+  // free, unmetered, unwatermarked output. The guard must run again on every
+  // retry until one actually succeeds.
+  let calls = 0;
+  setLicenseGuard({
+    consume() {
+      calls++;
+      if (calls === 1) throw licenseQuotaError("blocked");
+    },
+  });
+  const doc = createDocument({ title: "t" });
+  doc.addPage({ size: "A4" }).text("x", { x: 24, y: 700 });
+  assert.throws(() => doc.toUint8Array(), (e: unknown) => (e as { code?: string }).code === PdfErrorCode.LICENSE_QUOTA_EXCEEDED);
+  doc.toUint8Array(); // second attempt: guard allows it now
+  assert.equal(calls, 2);
+});
+
+test("writeTo: retrying after a rejected attempt re-checks the guard (no free bypass)", async () => {
+  let calls = 0;
+  setLicenseGuard({
+    consume() {
+      calls++;
+      if (calls === 1) throw licenseQuotaError("blocked");
+    },
+  });
+  const doc = createDocument({ title: "t" });
+  doc.addPage({ size: "A4" }).text("x", { x: 24, y: 700 });
+  const chunks: Uint8Array[] = [];
+  const sink = { write: async (c: Uint8Array) => { chunks.push(c); }, close: async () => {} };
+  await assert.rejects(() => doc.writeTo(sink), (e: unknown) => (e as { code?: string }).code === PdfErrorCode.LICENSE_QUOTA_EXCEEDED);
+  await doc.writeTo(sink); // second attempt: guard allows it now
+  assert.equal(calls, 2);
+  assert.ok(chunks.length > 0);
+});
+
 test("watermark reuses an embedded font so conformance profiles stay valid", async () => {
   const { readFile } = await import("node:fs/promises");
   // Resolved from the repo root: the compiled test runs from dist/test, where
