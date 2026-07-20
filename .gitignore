@@ -51,6 +51,7 @@ Thumbs.db
 # (overriding the monorepo's private default) tracked so clones build correctly.
 !license-server/.npmrc
 !licensing/.npmrc
+!license-server/examples/node-api-server/.npmrc
 
 # Test build output for the licensing package.
 dist-test
