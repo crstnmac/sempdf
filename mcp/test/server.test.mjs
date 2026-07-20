@@ -33,7 +33,11 @@ describe("zeropdf MCP server", () => {
     b = join(dir, "b.pdf");
     merged = join(dir, "merged.pdf");
 
-    const transport = new StdioClientTransport({ command: "node", args: [serverEntry] });
+    const transport = new StdioClientTransport({
+      command: "node",
+      args: [serverEntry],
+      env: { ...process.env, WORKSPACE_DIR: dir },
+    });
     client = new Client({ name: "test", version: "0.0.0" });
     await client.connect(transport);
   });
