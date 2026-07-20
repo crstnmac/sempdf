@@ -10,6 +10,13 @@ import { decInFlight, incInFlight, recordRequest } from "./metrics.js";
  * emitted. The license key (Bearer) and any signing material therefore never
  * reach the logs. Keep it that way when extending the log shape.
  */
+// Hit every 30s (Prometheus scrape) / by the LB + uptime monitor — internal
+// plumbing, not an application event. Excluded so the log stream stays
+// readable; /metrics' own values are already captured in Prometheus, and a
+// dead scrape target is caught by the `up{job="license-api"}` alert, not by
+// eyeballing this log line.
+const UNLOGGED_PATHS = new Set(["/metrics", "/healthz", "/readyz"]);
+
 export const requestLogger: MiddlewareHandler = async (c, next) => {
   const start = performance.now();
   incInFlight();
@@ -20,6 +27,7 @@ export const requestLogger: MiddlewareHandler = async (c, next) => {
     decInFlight();
     const status = c.res.status;
     recordRequest(status, durationMs);
+    if (UNLOGGED_PATHS.has(c.req.path)) return;
     // path (not url) avoids logging query strings, which could carry identifiers.
     const line = {
       level: status >= 500 ? "error" : status >= 400 ? "warn" : "info",
