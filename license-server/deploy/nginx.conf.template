@@ -1,6 +1,20 @@
 # Envsubst template — ${API_UPSTREAM} is replaced at container start
 # (default http://api:8787, see web.Dockerfile).
 
+# Trust X-Forwarded-For only from the OVH Load Balancer, reached over the
+# vRack private network (10.0.0.0/24) — never from the public internet, so a
+# client cannot spoof this header to fake its own IP for rate limiting.
+# CONFIRMED 2026-07-20: the LB currently sends NO X-Forwarded-For at all
+# (nginx access logs show it empty on every request), which collapses every
+# real visitor's rate-limit key down to nginx's own $remote_addr (the LB's
+# two internal addresses) — one shared bucket for ALL customers. This module
+# fixes nginx's half once the LB is configured to insert the header (OVH LB
+# listener setting / Octavia `insert_headers: {X-Forwarded-For: true}`); it
+# is inert (no-op) until then.
+set_real_ip_from 10.0.0.0/24;
+real_ip_header    X-Forwarded-For;
+real_ip_recursive  on;
+
 server {
     listen       80;
     server_name  _;

@@ -8,8 +8,13 @@ import { authClient, useSession, type SessionUser } from '#/lib/auth-client.ts'
 
 export const Route = createFileRoute('/portal')({
   beforeLoad: async ({ location }) => {
-    const { data } = await authClient.getSession()
-    if (!data) {
+    const { data, error } = await authClient.getSession()
+    // Only a real "no session" response (no data, no error — better-auth
+    // returns 200 + null for this) means genuinely logged out. Any other
+    // error (429 rate-limited, 5xx, network blip) must NOT redirect to
+    // login: that would sign out a perfectly valid session over a transient
+    // failure.
+    if (!data && !error) {
       throw redirect({ to: '/login', search: { redirect: location.href } })
     }
   },
