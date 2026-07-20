@@ -198,6 +198,12 @@ export class LicenseClient {
     try {
       response = await this.authorize(units, challenge);
     } catch (err) {
+      // A definitive rejection (quota exceeded, origin not allowed, malformed
+      // response) is not an outage — the server answered, and grace/closed
+      // handling would only hide the real reason behind a misleading
+      // "server unreachable" message. Only genuine unreachability (network
+      // failure, timeout/abort) falls through to handleOutage.
+      if (err instanceof PdfEngineError && err.code === PdfErrorCode.LICENSE_QUOTA_EXCEEDED) throw err;
       return this.handleOutage(units, err);
     }
 
