@@ -2,6 +2,20 @@
 
 All notable changes to `@zeropdf/zeropdf-pdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.1.5] - 2026-07-20
+
+### Fixed
+
+- **Security: certificate-recipient encryption used a predictable RNG for
+  cryptographic material.** `generateRandom20ByteSeed()` (RSA public-key
+  encryption seed) and the PKCS#1 v1.5 padding bytes in `rsaEncryptPkcs1`
+  were both filled with `Math.random()` — not cryptographically secure, so
+  the seed and padding were theoretically predictable to an attacker who
+  could observe enough output. Both now draw from
+  `globalThis.crypto.getRandomValues` (CSPRNG), falling back to
+  `Math.random()` only in runtimes without a Web Crypto API. No API change;
+  affects only documents encrypted for certificate recipients.
+
 ## [2.1.4] - 2026-07-20
 
 ### Fixed
