@@ -2,6 +2,22 @@
 
 All notable changes to `@sempdf/sempdf-pdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.1.2] - 2026-07-20
+
+### Fixed
+
+- **Regression: `2.1.1` shipped with the wrong baked license server URL.**
+  Publishing `2.1.1` ran the release build without
+  `SEMPDF_LICENSE_SERVER`/`SEMPDF_LICENSE_PUBKEYS` set, so the bake step
+  fell back to the local dev defaults (`http://localhost:8787`, no public
+  keys) instead of preserving `2.1.0`'s correct baked production values.
+  Because `bakedServerUrl ?? process.env.SEMPDF_LICENSE_SERVER` only falls
+  through on `null`/`undefined` — not on a wrong-but-truthy string — this also
+  silently ignored any `SEMPDF_LICENSE_SERVER` a caller set explicitly, so
+  the override didn't help either. Re-baked and republished with the correct
+  values (verified directly against the published tarball, not just the
+  local build) as `2.1.2`. `2.1.1` should not be used.
+
 ## [2.1.1] - 2026-07-20
 
 ### Fixed
