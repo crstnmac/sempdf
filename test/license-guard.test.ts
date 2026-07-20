@@ -149,6 +149,28 @@ test("writeTo: retrying after a rejected attempt re-checks the guard (no free by
   assert.ok(chunks.length > 0);
 });
 
+test("a sync output method cannot interleave with an in-flight writeTo() on the same document", async () => {
+  // writeTo() is async: it stays un-finalized across an await gap (license
+  // authorization) before it actually charges the guard. A prior version let
+  // toUint8Array()/toArrayBuffer()/toBlob() run freely during that gap, each
+  // fully serializing and charging independently — one logical document,
+  // billed twice. The reentrancy guard writeTo() already used against itself
+  // must also block the synchronous methods.
+  let calls = 0;
+  setLicenseGuard({ consume() { calls++; } });
+  const doc = createDocument({ title: "t" });
+  doc.addPage({ size: "A4" }).text("x", { x: 24, y: 700 });
+  const sink = { write: async () => {}, close: async () => {} };
+
+  const writePromise = doc.writeTo(sink); // not awaited — still mid-flight
+  assert.throws(
+    () => doc.toUint8Array(),
+    (e: unknown) => (e as { code?: string }).code === PdfErrorCode.INVALID_OPERATION,
+  );
+  await writePromise;
+  assert.equal(calls, 1);
+});
+
 test("watermark reuses an embedded font so conformance profiles stay valid", async () => {
   const { readFile } = await import("node:fs/promises");
   // Resolved from the repo root: the compiled test runs from dist/test, where
