@@ -25,6 +25,20 @@ function keyFromRequest(c: Context, body: { key?: unknown }): string {
 }
 
 /**
+ * Parses a non-negative integer from a request body field, defaulting to 0
+ * for anything that isn't a finite number (missing, a string like "abc", an
+ * object, `NaN`/`Infinity`). Without the `Number.isFinite` guard, a
+ * malformed value survives as `NaN` — `NaN <= 0` and `NaN > max` are both
+ * `false`, so it passes every bound check and reaches a bigint DB column,
+ * which Postgres rejects with an uncaught 500 instead of a clean 400.
+ */
+function parseNonNegativeInt(value: unknown): number {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.floor(n));
+}
+
+/**
  * Extracts job identifiers and client/runtime telemetry metadata. Supports the
  * baked-in auto-guard (fields under `body.meta`), the manual client (top-level
  * `jobId`/`jobDescription`), and `X-Job-*` headers.
@@ -94,7 +108,7 @@ machine.get("/public-key", (c) => c.json(publicKeyBundle()));
 machine.post("/authorize", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const key = keyFromRequest(c, body);
-  const requested = Math.max(0, Math.floor(Number(body.requested ?? 0)));
+  const requested = parseNonNegativeInt(body.requested);
   const nonce = String(body.nonce ?? "");
   const { jobId, jobDescription, meta } = readMeta(c, body);
   if (!key || !nonce || requested <= 0) return c.json({ error: "bad_request" }, 400);
@@ -147,8 +161,8 @@ machine.post("/authorize", async (c) => {
 machine.post("/usage", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const key = keyFromRequest(c, body);
-  const documents = Math.max(0, Math.floor(Number(body.documents ?? 0)));
-  const pages = Math.max(0, Math.floor(Number(body.pages ?? 0)));
+  const documents = parseNonNegativeInt(body.documents);
+  const pages = parseNonNegativeInt(body.pages);
   const { jobId, jobDescription, meta } = readMeta(c, body);
   const status = body.status === "fail" || body.status === "watermarked" || body.status === "blocked" ? body.status : "success";
   if (!key || (documents <= 0 && pages <= 0)) return c.json({ error: "bad_request" }, 400);
