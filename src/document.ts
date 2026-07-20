@@ -8350,12 +8350,19 @@ interface RsaPublicKey {
   e: bigint;
 }
 
-function generateRandom20ByteSeed(): Uint8Array {
-  const seed = new Uint8Array(20);
-  for (let i = 0; i < 20; i++) {
-    seed[i] = Math.floor(Math.random() * 256);
+function secureRandomBytes(length: number): Uint8Array {
+  const bytes = new Uint8Array(length);
+  const webCrypto = globalThis.crypto;
+  if (webCrypto?.getRandomValues) {
+    webCrypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < length; i++) bytes[i] = Math.floor(Math.random() * 256);
   }
-  return seed;
+  return bytes;
+}
+
+function generateRandom20ByteSeed(): Uint8Array {
+  return secureRandomBytes(20);
 }
 
 function parseX509PublicKey(der: Uint8Array): RsaPublicKey | undefined {
@@ -8564,8 +8571,11 @@ function rsaPkcs1Encrypt(
   const em = new Uint8Array(k);
   em[0] = 0x00;
   em[1] = 0x02;
-  for (let i = 2; i < 2 + psLen; i++) {
-    em[i] = Math.floor(Math.random() * 255) + 1;
+  // PS bytes must be non-zero (PKCS#1 v1.5); resample any zero bytes drawn.
+  for (let i = 2; i < 2 + psLen; ) {
+    for (const byte of secureRandomBytes(2 + psLen - i)) {
+      if (byte !== 0) em[i++] = byte;
+    }
   }
   em[2 + psLen] = 0x00;
   em.set(message, 2 + psLen + 1);

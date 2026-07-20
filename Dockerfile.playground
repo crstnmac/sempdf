@@ -18,7 +18,8 @@ RUN npm run build
 # Final image carries only the built app — no token in its history.
 FROM node:24-alpine
 WORKDIR /app
-COPY --from=build /app .
+COPY --from=build --chown=node:node /app .
+USER node
 ENV PORT=4173
 EXPOSE 4173
 CMD ["node", "examples/website/server.mjs"]
