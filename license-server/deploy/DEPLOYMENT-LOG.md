@@ -422,8 +422,13 @@ Rules that keep releases boring:
       that was ever pasted into a chat/ticket.
 - [ ] **`sslmode=verify-full`** in both `.env` `DATABASE_URL`s — pins today's
       node-pg verification behavior before pg v9 weakens `require`.
-- [ ] **SMTP provider** on :587 STARTTLS (OVH blocks outbound :25) — until
-      then trial/renewal notifications only log.
+- [x] **SMTP provider** — **Done 2026-07-20**: M365 `smtp.office365.com:587`
+      STARTTLS as `support@zeropdf.net` (app password; tenant still
+      allows SMTP AUTH). Wired into both instances' `.env` (api recreated —
+      trial/renewal notifications now actually SEND) and Grafana
+      (`GF_SMTP_*`). Send verified from lic-1. ⚠ The app password was pasted
+      into a chat during setup — rotate it and update both
+      `/opt/zeropdf/.env` + `lic-1:~/monitoring/.env`.
 - [ ] **Client library release build**:
       `ZEROPDF_LICENSE_SERVER=https://<domain>` +
       `ZEROPDF_LICENSE_PUBKEYS='{"v1":"<PEM from /v1/public-key>"}'`.
@@ -471,8 +476,18 @@ file-provisioned from `monitoring/dashboards/zeropdf-overview.json`
 (provider `grafana-dashboards.yaml`, mounted in compose) — the repo JSON is
 source of truth; UI edits don't persist back. 12 panels: up/sweep-age/
 in-flight/5xx stats, request rate + status classes, p50/p95/p99 latency,
-pg pool, rate-limited, log volume, error + api log panels. Grafana alert
-rules still TODO (see checklist above).
+pg pool, rate-limited, log volume, error + api log panels.
+
+Alert rules (added 2026-07-20, file-provisioned from `monitoring/alerting/`):
+`lic-5xx-rate` (>0.05/s 5xx for 5m), `lic-sweep-stale` (sweep age >7200s),
+`lic-pool-saturation` (pg pool waiting >0 for 5m), `lic-host-down`
+(<2 healthy hosts — catches both up==0 and a host that stops reporting).
+Contact point `ops-email` → `ALERT_EMAIL` via M365 SMTP (`GF_SMTP_*`);
+pipeline verified end-to-end with a temporary always-firing smoke rule.
+Editing rules: change the YAML in repo, scp to `lic-1:~/monitoring/alerting/`,
+restart grafana — removing a rule needs a `deleteRules:` entry, deleting the
+file alone does not unprovision it. Still TODO: external uptime check on
+`/readyz`.
 
 ## Parked (deliberate)
 
