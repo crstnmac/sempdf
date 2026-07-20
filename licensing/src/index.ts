@@ -114,6 +114,13 @@ export class LicenseClient {
   private watermark = false;
   private watermarkText: string | undefined;
   private lastGoodCheckout = 0;
+  /** Grace units already granted since lastGoodCheckout — caps the TOTAL
+   *  grace lease for one outage at graceUnits, not per-call. Without this,
+   *  each checkout() during a prolonged outage re-grants a fresh graceUnits
+   *  (since the withinGrace window is measured from the last GOOD checkout,
+   *  not reset per grant), so a high-volume caller accumulates unbounded
+   *  free lease for the whole graceMs window. */
+  private graceGranted = 0;
   /** True once the guard was re-installed on the core's verified path. */
   private proofInstalled = false;
 
@@ -228,6 +235,7 @@ export class LicenseClient {
     this.lease += response.granted;
     this.resetAt = response.resetAt;
     this.graceLease = false;
+    this.graceGranted = 0; // a real authorize succeeded — the outage (if any) is over
     this.watermark = response.watermark === true;
     this.watermarkText = response.watermarkText ?? (this.watermark ? response.status === "trial" ? "Trial Mode" : "Over Limit" : undefined);
     this.lastGoodCheckout = Date.now();
@@ -260,10 +268,20 @@ export class LicenseClient {
   private handleOutage(units: number, err: unknown): number {
     const withinGrace = Date.now() - this.lastGoodCheckout <= this.options.graceMs;
     if (this.options.failMode === "open" && withinGrace) {
-      const grant = Math.min(units, this.options.graceUnits);
-      this.lease += grant;
-      this.graceLease = true;
-      return grant;
+      // graceUnits is the TOTAL grace lease for one outage, not a per-call
+      // refill — cap cumulative grants since the last good checkout so a
+      // high-volume caller retrying throughout the graceMs window can't
+      // accumulate unbounded free lease.
+      const remainingGrace = Math.max(0, this.options.graceUnits - this.graceGranted);
+      const grant = Math.min(units, remainingGrace);
+      if (grant > 0) {
+        this.lease += grant;
+        this.graceGranted += grant;
+        this.graceLease = true;
+        return grant;
+      }
+      // Total grace for this outage is used up — fail closed below, same as
+      // an outage past the grace window.
     }
     throw new PdfEngineError(
       PdfErrorCode.LICENSE_QUOTA_EXCEEDED,
