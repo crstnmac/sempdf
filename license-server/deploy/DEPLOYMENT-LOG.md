@@ -429,14 +429,23 @@ Rules that keep releases boring:
       (`GF_SMTP_*`). Send verified from lic-1. ⚠ The app password was pasted
       into a chat during setup — rotate it and update both
       `/opt/sempdf/.env` + `lic-1:~/monitoring/.env`.
-- [ ] **Client library release build**:
-      `SEMPDF_LICENSE_SERVER=https://<domain>` +
-      `SEMPDF_LICENSE_PUBKEYS='{"v1":"<PEM from /v1/public-key>"}'`.
-      Never bake the bare IP; never skip the keys (bake script warns).
+- [x] **Client library release build** — **Done 2026-07-17** as part of the
+      `2.1.0` release (`a5cd44f`): baked `bakedServerUrl =
+      "https://sempdf.sempdf.net"` + the real `v1` public key.
+      **Regressed 2026-07-20 in `2.1.1`, fixed same day in `2.1.2`** — see
+      "Node API example + core library 2.1.1 → 2.1.2" below. **Lesson: always export
+      `SEMPDF_LICENSE_SERVER` + `SEMPDF_LICENSE_PUBKEYS` in the SAME
+      shell as `npm publish`** (the bake script's "preserve existing value"
+      fallback is not reliable enough to trust silently); after publishing,
+      verify with `npm pack <pkg>@<version> --registry ... && tar xzf ... &&
+      cat package/dist/src/internal/license-server.js` against the actual
+      tarball, not the local build.
 - [x] Licensing companion package publishes as **0.2.1+** — **Done
       2026-07-17**: `0.2.1` live on `npm.sempdf.net` (release `a5cd44f`,
       includes the canonical-v3 client). `0.2.0` stays deprecated on the
-      registry from the rolled-back release.
+      registry from the rolled-back release. **Updated 2026-07-20:** `0.2.2`
+      fixes `checkout()` masking a real server rejection (quota/origin) as
+      "server unreachable" — see "CORS + licensing client fixes" below.
 - [x] ~~SigNoz~~ **Done 2026-07-20 as Loki + Prometheus + Grafana** (SigNoz
       dropped — was never wired; otel-collector had been crash-looping with an
       empty endpoint since day one). See "Observability (as-built)" below.
@@ -457,6 +466,129 @@ reject a pinned key when the request's `Origin` header doesn't match —
 including requests with no `Origin` at all, so a pinned key only ever works
 from a browser. Documented as abuse mitigation, not cryptographic protection,
 in `docs/guide/licensing.md#origin-pinning-browser-chrome-extension-keys`.
+
+## CORS + licensing client fixes for browser/extension callers (2026-07-20)
+
+Origin pinning above assumed browsers could actually reach `/v1/*` — they
+couldn't. `/v1/authorize`, `/v1/usage`, `/v1/license` had **no CORS handling
+at all** (deliberately, "server-to-server only" — true until today). A
+browser `fetch()` failed at the CORS layer with no response, and the
+licensing client's fail-closed `checkout()` reported that as "License server
+unreachable," discovered live while wiring up a customer's Vite app.
+
+- **API** (`eec842d`): wildcard CORS (`origin: "*"`) added to those three
+  routes only. Safe because auth here is a Bearer key, never a cookie — CORS
+  isn't the access boundary, the key (and origin pinning, when set) is.
+- **Licensing client, `4addd77`, published `0.2.2`**: a deeper bug this
+  surfaced — `checkout()` funneled **any** error from `authorize()` into
+  outage/grace handling, including a definitive server rejection
+  (`LICENSE_QUOTA_EXCEEDED`, which now also covers `origin_not_allowed`).
+  Under `failMode: "closed"` that always threw the generic "unreachable"
+  message, discarding the real reason (e.g. "this origin isn't allowed").
+  Fixed: only genuine unreachability (fetch reject, timeout/abort, malformed
+  response) falls through to outage handling now.
+
+## Node API example + core library 2.1.1 → 2.1.2 (2026-07-20)
+
+Added `license-server/examples/node-api-server/` — the zero-config **Node**
+auto-guard path (no `@sempdf/sempdf-pdf-licensing` needed server-side;
+`SEMPDF_LICENSE_KEY`/`SEMPDF_LICENSE_SERVER` env vars are the entire setup)
+plus a `POST /api/reports/s3` endpoint: generate → upload to S3 → return a
+presigned GET URL, bucket blocking all public access.
+
+While building it, found `renderDocumentJson()` never awaited license
+authorization — it's `async` (real font/image loading) but its final
+serialize called the document's *synchronous* `toUint8Array()`, bypassing
+every other async output method's auto-authorize. Writing the regression test
+for that surfaced a second, more serious bug: `ensureLicenseAuthorized()`
+checked the `SEMPDF_LICENSE_DEV` bypass before attempting auto-install, but
+the synchronous consume step right after it checks the opposite order — with
+both a real key **and** `SEMPDF_LICENSE_DEV=1` set (an easy dev/staging
+misconfig), every async output method silently skipped authorization and then
+threw "not yet authorized" anyway. Both fixed in `70c0aa7`, released as
+**core library `2.1.1`**.
+
+**`2.1.1` itself shipped broken** (`52aadea`, same day): its `npm publish` ran
+without `SEMPDF_LICENSE_SERVER`/`SEMPDF_LICENSE_PUBKEYS` set, so the bake
+step fell back to dev defaults (`localhost:8787`, no public keys) instead of
+preserving `2.1.0`'s correct production values — and because
+`bakedServerUrl ?? envVar` only falls through on `null`/`undefined`, this also
+silently ignored any `SEMPDF_LICENSE_SERVER` a caller set explicitly, so
+there was no workaround short of a new release. Re-baked and republished as
+**`2.1.2`** with the env vars held for the whole publish command; verified
+against the actual published tarball (`npm pack`), not just the local build.
+`2.1.1` is `npm deprecate`d on the registry. **`2.1.1` should never be
+installed; `^2.1.0` ranges will need to move to `2.1.2`.**
+
+## Production auth bug: shared rate-limit collapse via a missing LB header (2026-07-20)
+
+Reported as "logging in on a second device kills the first session." Traced
+(with a live repro against `/api/auth/sign-in|get-session` proving the
+backend itself was NOT invalidating other sessions) to the OVH Load Balancer:
+`openstack loadbalancer listener show` on the `https-listener` showed
+**`insert_headers: {}`** — completely empty. It never sent `X-Forwarded-For`
+at all, so nginx's own `$remote_addr` (one of its two internal LB-facing
+addresses) became "the client IP" for **every visitor**, collapsing
+better-auth's per-IP auth rate limiter into one bucket shared across all
+customers, not just one person's devices — confirmed via nginx access logs
+showing only two constant `10.0.0.x` addresses regardless of who was actually
+connecting. Any user's auth traffic could exhaust the shared budget for
+everyone else. The frontend's `beforeLoad` then treated the resulting `429`
+identically to "not logged in" and redirected to `/login`, discarding a
+perfectly valid session.
+
+Three fixes, all live (`6cbd475`):
+
+1. **OVH LB** — `openstack loadbalancer listener set 8234a47a-7d23-4f43-ac65-4243769e049f --insert-headers "X-Forwarded-For=true,X-Forwarded-Port=true,X-Forwarded-Proto=true"`
+   (repeated `--insert-headers` flags overwrite each other — one flag, one
+   comma-separated value). LB stayed `ACTIVE`/`ONLINE` throughout, no
+   downtime. OpenStack creds: `~/openrc.sh` (per Phase 1).
+2. **nginx** (`nginx.conf.template`) — `set_real_ip_from 10.0.0.0/24;
+   real_ip_header X-Forwarded-For; real_ip_recursive on;`, trusting the
+   header only from the vRack range so a public client can't spoof it.
+3. **Frontend** (`_admin.tsx`, `portal.tsx`) — `beforeLoad` now only
+   redirects to `/login` on a genuine "no session" response (no `data`, no
+   `error`); a `429`/`5xx`/network blip no longer force-logs-out a valid
+   session. Defense in depth against any future rate-limit pressure.
+
+Verified live end-to-end: a fresh request through the real domain now shows
+the true client IP in nginx's access logs, in both `$remote_addr` and
+`$http_x_forwarded_for` (previously always one of the two internal LB
+addresses, XFF always empty).
+
+**Related, not yet fixed:** `TRUSTED_PROXY_COUNT` is unset in both `.env`s
+(defaults to `0`), so the *separate* machine-route rate limiter
+(`middleware/rate-limit.ts`, keyed by API key + IP) currently ignores
+`X-Forwarded-For` entirely and uses the raw socket peer address — the docker
+network IP of the `web` container, constant for every request. Less severe
+than the auth-endpoint bug (the API key component still makes buckets
+per-customer), but worth setting now that the LB genuinely sends the header,
+to get real per-visitor IP granularity within a single customer's traffic.
+
+## Request log noise + pg pool idle-timeout fix (2026-07-20)
+
+`/metrics` (30s Prometheus scrape), `/healthz`, `/readyz` (LB + uptime
+monitor, ~10s cadence) were logged forever on every hit — pure infra
+plumbing, not application events (`023266c`). Excluded from the structured
+request logger; metrics recording (`recordRequest`) is unaffected, only the
+log line is skipped. Verified zero such lines in Loki since redeploy.
+
+Investigating the resulting cleaner p95 numbers (broken down per-endpoint via
+Loki, since the Prometheus histogram has no path label) found two patterns:
+`/metrics` and `/api/auth/get-session` were **consistently** slow (~270ms,
+~190ms, every single hit); `/v1/authorize`, `/v1/usage`,
+`/v1/portal/overview` were fast except for occasional 100-290ms spikes.
+Measured directly (`de6f954`): a cold DB connection (TLS + auth) costs
+~139ms; a warm pooled query costs ~1ms. `node-postgres` defaults
+`idleTimeoutMillis` to **10s** — shorter than both the 30s scrape interval
+(`renderPrometheus`'s `sweepFreshness` query) and typical gaps between
+dashboard navigations (better-auth's session lookup shares the same pool via
+`drizzleAdapter(db, ...)`), so the pool kept closing idle connections and
+paying a fresh handshake on the next hit. Raised to `120_000` in
+`db/client.ts` — DB has ample headroom (`max_connections=100` vs 30 total
+pooled connections across both instances). Verified live: cold call 75ms,
+then three more 20s apart at 8/5/4ms (would have gone cold again under the
+old default).
 
 ## Observability (as-built, 2026-07-20)
 
