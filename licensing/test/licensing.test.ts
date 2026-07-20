@@ -135,6 +135,33 @@ test("fail-open: grace lease after a prior good checkout", async () => {
   assert.equal(client.state().grace, true);
 });
 
+test("fail-open: graceUnits caps the TOTAL grace lease for one outage, not per-call", async () => {
+  // graceUnits is documented as "the size of the grace lease" for an outage
+  // (singular/total), not a per-call refill. Without a cumulative cap, every
+  // checkout() during the outage re-grants a fresh graceUnits (the grace
+  // window is measured from the last GOOD checkout, not reset per grant),
+  // so a high-volume caller could accumulate unbounded free lease for the
+  // whole graceMs window.
+  let calls = 0;
+  const flaky = (async (url: string | URL, init?: RequestInit) => {
+    calls += 1;
+    if (calls > 1 && new URL(url).pathname === "/v1/authorize") throw new Error("ECONNREFUSED");
+    return mockServer({ quota: 100 })(url as never, init);
+  }) as unknown as typeof fetch;
+  const client = await createLicenseClient({
+    key: "k", serverUrl: "https://lic.test", fetch: flaky, failMode: "open", graceUnits: 5, publicKeyPem,
+  });
+  await client.checkout(1); // good checkout primes the grace window
+  const first = await client.checkout(5); // server down -> grace lease, uses the full 5-unit cap
+  assert.equal(first, 5);
+  // A second call during the SAME outage must NOT get another 5 — the cap
+  // is on the total outage, not per call.
+  await assert.rejects(
+    () => client.checkout(5),
+    (e: unknown) => (e as { code?: string }).code === PdfErrorCode.LICENSE_QUOTA_EXCEEDED,
+  );
+});
+
 test("default meter (pages): lease counts pages, flush reports both dimensions", async () => {
   const usageLog: Array<{ documents: number; pages: number; status?: string | undefined; jobDescription?: string | undefined }> = [];
   const client = await createLicenseClient({
