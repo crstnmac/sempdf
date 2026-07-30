@@ -2,6 +2,34 @@
 
 All notable changes to `@zeropdf/zeropdf-pdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.3.0] - 2026-07-30
+
+### Added
+
+- **Accent folding, and `normalizeText: "ascii-only"`.** The built-in fonts
+  encode ASCII only, so European text failed with `UNSUPPORTED_CHARACTER` even
+  though it has an obvious ASCII form. `htmlToBlocks()`'s default
+  `normalizeText: "ascii"` now strips accents through Unicode decomposition
+  (`Muñoz` → `Munoz`, `café` → `cafe`) plus an explicit map for letters that do
+  not decompose (`Æ` → `AE`, `ß` → `ss`, `Ø` → `O`, `Þ` → `TH`, `ı` → `i`,
+  `Ł` → `L`, `ŋ` → `ng`). Characters with no ASCII form — Devanagari, CJK,
+  emoji — are still left alone rather than silently dropped; the new
+  `"ascii-only"` mode opts into dropping them for pipelines that must never
+  fail and cannot embed a font. The folding helper is exported as
+  `foldToAscii(text, asciiOnly?)`.
+- **The Latin-1 named entities.** `&eacute;`, `&ntilde;`, `&uuml;`, `&Oslash;`,
+  `&szlig;`, `&AElig;`, `&thorn;` and the rest of the accented set now decode;
+  previously they passed through as literal `&eacute;` text.
+
+### Changed
+
+- **`UNSUPPORTED_CHARACTER` now says what failed and how to fix it.** The
+  message names the character and its code point (`"日" (U+65E5)`) and points at
+  `registerBundledFonts()` / `embedTrueTypeFont()` / `loadGoogleFont()` /
+  `fallbackFonts` / text normalization. `details` gains `font` and `excerpt` —
+  a window of the surrounding text — so the offending field is findable in a
+  large document.
+
 ## [2.2.1] - 2026-07-30
 
 ### Fixed

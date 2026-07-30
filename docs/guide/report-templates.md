@@ -311,6 +311,13 @@ options: {
 
 The flow API is `flow.code(source, options, language)`. `language` is recorded as the structure element's expansion text.
 
+Pass a monospaced `font` for anything beyond ASCII — the built-in `Courier` encodes ASCII only. `registerBundledFonts(doc)` returns a ready `mono` family, or embed your own:
+
+```ts
+const fonts = await registerBundledFonts(doc)
+{ type: "code", code: src, options: { font: fonts.mono } }
+```
+
 Accessibility notes: the code text is real marked content inside the `Code` element, while the background band and the line-number gutter are emitted as artifacts, so assistive tech reads the code without the decoration. Indentation is kept as real spaces inside each line, so copied text keeps its shape. For `pdfua-1`/`pdfa-*` output, pass an embedded monospaced font (e.g. the bundled Liberation Mono) as `font` — the built-in `Courier` is not embeddable.
 
 ## Custom Blocks

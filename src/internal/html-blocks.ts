@@ -96,15 +96,22 @@ export interface HtmlToBlocksOptions {
   /** Keeps paragraphs whose text is empty after collapsing whitespace. Defaults to `false`. */
   readonly keepEmptyParagraphs?: boolean | undefined;
   /**
-   * How typographic characters that HTML entities introduce are handled.
+   * How characters the built-in fonts cannot encode are handled. Those fonts
+   * are ASCII-only, so `&mdash;`, `&nbsp;`, or an accented name would otherwise
+   * fail with `UNSUPPORTED_CHARACTER`.
    *
-   * `"ascii"` (default) folds smart quotes, dashes, ellipses, non-breaking
-   * spaces, bullets, arrows, fractions, and currency symbols to ASCII
-   * equivalents — the built-in (non-embedded) fonts encode ASCII only, so
-   * `&mdash;` or `&nbsp;` would otherwise fail to render. Use `"none"` to keep
-   * the original characters when rendering with an embedded Unicode font.
+   * - `"ascii"` (default) folds typographic punctuation, symbols, and currency
+   *   to ASCII equivalents and strips accents (`Muñoz` becomes `Munoz`).
+   *   Characters with no ASCII equivalent — Devanagari, CJK, emoji — are left
+   *   as they are, so they still render with an embedded font and still raise a
+   *   clear error with a built-in one, rather than vanishing.
+   * - `"ascii-only"` does the same, then drops every remaining non-ASCII
+   *   character. Lossy by design: use it when rendering must never fail and the
+   *   pipeline has no embedded font.
+   * - `"none"` keeps the text exactly as authored. Use it with an embedded
+   *   Unicode font.
    */
-  readonly normalizeText?: 'ascii' | 'none' | undefined;
+  readonly normalizeText?: 'ascii' | 'ascii-only' | 'none' | undefined;
 }
 
 /* HTML parsing --------------------------------------------------------------- */
@@ -174,6 +181,24 @@ const NAMED_ENTITIES: Readonly<Record<string, string>> = {
   pi: 'π', mu: 'μ', omega: 'ω', shy: '­',
   ensp: ' ', emsp: ' ', thinsp: ' ', zwnj: '‌',
   zwj: '‍', iexcl: '¡', iquest: '¿', szlig: 'ß',
+  // Latin-1 accented letters: common in names and addresses, folded to ASCII
+  // afterwards when `normalizeText` asks for it.
+  Agrave: 'À', Aacute: 'Á', Acirc: 'Â', Atilde: 'Ã', Auml: 'Ä',
+  Aring: 'Å', AElig: 'Æ', Ccedil: 'Ç', Egrave: 'È', Eacute: 'É',
+  Ecirc: 'Ê', Euml: 'Ë', Igrave: 'Ì', Iacute: 'Í', Icirc: 'Î',
+  Iuml: 'Ï', ETH: 'Ð', Ntilde: 'Ñ', Ograve: 'Ò', Oacute: 'Ó',
+  Ocirc: 'Ô', Otilde: 'Õ', Ouml: 'Ö', Oslash: 'Ø', Ugrave: 'Ù',
+  Uacute: 'Ú', Ucirc: 'Û', Uuml: 'Ü', Yacute: 'Ý', THORN: 'Þ',
+  agrave: 'à', aacute: 'á', acirc: 'â', atilde: 'ã', auml: 'ä',
+  aring: 'å', aelig: 'æ', ccedil: 'ç', egrave: 'è', eacute: 'é',
+  ecirc: 'ê', euml: 'ë', igrave: 'ì', iacute: 'í', icirc: 'î',
+  iuml: 'ï', eth: 'ð', ntilde: 'ñ', ograve: 'ò', oacute: 'ó',
+  ocirc: 'ô', otilde: 'õ', ouml: 'ö', oslash: 'ø', ugrave: 'ù',
+  uacute: 'ú', ucirc: 'û', uuml: 'ü', yacute: 'ý', thorn: 'þ',
+  yuml: 'ÿ', OElig: 'Œ', oelig: 'œ', Scaron: 'Š', scaron: 'š',
+  Yuml: 'Ÿ', fnof: 'ƒ', ordf: 'ª', ordm: 'º', not: '¬',
+  brvbar: '¦', uml: '¨', macr: '¯', acute: '´', cedil: '¸',
+  sup1: '¹', frac13: '⅓',
 };
 
 /**
@@ -390,25 +415,63 @@ const ASCII_FOLDING: Readonly<Record<string, string>> = {
   '\u00b6': 'P.', '\u2020': '*', '\u2021': '**', '\u2030': 'o/oo',
   '\u20ac': 'EUR', '\u00a3': 'GBP', '\u00a5': 'JPY', '\u20b9': 'INR',
   '\u00a2': 'cents', '\u2011': '-',
+  // Letters Unicode decomposition cannot reduce: no combining-mark form exists.
+  '\u00c6': 'AE', '\u00e6': 'ae', '\u0152': 'OE', '\u0153': 'oe',
+  '\u00df': 'ss', '\u1e9e': 'SS', '\u00d8': 'O', '\u00f8': 'o',
+  '\u0110': 'D', '\u0111': 'd', '\u00d0': 'D', '\u00f0': 'd',
+  '\u00de': 'TH', '\u00fe': 'th', '\u0131': 'i', '\u0130': 'I',
+  '\u0141': 'L', '\u0142': 'l', '\u0126': 'H', '\u0127': 'h',
+  '\u0166': 'T', '\u0167': 't', '\u014a': 'NG', '\u014b': 'ng',
+  '\u0138': 'k', '\u0149': "'n", '\u017f': 's',
 };
 
 /** Applies {@link foldToAscii} to every text node, leaving attributes alone. */
-function foldTextNodes(nodes: readonly HtmlNode[]): HtmlNode[] {
+function foldTextNodes(nodes: readonly HtmlNode[], asciiOnly: boolean): HtmlNode[] {
   return nodes.map((node) =>
     node.kind === 'text'
-      ? { kind: 'text', text: foldToAscii(node.text) }
-      : { ...node, children: foldTextNodes(node.children) },
+      ? { kind: 'text', text: foldToAscii(node.text, asciiOnly) }
+      : { ...node, children: foldTextNodes(node.children, asciiOnly) },
   );
 }
 
-/** Folds typographic characters the built-in fonts cannot encode to ASCII. */
-export function foldToAscii(text: string): string {
+/**
+ * Folds characters the built-in (ASCII-only) fonts cannot encode: the explicit
+ * map above first, then Unicode decomposition to strip accents, so `Muñoz` and
+ * `café` survive with base-14 fonts.
+ *
+ * @param text The text to fold.
+ * @param asciiOnly When true, drops anything still outside ASCII after folding
+ *   (Devanagari, CJK, emoji). Lossy — off by default so content is never
+ *   silently discarded.
+ */
+export function foldToAscii(text: string, asciiOnly = false): string {
   let out = '';
   for (const character of text) {
-    const folded = ASCII_FOLDING[character];
-    out += folded === undefined ? character : folded;
+    const mapped = ASCII_FOLDING[character];
+    if (mapped !== undefined) {
+      out += mapped;
+      continue;
+    }
+    if (character.charCodeAt(0) < 0x80) {
+      out += character;
+      continue;
+    }
+    // Decompose, then drop the combining marks: é → e, Å → A, ǰ → j.
+    const stripped = character.normalize('NFKD').replace(/\p{M}+/gu, '');
+    if (stripped.length > 0 && isAscii(stripped)) {
+      out += stripped;
+      continue;
+    }
+    if (!asciiOnly) out += character;
   }
   return out;
+}
+
+function isAscii(text: string): boolean {
+  for (let index = 0; index < text.length; index += 1) {
+    if (text.charCodeAt(index) >= 0x80) return false;
+  }
+  return true;
 }
 
 /* Block conversion ----------------------------------------------------------- */
@@ -429,7 +492,7 @@ interface ResolvedOptions {
   readonly imageFallback: 'alt' | 'drop';
   readonly allowedLinkSchemes: readonly string[];
   readonly keepEmptyParagraphs: boolean;
-  readonly normalizeText: 'ascii' | 'none';
+  readonly normalizeText: 'ascii' | 'ascii-only' | 'none';
 }
 
 /** Inline style carried down the tree while collecting runs. */
@@ -499,7 +562,11 @@ export function htmlToBlocks(html: string, options: HtmlToBlocksOptions = {}): T
     normalizeText: options.normalizeText ?? 'ascii',
   };
   const nodes = parseHtml(html);
-  return convertNodes(resolved.normalizeText === 'ascii' ? foldTextNodes(nodes) : nodes, resolved, {}, 0);
+  const normalized =
+    resolved.normalizeText === 'none'
+      ? nodes
+      : foldTextNodes(nodes, resolved.normalizeText === 'ascii-only');
+  return convertNodes(normalized, resolved, {}, 0);
 }
 
 /**

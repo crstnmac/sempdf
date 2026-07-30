@@ -24,7 +24,7 @@ try {
 | `INVALID_PDF` | Malformed or unsupported PDF input | Verify the source PDF is valid (not truncated, correct header); if possible, re-export or repair the PDF with a standards-compliant writer |
 | `UNSUPPORTED_XREF_FORMAT` | Cross-reference stream format is not recognized | The library supports classic xref tables, xref streams, object streams, and incremental xref chains. If you encounter this, the PDF may use malformed or non-standard cross-reference data |
 | `INVALID_FONT` | Font name is not a standard-14 font (the message suggests the closest match, e.g. `Did you mean "Helvetica"?`), or embedded font data is corrupt | Use exact PostScript names (`"Helvetica"`, `"Times-Roman"`, etc.), register a family with `registerFontFamily()`, or verify TTF data is valid |
-| `UNSUPPORTED_CHARACTER` | A character has no glyph in any available font | Add an embedded font that covers the character or provide a `fallbackFonts` array |
+| `UNSUPPORTED_CHARACTER` | A character has no glyph in any available font. The message names the character and its code point; `details` carries `character`, `codePoint`, `font`, and an `excerpt` of the surrounding text | Embed a font that covers it, add one to `fallbackFonts`, or normalize the text (see [HTML to PDF](./html-to-pdf#fonts-and-non-ascii-text)) |
 | `INVALID_IMAGE` | Image is corrupt, unsupported format, or wrong color space | Verify image data and use the matching image API: `jpeg`, `png`, `bmp`, `gif`, `jpeg2000`, `jbig2`, `tiff`, `webp`, or `svg` |
 | `UNSUPPORTED_IMAGE_FORMAT` | Image format variant is not supported | Convert to a supported variant, such as RGB/CMYK JPEG, non-interlaced PNG, lossless WebP, baseline LZW TIFF, or first-frame GIF |
 | `UNSUPPORTED_IMAGE_COLOR_SPACE` | PNG uses a color space other than RGB or Grayscale | Convert the image to RGB or grayscale |
@@ -117,13 +117,42 @@ try {
 
 ### Causes
 
-1. **Standard 14 font coverage**: The standard 14 fonts only cover Latin-1 (ISO 8859-1). Any character outside that range (CJK, Arabic, Greek, emoji) produces `.notdef`
+1. **Standard 14 font coverage**: the built-in fonts encode **ASCII only** in this engine. Anything above U+007F — an accented name, `—`, `&nbsp;`, `₹`, CJK, Arabic, Greek, emoji — raises `UNSUPPORTED_CHARACTER` rather than rendering a wrong glyph
 2. **Embedded font doesn't cover the character**: The TrueType font has the character, but not in the subset produced
 3. **Font family name mismatch**: The font was embedded with a different family name than what's requested in `text()` calls
 4. **CJK-specific**: CJK TrueType fonts are large (5–20 MB); subsetting may inadvertently exclude needed glyphs if glyph IDs are not correctly tracked
 5. **Fallback not configured**: A fallback font covers the character, but `fallbackFonts` was not passed to `text()`
 
 ### Fixes
+
+**Read the error first.** It names the character, its code point, the font in play, and where in your text it appeared:
+
+```ts
+try {
+  doc.renderTemplate({ blocks })
+} catch (error) {
+  if (error instanceof PdfEngineError && error.code === PdfErrorCode.UNSUPPORTED_CHARACTER) {
+    console.error(error.details) // { character: '日', codePoint: 26085, font: 'Helvetica', excerpt: 'Hi 日本語 there' }
+  }
+}
+```
+
+**The zero-setup route — bundled fonts:**
+
+```ts
+const fonts = await registerBundledFonts(doc) // { sans, serif, mono }
+doc.renderTemplate({ page: { font: fonts.sans }, blocks })
+```
+
+Liberation Sans/Serif/Mono cover Latin (incl. Latin Extended-A), Greek, Cyrillic, and Hebrew — enough for European names, `—`, `€`, and `₹`-free text. Scripts beyond that still need their own font.
+
+**For text that must never fail with no font work** — fold or strip it at conversion time (HTML input) or with the exported helper:
+
+```ts
+htmlToBlocks(html)                                  // folds é → e, — → -, &nbsp; → space
+htmlToBlocks(html, { normalizeText: 'ascii-only' }) // also drops Devanagari/CJK/emoji (lossy)
+foldToAscii('Muñoz — café')                         // 'Munoz - cafe'
+```
 
 **For standard 14 fonts — switch to an embedded font with Unicode coverage:**
 
