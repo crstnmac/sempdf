@@ -4,8 +4,12 @@ import assert from "node:assert/strict";
 import {
   createDocument,
   decodeHtmlEntities,
+  foldToAscii,
   htmlToBlocks,
   parseDocument,
+  PdfEngineError,
+  PdfErrorCode,
+  registerBundledFonts,
   renderDocumentJsonSync,
 } from "../src/index.js";
 import type { PdfDocumentJson, TemplateBlock } from "../src/index.js";
@@ -292,4 +296,60 @@ test("converted HTML renders as a tagged, compliant document", () => {
   const doc = createDocument({ title: "Tagged HTML", tagged: true, language: "en" });
   doc.renderTemplate({ blocks });
   assert.deepEqual(doc.validateCompliance().filter((issue) => issue.severity === "error"), []);
+});
+
+test("accents fold so base-14 fonts can render European text", () => {
+  const paragraph = htmlToBlocks("<p>Caf&eacute; Mu&ntilde;oz &uuml;ber</p>")[0]!;
+  assert.equal(paragraph.type === "paragraph" && paragraph.text, "Cafe Munoz uber");
+  // Letters with no combining-mark decomposition are mapped explicitly.
+  assert.equal(foldToAscii("Æøß Đ Þ ıŁ ŋ"), "AEoss D TH iL ng");
+  // Rendering the folded text end to end must not throw with built-in fonts.
+  assert.doesNotThrow(() => render(htmlToBlocks("<p>Muñoz café Ærø</p>")).byteLength);
+});
+
+test("characters with no ASCII form survive 'ascii' and are dropped by 'ascii-only'", () => {
+  const kept = htmlToBlocks("<p>Report नमस्ते done</p>")[0]!;
+  assert.ok(kept.type === "paragraph" && kept.text.includes("नमस्ते"), "content must not vanish silently");
+
+  const stripped = htmlToBlocks("<p>Report नमस्ते ✅ 日本語 done</p>", { normalizeText: "ascii-only" })[0]!;
+  assert.equal(stripped.type === "paragraph" && stripped.text, "Report done");
+  // "ascii-only" is the never-fail path for pipelines with no embedded font.
+  assert.doesNotThrow(() =>
+    render(htmlToBlocks("<p>नमस्ते ✅ 日本語 ok</p>", { normalizeText: "ascii-only" })),
+  );
+  assert.equal(foldToAscii("Café 日本 ✅", true), "Cafe  ");
+});
+
+test("an unencodable character reports what it is, where, and how to fix it", () => {
+  assert.throws(
+    () => render(htmlToBlocks("<p>Hi 日本語 there</p>")),
+    (error: unknown) => {
+      assert.ok(error instanceof PdfEngineError);
+      assert.equal(error.code, PdfErrorCode.UNSUPPORTED_CHARACTER);
+      assert.match(error.message, /U\+65E5/);
+      assert.match(error.message, /embed a font/i);
+      const details = error.details as { character: string; codePoint: number; font: string; excerpt: string };
+      assert.equal(details.character, "日");
+      assert.equal(details.codePoint, 0x65e5);
+      assert.equal(details.font, "Helvetica");
+      // The excerpt locates the text in the caller's data.
+      assert.ok(details.excerpt.includes("日本語"), details.excerpt);
+      return true;
+    },
+  );
+});
+
+test("an embedded font renders the original characters with normalizeText: none", async () => {
+  const doc = createDocument({ title: "Unicode" });
+  const fonts = await registerBundledFonts(doc);
+  doc.renderTemplate({
+    page: { font: fonts.sans },
+    blocks: htmlToBlocks("<p>Café Muñoz — Привет</p>", {
+      normalizeText: "none",
+      paragraph: { font: fonts.sans },
+    }),
+  });
+  const text = textOf(new Uint8Array(doc.toArrayBuffer()));
+  assert.ok(text.includes("Café"), text);
+  assert.ok(text.includes("Привет"), text);
 });

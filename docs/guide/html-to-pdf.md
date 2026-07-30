@@ -58,7 +58,7 @@ htmlToBlocks("<p>A&mdash;B&nbsp;C &hellip; &euro;5</p>", { normalizeText: "none"
 // "A—B C … €5" — needs an embedded Unicode font
 ```
 
-`"ascii"` (the default) folds smart quotes, dashes, ellipses, non-breaking spaces, bullets, arrows, comparison operators, fractions, superscript digits, and currency symbols to ASCII equivalents. Use `"none"` with an embedded font when you want the real typography:
+`"ascii"` (the default) folds smart quotes, dashes, ellipses, non-breaking spaces, bullets, arrows, comparison operators, fractions, superscript digits, currency symbols, and accents to ASCII equivalents. Use `"none"` with an embedded font when you want the real typography:
 
 ```ts
 const inter = doc.embedTrueTypeFont(interBytes)
@@ -71,7 +71,79 @@ doc.renderTemplate({
 })
 ```
 
-`decodeHtmlEntities(text)` is exported separately for when you only need the decoding step.
+`decodeHtmlEntities(text)` is exported separately for when you only need the decoding step, and `foldToAscii(text, asciiOnly?)` for when you need the folding step on text that did not come from HTML.
+
+## Fonts and non-ASCII text
+
+The built-in (non-embedded) fonts encode **ASCII only**. That single fact drives every `UNSUPPORTED_CHARACTER` error, and there are three ways to deal with it.
+
+**1. Fold to ASCII (default, zero setup).** `normalizeText: "ascii"` maps typographic punctuation, symbols, and currency to ASCII and strips accents through Unicode decomposition:
+
+| Input | Rendered |
+|-------|----------|
+| `Caf&eacute; Mu&ntilde;oz &uuml;ber` | `Cafe Munoz uber` |
+| `&AElig;r&oslash; &szlig; &THORN;` | `AEro ss TH` |
+| `A&mdash;B&nbsp;C &hellip; &euro;5 &frac12;` | `A-B C ... EUR5 1/2` |
+
+Characters with no ASCII equivalent — Devanagari, CJK, emoji — are deliberately **left alone** so they render with an embedded font and still raise a clear error with a built-in one, instead of silently disappearing.
+
+**2. Embed a font (best output).** Register once, then point the block options at it:
+
+```ts
+import { createDocument, htmlToBlocks, registerBundledFonts } from "@sempdf/sempdf-pdf"
+
+const doc = createDocument({ title: "Report", tagged: true, language: "en" })
+const fonts = await registerBundledFonts(doc)   // { sans, serif, mono }
+
+doc.renderTemplate({
+  page: { font: fonts.sans },
+  blocks: htmlToBlocks(html, {
+    normalizeText: "none",          // keep the original characters
+    paragraph: { font: fonts.sans },
+    heading: { font: fonts.sans },
+    code: { font: fonts.mono },     // <pre> blocks
+    codeFont: fonts.mono,           // inline <code>/<kbd>/<samp>
+    table: { font: fonts.sans },
+  }),
+})
+```
+
+Bundled Liberation covers Latin (incl. Latin Extended-A), Greek, Cyrillic, and Hebrew. For other scripts embed your own and chain fallbacks:
+
+```ts
+const latin = doc.embedTrueTypeFont(await loadGoogleFont("Inter"))
+const devanagari = doc.embedTrueTypeFont(await readFile("NotoSansDevanagari-Regular.ttf"))
+const mono = doc.embedTrueTypeFont(await loadGoogleFont("JetBrains Mono"))
+
+htmlToBlocks(html, {
+  normalizeText: "none",
+  paragraph: { font: latin, fallbackFonts: [devanagari] },
+  code: { font: mono, fallbackFonts: [devanagari] },
+  codeFont: mono,
+})
+```
+
+`registerBundledFonts()` needs a filesystem; in the browser pass `{ read }` to supply the bytes via `fetch`. Embedded fonts are also required for `pdfua-1`/`pdfa-*` conformance — the built-in fonts are not embeddable.
+
+**3. Strip what cannot be rendered (`"ascii-only"`).** For pipelines that must never throw and cannot embed fonts:
+
+```ts
+htmlToBlocks(html, { normalizeText: "ascii-only" })
+// "Report नमस्ते ✅ done" → "Report done"
+```
+
+Lossy by design — prefer option 2 whenever the script matters to the reader.
+
+**Diagnosing a failure.** `UNSUPPORTED_CHARACTER` names the character, its code point, the font in play, and an excerpt of the text so you can find the offending field:
+
+```
+Text contains a character the configured fonts cannot encode: "日" (U+65E5).
+The built-in fonts encode ASCII only: embed a font that covers this character
+(registerBundledFonts(), embedTrueTypeFont(), or loadGoogleFont()), pass it as
+`fallbackFonts`, or normalize the text to ASCII.
+
+details → { character: '日', codePoint: 26085, font: 'Helvetica', excerpt: 'Hi 日本語 there' }
+```
 
 ## Styling the output
 

@@ -569,7 +569,9 @@ function shapeTextRuns(
   }
 
   const characters = codePoints(reorderTextForDirection(text, resolvedDirection));
-  const resolvedFonts = characters.map((character) => resolveFontForCharacter(character, options.font, options.fallbackFonts, embeddedFonts));
+  const resolvedFonts = characters.map((character) =>
+    resolveFontForCharacter(character, options.font, options.fallbackFonts, embeddedFonts, text)
+  );
   const runs: Array<{ text: string; font: PdfFont; hasFollowingCharacter: boolean }> = [];
 
   for (let index = 0; index < characters.length; index += 1) {
@@ -614,7 +616,8 @@ function resolveFontForCharacter(
   character: string,
   primaryFont: PdfFont,
   fallbackFonts: readonly PdfFont[],
-  embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>
+  embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>,
+  context?: string
 ): PdfFont {
   const codePoint = character.codePointAt(0);
   if (codePoint === undefined) {
@@ -633,10 +636,32 @@ function resolveFontForCharacter(
     }
   }
 
-  throw new PdfEngineError(PdfErrorCode.UNSUPPORTED_CHARACTER, "Text contains characters not supported by the configured fonts.", {
-    character,
-    codePoint
-  });
+  // Name the character, where it appeared, and the two ways out: the message is
+  // usually the only clue a caller gets about which field carried the text.
+  const hex = `U+${codePoint.toString(16).toUpperCase().padStart(4, "0")}`;
+  const usingBuiltIn = typeof primaryFont === "string";
+  const remedy = usingBuiltIn
+    ? "The built-in fonts encode ASCII only: embed a font that covers this character (registerBundledFonts(), embedTrueTypeFont(), or loadGoogleFont()), pass it as `fallbackFonts`, or normalize the text to ASCII."
+    : "Embed a font that covers this character, or add one to `fallbackFonts`.";
+  throw new PdfEngineError(
+    PdfErrorCode.UNSUPPORTED_CHARACTER,
+    `Text contains a character the configured fonts cannot encode: ${JSON.stringify(character)} (${hex}). ${remedy}`,
+    {
+      character,
+      codePoint,
+      font: usingBuiltIn ? primaryFont : primaryFont.id,
+      ...(context === undefined ? {} : { excerpt: textExcerpt(context, character) })
+    }
+  );
+}
+
+/** A short window of the offending text, to locate it in the caller's data. */
+function textExcerpt(text: string, character: string, radius = 24): string {
+  const at = text.indexOf(character);
+  if (at === -1) return text.slice(0, radius * 2);
+  const start = Math.max(0, at - radius);
+  const end = Math.min(text.length, at + radius);
+  return `${start > 0 ? "…" : ""}${text.slice(start, end)}${end < text.length ? "…" : ""}`;
 }
 
 function fontSupportsCodePoint(font: PdfFont, codePoint: number, embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>): boolean {

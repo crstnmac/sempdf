@@ -18,7 +18,7 @@ export type {
   ShapedGlyph,
   TextShaper,
 } from "./internal/text-shaper.js";
-export { decodeHtmlEntities, htmlToBlocks } from "./internal/html-blocks.js";
+export { decodeHtmlEntities, foldToAscii, htmlToBlocks } from "./internal/html-blocks.js";
 export type { HtmlImageResolution, HtmlToBlocksOptions } from "./internal/html-blocks.js";
 export { renderDocumentJson, renderDocumentJsonSync } from "./document-json.js";
 export type {
