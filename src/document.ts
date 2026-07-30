@@ -1375,17 +1375,42 @@ interface ResolvedCodeStyle {
 }
 
 /**
- * Guards the code-block source. Estimation runs before any text validation, so
- * without this a missing or misnamed field (`text` instead of `code`, an
- * undefined column) surfaced as a bare `TypeError` from deep inside layout.
+ * Guards a block's text content. Template pagination estimates block heights
+ * before any text validation runs, so without this a missing or misnamed field
+ * (`text` where `code` was meant, an undefined database column) surfaced as a
+ * bare `TypeError` from deep inside layout, naming neither block nor field.
+ *
+ * @param value The value supplied by the caller.
+ * @param what Human-readable description, e.g. `Code block source`.
+ * @param field The field the value belongs in, named in the message.
  */
-function assertCodeSource(source: unknown): asserts source is string {
-  if (typeof source === "string") return;
+function assertBlockText(value: unknown, what: string, field: string): asserts value is string {
+  if (typeof value === "string") return;
+  const received = value === null ? "null" : typeof value;
   throw new PdfEngineError(
     PdfErrorCode.INVALID_TEXT,
-    `Code block source must be a string; received ${source === null ? "null" : typeof source}. A "code" template block takes its source in the \`code\` field.`,
-    { received: source === null ? "null" : typeof source },
+    `${what} must be a string; received ${received}. Supply it in the \`${field}\` field.`,
+    { received, field },
   );
+}
+
+/** Guards a block's array content (rich-text runs, list items, table rows). */
+function assertBlockArray(
+  value: unknown,
+  what: string,
+  field: string,
+): asserts value is readonly unknown[] {
+  if (Array.isArray(value)) return;
+  const received = value === null ? "null" : typeof value;
+  throw new PdfEngineError(
+    PdfErrorCode.INVALID_TEXT,
+    `${what} must be an array; received ${received}. Supply it in the \`${field}\` field.`,
+    { received, field },
+  );
+}
+
+function assertCodeSource(source: unknown): asserts source is string {
+  assertBlockText(source, "Code block source", "code");
 }
 
 function resolveCodeStyle(options: FlowCodeOptions): ResolvedCodeStyle {
@@ -2100,6 +2125,7 @@ export class PdfFlow {
     options: FlowHeadingOptions = {},
     annotations?: readonly import("./types.js").ParagraphTextAnnotation[],
   ): this {
+    assertBlockText(text, "Heading text", "text");
     const level = options.level ?? 1;
     const tag = options.tag ?? `H${level}` as const;
     const fontSize = options.fontSize ?? headingFontSize(level);
@@ -2146,6 +2172,7 @@ export class PdfFlow {
   estimate(block: TemplateBlock): number {
     switch (block.type) {
       case "heading": {
+        assertBlockText(block.text, "Heading text", "text");
         const options = block.options;
         const level = options?.level ?? 1;
         const fontSize = options?.fontSize ?? headingFontSize(level);
@@ -2225,6 +2252,7 @@ export class PdfFlow {
       case "rect":
         return block.height + this.state.gap;
       case "list":
+        assertBlockArray(block.items, "List items", "items");
         return this.estimateListHeight(block.items, {
           ...block.options,
           width: block.options?.width ?? this.state.width,
@@ -2272,6 +2300,7 @@ export class PdfFlow {
    * @param options Flow spacing and inherited style defaults.
    */
   richParagraph(runs: readonly InlineTextRun[], options: FlowRichTextOptions = {}): this {
+    assertBlockArray(runs, "Rich paragraph runs", "runs");
     const spacing = this.resolveSpacing("paragraph", options);
     this.applyMarginTop(spacing.before);
     const blockWidth = Math.min(
@@ -2632,6 +2661,7 @@ export class PdfFlow {
     options: FlowTextOptions = {},
     annotations?: readonly import("./types.js").ParagraphTextAnnotation[],
   ): this {
+    assertBlockText(text, "Paragraph text", "text");
     const spacing = this.resolveSpacing("paragraph", options);
     this.applyMarginTop(spacing.before);
     const { height: consumedHeight, runs } = this.writeTextBlock(
@@ -2874,6 +2904,7 @@ export class PdfFlow {
    * @returns This flow helper for chaining.
    */
   table(rows: readonly TableRow[], options: FlowTableOptions = {}): this {
+    assertBlockArray(rows, "Table rows", "rows");
     this.advanceColumnIfNeeded(this.estimateTableHeight(rows, options));
     const spacing = this.resolveSpacing("table", options);
     this.applyMarginTop(spacing.before);
@@ -3059,6 +3090,7 @@ export class PdfFlow {
     text: string,
     options: FlowTextOptions = {},
   ): number {
+    assertBlockText(text, "Paragraph text", "text");
     const spacing = this.resolveSpacing("paragraph", options);
     const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
     const blockWidth = Math.min(options.blockWidth ?? innerWidth, innerWidth);
@@ -3077,6 +3109,7 @@ export class PdfFlow {
     runs: readonly InlineTextRun[],
     options: FlowRichTextOptions,
   ): number {
+    assertBlockArray(runs, "Rich paragraph runs", "runs");
     const spacing = this.resolveSpacing("paragraph", options);
     const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
     const blockWidth = Math.min(options.blockWidth ?? innerWidth, innerWidth);
@@ -3111,6 +3144,7 @@ export class PdfFlow {
     rows: readonly TableRow[],
     options: FlowTableOptions = {},
   ): number {
+    assertBlockArray(rows, "Table rows", "rows");
     const spacing = this.resolveSpacing("table", options);
     const perRow = this.computeTableRowHeights(rows, options);
     return spacing.before + perRow.reduce((sum, h) => sum + h, 0) + spacing.after;
@@ -4178,6 +4212,7 @@ export class PdfFlow {
    * @returns This flow helper for chaining.
    */
   list(items: readonly ListItem[], options: FlowListOptions): this {
+    assertBlockArray(items, "List items", "items");
     this.advanceColumnIfNeeded(
       this.estimateListHeight(items, {
         ...options,

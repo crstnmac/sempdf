@@ -269,7 +269,8 @@ test("empty, whitespace, and non-string input yield no blocks", () => {
   assert.deepEqual(htmlToBlocks(""), []);
   assert.deepEqual(htmlToBlocks("   \n "), []);
   assert.deepEqual(htmlToBlocks("<p></p><div>  </div>"), []);
-  assert.deepEqual(htmlToBlocks(undefined as unknown as string), []);
+  // A non-string source is a wiring mistake, not empty content.
+  assert.throws(() => htmlToBlocks(undefined as unknown as string), PdfEngineError);
 });
 
 test("malformed markup does not throw and keeps its text", () => {
@@ -352,4 +353,17 @@ test("an embedded font renders the original characters with normalizeText: none"
   const text = textOf(new Uint8Array(doc.toArrayBuffer()));
   assert.ok(text.includes("Café"), text);
   assert.ok(text.includes("Привет"), text);
+});
+
+test("an html block given the wrong field fails instead of rendering nothing", () => {
+  const doc = createDocument();
+  assert.throws(
+    () => doc.renderTemplate({ blocks: [{ type: "html", text: "<p>hi</p>" }] as unknown as TemplateBlock[] }),
+    (error: unknown) => {
+      assert.ok(error instanceof PdfEngineError);
+      assert.equal(error.code, PdfErrorCode.INVALID_TEXT);
+      assert.match(error.message, /`html` field/);
+      return true;
+    },
+  );
 });
