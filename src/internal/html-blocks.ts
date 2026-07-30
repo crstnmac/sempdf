@@ -11,6 +11,7 @@
  * it does not know are unwrapped (their children still render) and dangerous
  * content (`<script>`, `<style>`, `javascript:` URLs) is dropped.
  */
+import { PdfEngineError, PdfErrorCode } from '../errors.js';
 import type {
   BinaryData,
   ColorInput,
@@ -542,7 +543,17 @@ const HR_HEIGHT = HR_THICKNESS + HR_SPACE_ABOVE + HR_SPACE_BELOW;
  * @returns Blocks ready for `renderTemplate`, `flow.render`, or `renderDocumentJson`.
  */
 export function htmlToBlocks(html: string, options: HtmlToBlocksOptions = {}): TemplateBlock[] {
-  if (typeof html !== 'string' || html.trim().length === 0) return [];
+  // A non-string source is a wiring mistake — an `html` block given `text`, or
+  // an undefined field. Returning nothing would drop the content silently.
+  if (typeof html !== 'string') {
+    const received = html === null ? 'null' : typeof html;
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_TEXT,
+      `HTML source must be a string; received ${received}. Supply it in the \`html\` field.`,
+      { received, field: 'html' },
+    );
+  }
+  if (html.trim().length === 0) return [];
   const resolved: ResolvedOptions = {
     headingOffset: options.headingOffset ?? 0,
     paragraph: options.paragraph ?? {},

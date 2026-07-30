@@ -851,6 +851,14 @@ function renderTableWithSplits(
   advancePage: () => void,
   stylesheet: TemplateStylesheet | undefined,
 ): void {
+  if (!Array.isArray(block.rows)) {
+    const received = block.rows === null ? 'null' : typeof block.rows;
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_TEXT,
+      `Table rows must be an array; received ${received}. Supply them in the \`rows\` field.`,
+      { blockIndex, received, field: 'rows' },
+    );
+  }
   const allRows = block.rows;
   if (allRows.length === 0) return;
 

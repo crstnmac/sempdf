@@ -272,3 +272,26 @@ test("a missing or misnamed code field fails with an actionable error", () => {
   const flow = createDocument().addPage().flow();
   assert.throws(() => flow.code(undefined as unknown as string), PdfEngineError);
 });
+
+test("every text-bearing block names its field when the value is missing", () => {
+  const cases: Array<[Record<string, unknown>, RegExp]> = [
+    [{ type: "paragraph", code: "x" }, /Paragraph text .*`text` field/],
+    [{ type: "heading", options: { level: 3 } }, /Heading text .*`text` field/],
+    [{ type: "richParagraph" }, /Rich paragraph runs .*`runs` field/],
+    [{ type: "list" }, /List items .*`items` field/],
+    [{ type: "table" }, /Table rows .*`rows` field/],
+  ];
+  for (const [block, expected] of cases) {
+    const doc = createDocument();
+    assert.throws(
+      () => doc.renderTemplate({ blocks: [block] as unknown as TemplateBlock[] }),
+      (error: unknown) => {
+        assert.ok(error instanceof PdfEngineError, `${JSON.stringify(block)} threw ${String(error)}`);
+        assert.equal(error.code, PdfErrorCode.INVALID_TEXT);
+        assert.match(error.message, expected);
+        return true;
+      },
+      JSON.stringify(block),
+    );
+  }
+});

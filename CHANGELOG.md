@@ -2,6 +2,26 @@
 
 All notable changes to `@sempdf/sempdf-pdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.3.1] - 2026-07-30
+
+### Fixed
+
+- **A block missing its content field crashed with a bare `TypeError`.**
+  Template pagination estimates every block's height before any validation
+  runs, so `{ type: "paragraph", code }` (a `code` block mistyped),
+  `{ type: "heading" }` with no `text`, or a `richParagraph`/`list`/`table`
+  with no `runs`/`items`/`rows` died on `Cannot read properties of undefined
+  (reading 'replace' | 'map' | 'length')` from deep inside layout, naming
+  neither the block nor the field. Every text-bearing block now throws
+  `PdfEngineError` (`INVALID_TEXT`) naming what was expected and which field it
+  belongs in, from both the render and estimate paths.
+- **An `html` block given the wrong field rendered nothing at all.**
+  `{ type: "html", text: "<p>…</p>" }` (rather than `html`) silently produced
+  no output, so content vanished from the document with no error.
+  `htmlToBlocks()` and the `html` block now throw `INVALID_TEXT` naming the
+  `html` field for a non-string source; an empty or whitespace-only string
+  still yields no blocks, as before.
+
 ## [2.3.0] - 2026-07-30
 
 ### Added
