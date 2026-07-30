@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createDocument, hex, parseDocument, PdfEngineError, renderDocumentJsonSync } from "../src/index.js";
+import { createDocument, hex, parseDocument, PdfEngineError, PdfErrorCode, renderDocumentJsonSync } from "../src/index.js";
 import type { PdfDocumentJson, TemplateBlock } from "../src/index.js";
 
 const HTML_SNIPPET = [
@@ -227,4 +227,48 @@ test("keeps every line when no further region is available", () => {
   doc.addPage({ size: "A6" }).flow().code(source);
   const runs = runsOf(new Uint8Array(doc.toArrayBuffer()));
   assert.equal(runs.length, 90);
+});
+
+test("an empty or whitespace-only source renders nothing", () => {
+  for (const code of ["", "   ", "\n\n", "\t"]) {
+    const doc = createDocument();
+    // A sibling paragraph keeps the page non-empty; the code block itself must
+    // contribute no band and no text.
+    doc.renderTemplate({ blocks: [{ type: "paragraph", text: "only me" }, { type: "code", code }] });
+    const ops = doc.toModel().pages.flatMap((page) => page.ops);
+    assert.deepEqual(
+      ops.map((op) => op.type),
+      ["text"],
+      `expected no code ops for ${JSON.stringify(code)}`,
+    );
+  }
+  const flow = createDocument().addPage().flow();
+  const before = flow.cursorY;
+  flow.code("");
+  assert.equal(flow.cursorY, before, "an empty code block must not move the cursor");
+});
+
+test("a missing or misnamed code field fails with an actionable error", () => {
+  for (const block of [
+    { type: "code" },
+    { type: "code", text: "x = 1" },
+    { type: "code", code: null },
+    { type: "code", code: 42 },
+  ] as unknown as TemplateBlock[]) {
+    const doc = createDocument();
+    // The estimate pass runs first, so the guard has to live there too — this
+    // used to surface as `TypeError: Cannot read properties of undefined`.
+    assert.throws(
+      () => doc.renderTemplate({ blocks: [block] }),
+      (error: unknown) => {
+        assert.ok(error instanceof PdfEngineError, `got ${String(error)}`);
+        assert.equal(error.code, PdfErrorCode.INVALID_TEXT);
+        assert.match(error.message, /`code` field/);
+        return true;
+      },
+      JSON.stringify(block),
+    );
+  }
+  const flow = createDocument().addPage().flow();
+  assert.throws(() => flow.code(undefined as unknown as string), PdfEngineError);
 });

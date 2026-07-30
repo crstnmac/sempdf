@@ -284,6 +284,8 @@ Each item follows the `ListItem` format: `{ text: string, children?: ListItem[] 
 
 Defaults: `Courier` at 9pt on a `#f6f8fa` band with 8pt padding, tabs expanded to 4 spaces, and lines wider than the column soft-wrapped onto continuation lines that keep the wrapped line's own indentation.
 
+The source lives in the block's `code` field and must be a string — anything else throws `PdfEngineError` (`INVALID_TEXT`) naming the field. An empty or whitespace-only source renders nothing and takes no vertical space, so a blank field in your data is safe to pass through.
+
 | Option | Purpose |
 |--------|---------|
 | `font`, `fontSize`, `lineHeight`, `color`, `kerning` | Typography. `kerning` defaults to `false` so columns line up |
