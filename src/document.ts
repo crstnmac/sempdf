@@ -1374,6 +1374,20 @@ interface ResolvedCodeStyle {
   readonly highlight: readonly import("./types.js").CodeHighlightRule[];
 }
 
+/**
+ * Guards the code-block source. Estimation runs before any text validation, so
+ * without this a missing or misnamed field (`text` instead of `code`, an
+ * undefined column) surfaced as a bare `TypeError` from deep inside layout.
+ */
+function assertCodeSource(source: unknown): asserts source is string {
+  if (typeof source === "string") return;
+  throw new PdfEngineError(
+    PdfErrorCode.INVALID_TEXT,
+    `Code block source must be a string; received ${source === null ? "null" : typeof source}. A "code" template block takes its source in the \`code\` field.`,
+    { received: source === null ? "null" : typeof source },
+  );
+}
+
 function resolveCodeStyle(options: FlowCodeOptions): ResolvedCodeStyle {
   const fontSize = options.fontSize ?? 9;
   if (!Number.isFinite(fontSize) || fontSize <= 0) {
@@ -2395,6 +2409,10 @@ export class PdfFlow {
    * @returns This flow helper for chaining.
    */
   code(source: string, options: FlowCodeOptions = {}, language?: string): this {
+    assertCodeSource(source);
+    // Nothing to draw: an empty or whitespace-only source (a blank CMS field,
+    // say) renders no band rather than a stray empty box.
+    if (source.trim().length === 0) return this;
     validateText(source);
     const style = resolveCodeStyle(options);
     const spacing = this.resolveSpacing("code", options);
@@ -2567,6 +2585,8 @@ export class PdfFlow {
 
   /** Estimates the height a code block consumes at the current flow position. */
   private estimateCodeHeight(source: string, options: FlowCodeOptions = {}): number {
+    assertCodeSource(source);
+    if (source.trim().length === 0) return 0;
     const style = resolveCodeStyle(options);
     const spacing = this.resolveSpacing("code", options);
     const styled = resolveFontFamilyOptions(

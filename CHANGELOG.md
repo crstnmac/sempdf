@@ -2,6 +2,23 @@
 
 All notable changes to `@zeropdf/zeropdf-pdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.2.1] - 2026-07-30
+
+### Fixed
+
+- **A `code` block with a missing or misnamed source crashed with a bare
+  `TypeError`.** Template pagination estimates every block's height before any
+  text validation runs, so `{ type: "code" }` with no `code` field (or `text`
+  used by mistake, or an undefined database column) reached
+  `estimateCodeHeight` and died on `Cannot read properties of undefined
+  (reading 'replace')` with no hint about the cause. Both the render and
+  estimate paths now throw `PdfEngineError` (`INVALID_TEXT`) naming the `code`
+  field and the type received.
+- **An empty `code` block no longer throws or draws an empty band.** A blank or
+  whitespace-only source (a CMS field with no content) previously threw
+  `INVALID_TEXT` for `""` yet rendered a stray empty band for `"   "`. Both now
+  render nothing and consume no vertical space.
+
 ## [2.2.0] - 2026-07-30
 
 ### Added
