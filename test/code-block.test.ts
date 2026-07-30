@@ -295,3 +295,115 @@ test("every text-bearing block names its field when the value is missing", () =>
     );
   }
 });
+
+test("continuation notes mark where a split listing resumes and carries on", () => {
+  const source = Array.from({ length: 130 }, (_, i) => `line ${i + 1}`).join("\n");
+  const doc = createDocument({ title: "Continuity" });
+  doc.renderTemplate({
+    blocks: [
+      {
+        type: "code",
+        code: source,
+        options: {
+          lineNumbers: true,
+          continuedLabel: ({ firstLineNumber, fragmentIndex }) => `from ${firstLineNumber} part ${fragmentIndex + 1}`,
+          continuesLabel: ({ lastLineNumber, totalLines }) => `more after ${lastLineNumber} of ${totalLines}`,
+        },
+      },
+    ],
+  });
+  const bytes = new Uint8Array(doc.toArrayBuffer());
+  const pages = parseDocument(bytes).extractText();
+  assert.ok(pages.length >= 3, `expected 3+ pages, got ${pages.length}`);
+
+  // Every source line renders exactly once despite the notes taking space.
+  const rendered = runsOf(bytes).filter((run) => /^line \d+$/.test(run.text));
+  assert.equal(rendered.length, 130);
+
+  // First fragment: a "continues" note, no "continued from".
+  assert.ok(!pages[0]!.text.includes("part 1"), "the opening fragment is not a continuation");
+  assert.match(pages[0]!.text, /more after \d+ of 130/);
+  // Middle fragment: both notes.
+  assert.match(pages[1]!.text, /from \d+ part 2/);
+  assert.match(pages[1]!.text, /more after \d+ of 130/);
+  // Last fragment: resumed, but nothing follows.
+  const last = pages[pages.length - 1]!.text;
+  assert.match(last, /from \d+ part \d+/);
+  assert.ok(!/more after/.test(last), "the final fragment must not claim to continue");
+
+  // The numbers line up with the code: "from N" names the fragment's first line.
+  const resumeLine = /from (\d+) part 2/.exec(pages[1]!.text)?.[1];
+  assert.ok(resumeLine !== undefined && pages[1]!.text.includes(`line ${resumeLine}`), resumeLine);
+});
+
+test("a fixed string works as a continuation note, and notes are artifacts", () => {
+  const source = Array.from({ length: 120 }, (_, i) => `l${i}`).join("\n");
+  const doc = createDocument({ title: "Notes", tagged: true, language: "en", compress: false });
+  doc.renderTemplate({
+    blocks: [{ type: "code", code: source, options: { continuedLabel: "(continued)" } }],
+  });
+  const bytes = new Uint8Array(doc.toArrayBuffer());
+  assert.ok(textOf(bytes).join("\n").includes("(continued)"));
+  // The note must not land inside the Code element's marked content.
+  const raw = Buffer.from(bytes).toString("latin1");
+  const codeMarks = raw.split("/Code <</MCID");
+  assert.ok(codeMarks.length > 1);
+  assert.ok(!/\/Code <<\/MCID \d+>> BDC[^E]*\(continued\)/.test(raw), "note must be an artifact");
+  assert.deepEqual(doc.validateCompliance().filter((issue) => issue.severity === "error"), []);
+});
+
+test("a bordered block opens its border where it was split", () => {
+  const source = Array.from({ length: 120 }, (_, i) => `l${i}`).join("\n");
+
+  /** Horizontal rules in a border path: the top and bottom edges of the band. */
+  const horizontalEdges = (doc: ReturnType<typeof createDocument>): number[] =>
+    doc.toModel().pages.map((page) => {
+      const border = page.ops.filter((op) => op.type === "path").at(-1)!;
+      if (border.type !== "path") return -1;
+      if (border.commands.every((command) => command.type === "rect")) return 2; // closed box
+      let horizontals = 0;
+      for (let i = 1; i < border.commands.length; i += 1) {
+        const from = border.commands[i - 1]!;
+        const to = border.commands[i]!;
+        if (from.type === "moveTo" && to.type === "lineTo" && Math.abs(from.y - to.y) < 0.001) {
+          horizontals += 1;
+        }
+      }
+      return horizontals;
+    });
+
+  const split = createDocument();
+  split.renderTemplate({ blocks: [{ type: "code", code: source, options: { borderWidth: 1 } }] });
+  const edges = horizontalEdges(split);
+  assert.ok(edges.length >= 3, `expected 3+ fragments, got ${edges.length}`);
+  // Opening fragment keeps its top rule, drops the bottom one; middles have
+  // neither; the closing fragment keeps only its bottom rule.
+  assert.equal(edges[0], 1);
+  assert.equal(edges[1], 0);
+  assert.equal(edges[edges.length - 1], 1);
+
+  // An unsplit block is a plain closed box.
+  const whole = createDocument();
+  whole.renderTemplate({ blocks: [{ type: "code", code: "one\ntwo", options: { borderWidth: 1 } }] });
+  assert.deepEqual(horizontalEdges(whole), [2]);
+
+  // openSplitEdges: false keeps every fragment a full box.
+  const boxed = createDocument();
+  boxed.renderTemplate({
+    blocks: [{ type: "code", code: source, options: { borderWidth: 1, openSplitEdges: false } }],
+  });
+  assert.deepEqual(new Set(horizontalEdges(boxed)), new Set([2]));
+});
+
+test("fragments on one page share a single Code element", () => {
+  const source = Array.from({ length: 80 }, (_, i) => `c${i}`).join("\n");
+  const doc = createDocument({ title: "Columns", tagged: true, language: "en", compress: false });
+  doc.renderTemplate({
+    page: { columns: { count: 2 } },
+    blocks: [{ type: "code", code: source }],
+  });
+  assert.equal(doc.pageCount, 1);
+  const raw = Buffer.from(doc.toArrayBuffer()).toString("latin1");
+  // Two column fragments, one page: one Code element, not two.
+  assert.equal([...raw.matchAll(/\/S \/Code/g)].length, 1);
+});

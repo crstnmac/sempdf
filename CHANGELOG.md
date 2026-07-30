@@ -2,6 +2,30 @@
 
 All notable changes to `@sempdf/sempdf-pdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.4.0] - 2026-07-30
+
+### Added
+
+- **Multi-page continuity for code blocks.** A listing that spans pages or
+  columns already split line-by-line; now it can say so. `continuedLabel` draws
+  a note at the top of every fragment after the first and `continuesLabel` at
+  the bottom of every fragment that carries on — a fixed string, or a callback
+  given `{ fragmentIndex, firstLineNumber, lastLineNumber, totalLines }`. Notes
+  are artifacts (never read as code) and reserve their own line, so they never
+  overlap the listing. Styled with `continuationFontSize`,
+  `continuationColor`, and `continuationAlign`.
+- **Open borders at a split.** A bordered block now omits the rule under a
+  fragment that continues and above one that resumes, so consecutive fragments
+  read as one listing instead of a stack of boxes. `openSplitEdges: false`
+  restores a closed box per fragment.
+
+### Changed
+
+- **One `Code` structure element per page instead of per fragment.** A block
+  that split across the columns of a single page produced a separate `Code`
+  element per column; the fragments now share the page's element, and a new one
+  starts only on a new page.
+
 ## [2.3.1] - 2026-07-30
 
 ### Fixed

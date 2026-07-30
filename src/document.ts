@@ -1372,7 +1372,18 @@ interface ResolvedCodeStyle {
   readonly lineNumberColor: ColorInput;
   readonly tag: "Code" | "P" | "Artifact";
   readonly highlight: readonly import("./types.js").CodeHighlightRule[];
+  readonly continuedLabel: CodeLabel | undefined;
+  readonly continuesLabel: CodeLabel | undefined;
+  readonly continuationFontSize: number;
+  readonly continuationColor: ColorInput;
+  readonly continuationAlign: "left" | "right";
+  readonly openSplitEdges: boolean;
+  /** Height reserved for one continuation note, 0 when no note can appear. */
+  readonly labelHeight: number;
 }
+
+/** A continuation note: fixed text, or text derived from the fragment. */
+type CodeLabel = string | ((info: import("./types.js").CodeContinuationInfo) => string);
 
 /**
  * Guards a block's text content. Template pagination estimates block heights
@@ -1446,6 +1457,14 @@ function resolveCodeStyle(options: FlowCodeOptions): ResolvedCodeStyle {
       { lineHeight },
     );
   }
+  const continuationFontSize = options.continuationFontSize ?? Math.round(fontSize * 0.85 * 100) / 100;
+  if (!Number.isFinite(continuationFontSize) || continuationFontSize <= 0) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_NUMBER,
+      `Code block continuationFontSize must be a positive finite number, got ${continuationFontSize}.`,
+      { continuationFontSize },
+    );
+  }
   const background = options.background === "none" ? undefined : options.background ?? CODE_DEFAULT_BACKGROUND;
   const borderColor =
     options.borderColor ?? (options.borderWidth !== undefined && options.borderWidth > 0 ? CODE_DEFAULT_BORDER : undefined);
@@ -1465,7 +1484,27 @@ function resolveCodeStyle(options: FlowCodeOptions): ResolvedCodeStyle {
     lineNumberColor: options.lineNumberColor ?? CODE_DEFAULT_GUTTER,
     tag: options.tag ?? "Code",
     highlight: options.highlight ?? [],
+    continuedLabel: options.continuedLabel,
+    continuesLabel: options.continuesLabel,
+    continuationFontSize: continuationFontSize,
+    continuationColor: options.continuationColor ?? options.lineNumberColor ?? CODE_DEFAULT_GUTTER,
+    continuationAlign: options.continuationAlign ?? "right",
+    openSplitEdges: options.openSplitEdges ?? true,
+    labelHeight:
+      options.continuedLabel === undefined && options.continuesLabel === undefined
+        ? 0
+        : Math.round(continuationFontSize * 1.5 * 100) / 100,
   };
+}
+
+/** Renders a continuation note for one fragment. */
+function formatCodeLabel(
+  label: CodeLabel | undefined,
+  info: import("./types.js").CodeContinuationInfo,
+): string | undefined {
+  if (label === undefined) return undefined;
+  const text = typeof label === "string" ? label : label(info);
+  return typeof text === "string" && text.trim().length > 0 ? text : undefined;
 }
 
 /** One rendered line of a code block: text plus its source line number. */
@@ -1550,6 +1589,29 @@ function clipCodeLine(line: string, width: number, measure: (text: string) => nu
     fits = end;
   }
   return line.slice(0, Math.max(fits, 1));
+}
+
+/** Source line number of the first line at or after `index`. */
+function firstNumberFrom(lines: readonly CodeVisualLine[], index: number): number {
+  for (let i = index; i < lines.length; i += 1) {
+    const number = lines[i]!.number;
+    if (number !== undefined) return number;
+  }
+  // Only soft-wrapped continuation lines remain: fall back to the last number.
+  for (let i = index - 1; i >= 0; i -= 1) {
+    const number = lines[i]!.number;
+    if (number !== undefined) return number;
+  }
+  return 1;
+}
+
+/** Source line number of the last numbered line in `lines`. */
+function lastNumberIn(lines: readonly CodeVisualLine[]): number | undefined {
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const number = lines[i]!.number;
+    if (number !== undefined) return number;
+  }
+  return undefined;
 }
 
 /** A contiguous span of a code line sharing one color and font. */
@@ -2462,13 +2524,14 @@ export class PdfFlow {
       color: ColorInput,
       tag: "Code" | "P" | "Artifact",
       font?: PdfFont | undefined,
+      fontSize?: number | undefined,
     ): import("./internal/validation.js").NormalizedTextBaseOptions =>
       normalizeTextBaseOptions({
         x,
         y,
         font: font ?? styled.font,
         ...(styled.fallbackFonts ? { fallbackFonts: styled.fallbackFonts } : {}),
-        fontSize: style.fontSize,
+        fontSize: fontSize ?? style.fontSize,
         kerning: options.kerning ?? false,
         color,
         tag,
@@ -2476,6 +2539,10 @@ export class PdfFlow {
     const measureBase = textOptions(0, 0, style.color, style.tag);
     const measure = (text: string): number =>
       text.length === 0 ? 0 : measureTextWidth(text, measureBase, this.embeddedFonts);
+    const measureAt = (text: string, fontSize: number): number =>
+      text.length === 0
+        ? 0
+        : measureTextWidth(text, textOptions(0, 0, style.color, "Artifact", undefined, fontSize), this.embeddedFonts);
 
     const blockAlign = options.blockAlign ?? "left";
     const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
@@ -2488,48 +2555,109 @@ export class PdfFlow {
     const textWidth = Math.max(blockWidth - style.padding * 2 - gutterWidth, 1);
     const lines = layoutCodeLines(source, style, textWidth, measure);
     const overhead = style.padding * 2;
+    const totalLines = lines[lines.length - 1]?.number ?? style.firstLineNumber;
+    // One structure element per page: fragments split across columns of the same
+    // page stay inside it, so the tag tree has an element per page rather than
+    // per fragment.
+    let node: InternalStructureNode | undefined;
+    let nodePage: InternalPageModel | undefined;
+    const structureNodeForFragment = (): InternalStructureNode | undefined => {
+      if (style.tag === "Artifact") return undefined;
+      if (node !== undefined && nodePage === this.page) return node;
+      nodePage = this.page;
+      const structure = language === undefined ? undefined : { expansion: language };
+      node =
+        style.tag === "P"
+          ? createStructureNode(this.page, "P", structure, this.parent)
+          : createStructureNode(
+              this.page,
+              "Code",
+              structure,
+              createStructureNode(this.page, "P", undefined, this.parent),
+            );
+      return node;
+    };
+
     let index = 0;
+    let fragmentIndex = 0;
     while (index < lines.length) {
-      let capacity = Math.floor((this.remainingHeight - overhead) / style.lineHeight);
+      const isContinuation = fragmentIndex > 0;
+      // A continuation note occupies a line of its own at the top of a resumed
+      // fragment, and at the bottom of one that carries on.
+      const topLabelHeight = isContinuation && style.continuedLabel !== undefined ? style.labelHeight : 0;
+      const bottomLabelAllowance = style.continuesLabel !== undefined ? style.labelHeight : 0;
+      const fixed = overhead + topLabelHeight;
+      let available = this.remainingHeight - fixed;
       // Not even one line fits: move to a fresh region when one is available,
       // otherwise overflow the current one rather than loop forever.
-      if (capacity < 1 && this.state.y < this.state.startY && this.advanceFlowRegion()) {
-        capacity = Math.floor((this.remainingHeight - overhead) / style.lineHeight);
+      if (available < style.lineHeight && this.state.y < this.state.startY && this.advanceFlowRegion()) {
+        available = this.remainingHeight - fixed;
       }
-      capacity = Math.max(capacity, 1);
-
+      const remaining = lines.length - index;
+      // Take everything if it fits without a bottom note; otherwise leave room
+      // for the note that says the block continues.
+      const fitsWhole = Math.floor(available / style.lineHeight) >= remaining;
+      const capacity = Math.max(
+        1,
+        Math.floor((available - (fitsWhole ? 0 : bottomLabelAllowance)) / style.lineHeight),
+      );
       // A fragment that cannot be continued anywhere is kept whole and allowed
       // to overflow the region: dropping code silently would be worse.
-      const remaining = lines.length - index;
       const take = remaining > capacity && !this.canAdvanceRegion ? remaining : Math.min(capacity, remaining);
       const bandLines = lines.slice(index, index + take);
-      const bandHeight = bandLines.length * style.lineHeight + overhead;
+      const willContinue = index + bandLines.length < lines.length && this.canAdvanceRegion;
+
+      const firstLineNumber = firstNumberFrom(lines, index);
+      const lastLineNumber = lastNumberIn(bandLines) ?? firstLineNumber;
+      const info: import("./types.js").CodeContinuationInfo = {
+        fragmentIndex,
+        firstLineNumber,
+        lastLineNumber,
+        totalLines,
+      };
+      const topLabel = isContinuation ? formatCodeLabel(style.continuedLabel, info) : undefined;
+      const bottomLabel = willContinue ? formatCodeLabel(style.continuesLabel, info) : undefined;
+
+      const bandHeight =
+        bandLines.length * style.lineHeight +
+        overhead +
+        (topLabel === undefined ? 0 : style.labelHeight) +
+        (bottomLabel === undefined ? 0 : style.labelHeight);
       // Geometry is re-derived per fragment: a column or page advance moves the
       // content edge (and may narrow the region).
       const bandInnerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
       const bandWidth = Math.min(blockWidth, bandInnerWidth);
       const bandX = computeBlockX(this.state.x, spacing.left, bandInnerWidth, bandWidth, blockAlign);
       const textX = bandX + style.padding + gutterWidth;
-      this.drawCodeBand(bandX, bandWidth, bandHeight, style);
+      // The border opens where the listing was cut, so consecutive fragments
+      // read as one block instead of separate boxes.
+      this.drawCodeBand(bandX, bandWidth, bandHeight, style, {
+        openTop: style.openSplitEdges && isContinuation,
+        openBottom: style.openSplitEdges && willContinue,
+      });
 
-      const node =
-        style.tag === "Artifact"
-          ? undefined
-          : style.tag === "P"
-            ? createStructureNode(
-                this.page,
-                "P",
-                language === undefined ? undefined : { expansion: language },
-                this.parent,
-              )
-            : createStructureNode(
-                this.page,
-                "Code",
-                language === undefined ? undefined : { expansion: language },
-                createStructureNode(this.page, "P", undefined, this.parent),
-              );
+      const fragmentNode = structureNodeForFragment();
 
-      let baseline = this.state.y - style.padding - style.fontSize * CODE_ASCENT_RATIO;
+      let baseline = this.state.y - style.padding;
+      const drawLabel = (text: string): void => {
+        baseline -= style.continuationFontSize * CODE_ASCENT_RATIO;
+        const width = measureAt(text, style.continuationFontSize);
+        const labelX =
+          style.continuationAlign === "left"
+            ? bandX + style.padding
+            : bandX + bandWidth - style.padding - width;
+        // Notes about the split are decoration, not part of the code.
+        this.pushCodeText(
+          text,
+          labelX,
+          baseline,
+          textOptions(labelX, baseline, style.continuationColor, "Artifact", undefined, style.continuationFontSize),
+          undefined,
+        );
+        baseline -= style.labelHeight - style.continuationFontSize * CODE_ASCENT_RATIO;
+      };
+      if (topLabel !== undefined) drawLabel(topLabel);
+      baseline -= style.fontSize * CODE_ASCENT_RATIO;
       for (const line of bandLines) {
         if (style.lineNumbers && line.number !== undefined) {
           const label = String(line.number);
@@ -2552,16 +2680,21 @@ export class PdfFlow {
               x,
               baseline,
               textOptions(x, baseline, span.color ?? style.color, style.tag, span.font),
-              node,
+              fragmentNode,
             );
           }
           x += measure(span.text);
         }
         baseline -= style.lineHeight;
       }
+      if (bottomLabel !== undefined) {
+        baseline += style.fontSize * CODE_ASCENT_RATIO;
+        drawLabel(bottomLabel);
+      }
 
       this.state.y -= bandHeight;
       index += bandLines.length;
+      fragmentIndex += 1;
       if (index < lines.length && !this.advanceFlowRegion()) break;
     }
 
@@ -2569,31 +2702,60 @@ export class PdfFlow {
     return this;
   }
 
-  /** Draws one code-block fragment's background and border band. */
+  /**
+   * Draws one code-block fragment's background and border band. `openTop` and
+   * `openBottom` omit the border along an edge where the listing was cut, so a
+   * split block reads as one listing rather than a stack of boxes.
+   */
   private drawCodeBand(
     x: number,
     width: number,
     height: number,
     style: ResolvedCodeStyle,
+    edges: { openTop: boolean; openBottom: boolean } = { openTop: false, openBottom: false },
   ): void {
     if (style.background === undefined && style.borderColor === undefined) return;
-    const paint =
-      style.background !== undefined && style.borderColor !== undefined
-        ? "fillStroke"
-        : style.background !== undefined
-          ? "fill"
-          : "stroke";
+    const bottom = this.state.y - height;
+    const top = this.state.y;
+    const right = x + width;
+    if (style.background !== undefined) {
+      this.page.ops.push({
+        type: "path",
+        commands: [{ type: "rect", x, y: bottom, width, height }],
+        style: normalizePathStyle({
+          paint: "fill",
+          fill: { color: style.background },
+          tag: "Artifact",
+        }),
+      });
+    }
+    if (style.borderColor === undefined) return;
+    const stroke = { color: style.borderColor, width: style.borderWidth };
+    if (!edges.openTop && !edges.openBottom) {
+      this.page.ops.push({
+        type: "path",
+        commands: [{ type: "rect", x, y: bottom, width, height }],
+        style: normalizePathStyle({ paint: "stroke", stroke, tag: "Artifact" }),
+      });
+      return;
+    }
+    // Sides always; top/bottom only where the fragment is not continued.
+    const commands: PathCommand[] = [
+      { type: "moveTo", x, y: bottom },
+      { type: "lineTo", x, y: top },
+      { type: "moveTo", x: right, y: bottom },
+      { type: "lineTo", x: right, y: top },
+    ];
+    if (!edges.openTop) {
+      commands.push({ type: "moveTo", x, y: top }, { type: "lineTo", x: right, y: top });
+    }
+    if (!edges.openBottom) {
+      commands.push({ type: "moveTo", x, y: bottom }, { type: "lineTo", x: right, y: bottom });
+    }
     this.page.ops.push({
       type: "path",
-      commands: [{ type: "rect", x, y: this.state.y - height, width, height }],
-      style: normalizePathStyle({
-        paint,
-        ...(style.background === undefined ? {} : { fill: { color: style.background } }),
-        ...(style.borderColor === undefined
-          ? {}
-          : { stroke: { color: style.borderColor, width: style.borderWidth } }),
-        tag: "Artifact",
-      }),
+      commands,
+      style: normalizePathStyle({ paint: "stroke", stroke, tag: "Artifact" }),
     });
   }
 

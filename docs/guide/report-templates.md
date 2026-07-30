@@ -295,6 +295,29 @@ The source lives in the block's `code` field and must be a string — anything e
 | `highlight` | Regex colouring rules, applied per rendered line |
 | `tag` | `"Code"` (default, a `Code` element inside a `P`), `"P"`, or `"Artifact"` for untagged |
 
+### Listings that span pages
+
+A block longer than the page splits line-by-line and repeats its band, and the gutter keeps numbering continuously. Two optional notes tell the reader what happened at the cut:
+
+```ts
+{
+  type: "code",
+  code: longListing,
+  options: {
+    lineNumbers: true,
+    borderWidth: 0.75,
+    continuedLabel: ({ firstLineNumber }) => `continued from line ${firstLineNumber - 1}`,
+    continuesLabel: ({ lastLineNumber, totalLines }) => `continues: ${lastLineNumber} of ${totalLines} lines`,
+  }
+}
+```
+
+- `continuedLabel` is drawn at the top of every fragment after the first, `continuesLabel` at the bottom of every fragment that carries on. Either takes a fixed string or a callback receiving `{ fragmentIndex, firstLineNumber, lastLineNumber, totalLines }`.
+- Both are artifacts, so assistive tech never reads them as part of the code, and both reserve their own line — code is never overlapped.
+- Style them with `continuationFontSize` (default `fontSize * 0.85`), `continuationColor`, and `continuationAlign` (`"right"` by default).
+- When a border is drawn, the edge at the cut is left open — no rule under a fragment that continues, none above one that resumes — so the fragments read as one listing. Set `openSplitEdges: false` for a closed box per fragment.
+- Structure follows the pages: fragments that share a page (splitting across columns) share one `Code` element; a new page starts a new one.
+
 Highlighting takes an ordered rule list; earlier rules win, so put strings and comments before keywords:
 
 ```ts
