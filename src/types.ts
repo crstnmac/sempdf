@@ -1167,7 +1167,7 @@ export interface FlowOptions {
 export type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 
 /**
- * Semantic spacing scale used by flow layout for paragraphs, headings, tables, images, and links.
+ * Semantic spacing scale used by flow layout for paragraphs, headings, tables, images, links, and code blocks.
  */
 export interface FlowSpacingScale {
   /** Default spacing before paragraph blocks. */
@@ -1190,6 +1190,10 @@ export interface FlowSpacingScale {
   linkBefore?: number | undefined;
   /** Default spacing after link blocks. */
   linkAfter?: number | undefined;
+  /** Default spacing before code blocks. */
+  codeBefore?: number | undefined;
+  /** Default spacing after code blocks. */
+  codeAfter?: number | undefined;
 }
 
 /**
@@ -1247,6 +1251,83 @@ export interface FlowTextOptions
 export interface FlowHeadingOptions extends FlowTextOptions {
   /** Heading level to render and tag. */
   level?: HeadingLevel | undefined;
+}
+
+/**
+ * A regular-expression colouring rule applied to the visual lines of a code
+ * block. Rules are evaluated in order and never overwrite a span already
+ * claimed by an earlier rule, so put the most specific patterns first
+ * (strings and comments before keywords).
+ */
+export interface CodeHighlightRule {
+  /**
+   * Pattern to match within each rendered line. A string matches literally;
+   * a `RegExp` is re-created with the `g` flag (and keeps `i`/`u`/`s`).
+   * Patterns are matched per visual line, so they cannot span line breaks.
+   */
+  readonly pattern: RegExp | string;
+  /** Color applied to matched text. Defaults to the block's `color`. */
+  readonly color?: ColorInput | undefined;
+  /** Font applied to matched text. Defaults to the block's `font`. */
+  readonly font?: PdfFont | undefined;
+}
+
+/**
+ * Options for placing a preformatted code block through the flow layout API.
+ *
+ * Unlike paragraphs, code blocks preserve leading whitespace and hard line
+ * breaks verbatim, never re-flow words between lines, and split across pages
+ * or columns line-by-line (each fragment repeats the background band).
+ */
+export interface FlowCodeOptions extends FlowBlockSpacingOptions {
+  /** Font used to render the code. Defaults to `Courier`. */
+  font?: PdfFont | undefined;
+  /** Fallback fonts used when the primary font lacks a glyph. */
+  fallbackFonts?: PdfFont[] | undefined;
+  /** Font size in PDF points. Defaults to 9. */
+  fontSize?: number | undefined;
+  /** Baseline-to-baseline distance in points. Defaults to `fontSize * 1.35`. */
+  lineHeight?: number | undefined;
+  /** Code text color. Defaults to `#1f2328`. */
+  color?: ColorInput | undefined;
+  /** Whether kerning should be applied. Defaults to `false` so columns align. */
+  kerning?: boolean | undefined;
+  /** Background fill behind the block. Pass `"none"` to draw no background. */
+  background?: ColorInput | "none" | undefined;
+  /** Border color. A border is drawn only when this or `borderWidth` is set. */
+  borderColor?: ColorInput | undefined;
+  /** Border width in points. Defaults to 0.5 when `borderColor` is set. */
+  borderWidth?: number | undefined;
+  /** Inner padding between the background band and the code, in points. Defaults to 8. */
+  padding?: number | undefined;
+  /** Spaces a tab expands to. Defaults to 4. */
+  tabSize?: number | undefined;
+  /**
+   * Whether lines wider than the content width soft-wrap onto continuation
+   * lines (indented to match the wrapped line's own indentation). When
+   * `false`, long lines are clipped to the content width. Defaults to `true`.
+   */
+  wrap?: boolean | undefined;
+  /** Whether to render a line-number gutter. Defaults to `false`. */
+  lineNumbers?: boolean | undefined;
+  /** Number given to the first line when `lineNumbers` is set. Defaults to 1. */
+  firstLineNumber?: number | undefined;
+  /** Line-number color. Defaults to a muted grey. */
+  lineNumberColor?: ColorInput | undefined;
+  /** Gap between the line-number gutter and the code, in points. Defaults to 6. */
+  gutterGap?: number | undefined;
+  /** Regex colouring rules applied to each rendered line. */
+  highlight?: readonly CodeHighlightRule[] | undefined;
+  /**
+   * Structure tagging. `"Code"` (default) emits a `P` wrapper containing a
+   * `Code` element, `"P"` tags the fragment as a plain paragraph, and
+   * `"Artifact"` leaves the content untagged.
+   */
+  tag?: "Code" | "P" | "Artifact" | undefined;
+  /** Optional width for the block within the flow column. */
+  blockWidth?: number | undefined;
+  /** Alignment of the block inside the flow column. */
+  blockAlign?: "left" | "center" | "right" | undefined;
 }
 
 /**
@@ -1636,6 +1717,42 @@ export interface TemplateParagraphBlock {
 }
 
 /**
+ * Template block that converts an HTML fragment into blocks at render time.
+ * Expanded before pagination, so the headings inside it still feed the TOC and
+ * auto-outline and every generated block paginates normally.
+ */
+export interface TemplateHtmlBlock {
+  readonly type: "html";
+  /** HTML to convert. Tag soup is tolerated; scripts and styles are dropped. */
+  readonly html: string;
+  /** Conversion and styling options. */
+  readonly options?: import("./internal/html-blocks.js").HtmlToBlocksOptions | undefined;
+  /** Stylesheet class name(s) applied to the generated blocks' own selectors. */
+  readonly class?: string | readonly string[] | undefined;
+  /** Whether this block should stay on the same page as the following block when possible. */
+  readonly keepWithNext?: boolean | undefined;
+}
+
+/**
+ * Template block for rendering a preformatted code block: monospaced text with
+ * indentation and hard line breaks preserved, drawn on a background band that
+ * repeats on each page or column the block spans.
+ */
+export interface TemplateCodeBlock {
+  readonly type: "code";
+  /** Source text to render. Tabs are expanded; `\r\n` and `\r` are normalized. */
+  readonly code: string;
+  /** Optional language label, recorded on the structure element as its expansion text. */
+  readonly language?: string | undefined;
+  /** Options that control this block. */
+  readonly options?: FlowCodeOptions | undefined;
+  /** Stylesheet class name(s) applied beneath inline `options`. */
+  readonly class?: string | readonly string[] | undefined;
+  /** Whether this block should stay on the same page as the following block when possible. */
+  readonly keepWithNext?: boolean | undefined;
+}
+
+/**
  * Template block for rendering a paragraph of inline rich-text runs, mixing
  * fonts, weights, sizes, colors, and links on the same wrapping lines.
  */
@@ -1947,7 +2064,7 @@ export interface TemplateRectBlock {
 export interface TemplateListBlock {
   readonly type: "list";
   readonly items: ListItem[];
-  readonly options?: Omit<ListOptions, "x" | "y"> | undefined;
+  readonly options?: FlowListOptions | undefined;
   /** Stylesheet class name(s) applied beneath inline `options`. */
   readonly class?: string | readonly string[] | undefined;
   readonly keepWithNext?: boolean | undefined;
@@ -2006,6 +2123,8 @@ export type TemplateBlock = (
   | TemplateHeadingBlock
   | TemplateParagraphBlock
   | TemplateRichParagraphBlock
+  | TemplateCodeBlock
+  | TemplateHtmlBlock
   | TemplateTableBlock
   | TemplateImageBlock
   | TemplateLinkBlock
@@ -2094,9 +2213,13 @@ export interface TemplateStyle {
 /**
  * Named styles applied to template blocks. Keys are either *type selectors*
  * matching a block's `type` (`"paragraph"`, `"table"`, `"link"`, `"list"`,
- * `"image"`, plus per-format image types like `"png"`, and per-level headings
- * `"heading"`/`"heading1"`..`"heading6"`) or arbitrary *class names* referenced
- * by a block's `class` field.
+ * `"code"`, `"image"`, plus per-format image types like `"png"`, and per-level
+ * headings `"heading"`/`"heading1"`..`"heading6"`) or arbitrary *class names*
+ * referenced by a block's `class` field.
+ *
+ * A stylesheet carries the shared typographic fields only; code-specific
+ * visuals (`background`, `padding`, `lineNumbers`, `highlight`, …) belong in a
+ * {@link TemplateCodeBlock}'s inline `options`.
  *
  * Resolution cascade for each block (low to high priority): page defaults →
  * matching type selectors (generic before specific) → each class in `class`

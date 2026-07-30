@@ -30,6 +30,7 @@ const guideSidebar: DefaultTheme.SidebarItem[] = [
       { text: "Metadata and Navigation", link: "/guide/metadata-and-navigation" },
       { text: "Report Templates", link: "/guide/report-templates" },
       { text: "JSON to PDF", link: "/guide/json-to-pdf" },
+      { text: "HTML to PDF", link: "/guide/html-to-pdf" },
       { text: "Template Stylesheets", link: "/guide/template-stylesheets" },
       { text: "Custom Blocks", link: "/guide/custom-blocks" },
       { text: "Pixel-Perfect Invoices", link: "/guide/pixel-perfect-invoices" }

@@ -120,6 +120,8 @@ doc.renderTemplate({
 | `image` | Embedded JPEG/PNG with alt text |
 | `link` | URI link with paragraph spacing |
 | `list` | Ordered/unordered/nested |
+| `code` | Preformatted monospaced code with a background band ([Code blocks](#code-blocks)) |
+| `html` | An HTML fragment converted to blocks before pagination ([HTML to PDF](./html-to-pdf)) |
 | `pageBreak` | Force next block to a new page |
 | `toc` | Table of contents built from heading blocks ([Table of contents](#table-of-contents)) |
 | `crossRef` | Cross-reference to a named `anchor`, with resolved page number ([Cross-references](#cross-references)) |
@@ -267,6 +269,48 @@ Each item follows the `ListItem` format: `{ text: string, children?: ListItem[] 
 }
 ```
 
+## Code blocks
+
+`code` renders preformatted text: indentation and hard line breaks are kept verbatim, words never re-flow between lines, and the block splits across pages line-by-line, repeating its background band on each fragment.
+
+```ts
+{
+  type: "code",
+  code: '<div class="card">\n  <img src="hero.png" alt="">\n</div>',
+  language: "html",
+  options: { lineNumbers: true, borderWidth: 1 }
+}
+```
+
+Defaults: `Courier` at 9pt on a `#f6f8fa` band with 8pt padding, tabs expanded to 4 spaces, and lines wider than the column soft-wrapped onto continuation lines that keep the wrapped line's own indentation.
+
+| Option | Purpose |
+|--------|---------|
+| `font`, `fontSize`, `lineHeight`, `color`, `kerning` | Typography. `kerning` defaults to `false` so columns line up |
+| `background`, `borderColor`, `borderWidth`, `padding` | The band. `background: "none"` draws no band |
+| `tabSize`, `wrap` | Tab expansion; `wrap: false` clips long lines instead of wrapping |
+| `lineNumbers`, `firstLineNumber`, `lineNumberColor`, `gutterGap` | Line-number gutter (continuation lines are left unnumbered) |
+| `highlight` | Regex colouring rules, applied per rendered line |
+| `tag` | `"Code"` (default, a `Code` element inside a `P`), `"P"`, or `"Artifact"` for untagged |
+
+Highlighting takes an ordered rule list; earlier rules win, so put strings and comments before keywords:
+
+```ts
+options: {
+  highlight: [
+    { pattern: /"[^"]*"/, color: hex("#0a3069") },
+    { pattern: /<\/?[a-zA-Z!][\w-]*/, color: hex("#116329") },
+    { pattern: /[a-zA-Z-]+(?==)/, color: hex("#953800") },
+  ]
+}
+```
+
+`pattern` also accepts a plain string (matched literally), which keeps rules JSON-serializable for `renderDocumentJson`. Patterns are matched per rendered line, so they cannot span line breaks.
+
+The flow API is `flow.code(source, options, language)`. `language` is recorded as the structure element's expansion text.
+
+Accessibility notes: the code text is real marked content inside the `Code` element, while the background band and the line-number gutter are emitted as artifacts, so assistive tech reads the code without the decoration. Indentation is kept as real spaces inside each line, so copied text keeps its shape. For `pdfua-1`/`pdfa-*` output, pass an embedded monospaced font (e.g. the bundled Liberation Mono) as `font` — the built-in `Courier` is not embeddable.
+
 ## Custom Blocks
 
 When built-in block types don't cover your needs, use the `custom` type with `render` and `estimate` callbacks.
@@ -298,6 +342,7 @@ Spacing is semantic, not a single fixed gap:
 - headings: stronger before-space, smaller after-space, no leading space at top of page
 - tables and figures: object spacing before and after
 - links: paragraph-like spacing after
+- code blocks: object spacing before and after (`codeBefore`/`codeAfter`)
 
 Override per block with `marginTop` / `marginBottom`. Override globally with `page.spacing`.
 

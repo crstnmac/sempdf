@@ -9,7 +9,7 @@ import {
   type ParsedPdfMetadata,
 } from "./parser.js";
 import { parseImage } from "./internal/image.js";
-import { layoutTextBlock, measureTextWidth } from "./internal/text-layout.js";
+import { layoutTextBlock, measureTextWidth, positionTextRuns } from "./internal/text-layout.js";
 import {
   breakInlineLines,
   placeInlineLine,
@@ -36,6 +36,7 @@ import {
   renderTemplateBlocksToFlow,
   renderTemplateDocument,
 } from "./internal/template-render.js";
+import { htmlToBlocks, type HtmlToBlocksOptions } from "./internal/html-blocks.js";
 import {
   addAnnotationStructureNode,
   addFlowTextBlockToPage,
@@ -53,6 +54,7 @@ import {
   placementBoundingBox,
   pushPositionedTextRuns,
   pushInlineDecorations,
+  pushInlineHighlights,
   pushTextHighlights,
   pushTextDecorations,
   radioGroupBoundingBox,
@@ -161,6 +163,7 @@ import type {
   FlowSpacingScale,
   FlowTableOptions,
   FlowTextFieldOptions,
+  FlowCodeOptions,
   FlowRichTextOptions,
   FlowTextOptions,
   InlineTextRun,
@@ -217,6 +220,7 @@ import type {
   UriLinkOptions,
   XmpMetadataInput,
 } from "./types.js";
+import { hex } from "./types.js";
 
 import type {
   CheckBoxAnnotation,
@@ -1328,7 +1332,7 @@ interface FlowState {
 }
 
 type HeadingLevelKey = 1 | 2 | 3 | 4 | 5 | 6;
-type FlowBlockKind = "paragraph" | "heading" | "table" | "image" | "link";
+type FlowBlockKind = "paragraph" | "heading" | "table" | "image" | "link" | "code";
 
 function computeBlockX(
   baseX: number,
@@ -1341,6 +1345,238 @@ function computeBlockX(
   if (align === "center") return startX + (innerWidth - blockWidth) / 2;
   if (align === "right") return startX + (innerWidth - blockWidth);
   return startX;
+}
+
+/** GitHub-like default palette for code blocks. */
+const CODE_DEFAULT_BACKGROUND = hex("#f6f8fa");
+const CODE_DEFAULT_BORDER = hex("#d0d7de");
+const CODE_DEFAULT_TEXT = hex("#1f2328");
+const CODE_DEFAULT_GUTTER = hex("#8c959f");
+
+/** Fraction of the font size treated as the ascent when centering code lines. */
+const CODE_ASCENT_RATIO = 0.8;
+
+interface ResolvedCodeStyle {
+  readonly fontSize: number;
+  readonly lineHeight: number;
+  readonly padding: number;
+  readonly tabSize: number;
+  readonly wrap: boolean;
+  readonly lineNumbers: boolean;
+  readonly firstLineNumber: number;
+  readonly gutterGap: number;
+  readonly borderWidth: number;
+  readonly background: ColorInput | undefined;
+  readonly borderColor: ColorInput | undefined;
+  readonly color: ColorInput;
+  readonly lineNumberColor: ColorInput;
+  readonly tag: "Code" | "P" | "Artifact";
+  readonly highlight: readonly import("./types.js").CodeHighlightRule[];
+}
+
+function resolveCodeStyle(options: FlowCodeOptions): ResolvedCodeStyle {
+  const fontSize = options.fontSize ?? 9;
+  if (!Number.isFinite(fontSize) || fontSize <= 0) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_NUMBER,
+      `Code block fontSize must be a positive finite number, got ${fontSize}.`,
+      { fontSize },
+    );
+  }
+  const padding = options.padding ?? 8;
+  if (!Number.isFinite(padding) || padding < 0) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_NUMBER,
+      `Code block padding must be a finite non-negative number, got ${padding}.`,
+      { padding },
+    );
+  }
+  const tabSize = options.tabSize ?? 4;
+  if (!Number.isInteger(tabSize) || tabSize < 0) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_NUMBER,
+      `Code block tabSize must be a non-negative integer, got ${tabSize}.`,
+      { tabSize },
+    );
+  }
+  const lineHeight = options.lineHeight ?? Math.round(fontSize * 1.35 * 100) / 100;
+  if (!Number.isFinite(lineHeight) || lineHeight <= 0) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_NUMBER,
+      `Code block lineHeight must be a positive finite number, got ${lineHeight}.`,
+      { lineHeight },
+    );
+  }
+  const background = options.background === "none" ? undefined : options.background ?? CODE_DEFAULT_BACKGROUND;
+  const borderColor =
+    options.borderColor ?? (options.borderWidth !== undefined && options.borderWidth > 0 ? CODE_DEFAULT_BORDER : undefined);
+  return {
+    fontSize,
+    lineHeight,
+    padding,
+    tabSize,
+    wrap: options.wrap ?? true,
+    lineNumbers: options.lineNumbers ?? false,
+    firstLineNumber: options.firstLineNumber ?? 1,
+    gutterGap: options.gutterGap ?? 6,
+    borderWidth: borderColor === undefined ? 0 : options.borderWidth ?? 0.5,
+    background,
+    borderColor,
+    color: options.color ?? CODE_DEFAULT_TEXT,
+    lineNumberColor: options.lineNumberColor ?? CODE_DEFAULT_GUTTER,
+    tag: options.tag ?? "Code",
+    highlight: options.highlight ?? [],
+  };
+}
+
+/** One rendered line of a code block: text plus its source line number. */
+interface CodeVisualLine {
+  readonly text: string;
+  /** Source line number, or `undefined` for a soft-wrapped continuation line. */
+  readonly number: number | undefined;
+}
+
+/**
+ * Expands tabs, normalizes line endings, and soft-wraps each source line to
+ * `width`. Wrapping preserves the wrapped line's own indentation on its
+ * continuation lines and prefers breaking at a space; a token wider than the
+ * content width is split mid-token rather than overflowing.
+ */
+function layoutCodeLines(
+  source: string,
+  style: ResolvedCodeStyle,
+  width: number,
+  measure: (text: string) => number,
+): readonly CodeVisualLine[] {
+  const tab = " ".repeat(style.tabSize);
+  const sourceLines = source.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  const out: CodeVisualLine[] = [];
+  for (let index = 0; index < sourceLines.length; index += 1) {
+    const number = style.firstLineNumber + index;
+    const line = sourceLines[index]!.replace(/\t/g, tab);
+    if (line.length === 0) {
+      out.push({ text: "", number });
+      continue;
+    }
+    if (measure(line) <= width) {
+      out.push({ text: line, number });
+      continue;
+    }
+    if (!style.wrap) {
+      out.push({ text: clipCodeLine(line, width, measure), number });
+      continue;
+    }
+    const indent = line.slice(0, line.length - line.trimStart().length);
+    // A continuation indent wider than the content width would make no progress.
+    const hangingIndent = measure(indent) < width / 2 ? indent : "";
+    let rest = line;
+    let first = true;
+    while (rest.length > 0) {
+      const prefix = first ? "" : hangingIndent;
+      const room = Math.max(width - measure(prefix), 1);
+      const taken = takeCodeSegment(rest, room, measure);
+      out.push({ text: prefix + taken, number: first ? number : undefined });
+      rest = rest.slice(taken.length);
+      // Leading spaces of a continuation come from the hanging indent instead.
+      if (!first || hangingIndent.length > 0) rest = rest.replace(/^ +/, "");
+      first = false;
+      if (taken.length === 0) break;
+    }
+  }
+  return out;
+}
+
+/** Longest prefix of `line` that fits `width`, preferring a break at a space. */
+function takeCodeSegment(line: string, width: number, measure: (text: string) => number): string {
+  if (measure(line) <= width) return line;
+  let fits = 0;
+  for (let end = 1; end <= line.length; end += 1) {
+    if (measure(line.slice(0, end)) > width) break;
+    fits = end;
+  }
+  if (fits === 0) return line.slice(0, 1);
+  const lastSpace = line.lastIndexOf(" ", fits);
+  // Break after a space when one exists past the line's own indentation.
+  if (lastSpace > 0 && line.slice(0, lastSpace).trim().length > 0) {
+    return line.slice(0, lastSpace + 1);
+  }
+  return line.slice(0, fits);
+}
+
+/** Truncates a line to `width` when wrapping is disabled. */
+function clipCodeLine(line: string, width: number, measure: (text: string) => number): string {
+  let fits = 0;
+  for (let end = 1; end <= line.length; end += 1) {
+    if (measure(line.slice(0, end)) > width) break;
+    fits = end;
+  }
+  return line.slice(0, Math.max(fits, 1));
+}
+
+/** A contiguous span of a code line sharing one color and font. */
+interface CodeSpan {
+  readonly text: string;
+  readonly color: ColorInput | undefined;
+  readonly font: PdfFont | undefined;
+}
+
+/**
+ * Splits a rendered line into colored spans. Earlier rules win: a rule never
+ * re-colors characters already claimed by a rule before it.
+ */
+function highlightCodeLine(
+  line: string,
+  rules: readonly import("./types.js").CodeHighlightRule[],
+): readonly CodeSpan[] {
+  if (rules.length === 0 || line.length === 0) {
+    return [{ text: line, color: undefined, font: undefined }];
+  }
+  const owner = new Array<number>(line.length).fill(-1);
+  for (let ruleIndex = 0; ruleIndex < rules.length; ruleIndex += 1) {
+    const rule = rules[ruleIndex]!;
+    const pattern = codeHighlightRegExp(rule.pattern);
+    pattern.lastIndex = 0;
+    let match = pattern.exec(line);
+    while (match !== null) {
+      if (match[0].length === 0) {
+        pattern.lastIndex += 1;
+      } else {
+        for (let i = match.index; i < match.index + match[0].length; i += 1) {
+          if (owner[i] === -1) owner[i] = ruleIndex;
+        }
+      }
+      match = pattern.exec(line);
+    }
+  }
+  const spans: CodeSpan[] = [];
+  let start = 0;
+  for (let i = 1; i <= line.length; i += 1) {
+    if (i === line.length || owner[i] !== owner[start]) {
+      const ruleIndex = owner[start]!;
+      const rule = ruleIndex === -1 ? undefined : rules[ruleIndex];
+      spans.push({
+        text: line.slice(start, i),
+        color: rule?.color,
+        font: rule?.font,
+      });
+      start = i;
+    }
+  }
+  return spans;
+}
+
+const CODE_HIGHLIGHT_REGEXP_CACHE = new WeakMap<RegExp, RegExp>();
+
+function codeHighlightRegExp(pattern: RegExp | string): RegExp {
+  if (typeof pattern === "string") {
+    return new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
+  }
+  const cached = CODE_HIGHLIGHT_REGEXP_CACHE.get(pattern);
+  if (cached) return cached;
+  const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
+  const compiled = new RegExp(pattern.source, flags);
+  CODE_HIGHLIGHT_REGEXP_CACHE.set(pattern, compiled);
+  return compiled;
 }
 
 function groupPositionedRunsByLine(
@@ -1537,6 +1773,8 @@ function resolveDefaultSpacingBefore(
       return defaults.linkBefore;
     case "paragraph":
       return defaults.paragraphBefore;
+    case "code":
+      return defaults.codeBefore;
   }
 }
 
@@ -1556,6 +1794,8 @@ function resolveDefaultSpacingAfter(
       return defaults.linkAfter;
     case "paragraph":
       return defaults.paragraphAfter;
+    case "code":
+      return defaults.codeAfter;
   }
 }
 
@@ -1603,6 +1843,10 @@ interface RequiredFlowSpacingScale {
   linkBefore: number;
   /** Default spacing after link blocks. */
   linkAfter: number;
+  /** Default spacing before code blocks. */
+  codeBefore: number;
+  /** Default spacing after code blocks. */
+  codeAfter: number;
 }
 
 interface ResolvedBlockSpacing {
@@ -1699,6 +1943,8 @@ const STANDARD_FLOW_SPACING: RequiredFlowSpacingScale = {
   imageAfter: 12,
   linkBefore: 0,
   linkAfter: 8,
+  codeBefore: 6,
+  codeAfter: 14,
 };
 
 /**
@@ -1906,6 +2152,8 @@ export class PdfFlow {
         );
       case "richParagraph":
         return this.estimateRichParagraphHeight(block.runs, block.options ?? {});
+      case "code":
+        return this.estimateCodeHeight(block.code, block.options);
       case "table":
         return this.estimateTableHeight(block.rows, block.options);
       case "png":
@@ -1963,7 +2211,15 @@ export class PdfFlow {
       case "rect":
         return block.height + this.state.gap;
       case "list":
-        return this.estimateListHeight(block.items, { width: this.state.width, ...block.options });
+        return this.estimateListHeight(block.items, {
+          ...block.options,
+          width: block.options?.width ?? this.state.width,
+        });
+      case "html":
+        return htmlToBlocks(block.html, block.options).reduce(
+          (sum, child) => sum + this.estimate(child),
+          0,
+        );
       case "custom":
         return block.estimate(this);
       default:
@@ -2046,6 +2302,8 @@ export class PdfFlow {
         writingMode,
       };
       const placed = placeInlineLine(line, geometry, this.state.y, this.embeddedFonts);
+      // Highlight fills go down before the glyphs so the text paints over them.
+      pushInlineHighlights(this.page, placed.decorations);
       pushInlineDecorations(this.page, placed.decorations);
       // Walk the positioned runs, splitting them into contiguous link spans and
       // non-link spans. A link span's visible text and its annotation share one
@@ -2101,6 +2359,243 @@ export class PdfFlow {
     }
     this.state.y -= spacing.after;
     return this;
+  }
+
+  /**
+   * Converts an HTML fragment to blocks and renders them at the current flow
+   * cursor. A convenience wrapper over {@link htmlToBlocks} + {@link render}.
+   *
+   * For document-level rendering prefer an `html` template block (or
+   * `htmlToBlocks()` spread into your block list): those are expanded before
+   * pagination, so headings inside the HTML still feed the TOC and auto-outline.
+   *
+   * @param html The HTML to convert. Tag soup is tolerated.
+   * @param options Conversion and styling options.
+   *
+   * @returns This flow helper for chaining.
+   */
+  html(html: string, options: HtmlToBlocksOptions = {}): this {
+    return this.render(htmlToBlocks(html, options));
+  }
+
+  /**
+   * Adds a preformatted code block at the current flow cursor: monospaced text
+   * with leading whitespace and hard line breaks preserved, drawn on a
+   * background band.
+   *
+   * Long lines soft-wrap (continuation lines keep the wrapped line's
+   * indentation) unless `wrap: false` clips them. The block splits across pages
+   * and columns line-by-line, repeating the background band and padding on each
+   * fragment, so a block longer than a page is fine.
+   *
+   * @param source The code to render. Tabs expand to `tabSize` spaces.
+   * @param options Typography, background, gutter, and highlighting options.
+   * @param language Optional language name recorded as the structure element's expansion text.
+   *
+   * @returns This flow helper for chaining.
+   */
+  code(source: string, options: FlowCodeOptions = {}, language?: string): this {
+    validateText(source);
+    const style = resolveCodeStyle(options);
+    const spacing = this.resolveSpacing("code", options);
+    this.applyMarginTop(spacing.before);
+
+    const styled = resolveFontFamilyOptions(
+      {
+        font: options.font ?? "Courier",
+        ...(options.fallbackFonts ? { fallbackFonts: options.fallbackFonts } : {}),
+      },
+      this.fontFamilies,
+    );
+    // The marked-content tag must travel on every text op: the serializer only
+    // wraps (and only records an MCID for) text that carries one.
+    const textOptions = (
+      x: number,
+      y: number,
+      color: ColorInput,
+      tag: "Code" | "P" | "Artifact",
+      font?: PdfFont | undefined,
+    ): import("./internal/validation.js").NormalizedTextBaseOptions =>
+      normalizeTextBaseOptions({
+        x,
+        y,
+        font: font ?? styled.font,
+        ...(styled.fallbackFonts ? { fallbackFonts: styled.fallbackFonts } : {}),
+        fontSize: style.fontSize,
+        kerning: options.kerning ?? false,
+        color,
+        tag,
+      });
+    const measureBase = textOptions(0, 0, style.color, style.tag);
+    const measure = (text: string): number =>
+      text.length === 0 ? 0 : measureTextWidth(text, measureBase, this.embeddedFonts);
+
+    const blockAlign = options.blockAlign ?? "left";
+    const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
+    const blockWidth = Math.min(options.blockWidth ?? innerWidth, innerWidth);
+
+    const sourceLineCount = source.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").length;
+    const gutterWidth = style.lineNumbers
+      ? measure(String(style.firstLineNumber + sourceLineCount - 1)) + style.gutterGap
+      : 0;
+    const textWidth = Math.max(blockWidth - style.padding * 2 - gutterWidth, 1);
+    const lines = layoutCodeLines(source, style, textWidth, measure);
+    const overhead = style.padding * 2;
+    let index = 0;
+    while (index < lines.length) {
+      let capacity = Math.floor((this.remainingHeight - overhead) / style.lineHeight);
+      // Not even one line fits: move to a fresh region when one is available,
+      // otherwise overflow the current one rather than loop forever.
+      if (capacity < 1 && this.state.y < this.state.startY && this.advanceFlowRegion()) {
+        capacity = Math.floor((this.remainingHeight - overhead) / style.lineHeight);
+      }
+      capacity = Math.max(capacity, 1);
+
+      // A fragment that cannot be continued anywhere is kept whole and allowed
+      // to overflow the region: dropping code silently would be worse.
+      const remaining = lines.length - index;
+      const take = remaining > capacity && !this.canAdvanceRegion ? remaining : Math.min(capacity, remaining);
+      const bandLines = lines.slice(index, index + take);
+      const bandHeight = bandLines.length * style.lineHeight + overhead;
+      // Geometry is re-derived per fragment: a column or page advance moves the
+      // content edge (and may narrow the region).
+      const bandInnerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
+      const bandWidth = Math.min(blockWidth, bandInnerWidth);
+      const bandX = computeBlockX(this.state.x, spacing.left, bandInnerWidth, bandWidth, blockAlign);
+      const textX = bandX + style.padding + gutterWidth;
+      this.drawCodeBand(bandX, bandWidth, bandHeight, style);
+
+      const node =
+        style.tag === "Artifact"
+          ? undefined
+          : style.tag === "P"
+            ? createStructureNode(
+                this.page,
+                "P",
+                language === undefined ? undefined : { expansion: language },
+                this.parent,
+              )
+            : createStructureNode(
+                this.page,
+                "Code",
+                language === undefined ? undefined : { expansion: language },
+                createStructureNode(this.page, "P", undefined, this.parent),
+              );
+
+      let baseline = this.state.y - style.padding - style.fontSize * CODE_ASCENT_RATIO;
+      for (const line of bandLines) {
+        if (style.lineNumbers && line.number !== undefined) {
+          const label = String(line.number);
+          const numberX = textX - style.gutterGap - measure(label);
+          // Gutter numbers are decoration: artifacts, so they stay out of the
+          // reading order and are not spoken with the code.
+          this.pushCodeText(
+            label,
+            numberX,
+            baseline,
+            textOptions(numberX, baseline, style.lineNumberColor, "Artifact"),
+            undefined,
+          );
+        }
+        let x = textX;
+        for (const span of highlightCodeLine(line.text, style.highlight)) {
+          if (span.text.trim().length > 0) {
+            this.pushCodeText(
+              span.text,
+              x,
+              baseline,
+              textOptions(x, baseline, span.color ?? style.color, style.tag, span.font),
+              node,
+            );
+          }
+          x += measure(span.text);
+        }
+        baseline -= style.lineHeight;
+      }
+
+      this.state.y -= bandHeight;
+      index += bandLines.length;
+      if (index < lines.length && !this.advanceFlowRegion()) break;
+    }
+
+    this.state.y -= spacing.after;
+    return this;
+  }
+
+  /** Draws one code-block fragment's background and border band. */
+  private drawCodeBand(
+    x: number,
+    width: number,
+    height: number,
+    style: ResolvedCodeStyle,
+  ): void {
+    if (style.background === undefined && style.borderColor === undefined) return;
+    const paint =
+      style.background !== undefined && style.borderColor !== undefined
+        ? "fillStroke"
+        : style.background !== undefined
+          ? "fill"
+          : "stroke";
+    this.page.ops.push({
+      type: "path",
+      commands: [{ type: "rect", x, y: this.state.y - height, width, height }],
+      style: normalizePathStyle({
+        paint,
+        ...(style.background === undefined ? {} : { fill: { color: style.background } }),
+        ...(style.borderColor === undefined
+          ? {}
+          : { stroke: { color: style.borderColor, width: style.borderWidth } }),
+        tag: "Artifact",
+      }),
+    });
+  }
+
+  /** Places one already-positioned code span under `node` (or untagged). */
+  private pushCodeText(
+    text: string,
+    x: number,
+    y: number,
+    options: import("./internal/validation.js").NormalizedTextBaseOptions,
+    node: InternalStructureNode | undefined,
+  ): void {
+    pushPositionedTextRuns(
+      this.page,
+      positionTextRuns(text, { ...options, x, y }, this.embeddedFonts),
+      node?.id,
+    );
+  }
+
+  /** Estimates the height a code block consumes at the current flow position. */
+  private estimateCodeHeight(source: string, options: FlowCodeOptions = {}): number {
+    const style = resolveCodeStyle(options);
+    const spacing = this.resolveSpacing("code", options);
+    const styled = resolveFontFamilyOptions(
+      {
+        font: options.font ?? "Courier",
+        ...(options.fallbackFonts ? { fallbackFonts: options.fallbackFonts } : {}),
+      },
+      this.fontFamilies,
+    );
+    const measureBase = normalizeTextBaseOptions({
+      x: 0,
+      y: 0,
+      font: styled.font,
+      ...(styled.fallbackFonts ? { fallbackFonts: styled.fallbackFonts } : {}),
+      fontSize: style.fontSize,
+      kerning: options.kerning ?? false,
+      color: style.color,
+    });
+    const measure = (text: string): number =>
+      text.length === 0 ? 0 : measureTextWidth(text, measureBase, this.embeddedFonts);
+    const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
+    const blockWidth = Math.min(options.blockWidth ?? innerWidth, innerWidth);
+    const sourceLineCount = source.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").length;
+    const gutterWidth = style.lineNumbers
+      ? measure(String(style.firstLineNumber + sourceLineCount - 1)) + style.gutterGap
+      : 0;
+    const textWidth = Math.max(blockWidth - style.padding * 2 - gutterWidth, 1);
+    const lines = layoutCodeLines(source, style, textWidth, measure);
+    return spacing.before + lines.length * style.lineHeight + style.padding * 2 + spacing.after;
   }
 
   /**
@@ -2969,6 +3464,14 @@ export class PdfFlow {
     }
   }
 
+  /**
+   * Whether another column or overflow page is available to continue in.
+   * Unlike {@link advanceFlowRegion} this only reports; it moves nothing.
+   */
+  private get canAdvanceRegion(): boolean {
+    return this.state.columnIndex + 1 < this.state.columnCount || this.overflowHandler !== undefined;
+  }
+
   private advanceFlowRegion(): boolean {
     if (this.advanceColumn()) {
       return true;
@@ -2993,7 +3496,7 @@ export class PdfFlow {
    * @returns The result of the operation.
    */
   private resolveSpacing(
-    kind: "paragraph" | "table" | "image" | "link",
+    kind: "paragraph" | "table" | "image" | "link" | "code",
     options: FlowMarginOptions,
   ): ResolvedBlockSpacing;
   /**
@@ -7678,6 +8181,8 @@ function resolveFlowSpacing(options: FlowOptions): RequiredFlowSpacingScale {
       imageAfter: options.gap,
       linkBefore: 0,
       linkAfter: options.gap,
+      codeBefore: options.gap,
+      codeAfter: options.gap,
     };
   }
 
@@ -7709,6 +8214,9 @@ function resolveFlowSpacing(options: FlowOptions): RequiredFlowSpacingScale {
     linkBefore: spacing?.linkBefore ?? STANDARD_FLOW_SPACING.linkBefore,
     linkAfter:
       spacing?.linkAfter ?? gapFallback ?? STANDARD_FLOW_SPACING.linkAfter,
+    codeBefore: spacing?.codeBefore ?? STANDARD_FLOW_SPACING.codeBefore,
+    codeAfter:
+      spacing?.codeAfter ?? gapFallback ?? STANDARD_FLOW_SPACING.codeAfter,
   };
 }
 
