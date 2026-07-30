@@ -2,6 +2,47 @@
 
 All notable changes to `@sempdf/sempdf-pdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`htmlToBlocks()`, an `html` template block, and `flow.html()` — HTML to
+  PDF blocks.** Converts the HTML that CMS fields and rich-text editors emit
+  into template blocks: headings, paragraphs with inline runs, nested
+  ordered/unordered lists, tables (`th`/`scope`/`colspan`/`rowspan`/`caption`),
+  `pre` code blocks, blockquotes, rules, and images. Output is ordinary block
+  data, so it paginates, tags itself, feeds the TOC/auto-outline, and takes
+  stylesheets. `html` blocks are expanded before pagination, so headings inside
+  them still reach the TOC — including from `renderDocumentJson`, which lets
+  pure-JSON callers ship rich text.
+  Entity decoding covers named, decimal, hex, and double-encoded
+  (`&amp;mdash;`) references, exported on its own as `decodeHtmlEntities()`.
+  `normalizeText: "ascii"` (default) folds smart quotes, dashes, `&nbsp;`,
+  `&mdash;`, arrows, fractions, and currency symbols to ASCII so the built-in
+  ASCII-only fonts render converted content; `"none"` keeps the original
+  characters for embedded Unicode fonts. Untrusted input is handled by design:
+  scripts, styles, embeds, and form controls are dropped with their content,
+  link schemes are allow-listed (`javascript:` renders as plain text), and
+  malformed markup recovers instead of throwing.
+
+- **`code` template block and `flow.code()` — preformatted code blocks.**
+  Renders monospaced text with leading whitespace and hard line breaks kept
+  verbatim (paragraphs collapse both), on a background band that repeats on
+  every page or column the block spans, so a code listing longer than a page
+  paginates itself. Options cover typography, band fill/border/padding, tab
+  expansion, soft wrap with a hanging indent (or clipping), a line-number
+  gutter, and ordered regex highlight rules; `pattern` accepts a string so
+  rules stay JSON-serializable for `renderDocumentJson`. Tagged as a `Code`
+  element inside a `P` by default (`tag: "P"` or `"Artifact"` to change it).
+  Adds `codeBefore`/`codeAfter` to `FlowSpacingScale`.
+
+### Fixed
+
+- **A rich paragraph ignored its runs' `highlight` color.** `flow.richParagraph()`
+  (and so `richParagraph` blocks) pushed underline/strike decorations but never
+  the highlight fills, so a run with `highlight` rendered without its
+  background. The page-level rich-text API was unaffected.
+
 ## [2.1.5] - 2026-07-20
 
 ### Fixed

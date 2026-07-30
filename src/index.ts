@@ -18,6 +18,8 @@ export type {
   ShapedGlyph,
   TextShaper,
 } from "./internal/text-shaper.js";
+export { decodeHtmlEntities, htmlToBlocks } from "./internal/html-blocks.js";
+export type { HtmlImageResolution, HtmlToBlocksOptions } from "./internal/html-blocks.js";
 export { renderDocumentJson, renderDocumentJsonSync } from "./document-json.js";
 export type {
   BlockPosition,
@@ -70,6 +72,7 @@ export type {
   DocumentEncryptionAlgorithm,
   CurveToCommand,
   CmykColor,
+  CodeHighlightRule,
   ColorInput,
   NamedColor,
   DocumentEncryptionOptions,
@@ -99,6 +102,7 @@ export type {
   FlowImageOptions,
   FlowLinkOptions,
   FlowOptions,
+  FlowCodeOptions,
   FlowRichTextOptions,
   FlowSpacingScale,
   FlowTableOptions,
@@ -212,6 +216,8 @@ export type {
   TemplatePageNumberOptions,
   TemplatePageOptions,
   TemplateParagraphBlock,
+  TemplateCodeBlock,
+  TemplateHtmlBlock,
   TemplateRichParagraphBlock,
   ParagraphTextAnnotation,
   ParagraphHighlightAnnotation,

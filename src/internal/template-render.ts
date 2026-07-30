@@ -26,6 +26,7 @@ import type {
   TemplateCrossRefBlock,
   TemplateWatermarkOptions,
 } from '../types.js';
+import { expandHtmlBlocks, htmlToBlocks } from './html-blocks.js';
 import type { ResolvedPageSize } from './validation.js';
 
 interface ResolvedPageMargins {
@@ -114,6 +115,9 @@ export function renderTemplateDocument(
   options: TemplateDocumentOptions,
   metadata: Pick<TemplateRenderContext, 'title' | 'author'>,
 ): void {
+  // HTML blocks are expanded before anything else so the generated headings
+  // reach the TOC and auto-outline and each block paginates on its own.
+  options = { ...options, blocks: expandHtmlBlocks(options.blocks) };
   const strict = resolveStrictLayoutOptions(options.strictLayout);
   const pages: Array<{ pageNumber: number; page: PdfPage }> = [];
   let current = createTemplatePage(doc, options, 1);
@@ -214,12 +218,24 @@ export function renderTemplateDocument(
     }
 
     const estimatedHeight = estimateTemplateBlockHeight(block, current.flow, options.styles);
-    assertBlockFitsStrictLayout(strict, block, index, current, estimatedHeight);
+    // Code blocks paginate themselves line-by-line, so an oversized one is not
+    // a layout failure and must not be pushed to a fresh region it cannot fill.
+    const selfPaginates = block.type === 'code' && block.keepTogether !== true;
+    if (!selfPaginates) {
+      assertBlockFitsStrictLayout(strict, block, index, current, estimatedHeight);
+    }
     const keepWithNext = block.keepWithNext ?? block.type === 'heading';
-    const nextEstimatedHeight =
-      keepWithNext && options.blocks[index + 1] !== undefined
-        ? estimateTemplateBlockHeight(options.blocks[index + 1]!, current.flow, options.styles)
+    const next = options.blocks[index + 1];
+    let nextEstimatedHeight =
+      keepWithNext && next !== undefined
+        ? estimateTemplateBlockHeight(next, current.flow, options.styles)
         : 0;
+    // Keeping a heading with a self-paginating block means keeping it with that
+    // block's first fragment, not with all of it — otherwise a long code
+    // listing would push its own heading to a fresh region every time.
+    if (next !== undefined && next.type === 'code' && next.keepTogether !== true) {
+      nextEstimatedHeight = Math.min(nextEstimatedHeight, flowRegionCapacity(current) * 0.25);
+    }
     const balanceTarget = resolveColumnBalanceTarget(options.blocks, index, current, options.styles);
     // `keepTogether` forbids splitting a paragraph line-by-line across columns,
     // forcing it to be placed whole (breaking before it if it does not fit).
@@ -230,6 +246,7 @@ export function renderTemplateDocument(
 
     if (
       balanceTarget !== undefined &&
+      !selfPaginates &&
       current.flow.cursorY < current.startY &&
       current.startY - current.flow.cursorY + estimatedHeight + nextEstimatedHeight > balanceTarget
     ) {
@@ -239,7 +256,8 @@ export function renderTemplateDocument(
     if (
       current.flow.remainingHeight < estimatedHeight + nextEstimatedHeight &&
       current.flow.cursorY < current.startY &&
-      !canSplitTextAcrossColumn
+      !canSplitTextAcrossColumn &&
+      !(selfPaginates && estimatedHeight > flowRegionCapacity(current))
     ) {
       advanceToNextFlowRegion();
     }
@@ -1173,7 +1191,7 @@ export function renderTemplateBlocksToFlow(
   blocks: readonly TemplateBlock[],
   stylesheet?: TemplateStylesheet | undefined,
 ): void {
-  for (const block of blocks) {
+  for (const block of expandHtmlBlocks(blocks)) {
     renderTemplateBlockToFlow(flow, block, stylesheet);
   }
 }
@@ -1252,6 +1270,14 @@ function renderTemplateBlockToFlow(
       return;
     case 'richParagraph':
       flow.richParagraph(block.runs, block.options);
+      return;
+    case 'code':
+      flow.code(block.code, block.options ?? {}, block.language);
+      return;
+    case 'html':
+      // Normally expanded before rendering; handled here so a directly-passed
+      // html block still renders.
+      renderTemplateBlocksToFlow(flow, htmlToBlocks(block.html, block.options), stylesheet);
       return;
     case 'table':
       flow.table(block.rows, block.options);

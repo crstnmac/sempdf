@@ -55,7 +55,7 @@ interface PdfDocumentJson {
 }
 ```
 
-Block types, styles, and page options are identical to the [template API](./report-templates); see [Template Stylesheets](./template-stylesheets) for `styles`.
+Block types, styles, and page options are identical to the [template API](./report-templates); see [Template Stylesheets](./template-stylesheets) for `styles`. A `{ "type": "html", "html": "…" }` block converts an HTML fragment to blocks at render time, which is the way to ship rich text through pure JSON — see [HTML to PDF](./html-to-pdf).
 
 ## Fonts
 
@@ -217,6 +217,7 @@ The format covers the full declarative surface but not the callback-based or low
 - **Custom blocks** (`render(flow)` callbacks) — see [Custom Blocks](./custom-blocks).
 - **Digital signing** — `DocumentSignatureOptions.sign` is a callback; sign with the programmatic API (see [Digital Signatures](./digital-signatures)).
 - **`pageNumber.format`** callback — use footer tokens for numbering.
+- **`RegExp` highlight patterns** on `code` blocks — use the string form of `pattern` (matched literally), which is JSON-safe.
 - **Free imperative drawing** beyond positioned blocks — soft masks, blend modes, transparency groups, and arbitrary `PdfPage` graphics.
 
 For those, drop down to [`createDocument()`](./getting-started) and the page/flow APIs.
