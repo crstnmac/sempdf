@@ -1273,6 +1273,21 @@ export interface CodeHighlightRule {
 }
 
 /**
+ * Position of one fragment of a code block that was split across pages or
+ * columns, passed to the continuation-label callbacks.
+ */
+export interface CodeContinuationInfo {
+  /** Zero-based fragment index; 0 is the fragment that starts the block. */
+  readonly fragmentIndex: number;
+  /** Source line number of this fragment's first line. */
+  readonly firstLineNumber: number;
+  /** Source line number of this fragment's last line. */
+  readonly lastLineNumber: number;
+  /** Total number of source lines in the whole block. */
+  readonly totalLines: number;
+}
+
+/**
  * Options for placing a preformatted code block through the flow layout API.
  *
  * Unlike paragraphs, code blocks preserve leading whitespace and hard line
@@ -1318,6 +1333,37 @@ export interface FlowCodeOptions extends FlowBlockSpacingOptions {
   gutterGap?: number | undefined;
   /** Regex colouring rules applied to each rendered line. */
   highlight?: readonly CodeHighlightRule[] | undefined;
+  /**
+   * Note drawn at the top of every fragment after the first, marking it as the
+   * continuation of a block that started on an earlier page or column. Pass a
+   * string, or a function for line-aware text. Rendered as an artifact, so it is
+   * never read as code. Off by default.
+   *
+   * @example
+   * continuedLabel: ({ firstLineNumber }) => `… continued from line ${firstLineNumber - 1}`
+   */
+  continuedLabel?: string | ((info: CodeContinuationInfo) => string) | undefined;
+  /**
+   * Note drawn at the bottom of every fragment that carries on into the next
+   * page or column. Rendered as an artifact. Off by default.
+   *
+   * @example
+   * continuesLabel: "continues on next page →"
+   */
+  continuesLabel?: string | ((info: CodeContinuationInfo) => string) | undefined;
+  /** Font size for continuation notes. Defaults to `fontSize * 0.85`. */
+  continuationFontSize?: number | undefined;
+  /** Color for continuation notes. Defaults to `lineNumberColor`. */
+  continuationColor?: ColorInput | undefined;
+  /** Alignment of continuation notes within the band. Defaults to `"right"`. */
+  continuationAlign?: "left" | "right" | undefined;
+  /**
+   * Whether a bordered block leaves its border open where it was split — no rule
+   * along the bottom of a fragment that continues, none along the top of one
+   * that resumes — so the reader sees one listing rather than several boxes.
+   * Defaults to `true`.
+   */
+  openSplitEdges?: boolean | undefined;
   /**
    * Structure tagging. `"Code"` (default) emits a `P` wrapper containing a
    * `Code` element, `"P"` tags the fragment as a plain paragraph, and
