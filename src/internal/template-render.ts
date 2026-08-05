@@ -117,7 +117,7 @@ export function renderTemplateDocument(
 ): void {
   // HTML blocks are expanded before anything else so the generated headings
   // reach the TOC and auto-outline and each block paginates on its own.
-  options = { ...options, blocks: expandHtmlBlocks(options.blocks) };
+  options = { ...options, blocks: expandHtmlBlocks(options.blocks, doc.getDefaultCodeFont()) };
   const strict = resolveStrictLayoutOptions(options.strictLayout);
   const pages: Array<{ pageNumber: number; page: PdfPage }> = [];
   let current = createTemplatePage(doc, options, 1);
@@ -1199,7 +1199,7 @@ export function renderTemplateBlocksToFlow(
   blocks: readonly TemplateBlock[],
   stylesheet?: TemplateStylesheet | undefined,
 ): void {
-  for (const block of expandHtmlBlocks(blocks)) {
+  for (const block of expandHtmlBlocks(blocks, flow.getDefaultCodeFont())) {
     renderTemplateBlockToFlow(flow, block, stylesheet);
   }
 }
@@ -1285,7 +1285,7 @@ function renderTemplateBlockToFlow(
     case 'html':
       // Normally expanded before rendering; handled here so a directly-passed
       // html block still renders.
-      renderTemplateBlocksToFlow(flow, htmlToBlocks(block.html, block.options), stylesheet);
+      renderTemplateBlocksToFlow(flow, flow.htmlBlocks(block.html, block.options), stylesheet);
       return;
     case 'table':
       flow.table(block.rows, block.options);

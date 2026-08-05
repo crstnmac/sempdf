@@ -727,6 +727,30 @@ test("serializes PDF/UA-1 identification metadata and validates required tagging
   );
 });
 
+test("names the page and text that forced a built-in font compliance error", () => {
+  const doc = createDocument({ conformance: "pdfua-1", tagged: true, language: "en-US" });
+  doc.addPage({ size: "Letter" }).text("Intro paragraph", { x: 36, y: 720, tag: "P" });
+  doc.addPage({ size: "Letter" }).text("const answer = 42;", {
+    x: 36,
+    y: 720,
+    font: "Courier",
+    tag: "P"
+  });
+  doc.addPage({ size: "Letter" }).textField("email", { x: 36, y: 700, width: 120, height: 18 });
+
+  const issue = doc
+    .validateCompliance()
+    .find((candidate) => candidate.code === "PDFUA_EMBEDDED_FONTS_REQUIRED");
+  assert.ok(issue);
+  assert.deepEqual(issue.locations, [
+    { page: 1, kind: "text", font: "Helvetica", snippet: "Intro paragraph" },
+    { page: 2, kind: "text", font: "Courier", snippet: "const answer = 42;" },
+    { page: 3, kind: "annotation", annotation: "textField", name: "email" }
+  ]);
+  assert.match(issue.message, /Found at: page 1 · font "Helvetica" · "Intro paragraph"/);
+  assert.match(issue.message, /page 3 · textField "email"/);
+});
+
 test("reports tagged PDF accessibility warnings", () => {
   const doc = createDocument({ tagged: true });
   const page = doc.addPage();
