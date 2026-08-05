@@ -1203,19 +1203,28 @@ function numberAttribute(value: string | undefined): number | undefined {
  * generated run: `breakBefore`/`anchor`/`footnote` to its first block,
  * `breakAfter`/`keepWithNext` to its last, and `class`/`keepTogether` to all.
  */
-export function expandHtmlBlocks(blocks: readonly TemplateBlock[]): TemplateBlock[] {
+export function expandHtmlBlocks(
+  blocks: readonly TemplateBlock[],
+  codeFont?: PdfFont | undefined,
+): TemplateBlock[] {
   if (!blocks.some((block) => needsExpansion(block))) return blocks as TemplateBlock[];
   const out: TemplateBlock[] = [];
   for (const block of blocks) {
     if (block.type === 'section') {
-      out.push({ ...block, blocks: expandHtmlBlocks(block.blocks) });
+      out.push({ ...block, blocks: expandHtmlBlocks(block.blocks, codeFont) });
       continue;
     }
     if (block.type !== 'html') {
       out.push(block);
       continue;
     }
-    const converted = expandHtmlBlocks(htmlToBlocks(block.html, block.options));
+    // The document's code font stands in when the block does not name one, so
+    // inline `<code>` runs do not fall back to built-in Courier.
+    const blockOptions =
+      codeFont !== undefined && block.options?.codeFont === undefined
+        ? { ...block.options, codeFont }
+        : block.options;
+    const converted = expandHtmlBlocks(htmlToBlocks(block.html, blockOptions), codeFont);
     if (converted.length === 0) continue;
     const { class: className, keepTogether, breakBefore, breakAfter, anchor, footnote, keepWithNext } = block;
     out.push(

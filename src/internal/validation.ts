@@ -1,5 +1,5 @@
 import { PdfEngineError, PdfErrorCode } from "../errors.js";
-import type { AttachmentOptions, BmpImageOptions, BuiltInPageSize, CheckBoxOptions, ChoiceFieldMode, ChoiceFieldOptions, CustomPageSize, DocumentConformanceProfile, DocumentEncryptionAlgorithm, DocumentEncryptionOptions, DocumentInfo, DocumentPermissions, ExtGStateOptions, FieldActions, FillStyle, FontName, FreeTextAnnotationOptions, HighlightAnnotationOptions, JpegImageOptions, LineCap, LineJoin, ListItem, ListOptions, NoteAnnotationOptions, OutlineOptions, PageLabelOptions, PageLabelStyle, PageLinkOptions, PageSize, ParagraphTextAnnotation, PathCommand, PathStyle, PdfColor, PdfComplianceIssue, PdfContainerTag, PdfFigureStructureTag, PdfFont, PdfRoleMap, PdfStandardStructureTag, PdfStructureAttributeValue, PdfStructureOptions, PdfStructureTag, PdfTextStructureTag, PngImageOptions, PushButtonOptions, RadioGroupOptions, SignatureFieldOptions, SquigglyAnnotationOptions, StrikeOutAnnotationOptions, StrokeStyle, TableCell, TableCellBorders, TableCellBorderSide, TableHeaderScope, TableOptions, TextAlign, TextBlockOptions, TextDirection, TextFieldOptions, TextOptions, Transform, UnderlineAnnotationOptions, UriLinkOptions, VerticalAlign, ColorInput, XmpMetadataInput } from "../types.js";
+import type { AttachmentOptions, BmpImageOptions, BuiltInPageSize, CheckBoxOptions, ChoiceFieldMode, ChoiceFieldOptions, CustomPageSize, DocumentConformanceProfile, DocumentEncryptionAlgorithm, DocumentEncryptionOptions, DocumentInfo, DocumentPermissions, ExtGStateOptions, FieldActions, FillStyle, FontName, FreeTextAnnotationOptions, HighlightAnnotationOptions, JpegImageOptions, LineCap, LineJoin, ListItem, ListOptions, NoteAnnotationOptions, OutlineOptions, PageLabelOptions, PageLabelStyle, PageLinkOptions, PageSize, ParagraphTextAnnotation, PathCommand, PathStyle, PdfColor, PdfComplianceIssue, PdfComplianceLocation, PdfContainerTag, PdfFigureStructureTag, PdfFont, PdfRoleMap, PdfStandardStructureTag, PdfStructureAttributeValue, PdfStructureOptions, PdfStructureTag, PdfTextStructureTag, PngImageOptions, PushButtonOptions, RadioGroupOptions, SignatureFieldOptions, SquigglyAnnotationOptions, StrikeOutAnnotationOptions, StrokeStyle, TableCell, TableCellBorders, TableCellBorderSide, TableHeaderScope, TableOptions, TextAlign, TextBlockOptions, TextDirection, TextFieldOptions, TextOptions, Transform, UnderlineAnnotationOptions, UriLinkOptions, VerticalAlign, ColorInput, XmpMetadataInput } from "../types.js";
 import { PAGE_SIZES, gray, color as resolveColorName } from "../types.js";
 import type { InlineTextRun } from "../types.js";
 import type { NormalizedImageOptions, NormalizedPathStyle, NormalizedTextOptions } from "./ops.js";
@@ -153,6 +153,11 @@ export interface ComplianceCheckInput {
   conformance?: DocumentConformanceProfile | undefined;
   hasEncryption: boolean;
   usesBuiltInFonts: boolean;
+  /**
+   * Content that forced {@link ComplianceCheckInput.usesBuiltInFonts} to be
+   * true, used to point the caller at the offending page and text.
+   */
+  builtInFontUsages?: readonly PdfComplianceLocation[] | undefined;
   hasFigureWithoutAltText: boolean;
   hasTransparency: boolean;
   hasAttachments: boolean;
@@ -869,6 +874,46 @@ function isContainerStructureTag(tag: string): tag is PdfContainerTag {
     || tag === "Annot";
 }
 
+/** How many built-in font usages are named in a message before summarizing. */
+const BUILTIN_FONT_USAGE_REPORT_LIMIT = 3;
+
+function describeBuiltInFontUsage(location: PdfComplianceLocation): string {
+  const parts = [`page ${location.page}`];
+  if (location.kind === "annotation") {
+    const kind = location.annotation ?? "annotation";
+    parts.push(location.name !== undefined ? `${kind} "${location.name}"` : kind);
+  } else if (location.font !== undefined) {
+    parts.push(`font "${location.font}"`);
+  }
+  if (location.snippet !== undefined && location.snippet !== "") {
+    parts.push(JSON.stringify(location.snippet));
+  }
+  return parts.join(" · ");
+}
+
+/**
+ * Appends the offending pages and text snippets to a built-in font message so
+ * the caller can find the content without re-walking the document.
+ */
+function builtInFontIssue(
+  code: string,
+  message: string,
+  usages: readonly PdfComplianceLocation[] | undefined,
+): PdfComplianceIssue {
+  if (usages === undefined || usages.length === 0) {
+    return { code, severity: "error", message };
+  }
+  const named = usages.slice(0, BUILTIN_FONT_USAGE_REPORT_LIMIT);
+  const rest = usages.length - named.length;
+  const suffix = rest > 0 ? ` (+${rest} more)` : "";
+  return {
+    code,
+    severity: "error",
+    message: `${message} Found at: ${named.map(describeBuiltInFontUsage).join("; ")}${suffix}.`,
+    locations: usages,
+  };
+}
+
 export function collectComplianceIssues(input: ComplianceCheckInput): PdfComplianceIssue[] {
   const issues: PdfComplianceIssue[] = [];
 
@@ -905,11 +950,11 @@ export function collectComplianceIssues(input: ComplianceCheckInput): PdfComplia
       });
     }
     if (input.usesBuiltInFonts) {
-      issues.push({
-        code: "PDFA_EMBEDDED_FONTS_REQUIRED",
-        severity: "error",
-        message: `${profile} output requires embedded fonts for visible text.`
-      });
+      issues.push(builtInFontIssue(
+        "PDFA_EMBEDDED_FONTS_REQUIRED",
+        `${profile} output requires embedded fonts for visible text.`,
+        input.builtInFontUsages,
+      ));
     }
     // PDF/A-1b: no attachments. PDF/A-2b: only PDF/A files (we cannot verify, conservatively warn).
     // PDF/A-3b and PDF/A-4: arbitrary attachments allowed.
@@ -999,11 +1044,11 @@ export function collectComplianceIssues(input: ComplianceCheckInput): PdfComplia
       });
     }
     if (input.usesBuiltInFonts) {
-      issues.push({
-        code: "PDFUA_EMBEDDED_FONTS_REQUIRED",
-        severity: "error",
-        message: `${profile} output requires embedded fonts for visible text.`
-      });
+      issues.push(builtInFontIssue(
+        "PDFUA_EMBEDDED_FONTS_REQUIRED",
+        `${profile} output requires embedded fonts for visible text.`,
+        input.builtInFontUsages,
+      ));
     }
   }
 
@@ -1030,11 +1075,11 @@ export function collectComplianceIssues(input: ComplianceCheckInput): PdfComplia
       });
     }
     if (input.usesBuiltInFonts) {
-      issues.push({
-        code: "WTPDF_EMBEDDED_FONTS_REQUIRED",
-        severity: "error",
-        message: "WTPDF output requires embedded fonts for visible text."
-      });
+      issues.push(builtInFontIssue(
+        "WTPDF_EMBEDDED_FONTS_REQUIRED",
+        "WTPDF output requires embedded fonts for visible text.",
+        input.builtInFontUsages,
+      ));
     }
   }
 

@@ -195,6 +195,7 @@ import type {
   ImageOptions,
   PdfColor,
   PdfComplianceIssue,
+  PdfComplianceLocation,
   PdfContainerTag,
   PdfEmbeddedFont,
   PdfFont,
@@ -2072,6 +2073,41 @@ export class PdfFlow {
   ) {}
 
   /**
+   * Picks the font for code content: the per-call font, else the document's
+   * `codeFont` default, else its general `font` default, else built-in
+   * `Courier`. The prose font is only reached as a last resort before Courier
+   * so a document with embedded fonts does not silently emit a built-in one.
+   */
+  private resolveCodeFont(font: PdfFont | undefined): PdfFont {
+    return (
+      font ?? this.textDefaults?.codeFont ?? this.textDefaults?.font ?? "Courier"
+    );
+  }
+
+  /**
+   * The document's code font default, if any.
+   *
+   * @internal Used by the template renderer when expanding HTML blocks.
+   */
+  getDefaultCodeFont(): PdfFont | undefined {
+    return this.textDefaults?.codeFont ?? this.textDefaults?.font;
+  }
+
+  /**
+   * Expands an HTML fragment into template blocks with the document's code
+   * font applied to inline `<code>`/`<kbd>`/`<samp>` runs.
+   *
+   * @internal
+   */
+  htmlBlocks(html: string, options: HtmlToBlocksOptions = {}): TemplateBlock[] {
+    const codeFont = options.codeFont ?? this.getDefaultCodeFont();
+    return htmlToBlocks(
+      html,
+      codeFont !== undefined ? { ...options, codeFont } : options,
+    );
+  }
+
+  /**
    * Merges document text defaults (lowest priority), flow-configured defaults,
    * and per-call options (highest priority), then resolves a registered font
    * family to a concrete face. Built-in `bold`/`italic` variants are resolved
@@ -2320,7 +2356,7 @@ export class PdfFlow {
           width: block.options?.width ?? this.state.width,
         });
       case "html":
-        return htmlToBlocks(block.html, block.options).reduce(
+        return this.htmlBlocks(block.html, block.options).reduce(
           (sum, child) => sum + this.estimate(child),
           0,
         );
@@ -2480,7 +2516,7 @@ export class PdfFlow {
    * @returns This flow helper for chaining.
    */
   html(html: string, options: HtmlToBlocksOptions = {}): this {
-    return this.render(htmlToBlocks(html, options));
+    return this.render(this.htmlBlocks(html, options));
   }
 
   /**
@@ -2511,7 +2547,7 @@ export class PdfFlow {
 
     const styled = resolveFontFamilyOptions(
       {
-        font: options.font ?? "Courier",
+        font: this.resolveCodeFont(options.font),
         ...(options.fallbackFonts ? { fallbackFonts: options.fallbackFonts } : {}),
       },
       this.fontFamilies,
@@ -2782,7 +2818,7 @@ export class PdfFlow {
     const spacing = this.resolveSpacing("code", options);
     const styled = resolveFontFamilyOptions(
       {
-        font: options.font ?? "Courier",
+        font: this.resolveCodeFont(options.font),
         ...(options.fallbackFonts ? { fallbackFonts: options.fallbackFonts } : {}),
       },
       this.fontFamilies,
@@ -5752,6 +5788,17 @@ export class PdfDocument {
   /** Document-wide text defaults applied to text APIs when options are omitted. */
   private readonly textDefaults?: TextDefaults | undefined;
 
+  /**
+   * Font used for code content when a call omits it: the `codeFont` default,
+   * else the general `font` default. Undefined leaves the built-in `Courier`
+   * fallback in place.
+   *
+   * @internal Used by the template renderer when expanding HTML blocks.
+   */
+  getDefaultCodeFont(): PdfFont | undefined {
+    return this.textDefaults?.codeFont ?? this.textDefaults?.font;
+  }
+
   /** Document-wide default styling for page shape helpers. */
   private readonly shapeDefaults?: ShapeStyle | undefined;
 
@@ -8585,13 +8632,15 @@ function buildComplianceCheckInput(
   hasAttachments: boolean,
   xmpMetadata?: string | undefined,
 ): ComplianceCheckInput {
+  const builtInFontUsages = collectBuiltInFontUsages(pages);
   return {
     tagged: accessibility.tagged || hasTaggedPageContent(pages),
     language: accessibility.language,
     conformance: accessibility.conformance,
     hasEncryption,
     hasAttachments,
-    usesBuiltInFonts: usesBuiltInFonts(pages),
+    usesBuiltInFonts: builtInFontUsages.length > 0,
+    builtInFontUsages,
     hasFigureWithoutAltText: hasTaggedFiguresWithoutAltText(pages),
     hasTransparency: hasTransparentImageContent(pages),
     xmpMetadata,
@@ -8638,13 +8687,15 @@ function validateEditableCompliance(
     }
   }
 
+  const builtInFontUsages = collectBuiltInFontUsages(mutatedPages);
   const issues = collectComplianceIssues({
     tagged: tagged || hasTaggedPageContent(mutatedPages),
     language: base.getLanguage(),
     conformance,
     hasEncryption: base.getEncryptionContext() !== undefined,
     hasAttachments: base.listAttachments().length > 0,
-    usesBuiltInFonts: usesBuiltInFonts(mutatedPages),
+    usesBuiltInFonts: builtInFontUsages.length > 0,
+    builtInFontUsages,
     hasFigureWithoutAltText: hasTaggedFiguresWithoutAltText(mutatedPages),
     hasTransparency: hasTransparentImageContent(mutatedPages),
   });
@@ -8675,20 +8726,65 @@ function hasTaggedPageContent(pages: readonly InternalPageModel[]): boolean {
   );
 }
 
-function usesBuiltInFonts(pages: readonly InternalPageModel[]): boolean {
-  return pages.some(
-    (page) =>
-      page.ops.some(
-        (op) => op.type === "text" && typeof op.options.font === "string",
-      ) ||
-      page.annotations.some(
-        (annotation) =>
-          annotation.type === "textField" ||
-          annotation.type === "choiceField" ||
-          annotation.type === "freeText" ||
-          annotation.type === "pushButton",
-      ),
-  );
+/** Cap on collected usages so a whole document of Helvetica stays reportable. */
+const BUILTIN_FONT_USAGE_LIMIT = 25;
+
+/** Characters of offending text kept for the diagnostic snippet. */
+const BUILTIN_FONT_SNIPPET_LENGTH = 60;
+
+function builtInFontSnippet(text: string): string {
+  const collapsed = text.replace(/\s+/g, " ").trim();
+  return collapsed.length > BUILTIN_FONT_SNIPPET_LENGTH
+    ? `${collapsed.slice(0, BUILTIN_FONT_SNIPPET_LENGTH)}…`
+    : collapsed;
+}
+
+/**
+ * Lists the text ops and annotations that draw with a built-in (non-embedded)
+ * font, so compliance errors can name the page and content at fault.
+ */
+function collectBuiltInFontUsages(
+  pages: readonly InternalPageModel[],
+): PdfComplianceLocation[] {
+  const usages: PdfComplianceLocation[] = [];
+  for (const [index, page] of pages.entries()) {
+    const pageNumber = index + 1;
+    for (const op of page.ops) {
+      if (usages.length >= BUILTIN_FONT_USAGE_LIMIT) {
+        return usages;
+      }
+      if (op.type !== "text" || typeof op.options.font !== "string") {
+        continue;
+      }
+      const snippet = builtInFontSnippet(op.text);
+      usages.push({
+        page: pageNumber,
+        kind: "text",
+        font: op.options.font,
+        ...(snippet !== "" ? { snippet } : {}),
+      });
+    }
+    for (const annotation of page.annotations) {
+      if (usages.length >= BUILTIN_FONT_USAGE_LIMIT) {
+        return usages;
+      }
+      if (
+        annotation.type !== "textField" &&
+        annotation.type !== "choiceField" &&
+        annotation.type !== "freeText" &&
+        annotation.type !== "pushButton"
+      ) {
+        continue;
+      }
+      usages.push({
+        page: pageNumber,
+        kind: "annotation",
+        annotation: annotation.type,
+        ...(annotation.type !== "freeText" ? { name: annotation.name } : {}),
+      });
+    }
+  }
+  return usages;
 }
 
 function hasTaggedFiguresWithoutAltText(

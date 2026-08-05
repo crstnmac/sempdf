@@ -164,6 +164,7 @@ export type {
   PngImageOptions,
   PdfColor,
   PdfComplianceIssue,
+  PdfComplianceLocation,
   PdfContainerTag,
   PdfEmbeddedFont,
   PdfFigureStructureTag,

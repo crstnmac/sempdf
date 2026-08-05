@@ -357,6 +357,25 @@ export interface PdfStructureOptions {
 }
 
 /**
+ * Where a compliance issue was found, so the offending content can be located
+ * in the source document.
+ */
+export interface PdfComplianceLocation {
+  /** 1-based page number holding the offending content. */
+  page: number;
+  /** Whether the content came from a text operation or an annotation. */
+  kind: "text" | "annotation";
+  /** Built-in font name in use, when the issue is font-related. */
+  font?: string | undefined;
+  /** Annotation type, for annotation locations. */
+  annotation?: string | undefined;
+  /** Form field name, when the annotation is a named field. */
+  name?: string | undefined;
+  /** Leading characters of the offending text, truncated for readability. */
+  snippet?: string | undefined;
+}
+
+/**
  * Compliance validation issue returned by document validation.
  */
 export interface PdfComplianceIssue {
@@ -366,6 +385,11 @@ export interface PdfComplianceIssue {
   severity: "error" | "warning";
   /** Human-readable diagnostic message. */
   message: string;
+  /**
+   * Places in the document that triggered the issue, when the check can
+   * attribute it to specific content. Capped at a handful of entries.
+   */
+  locations?: readonly PdfComplianceLocation[] | undefined;
 }
 
 /**
@@ -433,6 +457,13 @@ export interface DocumentSignatureOptions {
 export interface TextDefaults {
   /** Default font (built-in name, embedded handle, or registered family name). */
   font?: PdfFont | undefined;
+  /**
+   * Default font for code blocks and inline `<code>` runs. Falls back to
+   * {@link TextDefaults.font}, then to the built-in `Courier`. Set this to an
+   * embedded monospaced family when the document must avoid built-in fonts
+   * (PDF/A, PDF/UA, WTPDF) but `font` is proportional.
+   */
+  codeFont?: PdfFont | undefined;
   /** Default bold flag. */
   bold?: boolean | undefined;
   /** Default italic flag. */

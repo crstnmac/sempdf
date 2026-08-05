@@ -74,6 +74,13 @@ const fonts = await registerBundledFonts(doc);
 doc.addPage().text("Accessible heading", { x: 56, y: 760, font: fonts.sans, bold: true });
 ```
 
+Code content resolves its own default: `defaults.codeFont`, else `defaults.font`, else built-in `Courier`. Set `codeFont` to a monospaced family so code blocks and inline `<code>` runs stay embedded under PDF/A and PDF/UA:
+
+```ts
+const doc = createDocument({ defaults: { font: "Liberation Sans", codeFont: "Liberation Mono" } });
+await registerBundledFonts(doc);
+```
+
 `fonts` is `{ sans, serif, mono }` — the **Liberation Sans/Serif/Mono** families (SIL OFL 1.1). They are **metric-compatible** with Helvetica/Times/Courier (and Arial/Times New Roman/Courier New), so swapping a built-in font for the bundled one embeds cleanly **without reflowing** your layout. Each family resolves `bold`/`italic`/`boldItalic` by flag, exactly like a font you register yourself.
 
 The fonts ship in the package under `fonts/liberation/`. They are OFL-licensed (redistributable, embeddable); the license travels with them. If you build from source, fetch them once with:

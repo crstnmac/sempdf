@@ -2,6 +2,31 @@
 
 All notable changes to `@sempdf/sempdf-pdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.5.0] - 2026-08-05
+
+### Added
+
+- **Compliance errors name the offending page and text.** A built-in font
+  error under `pdfua-*`/`pdfa-*`/`wtpdf` said only that embedded fonts were
+  required, leaving the offending content to be hunted by hand. The message now
+  appends the first three offenders (`page 2 · font "Courier" · "const answer
+  = 42;"`) and the issue carries a `locations` array
+  (`PdfComplianceLocation[]`: 1-based `page`, `kind`, `font`, `annotation`,
+  `name`, `snippet`) with up to 25 entries, on both `validateCompliance()` and
+  the `INVALID_COMPLIANCE` error's `details.issues`.
+- **`defaults.codeFont`.** Code content resolves its font as per-call `font` →
+  `defaults.codeFont` → `defaults.font` → built-in `Courier`, covering
+  `flow.code()`, `code` template blocks, and inline `<code>`/`<kbd>`/`<samp>`
+  runs from HTML. Point it at an embedded monospaced family (e.g. the bundled
+  Liberation Mono) to keep listings out of the built-in-font compliance error.
+
+### Changed
+
+- **Code blocks no longer hardcode built-in `Courier`.** A document whose
+  `defaults.font` is embedded previously still emitted Courier for every code
+  block, silently failing PDF/UA and PDF/A. Set `defaults.codeFont` to keep a
+  monospaced face; documents that set neither default are unaffected.
+
 ## [2.4.0] - 2026-07-30
 
 ### Added

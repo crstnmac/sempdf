@@ -282,7 +282,7 @@ Each item follows the `ListItem` format: `{ text: string, children?: ListItem[] 
 }
 ```
 
-Defaults: `Courier` at 9pt on a `#f6f8fa` band with 8pt padding, tabs expanded to 4 spaces, and lines wider than the column soft-wrapped onto continuation lines that keep the wrapped line's own indentation.
+Defaults: the document's `defaults.codeFont` (else `defaults.font`, else built-in `Courier`) at 9pt on a `#f6f8fa` band with 8pt padding, tabs expanded to 4 spaces, and lines wider than the column soft-wrapped onto continuation lines that keep the wrapped line's own indentation.
 
 The source lives in the block's `code` field and must be a string — anything else throws `PdfEngineError` (`INVALID_TEXT`) naming the field. An empty or whitespace-only source renders nothing and takes no vertical space, so a blank field in your data is safe to pass through.
 
@@ -341,7 +341,21 @@ const fonts = await registerBundledFonts(doc)
 { type: "code", code: src, options: { font: fonts.mono } }
 ```
 
-Accessibility notes: the code text is real marked content inside the `Code` element, while the background band and the line-number gutter are emitted as artifacts, so assistive tech reads the code without the decoration. Indentation is kept as real spaces inside each line, so copied text keeps its shape. For `pdfua-1`/`pdfa-*` output, pass an embedded monospaced font (e.g. the bundled Liberation Mono) as `font` — the built-in `Courier` is not embeddable.
+To set it once for every code block and inline `<code>` run, use the document-level default instead of repeating `font` per block:
+
+```ts
+const doc = createDocument({
+  conformance: "pdfua-1",
+  tagged: true,
+  language: "en-US",
+  defaults: { font: "Liberation Sans", codeFont: "Liberation Mono" },
+});
+await registerBundledFonts(doc); // registers those two family names
+```
+
+`codeFont` falls back to `defaults.font` and only then to built-in `Courier`, so a document with an embedded default font never silently emits Courier.
+
+Accessibility notes: the code text is real marked content inside the `Code` element, while the background band and the line-number gutter are emitted as artifacts, so assistive tech reads the code without the decoration. Indentation is kept as real spaces inside each line, so copied text keeps its shape. For `pdfua-1`/`pdfa-*` output, pass an embedded monospaced font (e.g. the bundled Liberation Mono) as `font`, or set `defaults.codeFont` once on the document — the built-in `Courier` is not embeddable.
 
 ## Custom Blocks
 

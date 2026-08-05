@@ -407,3 +407,44 @@ test("fragments on one page share a single Code element", () => {
   // Two column fragments, one page: one Code element, not two.
   assert.equal([...raw.matchAll(/\/S \/Code/g)].length, 1);
 });
+
+test("code blocks fall back to the document code font before built-in Courier", () => {
+  const codeFontOf = (defaults: Record<string, unknown>, options?: Record<string, unknown>): string[] => {
+    const doc = createDocument({
+      conformance: "pdfua-1",
+      tagged: true,
+      language: "en-US",
+      defaults,
+    } as never);
+    doc.addPage().flow().code("const answer = 42;", options as never);
+    const issue = doc
+      .validateCompliance()
+      .find((candidate) => candidate.code === "PDFUA_EMBEDDED_FONTS_REQUIRED");
+    return [...new Set((issue?.locations ?? []).map((location) => location.font ?? ""))];
+  };
+
+  assert.deepEqual(codeFontOf({}), ["Courier"]);
+  assert.deepEqual(codeFontOf({ font: "Times-Roman" }), ["Times-Roman"]);
+  assert.deepEqual(codeFontOf({ font: "Times-Roman", codeFont: "Courier-Bold" }), ["Courier-Bold"]);
+  assert.deepEqual(
+    codeFontOf({ font: "Times-Roman", codeFont: "Courier-Bold" }, { font: "Helvetica" }),
+    ["Helvetica"],
+  );
+});
+
+test("inline HTML code runs use the document code font", () => {
+  const doc = createDocument({
+    conformance: "pdfua-1",
+    tagged: true,
+    language: "en-US",
+    defaults: { font: "Times-Roman", codeFont: "Courier-Bold" },
+  } as never);
+  doc.renderTemplate({
+    blocks: [{ type: "html", html: "<p>Call <code>render()</code> first.</p>" }],
+  });
+  const issue = doc
+    .validateCompliance()
+    .find((candidate) => candidate.code === "PDFUA_EMBEDDED_FONTS_REQUIRED");
+  const fonts = [...new Set((issue?.locations ?? []).map((location) => location.font))];
+  assert.deepEqual(fonts.sort(), ["Courier-Bold", "Times-Roman"]);
+});
