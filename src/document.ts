@@ -650,6 +650,7 @@ function resolveFontFamilyOptions<T extends StyleableTextOptions>(
 /** Table-level style inherited by per-cell font and rich-run resolution. */
 type TableCellBaseStyle = {
   font?: PdfFont | undefined;
+  fallbackFonts?: PdfFont[] | undefined;
   fontSize?: number | undefined;
   color?: ColorInput | undefined;
   kerning?: boolean | undefined;
@@ -690,6 +691,7 @@ function resolveTableCellContent(
         const blockColor = cell.color ?? base.color;
         const blockStyle: RichBlockStyle = {
           ...(blockFont !== undefined ? { font: blockFont } : {}),
+          ...(base.fallbackFonts !== undefined ? { fallbackFonts: base.fallbackFonts } : {}),
           ...(base.fontSize !== undefined ? { fontSize: base.fontSize } : {}),
           ...(blockColor !== undefined ? { color: blockColor } : {}),
           ...(base.kerning !== undefined ? { kerning: base.kerning } : {}),
@@ -723,6 +725,9 @@ function fillTextDefaults<T extends TextOptions | TextBlockOptions>(
   if (merged.color === undefined && defaults.color !== undefined) merged.color = defaults.color;
   if (merged.kerning === undefined && defaults.kerning !== undefined) merged.kerning = defaults.kerning;
   if (merged.direction === undefined && defaults.direction !== undefined) merged.direction = defaults.direction;
+  if (merged.fallbackFonts === undefined && defaults.fallbackFonts !== undefined) {
+    merged.fallbackFonts = [...defaults.fallbackFonts];
+  }
   return merged;
 }
 
@@ -741,6 +746,7 @@ function prepareTextOptions<T extends TextOptions | TextBlockOptions>(
 /** Block-level style defaults inherited by inline runs that omit them. */
 type RichBlockStyle = {
   font?: PdfFont | undefined;
+  fallbackFonts?: PdfFont[] | undefined;
   fontSize?: number | undefined;
   color?: ColorInput | undefined;
   kerning?: boolean | undefined;
@@ -769,6 +775,7 @@ function buildRichRunInputs(
       y: 0,
       direction: "ltr",
       ...(font !== undefined ? { font } : {}),
+      ...(block.fallbackFonts !== undefined ? { fallbackFonts: block.fallbackFonts } : {}),
       ...(run.bold !== undefined ? { bold: run.bold } : {}),
       ...(run.italic !== undefined ? { italic: run.italic } : {}),
       ...(run.underline !== undefined ? { underline: run.underline } : {}),
@@ -889,11 +896,17 @@ export class PdfStructureContainer {
     const baseOptions = {
       ...options,
       font: options.font ?? this.textDefaults?.font,
+      fallbackFonts: options.fallbackFonts ?? this.textDefaults?.fallbackFonts,
       fontSize: options.fontSize ?? this.textDefaults?.fontSize,
       color: options.color ?? this.textDefaults?.color,
       kerning: options.kerning ?? this.textDefaults?.kerning,
     };
-    const normalizedOptions = normalizeListOptions(normalizedItems, baseOptions);
+    // Registered family names in `font`/`fallbackFonts` resolve to concrete
+    // faces here; list layout takes fonts as-is.
+    const normalizedOptions = normalizeListOptions(
+      normalizedItems,
+      resolveFontFamilyOptions(baseOptions, this.fontFamilies),
+    );
     prepareListRichRuns(normalizedItems, baseOptions, this.fontFamilies, this.textDefaults);
     const listNode = createStructureNode(this.page, "L", undefined, this.node);
     layoutList(
@@ -916,6 +929,7 @@ export class PdfStructureContainer {
     const base: TableOptions = {
       ...options,
       font: options.font ?? this.textDefaults?.font,
+      fallbackFonts: options.fallbackFonts ?? this.textDefaults?.fallbackFonts,
       fontSize: options.fontSize ?? this.textDefaults?.fontSize,
       color: options.color ?? this.textDefaults?.color,
       kerning: options.kerning ?? this.textDefaults?.kerning,
@@ -2078,6 +2092,16 @@ export class PdfFlow {
    * `Courier`. The prose font is only reached as a last resort before Courier
    * so a document with embedded fonts does not silently emit a built-in one.
    */
+  /**
+   * Picks the fallback fonts for a call: the per-call list, else the flow's,
+   * else the document's `defaults.fallbackFonts`.
+   */
+  private resolveFallbackFonts(
+    fallbackFonts: PdfFont[] | undefined,
+  ): PdfFont[] | undefined {
+    return fallbackFonts ?? this.state.fallbackFonts ?? this.textDefaults?.fallbackFonts;
+  }
+
   private resolveCodeFont(font: PdfFont | undefined): PdfFont {
     return (
       font ?? this.textDefaults?.codeFont ?? this.textDefaults?.font ?? "Courier"
@@ -2409,8 +2433,10 @@ export class PdfFlow {
     const fontSize = options.fontSize ?? this.state.fontSize;
     const color = options.color ?? this.state.color;
     const kerning = options.kerning ?? this.state.kerning;
+    const fallbackFonts = options.fallbackFonts ?? this.state.fallbackFonts;
     const blockStyle: RichBlockStyle = {
       ...(font !== undefined ? { font } : {}),
+      ...(fallbackFonts !== undefined ? { fallbackFonts } : {}),
       ...(fontSize !== undefined ? { fontSize } : {}),
       ...(color !== undefined ? { color } : {}),
       ...(kerning !== undefined ? { kerning } : {}),
@@ -2545,10 +2571,11 @@ export class PdfFlow {
     const spacing = this.resolveSpacing("code", options);
     this.applyMarginTop(spacing.before);
 
+    const fallbackFonts = this.resolveFallbackFonts(options.fallbackFonts);
     const styled = resolveFontFamilyOptions(
       {
         font: this.resolveCodeFont(options.font),
-        ...(options.fallbackFonts ? { fallbackFonts: options.fallbackFonts } : {}),
+        ...(fallbackFonts ? { fallbackFonts } : {}),
       },
       this.fontFamilies,
     );
@@ -2816,10 +2843,11 @@ export class PdfFlow {
     if (source.trim().length === 0) return 0;
     const style = resolveCodeStyle(options);
     const spacing = this.resolveSpacing("code", options);
+    const fallbackFonts = this.resolveFallbackFonts(options.fallbackFonts);
     const styled = resolveFontFamilyOptions(
       {
         font: this.resolveCodeFont(options.font),
-        ...(options.fallbackFonts ? { fallbackFonts: options.fallbackFonts } : {}),
+        ...(fallbackFonts ? { fallbackFonts } : {}),
       },
       this.fontFamilies,
     );
@@ -2998,8 +3026,7 @@ export class PdfFlow {
     const spacing = this.resolveSpacing("link", options);
     this.applyMarginTop(spacing.before);
     const font = options.font ?? this.state.font ?? "Helvetica";
-    const fallbackFonts =
-      options.fallbackFonts ?? this.state.fallbackFonts ?? [];
+    const fallbackFonts = this.resolveFallbackFonts(options.fallbackFonts) ?? [];
     const direction = options.direction ?? this.state.direction ?? "ltr";
     const fontSize = options.fontSize ?? this.state.fontSize ?? 12;
     const lineHeight =
@@ -3110,6 +3137,8 @@ export class PdfFlow {
       normalizeTableRows(rows),
       {
         font: options.font ?? this.state.font ?? this.textDefaults?.font,
+        fallbackFonts:
+          options.fallbackFonts ?? this.state.fallbackFonts ?? this.textDefaults?.fallbackFonts,
         fontSize: options.fontSize ?? this.state.fontSize ?? this.textDefaults?.fontSize,
         color: options.color ?? this.state.color ?? this.textDefaults?.color,
         kerning: options.kerning ?? this.state.kerning ?? this.textDefaults?.kerning,
@@ -3161,6 +3190,8 @@ export class PdfFlow {
       normalizeTableRows(rows),
       {
         font: options.font ?? this.state.font ?? this.textDefaults?.font,
+        fallbackFonts:
+          options.fallbackFonts ?? this.state.fallbackFonts ?? this.textDefaults?.fallbackFonts,
         fontSize: options.fontSize ?? this.state.fontSize ?? this.textDefaults?.fontSize,
         color: options.color ?? this.state.color ?? this.textDefaults?.color,
         kerning: options.kerning ?? this.state.kerning ?? this.textDefaults?.kerning,
@@ -3313,6 +3344,9 @@ export class PdfFlow {
     const blockWidth = Math.min(options.blockWidth ?? innerWidth, innerWidth);
     const blockStyle: RichBlockStyle = {
       ...((options.font ?? this.state.font) !== undefined ? { font: options.font ?? this.state.font } : {}),
+      ...((options.fallbackFonts ?? this.state.fallbackFonts) !== undefined
+        ? { fallbackFonts: options.fallbackFonts ?? this.state.fallbackFonts }
+        : {}),
       ...((options.fontSize ?? this.state.fontSize) !== undefined ? { fontSize: options.fontSize ?? this.state.fontSize } : {}),
       ...((options.color ?? this.state.color) !== undefined ? { color: options.color ?? this.state.color } : {}),
       ...((options.kerning ?? this.state.kerning) !== undefined ? { kerning: options.kerning ?? this.state.kerning } : {}),
@@ -3374,6 +3408,8 @@ export class PdfFlow {
       normalizeTableRows(rows),
       {
         font: options.font ?? this.state.font ?? this.textDefaults?.font,
+        fallbackFonts:
+          options.fallbackFonts ?? this.state.fallbackFonts ?? this.textDefaults?.fallbackFonts,
         fontSize: options.fontSize ?? this.state.fontSize ?? this.textDefaults?.fontSize,
         color: options.color ?? this.state.color ?? this.textDefaults?.color,
         kerning: options.kerning ?? this.state.kerning ?? this.textDefaults?.kerning,
@@ -4699,11 +4735,17 @@ export class PdfPage {
     const baseOptions = {
       ...options,
       font: options.font ?? this.textDefaults?.font,
+      fallbackFonts: options.fallbackFonts ?? this.textDefaults?.fallbackFonts,
       fontSize: options.fontSize ?? this.textDefaults?.fontSize,
       color: options.color ?? this.textDefaults?.color,
       kerning: options.kerning ?? this.textDefaults?.kerning,
     };
-    const normalizedOptions = normalizeListOptions(normalizedItems, baseOptions);
+    // Registered family names in `font`/`fallbackFonts` resolve to concrete
+    // faces here; list layout takes fonts as-is.
+    const normalizedOptions = normalizeListOptions(
+      normalizedItems,
+      resolveFontFamilyOptions(baseOptions, this.fontFamilies),
+    );
     prepareListRichRuns(normalizedItems, baseOptions, this.fontFamilies, this.textDefaults);
     const listNode = createStructureNode(this.page, "L");
     layoutList(
@@ -4726,6 +4768,7 @@ export class PdfPage {
     const base: TableOptions = {
       ...options,
       font: options.font ?? this.textDefaults?.font,
+      fallbackFonts: options.fallbackFonts ?? this.textDefaults?.fallbackFonts,
       fontSize: options.fontSize ?? this.textDefaults?.fontSize,
       color: options.color ?? this.textDefaults?.color,
       kerning: options.kerning ?? this.textDefaults?.kerning,

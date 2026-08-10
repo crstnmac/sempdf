@@ -74,6 +74,17 @@ const fonts = await registerBundledFonts(doc);
 doc.addPage().text("Accessible heading", { x: 56, y: 760, font: fonts.sans, bold: true });
 ```
 
+`defaults.fallbackFonts` supplies the same list to every text path — paragraphs, headings, code, lists, tables, rich runs, and HTML — so a symbol font covering glyphs your body font lacks (dingbats like `✓`/`✕`, arrows, CJK) is configured once:
+
+```ts
+const doc = createDocument({
+  defaults: { font: "Liberation Sans", fallbackFonts: ["Symbols"] },
+});
+doc.registerFontFamily("Symbols", { regular: symbolFontBytes });
+```
+
+A per-call `fallbackFonts` replaces the default rather than extending it; pass `[]` to opt a single call out.
+
 Code content resolves its own default: `defaults.codeFont`, else `defaults.font`, else built-in `Courier`. Set `codeFont` to a monospaced family so code blocks and inline `<code>` runs stay embedded under PDF/A and PDF/UA:
 
 ```ts
