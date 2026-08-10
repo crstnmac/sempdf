@@ -2,6 +2,27 @@
 
 All notable changes to `@zeropdf/zeropdf-pdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.5.1] - 2026-08-10
+
+### Added
+
+- **`defaults.fallbackFonts`.** A document-wide fallback list, consulted by
+  every text path that omits its own — paragraphs, headings, code, lists,
+  tables, rich runs, and HTML — so a symbol font covering glyphs the body font
+  lacks (`✓`, `✕`, arrows, CJK) is configured once at `createDocument` instead
+  of on every call. Precedence is per-call → flow state → document default; a
+  per-call list replaces the default rather than extending it, and `[]` opts a
+  single call out. `RichTextOptions.fallbackFonts` is new too, so rich runs can
+  set the list at block level.
+
+### Fixed
+
+- **`page.list()` ignored registered font families.** A family name in the
+  list's `font` (or now `fallbackFonts`) reached layout unresolved instead of
+  being mapped to a concrete face, so it rendered with the fallback font or
+  threw `UNSUPPORTED_CHARACTER`. `page.list()` and `container.list()` now
+  resolve families like every other block; `flow.list()` was unaffected.
+
 ## [2.5.0] - 2026-08-05
 
 ### Added

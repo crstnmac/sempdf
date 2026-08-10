@@ -458,6 +458,13 @@ export interface TextDefaults {
   /** Default font (built-in name, embedded handle, or registered family name). */
   font?: PdfFont | undefined;
   /**
+   * Default fonts consulted, in order, for characters the primary font cannot
+   * encode. Used by every text path that omits its own `fallbackFonts` — a
+   * symbol font listed here covers glyphs (dingbats, arrows, CJK) missing from
+   * the body font without threading the option through every call.
+   */
+  fallbackFonts?: PdfFont[] | undefined;
+  /**
    * Default font for code blocks and inline `<code>` runs. Falls back to
    * {@link TextDefaults.font}, then to the built-in `Courier`. Set this to an
    * embedded monospaced family when the document must avoid built-in fonts
@@ -1082,6 +1089,8 @@ export interface RichTextOptions {
   writingMode?: "horizontal" | "vertical" | undefined;
   /** Default font for runs that omit one. */
   font?: PdfFont | undefined;
+  /** Fallback fonts for characters the run's font cannot encode. */
+  fallbackFonts?: PdfFont[] | undefined;
   /** Default font size for runs that omit one. */
   fontSize?: number | undefined;
   /** Default color for runs that omit one. */
