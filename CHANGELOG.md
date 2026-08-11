@@ -2,6 +2,26 @@
 
 All notable changes to `@crstnmac/zeropdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.8.1] - 2026-08-11
+
+### Changed
+
+- Simplified headings to one API: `heading()` now accepts plain text or rich
+  runs, replacing the redundant `headingWithReference()` method.
+- Consolidated artifact classification into the public content options and
+  removed internal renderer helpers from the published type declarations.
+
+### Fixed
+
+- Corrected tagged-PDF footnotes to emit nested reference markers, structured
+  note labels and content, unique note IDs, and preserved link annotations.
+- Corrected cross-reference structure so visible text and its annotation share
+  one accessible link hierarchy.
+- Serialized classified artifacts as valid marked-content property dictionaries,
+  including pagination header and footer subtypes for page numbers.
+- Added accessible names to substring links and prevented artifact-only rich
+  paragraphs from leaving empty structure elements.
+
 ## [1.8.0] - 2026-08-11
 
 ### Changed
