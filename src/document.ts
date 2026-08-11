@@ -718,6 +718,7 @@ function buildRichRunInputs(
       ...(color !== undefined ? { color } : {}),
       ...(kerning !== undefined ? { kerning } : {}),
       ...(block.tag !== undefined ? { tag: block.tag } : {}),
+      ...(run.tag !== undefined ? { tag: run.tag } : {}),
       ...(run.characterSpacing !== undefined ? { characterSpacing: run.characterSpacing } : {}),
       ...(run.rise !== undefined ? { rise: run.rise } : {}),
       ...(run.superscript !== undefined ? { superscript: run.superscript } : {}),
@@ -2415,8 +2416,24 @@ export class PdfFlow {
       while (index < placed.runs.length) {
         const url = placed.runLinks[index];
         if (url === undefined) {
-          pushPositionedTextRuns(this.page, [placed.runs[index]!], structureNode?.id);
-          index += 1;
+          const runTag = placed.runs[index]!.options.tag;
+          const start = index;
+          while (
+            index < placed.runs.length &&
+            placed.runLinks[index] === undefined &&
+            placed.runs[index]!.options.tag === runTag
+          ) {
+            index += 1;
+          }
+          const span = placed.runs.slice(start, index);
+          if (runTag === "Artifact") {
+            pushPositionedTextRuns(this.page, span);
+          } else if (runTag !== undefined && runTag !== tag) {
+            const runNode = createStructureNode(this.page, runTag, undefined, structureNode);
+            pushPositionedTextRuns(this.page, span, runNode.id);
+          } else {
+            pushPositionedTextRuns(this.page, span, structureNode?.id);
+          }
           continue;
         }
         const start = index;

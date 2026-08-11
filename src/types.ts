@@ -1007,6 +1007,8 @@ export interface TextBlockOptions {
 export interface InlineTextRun {
   /** Text content of this segment. */
   text: string;
+  /** Optional semantic structure tag for this run within its rich-text block. */
+  tag?: PdfTextStructureTag | "Artifact" | undefined;
   /** Font for this run (built-in name, embedded handle, or registered family name). */
   font?: PdfFont | undefined;
   /** Selects the bold variant of this run's font. See {@link TextOptions.bold}. */

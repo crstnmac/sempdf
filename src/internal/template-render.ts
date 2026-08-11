@@ -283,8 +283,24 @@ export function renderTemplateDocument(
         text: block.footnote,
         ...(templateFont ? { font: templateFont } : {}),
       });
-      // Append the marker to text-bearing blocks so the reference is visible.
-      if (block.type === 'heading' || block.type === 'paragraph') {
+      // Rich text lets the marker carry its own Reference structure element
+      // while remaining inline with the paragraph it annotates.
+      if (block.type === 'paragraph') {
+        const styledBlock = resolveBlockStyles(block, options.styles) as typeof block;
+        blockToRender = {
+          type: 'richParagraph',
+          runs: [
+            { text: block.text },
+            { text: marker, tag: 'Reference' },
+          ],
+          ...(styledBlock.options ? { options: styledBlock.options } : {}),
+        };
+      } else if (block.type === 'richParagraph') {
+        blockToRender = {
+          ...block,
+          runs: [...block.runs, { text: marker, tag: 'Reference' }],
+        };
+      } else if (block.type === 'heading') {
         blockToRender = { ...block, text: block.text + marker };
       }
     }
@@ -704,12 +720,21 @@ function renderPageFootnotes(footnotes: readonly FootnoteEntry[]): void {
     notes.forEach((note, index) => {
       const fromBottom = notes.length - 1 - index;
       const y = note.baseBottom + fromBottom * FOOTNOTE_LINE_HEIGHT + FOOTNOTE_LINE_HEIGHT * 0.25;
-      note.page.text(`${note.number}. ${note.text}`, {
+      const noteElement = note.page.structure('Note');
+      const label = `${note.number}.`;
+      noteElement.structure('Lbl').text(label, {
         x: note.x,
         y,
         fontSize: FOOTNOTE_FONT_SIZE,
         ...(note.font ? { font: note.font } : {}),
-        tag: 'Note',
+        tag: 'Span',
+      });
+      noteElement.structure('P').text(note.text, {
+        x: note.x + FOOTNOTE_FONT_SIZE * 1.5,
+        y,
+        fontSize: FOOTNOTE_FONT_SIZE,
+        ...(note.font ? { font: note.font } : {}),
+        tag: 'Span',
       });
     });
   }
