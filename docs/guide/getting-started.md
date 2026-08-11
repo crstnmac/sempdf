@@ -1,22 +1,22 @@
 # Getting Started
 
-The package is published to a private registry. Point the `@zeropdf` scope at it
+The package is published to a private registry. Point the `@crstnmac` scope at it
 once, in your project's `.npmrc` (public npm stays untouched for every other package):
 
 ```ini
-@zeropdf:registry=https://npm.zeropdf.net
+@crstnmac:registry=https://nodeproxy.criston.dev
 ```
 
 Then install in a TypeScript project:
 
 ```sh
-npm i @zeropdf/zeropdf-pdf
+npm i @crstnmac/zeropdf
 ```
 
 Create a document, add a page, write content, and serialize the result:
 
 ```ts
-import { createDocument, rgb } from "@zeropdf/zeropdf-pdf";
+import { createDocument, rgb } from "@crstnmac/zeropdf";
 
 const doc = createDocument({
   title: "Hello PDF",
@@ -48,21 +48,12 @@ const bytes = doc.toUint8Array();
 
 The library returns standard binary data, so you can write the bytes in Node.js, upload them, or create a `Blob` in the browser.
 
-::: tip Licensed deployments
-With a license key configured (`ZEROPDF_LICENSE_KEY`), prefer an **async**
-output method — `await doc.save(path)`, `toUint8ArrayAsync()`, `toBlobAsync()`,
-`toArrayBufferAsync()`, or `writeTo(sink)`. They authorize and meter the page
-batch automatically. The synchronous `toUint8Array()` shown above works under
-the dev bypass (`ZEROPDF_LICENSE_DEV=1`) or after an explicit `checkout()`. See
-[Licensing](./licensing).
-:::
-
 ## Convenience helpers
 
 A few options keep call sites short:
 
 ```ts
-import { createDocument, mm, rgb } from "@zeropdf/zeropdf-pdf";
+import { createDocument, mm, rgb } from "@crstnmac/zeropdf";
 
 // Document-wide text defaults: fill in font/size/color so calls stay terse.
 const doc = createDocument({
@@ -118,7 +109,7 @@ import {
   parseDocument,
   rgb,
   splitDocument
-} from "@zeropdf/zeropdf-pdf";
+} from "@crstnmac/zeropdf";
 ```
 
 ## Local examples

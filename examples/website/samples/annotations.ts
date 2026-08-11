@@ -1,4 +1,4 @@
-import { createDocument, hex } from "@zeropdf/zeropdf-pdf";
+import { createDocument, hex } from "@crstnmac/zeropdf";
 
 const doc = createDocument({
   language: "en-US",

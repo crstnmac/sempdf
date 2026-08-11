@@ -1,25 +1,25 @@
 # MCP Server
 
-`@zeropdf/zeropdf-pdf` ships an [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server that exposes PDF generation and manipulation as tools for AI assistants like Claude.
+`@crstnmac/zeropdf` ships an [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server that exposes PDF generation and manipulation as tools for AI assistants like Claude.
 
 ## Install
 
 The MCP package is published on a private npm registry. Add the scope to your `.npmrc`:
 
 ```ini
-@zeropdf:registry=https://npm.zeropdf.net
+@crstnmac:registry=https://nodeproxy.criston.dev
 ```
 
 Then register with Claude:
 
 ```bash
-claude mcp add zeropdf -- npx --registry=https://npm.zeropdf.net @zeropdf/zeropdf-pdf-mcp
+claude mcp add zeropdf -- npx --registry=https://nodeproxy.criston.dev @crstnmac/zeropdf-mcp
 ```
 
 Set a workspace directory to scope all file operations:
 
 ```bash
-claude mcp add zeropdf -- npx --registry=https://npm.zeropdf.net @zeropdf/zeropdf-pdf-mcp --env WORKSPACE_DIR=~/Documents/pdf-workspace
+claude mcp add zeropdf -- npx --registry=https://nodeproxy.criston.dev @crstnmac/zeropdf-mcp --env WORKSPACE_DIR=~/Documents/pdf-workspace
 ```
 
 ## Tools

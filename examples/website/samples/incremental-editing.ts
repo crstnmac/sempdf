@@ -1,4 +1,4 @@
-import { createDocument, editDocument } from "@zeropdf/zeropdf-pdf";
+import { createDocument, editDocument } from "@crstnmac/zeropdf";
 
 // Step 1: Create a base document with form fields.
 const baseDoc = createDocument({

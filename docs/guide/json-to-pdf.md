@@ -3,7 +3,7 @@
 `renderDocumentJson()` turns a single, fully serializable value into PDF bytes — no callbacks, no in-memory font or image handles. Everything the document needs (metadata, fonts, images, headers/footers, encryption, and absolute-positioned content) is described as plain JSON, so a document can come straight from a config file, an API request, or an LLM.
 
 ```ts
-import { renderDocumentJson } from "@zeropdf/zeropdf-pdf";
+import { renderDocumentJson } from "@crstnmac/zeropdf";
 
 const bytes = await renderDocumentJson({
   title: "Hello",
@@ -176,7 +176,7 @@ A document whose blocks are all positioned (no flow content) is valid; blank pag
 When every font and image source is inline `base64`, render without `await`:
 
 ```ts
-import { renderDocumentJsonSync } from "@zeropdf/zeropdf-pdf";
+import { renderDocumentJsonSync } from "@crstnmac/zeropdf";
 
 const bytes = renderDocumentJsonSync({
   blocks: [{ type: "paragraph", text: "No async assets here." }]
@@ -184,27 +184,6 @@ const bytes = renderDocumentJsonSync({
 ```
 
 `path`, `url`, and `google` sources require loading and throw `INVALID_DOCUMENT_JSON` in the sync variant — use `renderDocumentJson` for those.
-
-## Licensing
-
-`renderDocumentJson()` authorizes with the license server itself — the same
-zero-config auto-guard as everywhere else (`ZEROPDF_LICENSE_KEY` +
-`ZEROPDF_LICENSE_SERVER` in Node, or an installed licensing client in the
-browser); no extra code needed.
-
-`renderDocumentJsonSync()` **cannot** do this — like
-`PdfDocument.toUint8Array()`, it has no way to await the authorize round
-trip. Call `checkout()` first:
-
-```ts
-import { renderDocumentJsonSync } from "@zeropdf/zeropdf-pdf";
-import { checkout } from "@zeropdf/zeropdf-pdf/license-guard";
-
-await checkout(); // reserves a default batch of pages
-const bytes = renderDocumentJsonSync({ blocks: [...] });
-```
-
-See [Licensing and Usage Limits](./licensing) for the full model.
 
 ## Node and the browser
 

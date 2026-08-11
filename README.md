@@ -6,23 +6,23 @@ forms, tagged/PDF-UA structure, encryption, and signing — Node and browser fri
 
 ## Install
 
-The package is published to a private registry. Point the `@zeropdf` scope at it
+The package is published to a private registry. Point the `@crstnmac` scope at it
 once, in your `.npmrc` (public npm stays untouched for every other package):
 
 ```ini
-@zeropdf:registry=https://npm.zeropdf.net
+@crstnmac:registry=https://nodeproxy.criston.dev
 ```
 
 Then install:
 
 ```sh
-npm i @zeropdf/zeropdf-pdf
+npm i @crstnmac/zeropdf
 ```
 
 ## Quick Start
 
 ```ts
-import { createDocument, rgb } from "@zeropdf/zeropdf-pdf";
+import { createDocument, rgb } from "@crstnmac/zeropdf";
 
 const doc = createDocument({
   title: "Hello PDF",
@@ -48,13 +48,13 @@ const bytes = doc.toUint8Array();
 Register the MCP server with Claude for PDF generation and manipulation as tools:
 
 ```bash
-claude mcp add zeropdf -- npx --registry=https://npm.zeropdf.net @zeropdf/zeropdf-pdf-mcp
+claude mcp add zeropdf -- npx --registry=https://nodeproxy.criston.dev @crstnmac/zeropdf-mcp
 ```
 
 Optionally set a workspace directory for scoped file operations:
 
 ```bash
-claude mcp add zeropdf -- npx --registry=https://npm.zeropdf.net @zeropdf/zeropdf-pdf-mcp --env WORKSPACE_DIR=~/Documents/pdf-workspace
+claude mcp add zeropdf -- npx --registry=https://nodeproxy.criston.dev @crstnmac/zeropdf-mcp --env WORKSPACE_DIR=~/Documents/pdf-workspace
 ```
 
 Tools: `generate_pdf`, `extract_text`, `get_pdf_info`, `inspect_pdf`, `merge_pdfs`, `split_pdf`, `extract_pages`, `append_pages`, `validate_pdf2`.
@@ -68,13 +68,10 @@ npm run docs:dev      # work on the docs site locally
 npm run example:web   # browser playground at http://localhost:4173/
 ```
 
-## License
-
-The library is MIT-licensed (see [`LICENSE`](./LICENSE)).
+## Bundled fonts
 
 The bundled fonts in [`fonts/liberation/`](./fonts/liberation) — Liberation
-Sans, Serif, and Mono, used by `registerBundledFonts()` — are **not** covered by
-the MIT license. They are © Red Hat, Inc. and Google, distributed under the
+Sans, Serif, and Mono, used by `registerBundledFonts()` — are © Red Hat, Inc. and Google, distributed under the
 **SIL Open Font License 1.1** (see [`fonts/liberation/LICENSE`](./fonts/liberation/LICENSE)).
 The OFL permits bundling and embedding the fonts in software and documents; the
 fonts retain reserved names ("Liberation", "Arimo", "Tinos", "Cousine") and may

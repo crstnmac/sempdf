@@ -32,7 +32,7 @@ export interface ShapedGlyph {
  *
  * @example
  * ```ts
- * import { createDocument, TextShaper, ShapedGlyph } from "@zeropdf/zeropdf-pdf";
+ * import { createDocument, TextShaper, ShapedGlyph } from "@crstnmac/zeropdf";
  *
  * // Example custom shaper using harfbuzzjs:
  * //

@@ -1,4 +1,4 @@
-import { createDocument, rgb } from "@zeropdf/zeropdf-pdf";
+import { createDocument, rgb } from "@crstnmac/zeropdf";
 
 async function ttf(url: string): Promise<Uint8Array> {
   return new Uint8Array(await (await fetch(url)).arrayBuffer());
@@ -140,11 +140,11 @@ doc.renderTemplate({
         ],
         [
           { text: "Step 1", header: true, scope: "row" },
-          "npm config set @zeropdf:registry=https://npm.zeropdf.net",
+          "npm config set @crstnmac:registry=https://nodeproxy.criston.dev",
         ],
         [
           { text: "Step 2", header: true, scope: "row" },
-          "npm install @zeropdf/zeropdf-pdf",
+          "npm install @crstnmac/zeropdf",
         ],
       ],
       options: {

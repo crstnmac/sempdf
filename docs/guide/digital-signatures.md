@@ -30,7 +30,7 @@ Pass `signature` to `createDocument`. The signature is applied when you
 serialize.
 
 ```ts
-import { createDocument } from "@zeropdf/zeropdf-pdf";
+import { createDocument } from "@crstnmac/zeropdf";
 
 const signed = createDocument({
   signature: {
@@ -67,7 +67,7 @@ bytes are preserved and a new cross-reference section is written with `/Prev`
 pointing at the previous one. This keeps any earlier signatures valid.
 
 ```ts
-import { editDocument } from "@zeropdf/zeropdf-pdf";
+import { editDocument } from "@crstnmac/zeropdf";
 
 const editable = editDocument(existingPdfBytes);
 editable.sign({

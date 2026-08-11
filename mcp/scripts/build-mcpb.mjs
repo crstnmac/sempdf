@@ -39,7 +39,7 @@ run("npx", [
 console.log("• copying lib type declarations");
 // Concatenate the PdfDocumentJson types + referenced template types, shipped
 // under a non-".d.ts" name (mcpb pack strips *.d.ts from the bundle).
-const libSrc = join(root, "node_modules", "@zeropdf", "zeropdf-pdf", "dist", "src");
+const libSrc = join(root, "node_modules", "@crstnmac", "zeropdf", "dist", "src");
 const documentTypes =
   readFileSync(join(libSrc, "document-json.d.ts"), "utf8") +
   "\n\n/* ── Referenced template & option types ───────────────────── */\n\n" +

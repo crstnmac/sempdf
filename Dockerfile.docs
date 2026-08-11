@@ -9,7 +9,7 @@ WORKDIR /app
 # written inline for the `npm ci` layer only, then removed.
 COPY package*.json ./
 RUN --mount=type=secret,id=NPM_TOKEN \
-    printf 'registry=https://npm.zeropdf.net\n@zeropdf:registry=https://npm.zeropdf.net\n//npm.zeropdf.net/:_authToken=%s\n' "$(cat /run/secrets/NPM_TOKEN)" > .npmrc \
+    printf 'registry=https://nodeproxy.criston.dev\n@crstnmac:registry=https://nodeproxy.criston.dev\n//nodeproxy.criston.dev/:_authToken=%s\n' "$(cat /run/secrets/NPM_TOKEN)" > .npmrc \
  && npm ci \
  && rm -f .npmrc
 COPY . .

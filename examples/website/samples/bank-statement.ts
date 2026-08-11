@@ -1,4 +1,4 @@
-import { createDocument, rgb } from "@zeropdf/zeropdf-pdf";
+import { createDocument, rgb } from "@crstnmac/zeropdf";
 
 async function ttf(url: string): Promise<Uint8Array> {
   return new Uint8Array(await (await fetch(url)).arrayBuffer());

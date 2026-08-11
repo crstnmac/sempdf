@@ -5,7 +5,7 @@ Generate a printable event ticket with venue details, QR placeholder, and tear-o
 ## Quick start
 
 ```ts
-import { createDocument, hex, rgb } from "@zeropdf/zeropdf-pdf";
+import { createDocument, hex, rgb } from "@crstnmac/zeropdf";
 import { readFileSync } from "node:fs";
 
 const fontData = readFileSync("fonts/SourceSans3-Regular.ttf");

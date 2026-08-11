@@ -1,4 +1,4 @@
-import { createDocument, rgb } from "@zeropdf/zeropdf-pdf";
+import { createDocument, rgb } from "@crstnmac/zeropdf";
 
 const doc = createDocument({
   title: "Single Page Demo",

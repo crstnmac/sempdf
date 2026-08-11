@@ -1,4 +1,4 @@
-import { createDocument } from "@zeropdf/zeropdf-pdf";
+import { createDocument } from "@crstnmac/zeropdf";
 
 const lorem = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. ".repeat(8);
 

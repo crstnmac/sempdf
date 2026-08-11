@@ -1,9 +1,0 @@
-apiVersion: 1
-
-providers:
-  - name: zeropdf
-    folder: ""
-    type: file
-    allowUiUpdates: true
-    options:
-      path: /etc/grafana/provisioning/dashboards/json

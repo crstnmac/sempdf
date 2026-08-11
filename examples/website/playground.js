@@ -56,8 +56,8 @@ async function loadTypes() {
 
   // Minimal package manifest so module resolution finds the entry types.
   defaults.addExtraLib(
-    JSON.stringify({ name: "@zeropdf/zeropdf-pdf", types: "index.d.ts" }),
-    "file:///node_modules/@zeropdf/zeropdf-pdf/package.json"
+    JSON.stringify({ name: "@crstnmac/zeropdf", types: "index.d.ts" }),
+    "file:///node_modules/@crstnmac/zeropdf/package.json"
   );
 
   async function add(relPath) {
@@ -66,7 +66,7 @@ async function loadTypes() {
     const response = await fetch(base + relPath);
     if (!response.ok) return;
     const text = await response.text();
-    defaults.addExtraLib(text, `file:///node_modules/@zeropdf/zeropdf-pdf/${relPath}`);
+    defaults.addExtraLib(text, `file:///node_modules/@crstnmac/zeropdf/${relPath}`);
 
     const dir = relPath.includes("/") ? `${relPath.slice(0, relPath.lastIndexOf("/"))}/` : "";
     const re = /from\s+["'](\.[^"']+)["']/g;
@@ -174,15 +174,6 @@ resizerEl.addEventListener("keydown", (event) => {
 
 // Boot Monaco, wire TypeScript, then render the default document.
 (async () => {
-  // The library is secure-by-default: with no license guard installed it
-  // refuses to serialize. The playground is a public demo, so install a
-  // permissive guard that allows unlimited local generation. Guards installed
-  // through the public API are unverified, so every playground PDF carries the
-  // fixed "UNLICENSED - EVALUATION ONLY" watermark; clean output requires the
-  // server-backed auto-guard (ZEROPDF_LICENSE_KEY).
-  const { setLicenseGuard } = await import("@zeropdf/zeropdf-pdf/license-guard");
-  setLicenseGuard({ consume() {} });
-
   monaco = await window.monacoReady;
 
   monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
@@ -196,7 +187,7 @@ resizerEl.addEventListener("keydown", (event) => {
     noEmit: false,
     strict: false,
     baseUrl: "file:///",
-    paths: { "@zeropdf/zeropdf-pdf": ["node_modules/@zeropdf/zeropdf-pdf/index.d.ts"] },
+    paths: { "@crstnmac/zeropdf": ["node_modules/@crstnmac/zeropdf/index.d.ts"] },
     lib: ["esnext", "dom"]
   });
 

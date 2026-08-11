@@ -1,4 +1,4 @@
-import { createDocument, rgb } from "@zeropdf/zeropdf-pdf";
+import { createDocument, rgb } from "@crstnmac/zeropdf";
 
 // Superscript/subscript, baseline rise, render modes (outline/invisible),
 // horizontal scaling, and inline highlight — on both template paragraphs and

@@ -8,7 +8,7 @@ import {
   extractPages,
   mergeDocuments,
   splitDocument
-} from "@zeropdf/zeropdf-pdf";
+} from "@crstnmac/zeropdf";
 ```
 
 ## Extract
@@ -53,7 +53,7 @@ Omit the index list to append every page from the source.
 For metadata-preserving in-place reorder, use `editDocument`:
 
 ```ts
-import { editDocument } from "@zeropdf/zeropdf-pdf";
+import { editDocument } from "@crstnmac/zeropdf";
 
 const editable = editDocument(bytes);
 editable.movePage(2, 0);
