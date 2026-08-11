@@ -160,7 +160,7 @@ export interface PdfDocumentJson {
   /**
    * Body blocks. Required and non-empty. A block flows by default, or is placed
    * at absolute coordinates when it carries an `x`/`x1`/`cx` anchor (see
-   * {@link JsonPositionedBlock}).
+   * {@link BlockPosition}).
    */
   readonly blocks: readonly JsonBlock[];
 }

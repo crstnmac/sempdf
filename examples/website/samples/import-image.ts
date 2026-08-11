@@ -2,7 +2,7 @@ import { createDocument, rgb } from "@crstnmac/zeropdf";
 
 // The playground runs in the browser, so load the image with fetch instead of
 // node:fs. page.image() detects the image format from its bytes.
-const response = await fetch("/examples/assets/zeropdf-logo.png");
+const response = await fetch("/examples/assets/company-logo.png");
 if (!response.ok) {
   throw new Error(`Could not load image: ${response.status} ${response.statusText}`);
 }
@@ -30,7 +30,7 @@ page.image(imageBytes, {
   y: 640,
   width: 360,
   height: 81,
-  altText: "zeropdf logo"
+  altText: "Brightforge Systems logo"
 });
 
 export default doc;

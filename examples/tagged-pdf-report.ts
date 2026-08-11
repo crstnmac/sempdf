@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createDocument, parseDocument, rgb } from '../src/index.js';
 import type { TemplateBlock } from '../src/index.js';
 
-const logo = readFileSync('examples/assets/zeropdf-logo.png');
+const logo = readFileSync('examples/assets/company-logo.png');
 
 const projectName = 'ACME Final Project';
 const clientName = 'ACME Inc.';
@@ -130,7 +130,7 @@ const doc = createDocument({
   structureRoot: 'Document',
   info: {
     title: `Accessibility Audit Report - ${projectName}`,
-    author: 'zeropdf',
+    author: 'Brightforge Systems',
     creator: 'zeropdf',
     subject: `${clientName} Accessibility Audit`,
     keywords: ['accessibility', 'WCAG', 'Section 508', 'PDF/UA'],
@@ -138,7 +138,7 @@ const doc = createDocument({
   encryption: {
     algorithm: 'aes-256-r6',
     userPassword: '',
-    ownerPassword: 'zeropdf2026',
+    ownerPassword: 'brightforge-demo-2026',
     permissions: { printing: true, copying: true, accessibility: true },
   },
 });
@@ -235,11 +235,11 @@ const refs: Array<{ label: string; url: string }> = [
 doc.renderTemplate({
   info: {
     title: `Accessibility Audit Report - ${projectName}`,
-    author: 'zeropdf',
+    author: 'Brightforge Systems',
   },
   xmpMetadata: {
     title: `Accessibility Audit Report - ${projectName}`,
-    creator: 'zeropdf',
+    creator: 'Brightforge Systems',
     createDate: '2026-05-05T00:00:00Z',
     modifyDate: '2026-05-05T00:00:00Z',
     metadataDate: '2026-05-05T00:00:00Z',
@@ -271,7 +271,7 @@ doc.renderTemplate({
       options: {
         maxWidth: 180,
         align: 'center',
-        altText: 'zeropdf logo',
+        altText: 'Brightforge Systems logo',
       },
     },
     {
@@ -291,7 +291,7 @@ doc.renderTemplate({
     },
     {
       type: 'heading',
-      text: 'zeropdf',
+      text: 'Brightforge Systems',
       options: { level: 2, color: BLUE, align: 'left', marginBottom: 8 },
     },
     {
@@ -326,11 +326,11 @@ doc.renderTemplate({
     },
     {
       type: 'link',
-      text: 'zeropdf website',
-      url: 'https://www.zeropdf.com/',
+      text: 'ZeroPDF website',
+      url: 'https://zeropdf.criston.dev/',
       options: {
         align: 'left',
-        structure: { altText: 'zeropdf website' },
+        structure: { altText: 'ZeroPDF website' },
       },
     },
     {
@@ -344,7 +344,7 @@ doc.renderTemplate({
     {
       type: 'table',
       rows: [
-        ['Report by', 'zeropdf'],
+        ['Report by', 'Brightforge Systems'],
         ['Prepared for', clientName],
         ['Version', '1.0'],
       ],

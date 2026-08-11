@@ -15,8 +15,8 @@ const doc = createDocument({
   conformance: "pdfua-1",
   tagged: true,
   structureRoot: "Document",
-  title: "Report Features Demo",
-  info: { author: "Lorem Ipsum" },
+  title: "Crestview Cloud Q2 2026 Business Review",
+  info: { author: "Crestview Cloud Finance & Operations" },
   defaults: { fontSize: 11, color: rgb(0.1, 0.1, 0.15) },
 });
 
@@ -45,10 +45,10 @@ doc.renderTemplate({
   },
 
   blocks: [
-    { type: "heading", text: "Quarterly Report", options: { level: 1 } },
+    { type: "heading", text: "Q2 2026 Business Review", options: { level: 1 } },
     {
       type: "paragraph",
-      text: "Everything below is generated in the browser.",
+      text: "Prepared for the leadership meeting on 11 August 2026. Figures are fictional but modeled on a real SaaS operating review.",
       class: "muted",
     },
 
@@ -75,10 +75,10 @@ doc.renderTemplate({
     },
     {
       type: "paragraph",
-      text: "Revenue grew for the third consecutive quarter.",
-      footnote: "Figures are unaudited; see the appendix for methodology.",
+      text: "Annual recurring revenue reached $18.7M, up 14.6% quarter over quarter, while gross retention improved to 94.2%.",
+      footnote: "Management figures are unaudited and exclude foreign-exchange adjustments; see the appendix for methodology.",
     },
-    { type: "paragraph", text: "Full details appear later." },
+    { type: "paragraph", text: "Enterprise expansion in logistics and healthcare offset softer new-business bookings in the education segment." },
     {
       type: "crossRef",
       to: "financials",
@@ -108,12 +108,12 @@ doc.renderTemplate({
           { text: "Q3", header: true },
           { text: "Q4", header: true },
         ],
-        ["Subscriptions", "$1.2M", "$1.5M"],
-        ["Professional services", "$0.3M", "$0.4M"],
+        ["Subscription revenue", "$4.08M", "$4.67M"],
+        ["Implementation services", "$0.62M", "$0.71M"],
         [
           { text: "Total", bold: true },
-          { text: "$1.5M", bold: true },
-          { text: "$1.9M", bold: true },
+          { text: "$4.70M", bold: true },
+          { text: "$5.38M", bold: true },
         ],
       ],
     },
@@ -126,8 +126,8 @@ doc.renderTemplate({
     },
     {
       type: "paragraph",
-      text: "Methodology and notes.",
-      footnote: "Compiled from internal dashboards.",
+      text: "Revenue is recognized under the company's standard subscription and professional-services policies. Retention metrics use beginning-of-period recurring revenue as the denominator.",
+      footnote: "Compiled from the fictional billing ledger, CRM opportunity snapshot, and customer-success health dashboard as of 31 July 2026.",
     },
   ],
 
