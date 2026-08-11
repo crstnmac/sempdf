@@ -313,6 +313,8 @@ export type PdfBoundingBox = readonly [number, number, number, number];
  * Accessibility metadata and attributes for tagged PDF structure elements.
  */
 export interface PdfStructureOptions {
+  /** Unique identifier for this structure element (/ID). Required on PDF/UA-1 Note elements. */
+  id?: string | undefined;
   /** Alternate text for tagged non-text content. */
   altText?: string | undefined;
   /** Replacement text exposed to assistive technology. */
@@ -331,12 +333,6 @@ export interface PdfStructureOptions {
    */
   mathML?: string | undefined;
   /**
-   * Artifact type classification for tagged PDF content.
-   * "Pagination" for headers/footers, "Layout" for typographic ornaments,
-   * "Page" for watermarks. Emitted as /Type in the /Artifact BMC/EMC pair.
-   */
-  artifactType?: "Pagination" | "Layout" | "Page" | undefined;
-  /**
    * Associated files embedded in the structure element.
    * Each file is emitted as an EmbeddedFile stream and Filespec, and
    * referenced from the StructElem /AF array.
@@ -354,6 +350,14 @@ export interface PdfStructureOptions {
    * Used by screen readers (PDF/UA accessibility attribute).
    */
   expansion?: string | undefined;
+}
+
+/** Classification shared by content that is explicitly tagged as an Artifact. */
+interface ArtifactOptions {
+  /** Artifact type written to the marked-content property dictionary. */
+  artifactType?: "Pagination" | "Layout" | "Page" | undefined;
+  /** Optional artifact subtype, such as Header, Footer, or Watermark. */
+  artifactSubtype?: "Header" | "Footer" | "Watermark" | undefined;
 }
 
 /**
@@ -813,7 +817,7 @@ export type TextRenderMode = "fill" | "stroke" | "fillStroke" | "invisible";
 /**
  * Options for placing a single line of text.
  */
-export interface TextOptions {
+export interface TextOptions extends ArtifactOptions {
   /** Horizontal position in PDF points. */
   x: number;
   /** Vertical position in PDF points. */
@@ -863,12 +867,6 @@ export interface TextOptions {
   /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
   /**
-   * Artifact type classification for tagged PDF content.
-   * "Pagination" for headers/footers, "Layout" for typographic ornaments,
-   * "Page" for watermarks. Emitted as /Type in the /Artifact BMC/EMC pair.
-   */
-  artifactType?: "Pagination" | "Layout" | "Page" | undefined;
-  /**
    * Built-in font encoding. When set, the font dictionary emits an /Encoding
    * entry with the specified encoding (e.g. /WinAnsiEncoding). When undefined,
    * the default encoding is used.
@@ -913,7 +911,7 @@ export type VerticalAlign = "top" | "middle" | "bottom";
 /**
  * Options for laying out wrapped text blocks.
  */
-export interface TextBlockOptions {
+export interface TextBlockOptions extends ArtifactOptions {
   /** Horizontal position in PDF points. */
   x: number;
   /** Vertical position in PDF points. */
@@ -1007,8 +1005,8 @@ export interface TextBlockOptions {
 export interface InlineTextRun {
   /** Text content of this segment. */
   text: string;
-  /** Optional semantic structure tag for this run within its rich-text block. */
-  tag?: PdfTextStructureTag | "Artifact" | undefined;
+  /** Optional inline semantic structure tag for this run within its rich-text block. */
+  tag?: "Span" | "Quote" | "Reference" | "BibEntry" | "Code" | "Artifact" | undefined;
   /** Font for this run (built-in name, embedded handle, or registered family name). */
   font?: PdfFont | undefined;
   /** Selects the bold variant of this run's font. See {@link TextOptions.bold}. */
@@ -1056,7 +1054,7 @@ export interface InlineTextRun {
  * left-to-right or right-to-left ordering. Vertical writing mode stacks the
  * runs in a single column.
  */
-export interface RichTextOptions {
+export interface RichTextOptions extends ArtifactOptions {
   /** Horizontal position in PDF points. */
   x: number;
   /** Vertical position (baseline of the first line, or top of the column in vertical mode) in PDF points. */
@@ -1850,6 +1848,8 @@ export interface TemplateRichParagraphBlock {
   readonly runs: readonly InlineTextRun[];
   /** Options that control this block. */
   readonly options?: FlowRichTextOptions | undefined;
+  /** Inline annotations anchored to specific substrings of the rendered text. */
+  readonly annotations?: readonly ParagraphTextAnnotation[] | undefined;
   /** Stylesheet class name(s) applied beneath inline `options`. */
   readonly class?: string | readonly string[] | undefined;
   /** Whether this block should stay on the same page as the following block when possible. */
@@ -2705,7 +2705,7 @@ export type ImageClip = "none" | "circle" | "ellipse";
  * Fit, positioning, and clipping controls shared by all raster image
  * placements. The image is always laid out inside its `width`×`height` box.
  */
-export interface ImageFitOptions {
+export interface ImageFitOptions extends ArtifactOptions {
   /**
    * How the image fills its box:
    * - `"fill"` (default) — stretch to the box, ignoring aspect ratio.
@@ -3522,7 +3522,7 @@ export interface FillStyle {
 /**
  * Painting, stroke, fill, transform, and tagging options for vector paths.
  */
-export interface PathStyle {
+export interface PathStyle extends ArtifactOptions {
   /** Paint. */
   paint: "stroke" | "fill" | "fillStroke";
   /** Stroke. */
@@ -3538,7 +3538,7 @@ export interface PathStyle {
  * `circle`, `ellipse`). The paint mode is inferred: a `fill` and `stroke`
  * together paint both; `fill` alone fills; otherwise the shape is stroked.
  */
-export interface ShapeStyle {
+export interface ShapeStyle extends ArtifactOptions {
   /** Fill color. Presence enables fill painting. */
   fill?: ColorInput | undefined;
   /** Stroke color. Defaults to black when only `lineWidth` is set. */

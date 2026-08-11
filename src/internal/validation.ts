@@ -711,6 +711,7 @@ export function normalizeStructureOptions(options: PdfStructureOptions | undefin
   }
 
   const normalized: PdfStructureOptions = {
+    ...(options.id !== undefined ? { id: normalizeOptionalStructureText(options.id, "id") } : {}),
     ...(options.altText !== undefined ? { altText: normalizeOptionalStructureText(options.altText, "altText") } : {}),
     ...(options.actualText !== undefined ? { actualText: normalizeOptionalStructureText(options.actualText, "actualText") } : {}),
     ...(options.language !== undefined ? { language: normalizeLanguage(options.language) } : {}),
@@ -1160,6 +1161,7 @@ export function normalizeTextBaseOptions(options: TextOptions | TextBlockOptions
     ...(options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {}),
     ...(encoding !== undefined ? { encoding } : {}),
     ...(('artifactType' in options && options.artifactType !== undefined) ? { artifactType: options.artifactType } : {}),
+    ...(('artifactSubtype' in options && options.artifactSubtype !== undefined) ? { artifactSubtype: options.artifactSubtype } : {}),
     ...(options.underline !== undefined ? { underline: options.underline } : {}),
     ...(options.strike !== undefined ? { strike: options.strike } : {}),
     ...(rise !== undefined ? { rise } : {}),
@@ -1943,7 +1945,9 @@ export function validateChoiceFieldValue(value: string, allowedOptions?: readonl
 export function normalizePathStyle(style: PathStyle): NormalizedPathStyle {
   const normalized: NormalizedPathStyle = {
     paint: style.paint,
-    ...(style.tag !== undefined ? { tag: style.tag } : {})
+    ...(style.tag !== undefined ? { tag: style.tag } : {}),
+    ...(style.artifactType !== undefined ? { artifactType: style.artifactType } : {}),
+    ...(style.artifactSubtype !== undefined ? { artifactSubtype: style.artifactSubtype } : {})
   };
 
   if (style.paint === "stroke" || style.paint === "fillStroke") {
@@ -2034,6 +2038,8 @@ export function normalizeImageOptions(options: JpegImageOptions | PngImageOption
   altText?: string | undefined;
   tag?: import("../types.js").PdfFigureStructureTag | "Artifact" | undefined;
   structure?: import("../types.js").PdfStructureOptions | undefined;
+  artifactType?: "Pagination" | "Layout" | "Page" | undefined;
+  artifactSubtype?: "Header" | "Footer" | "Watermark" | undefined;
   fit?: import("../types.js").ImageFit | undefined;
   position?: import("../types.js").ImagePosition | undefined;
   clip?: import("../types.js").ImageClip | undefined;
@@ -2060,6 +2066,8 @@ export function normalizeImageOptions(options: JpegImageOptions | PngImageOption
       : {}),
     ...("tag" in options && options.tag !== undefined ? { tag: normalizeFigureStructureTag(options.tag) } : {}),
     ...("structure" in options && options.structure !== undefined ? { structure: normalizeStructureOptions(options.structure) } : {}),
+    ...("artifactType" in options && options.artifactType !== undefined ? { artifactType: options.artifactType } : {}),
+    ...("artifactSubtype" in options && options.artifactSubtype !== undefined ? { artifactSubtype: options.artifactSubtype } : {}),
     ...("fit" in options && options.fit !== undefined ? { fit: normalizeImageFit(options.fit) } : {}),
     ...("position" in options && options.position !== undefined ? { position: normalizeImagePosition(options.position) } : {}),
     ...("clip" in options && options.clip !== undefined ? { clip: normalizeImageClip(options.clip) } : {})

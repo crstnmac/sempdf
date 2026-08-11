@@ -20,7 +20,7 @@ export interface PositionedTextRun {
 function carriedRunStyle(
   o: Pick<
     NormalizedTextBaseOptions,
-    "rise" | "renderMode" | "strokeColor" | "strokeWidth" | "horizontalScaling" | "highlight"
+    "rise" | "renderMode" | "strokeColor" | "strokeWidth" | "horizontalScaling" | "highlight" | "artifactType" | "artifactSubtype"
   >,
 ): Partial<NormalizedTextOptions> {
   return {
@@ -30,6 +30,8 @@ function carriedRunStyle(
     ...(o.strokeWidth !== undefined ? { strokeWidth: o.strokeWidth } : {}),
     ...(o.horizontalScaling !== undefined ? { horizontalScaling: o.horizontalScaling } : {}),
     ...(o.highlight !== undefined ? { highlight: o.highlight } : {}),
+    ...(o.artifactType !== undefined ? { artifactType: o.artifactType } : {}),
+    ...(o.artifactSubtype !== undefined ? { artifactSubtype: o.artifactSubtype } : {}),
   };
 }
 

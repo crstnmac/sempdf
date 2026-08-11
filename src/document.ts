@@ -2102,12 +2102,13 @@ export class PdfFlow {
   /**
    * The y-coordinate of the flow's bottom content boundary (the top of the
    * bottom margin). Content is laid out above this line.
+   * @internal
    */
   get bottomMargin(): number {
     return this.state.marginBottom;
   }
 
-  /** The x-coordinate of the flow frame's left content edge. */
+  /** The x-coordinate of the flow frame's left content edge. @internal */
   get contentX(): number {
     return this.state.frameX;
   }
@@ -2116,6 +2117,7 @@ export class PdfFlow {
    * Raises the bottom content boundary by `height` points, shrinking the
    * writable region. Used to reserve a page-bottom band (e.g. for footnotes)
    * so subsequent content stops above it.
+   * @internal
    */
   reserveBottomSpace(height: number): void {
     if (height > 0) this.state.marginBottom += height;
@@ -2163,6 +2165,7 @@ export class PdfFlow {
    * @param handler Callback that returns the next flow region.
    *
    * @returns This flow helper for chaining.
+   * @internal
    */
   setOverflowHandler(handler: (() => PdfFlow) | undefined): this {
     this.overflowHandler = handler;
@@ -2178,15 +2181,33 @@ export class PdfFlow {
    * @returns This flow helper for chaining.
    */
   heading(
-    text: string,
+    text: string | readonly InlineTextRun[],
     options: FlowHeadingOptions = {},
     annotations?: readonly import("./types.js").ParagraphTextAnnotation[],
   ): this {
-    assertBlockText(text, "Heading text", "text");
     const level = options.level ?? 1;
     const tag = options.tag ?? `H${level}` as const;
     const fontSize = options.fontSize ?? headingFontSize(level);
     const spacing = this.resolveSpacing("heading", options, level);
+    if (typeof text !== "string") {
+      assertBlockArray(text, "Heading runs", "runs");
+      const { level: _level, ...richOptions } = options;
+      return this.richParagraph(
+        text,
+        {
+          ...richOptions,
+          fontSize,
+          lineHeight: options.lineHeight ?? Math.round(fontSize * 1.25),
+          tag,
+          marginTop: spacing.before,
+          marginRight: spacing.right,
+          marginBottom: spacing.after,
+          marginLeft: spacing.left,
+        },
+        annotations,
+      );
+    }
+    assertBlockText(text, "Heading text", "text");
     this.applyMarginTop(spacing.before);
     const { height: consumedHeight, runs } = this.writeTextBlock(
       text,
@@ -2356,7 +2377,11 @@ export class PdfFlow {
    * @param runs The styled inline runs to lay out together.
    * @param options Flow spacing and inherited style defaults.
    */
-  richParagraph(runs: readonly InlineTextRun[], options: FlowRichTextOptions = {}): this {
+  richParagraph(
+    runs: readonly InlineTextRun[],
+    options: FlowRichTextOptions = {},
+    annotations?: readonly import("./types.js").ParagraphTextAnnotation[],
+  ): this {
     assertBlockArray(runs, "Rich paragraph runs", "runs");
     const spacing = this.resolveSpacing("paragraph", options);
     this.applyMarginTop(spacing.before);
@@ -2386,9 +2411,13 @@ export class PdfFlow {
     const blockAlign = options.blockAlign ?? "left";
     const tag = options.tag ?? "P";
 
+    const hasStructuredContent = normalizedRuns.some((run) => run.options.tag !== "Artifact");
     const createNode = (): InternalStructureNode | undefined =>
-      tag === "Artifact" ? undefined : createStructureNode(this.page, tag, options.structure, this.parent);
+      tag === "Artifact" || !hasStructuredContent
+        ? undefined
+        : createStructureNode(this.page, tag, options.structure, this.parent);
     let structureNode = createNode();
+    const paragraphRuns: import("./internal/text-layout.js").PositionedTextRun[] = [];
 
     const lines = breakInlineLines(normalizedRuns, { width: blockWidth, writingMode }, this.embeddedFonts);
     const placeLine = (line: (typeof lines)[number]): void => {
@@ -2404,6 +2433,7 @@ export class PdfFlow {
         writingMode,
       };
       const placed = placeInlineLine(line, geometry, this.state.y, this.embeddedFonts);
+      paragraphRuns.push(...placed.runs);
       // Highlight fills go down before the glyphs so the text paints over them.
       pushInlineHighlights(this.page, placed.decorations);
       pushInlineDecorations(this.page, placed.decorations);
@@ -2462,6 +2492,9 @@ export class PdfFlow {
         placeLine(line);
         this.state.y -= line.mainSize;
       }
+      if (annotations && annotations.length > 0) {
+        this.applyParagraphAnnotations(paragraphRuns, annotations, structureNode);
+      }
       this.state.y -= spacing.after;
       return this;
     }
@@ -2474,6 +2507,9 @@ export class PdfFlow {
       }
       placeLine(line);
       this.state.y -= lineHeight;
+    }
+    if (annotations && annotations.length > 0) {
+      this.applyParagraphAnnotations(paragraphRuns, annotations, structureNode);
     }
     this.state.y -= spacing.after;
     return this;
@@ -3055,6 +3091,7 @@ export class PdfFlow {
    * @param options Options that control the operation.
    *
    * @returns The reserved rect in PDF coordinates.
+   * @internal
    */
   reservePageLinkRect(
     options: Omit<PageLinkOptions, "x" | "y"> & FlowBlockSpacingOptions,
@@ -3678,8 +3715,9 @@ export class PdfFlow {
   private applyParagraphAnnotations(
     runs: readonly import("./internal/text-layout.js").PositionedTextRun[],
     annotations: readonly import("./types.js").ParagraphTextAnnotation[],
+    parent: InternalStructureNode | undefined = this.parent,
   ): void {
-    emitParagraphTextAnnotations(this.page, runs, annotations, this.embeddedFonts, this.parent);
+    emitParagraphTextAnnotations(this.page, runs, annotations, this.embeddedFonts, parent);
   }
 
   /**
@@ -9068,7 +9106,6 @@ function cloneStructureNode(
     ...(node.language !== undefined ? { language: node.language } : {}),
     ...(node.attributes !== undefined ? { attributes: node.attributes } : {}),
     ...(node.mathML !== undefined ? { mathML: node.mathML } : {}),
-    ...(node.artifactType !== undefined ? { artifactType: node.artifactType } : {}),
     ...(node.associatedFiles !== undefined ? { associatedFiles: [...node.associatedFiles] } : {}),
     ...(node.phoneme !== undefined ? { phoneme: node.phoneme } : {}),
     ...(node.expansion !== undefined ? { expansion: node.expansion } : {}),

@@ -271,6 +271,13 @@ export function renderTemplateDocument(
 
     let blockToRender: TemplateBlock = block;
     if (block.footnote !== undefined) {
+      if (block.type !== 'paragraph' && block.type !== 'richParagraph' && block.type !== 'heading') {
+        throw new PdfEngineError(
+          PdfErrorCode.INVALID_TEXT,
+          'Footnotes are only supported on heading, paragraph, and richParagraph blocks.',
+          { blockType: block.type },
+        );
+      }
       footnoteCounter += 1;
       const marker = ` [${footnoteCounter}]`;
       // Reserve a line at the page bottom so the note does not overlap content.
@@ -294,6 +301,7 @@ export function renderTemplateDocument(
             { text: marker, tag: 'Reference' },
           ],
           ...(styledBlock.options ? { options: styledBlock.options } : {}),
+          ...(block.annotations ? { annotations: block.annotations } : {}),
         };
       } else if (block.type === 'richParagraph') {
         blockToRender = {
@@ -301,7 +309,14 @@ export function renderTemplateDocument(
           runs: [...block.runs, { text: marker, tag: 'Reference' }],
         };
       } else if (block.type === 'heading') {
-        blockToRender = { ...block, text: block.text + marker };
+        const styledBlock = resolveBlockStyles(block, options.styles) as typeof block;
+        current.flow.heading(
+          [{ text: block.text }, { text: marker, tag: 'Reference' }],
+          styledBlock.options,
+          block.annotations,
+        );
+        pendingBreakAfter = breakAfter;
+        continue;
       }
     }
 
@@ -720,7 +735,7 @@ function renderPageFootnotes(footnotes: readonly FootnoteEntry[]): void {
     notes.forEach((note, index) => {
       const fromBottom = notes.length - 1 - index;
       const y = note.baseBottom + fromBottom * FOOTNOTE_LINE_HEIGHT + FOOTNOTE_LINE_HEIGHT * 0.25;
-      const noteElement = note.page.structure('Note');
+      const noteElement = note.page.structure('Note', { id: `footnote-${note.number}` });
       const label = `${note.number}.`;
       noteElement.structure('Lbl').text(label, {
         x: note.x,
@@ -741,7 +756,7 @@ function renderPageFootnotes(footnotes: readonly FootnoteEntry[]): void {
 }
 
 interface CrossRefBackfill {
-  readonly hostPage: PdfPage;
+  readonly content: PdfStructureContainer;
   readonly rect: { x: number; y: number; width: number; height: number };
   readonly baselineY: number;
   readonly fontSize: number;
@@ -781,8 +796,10 @@ function renderCrossRefBlock(
     marginTop: 0,
     marginBottom: 0,
   });
+  const reference = getCurrent().page.structure('Reference');
+  const content = opts.link === false ? reference : reference.structure('Link');
   backfills.push({
-    hostPage: getCurrent().page,
+    content,
     rect,
     baselineY: rect.y + lineHeight * 0.25,
     fontSize,
@@ -817,15 +834,15 @@ function resolveCrossRefBackfills(
     } else if (entry.pageNumbers) {
       text = `${text} ${target.pageNumber}`;
     }
-    entry.hostPage.text(text, {
+    entry.content.text(text, {
       x: entry.rect.x,
       y: entry.baselineY,
       fontSize: entry.fontSize,
       ...(entry.font ? { font: entry.font } : {}),
-      tag: 'Reference',
+      tag: 'Span',
     });
     if (entry.link) {
-      entry.hostPage.linkToPage(targetPage, {
+      entry.content.linkToPage(targetPage, {
         x: entry.rect.x,
         y: entry.rect.y,
         width: entry.rect.width,
@@ -1207,6 +1224,8 @@ function renderTemplatePageNumber(
         ...pageNumber.options,
         align,
         tag: pageNumber.options?.tag ?? 'Artifact',
+        artifactType: pageNumber.options?.artifactType ?? 'Pagination',
+        artifactSubtype: pageNumber.options?.artifactSubtype ?? (region === 'header' ? 'Header' : 'Footer'),
         marginTop: pageNumber.options?.marginTop ?? 0,
         marginBottom: pageNumber.options?.marginBottom ?? 0,
       },
@@ -1302,7 +1321,7 @@ function renderTemplateBlockToFlow(
       flow.paragraph(block.text, block.options, block.annotations);
       return;
     case 'richParagraph':
-      flow.richParagraph(block.runs, block.options);
+      flow.richParagraph(block.runs, block.options, block.annotations);
       return;
     case 'code':
       flow.code(block.code, block.options ?? {}, block.language);

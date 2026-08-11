@@ -1418,10 +1418,11 @@ test("emits artifact type in marked content", () => {
   const doc = createDocument({ tagged: true, language: "en-US" });
   const page = doc.addPage({ size: "Letter" });
   page.text("Page 1 of 10", {
-    x: 36, y: 720, tag: "Artifact"
+    x: 36, y: 720, tag: "Artifact", artifactType: "Pagination", artifactSubtype: "Footer"
   });
   const text = new TextDecoder().decode(doc.toUint8Array());
-  assert.match(text, /\/Artifact BMC/);
+  assert.match(text, /\/Artifact << \/Type \/Pagination \/Subtype \/Footer >> BDC/);
+  assert.doesNotMatch(text, /\/Artifact \/Type \/Pagination BMC/);
 });
 
 test("emits /AF associated file references", () => {

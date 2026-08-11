@@ -33,6 +33,7 @@ export interface TaggedPageContentItem {
   readonly structureGroupId?: number | undefined;
   readonly altText?: string | undefined;
   readonly artifactType?: "Pagination" | "Layout" | "Page" | undefined;
+  readonly artifactSubtype?: "Header" | "Footer" | "Watermark" | undefined;
 }
 
 export interface PlannedPage {
@@ -91,6 +92,7 @@ export interface StructElementAllocation {
   readonly childOrderKeys?: readonly number[] | undefined;
   readonly annotationObjectIds: readonly number[];
   readonly annotationParentTreeKeys: readonly number[];
+  readonly structureId?: string | undefined;
   readonly altText?: string | undefined;
   readonly actualText?: string | undefined;
   readonly language?: string | undefined;
@@ -150,9 +152,10 @@ export function collectTaggedPageContent(
           kind: 'artifact',
           ...(op.options.artifactType !== undefined
             ? { artifactType: op.options.artifactType }
-            : op.options.structure?.artifactType !== undefined
-              ? { artifactType: op.options.structure.artifactType }
-              : {}),
+            : {}),
+          ...(op.options.artifactSubtype !== undefined
+            ? { artifactSubtype: op.options.artifactSubtype }
+            : {}),
         });
         continue;
       }
@@ -185,6 +188,8 @@ export function collectTaggedPageContent(
         items.push({
           opIndex,
           kind: 'artifact',
+          ...(op.style.artifactType !== undefined ? { artifactType: op.style.artifactType } : {}),
+          ...(op.style.artifactSubtype !== undefined ? { artifactSubtype: op.style.artifactSubtype } : {}),
         });
       }
       continue;
@@ -196,9 +201,8 @@ export function collectTaggedPageContent(
       items.push({
         opIndex,
         kind: 'artifact',
-        ...(op.options.structure?.artifactType !== undefined
-          ? { artifactType: op.options.structure.artifactType }
-          : {}),
+        ...(op.options.artifactType !== undefined ? { artifactType: op.options.artifactType } : {}),
+        ...(op.options.artifactSubtype !== undefined ? { artifactSubtype: op.options.artifactSubtype } : {}),
       });
       continue;
     }
@@ -489,6 +493,7 @@ function allocateStructElementTree(
     childOrderKeys,
     annotationObjectIds,
     annotationParentTreeKeys: nodeAnnotationParentTreeKeys,
+    ...(node.structureId !== undefined ? { structureId: node.structureId } : {}),
     ...(altText !== undefined ? { altText } : {}),
     ...(node.actualText !== undefined ? { actualText: node.actualText } : {}),
     ...(node.language !== undefined ? { language: node.language } : {}),
@@ -765,6 +770,12 @@ export function buildStructElementDictionary(
     ],
     ['K', kids.length === 1 ? kids[0] : array(kids)],
     [
+      'ID',
+      element.structureId !== undefined
+        ? literalString(element.structureId)
+        : undefined,
+    ],
+    [
       'Alt',
       element.altText !== undefined
         ? literalString(element.altText)
@@ -936,5 +947,3 @@ function buildStructureAttributeValue(
     'Unsupported structure attribute value.',
   );
 }
-
-

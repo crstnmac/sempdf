@@ -168,6 +168,8 @@ export interface ParsedPdfStructureElement {
   readonly mcid?: number | undefined;
   /** Marked-content ids associated with the structure element. */
   readonly mcids?: readonly number[] | undefined;
+  /** Unique identifier assigned to the structure element. */
+  readonly id?: string | undefined;
   /** Alternate text for tagged non-text content. */
   readonly altText?: string | undefined;
   /** Replacement text exposed to assistive technology. */
@@ -4092,6 +4094,7 @@ function compactStructureElement(
   const mcids = collectStructureMcids(contentRef);
   const mcid = mcids[0];
   const children = collectStructureElements(document, contentRef, seen);
+  const id = readString(structElement, "ID");
   const altText = readString(structElement, "Alt");
   const actualText = readString(structElement, "ActualText");
   const language = readString(structElement, "Lang");
@@ -4101,6 +4104,7 @@ function compactStructureElement(
     ...(isPdfRef(pageRef) ? { pageObjectId: pageRef.objectId } : {}),
     ...(mcid !== undefined ? { mcid } : {}),
     ...(mcids.length > 0 ? { mcids } : {}),
+    ...(id !== undefined ? { id } : {}),
     ...(altText !== undefined ? { altText } : {}),
     ...(actualText !== undefined ? { actualText } : {}),
     ...(language !== undefined ? { language } : {}),
@@ -4119,6 +4123,7 @@ function compactEditableStructureElement(
   const mcids = collectStructureMcids(contentRef);
   const mcid = mcids[0];
   const children = collectEditableStructureElements(document, contentRef, seen);
+  const id = readString(structElement, "ID");
   const altText = readString(structElement, "Alt");
   const actualText = readString(structElement, "ActualText");
   const language = readString(structElement, "Lang");
@@ -4134,6 +4139,7 @@ function compactEditableStructureElement(
     ...(isPdfRef(pageRef) ? { pageObjectId: pageRef.objectId } : {}),
     ...(mcid !== undefined ? { mcid } : {}),
     ...(mcids.length > 0 ? { mcids } : {}),
+    ...(id !== undefined ? { id } : {}),
     ...(altText !== undefined ? { altText } : {}),
     ...(actualText !== undefined ? { actualText } : {}),
     ...(language !== undefined ? { language } : {}),
@@ -4179,6 +4185,7 @@ function compactInspectedStructureElement(
     .join(" ")
     .replace(/\s+/g, " ")
     .trim();
+  const id = readString(structElement, "ID");
   const altText = readString(structElement, "Alt");
   const actualText = readString(structElement, "ActualText");
   const language = readString(structElement, "Lang");
@@ -4189,6 +4196,7 @@ function compactInspectedStructureElement(
     ...(pageObjectId !== undefined ? { pageObjectId } : {}),
     ...(mcid !== undefined ? { mcid } : {}),
     ...(mcids.length > 0 ? { mcids } : {}),
+    ...(id !== undefined ? { id } : {}),
     ...(altText !== undefined ? { altText } : {}),
     ...(actualText !== undefined ? { actualText } : {}),
     ...(language !== undefined ? { language } : {}),
