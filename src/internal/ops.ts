@@ -16,6 +16,7 @@ export interface NormalizedTextOptions {
   structure?: PdfStructureOptions | undefined;
   structureGroupId?: number | undefined;
   artifactType?: "Pagination" | "Layout" | "Page" | undefined;
+  artifactSubtype?: "Header" | "Footer" | "Watermark" | undefined;
   characterSpacing?: number | undefined;
   wordSpacing?: number | undefined;
   leading?: number | undefined;
@@ -40,6 +41,8 @@ export interface NormalizedTextOptions {
 export interface NormalizedPathStyle {
   paint: PathStyle["paint"];
   tag?: "Artifact" | undefined;
+  artifactType?: "Pagination" | "Layout" | "Page" | undefined;
+  artifactSubtype?: "Header" | "Footer" | "Watermark" | undefined;
   stroke?: {
     color: PdfColor;
     width: number;
@@ -63,6 +66,8 @@ export interface NormalizedImageOptions {
   tag?: PdfFigureStructureTag | "Artifact" | undefined;
   structure?: PdfStructureOptions | undefined;
   structureGroupId?: number | undefined;
+  artifactType?: "Pagination" | "Layout" | "Page" | undefined;
+  artifactSubtype?: "Header" | "Footer" | "Watermark" | undefined;
   fit?: import("../types.js").ImageFit | undefined;
   position?: import("../types.js").ImagePosition | undefined;
   clip?: import("../types.js").ImageClip | undefined;

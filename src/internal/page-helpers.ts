@@ -104,12 +104,12 @@ export function createStructureNode(
     role,
     children: [],
     annotationIndexes: [],
+    ...(options?.id === undefined ? {} : { structureId: options.id }),
     ...(options?.altText === undefined ? {} : { altText: options.altText }),
     ...(options?.actualText === undefined ? {} : { actualText: options.actualText }),
     ...(options?.language === undefined ? {} : { language: options.language }),
     ...(options?.attributes === undefined ? {} : { attributes: options.attributes }),
     ...(options?.mathML === undefined ? {} : { mathML: options.mathML }),
-    ...(options?.artifactType === undefined ? {} : { artifactType: options.artifactType }),
     ...(options?.associatedFiles === undefined ? {} : { associatedFiles: options.associatedFiles }),
     ...(options?.phoneme === undefined ? {} : { phoneme: options.phoneme }),
     ...(options?.expansion === undefined ? {} : { expansion: options.expansion })
@@ -680,7 +680,8 @@ function emitParagraphTextAnnotation(
         width: rect.width,
         height: rect.fontSize + 2,
         ...(annotation.borderWidth !== undefined ? { borderWidth: annotation.borderWidth } : {}),
-        ...(annotation.tag !== undefined ? { tag: annotation.tag } : {})
+        ...(annotation.tag !== undefined ? { tag: annotation.tag } : {}),
+        structure: { altText: annotation.match }
       },
       parent
     );
@@ -793,6 +794,9 @@ export function applyStructureOptions(
   node: InternalStructureNode,
   options: PdfStructureOptions | undefined
 ): InternalStructureNode {
+  if (options?.id !== undefined) {
+    node.structureId = options.id;
+  }
   if (options?.altText !== undefined) {
     node.altText = options.altText;
   }

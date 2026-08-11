@@ -5000,8 +5000,12 @@ function* serializePageContentLines(
 
     const taggedItem = taggedContentByOpIndex.get(opIndex);
     if (taggedItem?.kind === 'artifact') {
-      if (taggedItem.artifactType !== undefined) {
-        yield `/Artifact /Type /${taggedItem.artifactType} BMC`;
+      if (taggedItem.artifactType !== undefined || taggedItem.artifactSubtype !== undefined) {
+        const properties = [
+          taggedItem.artifactType !== undefined ? `/Type /${taggedItem.artifactType}` : undefined,
+          taggedItem.artifactSubtype !== undefined ? `/Subtype /${taggedItem.artifactSubtype}` : undefined,
+        ].filter((entry): entry is string => entry !== undefined).join(' ');
+        yield `/Artifact << ${properties} >> BDC`;
       } else {
         yield '/Artifact BMC';
       }

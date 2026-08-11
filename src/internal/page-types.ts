@@ -170,12 +170,12 @@ export interface InternalStructureNode {
   readonly role: Exclude<PdfStructureTag, "Artifact">;
   readonly children: InternalStructureNode[];
   readonly annotationIndexes: number[];
+  structureId?: string | undefined;
   altText?: string | undefined;
   actualText?: string | undefined;
   language?: string | undefined;
   attributes?: Record<string, PdfStructureAttributeValue> | undefined;
   mathML?: string | undefined;
-  artifactType?: "Pagination" | "Layout" | "Page" | undefined;
   associatedFiles?:
     | Array<{ name: string; data: Uint8Array | ArrayBuffer; mimeType?: string }>
     | undefined;

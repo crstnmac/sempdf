@@ -2,7 +2,8 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "sourceMap": false,
-    "declarationMap": false
+    "declarationMap": false,
+    "stripInternal": true
   },
   "include": ["src/**/*.ts"]
 }

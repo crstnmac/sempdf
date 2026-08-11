@@ -1647,6 +1647,11 @@ test("crossRef resolves a forward anchor to its page number and links to it", ()
   assert.match(page1, /Details are on page 2\./);
   // And emits a navigation link.
   assert.match(new TextDecoder("latin1").decode(bytes), /\/Link/);
+  const root = parsed.inspectStructureElements()[0]!;
+  const reference = (root.children ?? []).find((element) => element.role === "Reference")!;
+  const link = (reference.children ?? []).find((element) => element.role === "Link")!;
+  assert.match(link.text ?? "", /Details are on page 2\./);
+  assert.equal(typeof link.annotations?.[0]?.destinationPageObjectId, "number");
 });
 
 test("footnote appends a marker and renders the note at the page bottom", () => {
@@ -1680,6 +1685,8 @@ test("footnote appends a marker and renders the note at the page bottom", () => 
   );
   const notes = (documentElement.children ?? []).filter((element) => element.role === "Note");
   assert.equal(notes.length, 2);
+  assert.deepEqual(notes.map((note) => note.id), ["footnote-1", "footnote-2"]);
+  assert.equal(new Set(notes.map((note) => note.id)).size, notes.length);
   assert.deepEqual(notes[0]!.children?.map((element) => element.role), ["Lbl", "P"]);
   assert.equal(notes[0]!.children?.[0]?.text, "1.");
   assert.equal(notes[0]!.children?.[1]?.text, "Smith 2020, p. 42.");
@@ -1701,6 +1708,61 @@ test("rich paragraph footnotes include a tagged reference marker", () => {
   const paragraph = (root.children ?? []).find((element) => element.role === "P")!;
   assert.ok((paragraph.children ?? []).some((element) => element.role === "Reference"));
   assert.ok((root.children ?? []).some((element) => element.role === "Note"));
+});
+
+test("footnoted paragraphs preserve substring annotations", () => {
+  const doc = createDocument();
+  doc.renderTemplate({
+    blocks: [
+      {
+        type: "paragraph",
+        text: "Read the linked source",
+        annotations: [{ type: "link", match: "linked source", url: "https://example.com" }],
+        footnote: "Supporting note.",
+      },
+    ],
+  });
+
+  const root = parseDocument(doc.toUint8Array()).inspectStructureElements()[0]!;
+  const paragraph = (root.children ?? []).find((element) => element.role === "P")!;
+  assert.ok((paragraph.children ?? []).some((element) => element.role === "Reference"));
+  const link = (paragraph.children ?? []).find((element) => element.role === "Link");
+  assert.equal(link?.altText, "linked source");
+});
+
+test("heading footnotes tag their marker as a nested Reference", () => {
+  const doc = createDocument();
+  doc.renderTemplate({ blocks: [{ type: "heading", text: "Heading", footnote: "A note." }] });
+
+  const root = parseDocument(doc.toUint8Array()).inspectStructureElements()[0]!;
+  const heading = (root.children ?? []).find((element) => element.role === "H1")!;
+  assert.ok((heading.children ?? []).some(
+    (element) => element.role === "Reference" && element.text?.includes("[1]"),
+  ));
+});
+
+test("rejects footnotes on blocks that cannot render a reference marker", () => {
+  const doc = createDocument();
+  assert.throws(
+    () => doc.renderTemplate({ blocks: [{ type: "code", code: "const x = 1;", footnote: "A note." }] }),
+    /Footnotes are only supported on heading, paragraph, and richParagraph blocks/,
+  );
+});
+
+test("all-artifact rich paragraphs do not leave empty structure elements", () => {
+  const doc = createDocument();
+  doc.renderTemplate({
+    blocks: [{ type: "richParagraph", runs: [{ text: "Decoration", tag: "Artifact" }] }],
+  });
+
+  assert.equal(parseDocument(doc.toUint8Array()).inspectStructureElements().length, 0);
+});
+
+test("template page numbers are classified pagination artifacts", () => {
+  const doc = createDocument({ compress: false });
+  doc.renderTemplate({ pageNumber: {}, blocks: [{ type: "paragraph", text: "Body" }] });
+  const raw = new TextDecoder("latin1").decode(doc.toUint8Array());
+  assert.match(raw, /\/Artifact << \/Type \/Pagination \/Subtype \/Footer >> BDC/);
 });
 
 test("master-page background renders on every page behind the content", () => {
