@@ -2,7 +2,7 @@
 
 These are the starter snippets bundled with the [live playground](https://sempdfplayground.sempdf.net/).
 Each one is a complete, self-contained program: it imports from
-`@sempdf/sempdf-pdf`, builds a document, and `export default`s it. Paste any of
+`@crstnmac/sempdf`, builds a document, and `export default`s it. Paste any of
 them into the playground (or a local script) and run it as-is.
 
 The snippets below are embedded directly from the playground's sample files, so

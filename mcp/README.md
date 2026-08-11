@@ -1,7 +1,7 @@
-# @sempdf/sempdf-pdf-mcp
+# @crstnmac/sempdf-mcp
 
 [Model Context Protocol](https://modelcontextprotocol.io) server that exposes
-[`@sempdf/sempdf-pdf`](../README.md) as tools an LLM client (Claude Desktop, Claude
+[`@crstnmac/sempdf`](../README.md) as tools an LLM client (Claude Desktop, Claude
 Code, etc.) can call. PDFs move in and out as **filesystem paths**.
 
 ## Tools
@@ -35,13 +35,13 @@ unless called with `overwrite: true`.
 
 ## Install & build
 
-The server depends on `@sempdf/sempdf-pdf` from the private registry, so the
-`@sempdf` scope must resolve there. Either run from the repo root (its `.npmrc`
-points the default registry at `https://npm.sempdf.net`) or add an
+The server depends on `@crstnmac/sempdf` from the private registry, so the
+`@crstnmac` scope must resolve there. Either run from the repo root (its `.npmrc`
+points the default registry at `https://nodeproxy.criston.dev`) or add an
 `.npmrc` here:
 
 ```ini
-@sempdf:registry=https://npm.sempdf.net
+@crstnmac:registry=https://nodeproxy.criston.dev
 ```
 
 Then:
@@ -58,13 +58,13 @@ npm test           # builds, then runs the stdio integration suite
 Install from the private registry:
 
 ```bash
-claude mcp add sempdf -- npx --registry=https://npm.sempdf.net @sempdf/sempdf-pdf-mcp
+claude mcp add sempdf -- npx --registry=https://nodeproxy.criston.dev @crstnmac/sempdf-mcp
 ```
 
 Optionally scope file operations to a workspace directory:
 
 ```bash
-claude mcp add sempdf -- npx --registry=https://npm.sempdf.net @sempdf/sempdf-pdf-mcp --env WORKSPACE_DIR=~/Documents/pdf-workspace
+claude mcp add sempdf -- npx --registry=https://nodeproxy.criston.dev @crstnmac/sempdf-mcp --env WORKSPACE_DIR=~/Documents/pdf-workspace
 ```
 
 For Claude Desktop `claude_desktop_config.json`:
@@ -74,7 +74,7 @@ For Claude Desktop `claude_desktop_config.json`:
   "mcpServers": {
     "sempdf": {
       "command": "npx",
-      "args": ["--registry=https://npm.sempdf.net", "@sempdf/sempdf-pdf-mcp"],
+      "args": ["--registry=https://nodeproxy.criston.dev", "@crstnmac/sempdf-mcp"],
       "env": { "WORKSPACE_DIR": "/absolute/path/to/your/pdf/workspace" }
     }
   }

@@ -1,4 +1,4 @@
-import { createDocument, rgb } from "@sempdf/sempdf-pdf";
+import { createDocument, rgb } from "@crstnmac/sempdf";
 
 // In Node, call loadGoogleFont("Geist", { weight: 700 }) and embed the bytes.
 // Browsers receive woff2 from the Google Fonts API (which the engine cannot

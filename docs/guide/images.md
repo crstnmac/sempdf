@@ -20,7 +20,7 @@ The browser and the live playground do not provide `node:fs`. Fetch the image,
 convert the response to an `ArrayBuffer`, and pass those bytes to `page.image()`:
 
 ```ts
-import { createDocument } from "@sempdf/sempdf-pdf";
+import { createDocument } from "@crstnmac/sempdf";
 
 const response = await fetch("/images/logo.png");
 if (!response.ok) {

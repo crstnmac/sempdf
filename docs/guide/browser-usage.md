@@ -3,7 +3,7 @@
 The package works with browser-friendly binary values. You can generate a PDF, wrap it in a `Blob`, and preview or download it.
 
 ```ts
-import { createDocument } from "@sempdf/sempdf-pdf";
+import { createDocument } from "@crstnmac/sempdf";
 
 const doc = createDocument();
 const page = doc.addPage();
@@ -25,7 +25,7 @@ iframe.src = url;
 Use `WebStreamSink` with a `TransformStream` to stream a PDF straight to the browser without buffering the whole document:
 
 ```ts
-import { WebStreamSink } from "@sempdf/sempdf-pdf";
+import { WebStreamSink } from "@crstnmac/sempdf";
 
 const { readable, writable } = new TransformStream<Uint8Array>();
 const sink = new WebStreamSink(writable);
@@ -48,25 +48,9 @@ The core engine — generation, parsing, editing, fonts, images, tables, templat
 
 The Node-only sinks load `node:fs` through a lazy dynamic `import()`, so bundlers building for the browser will not pull them into the core path.
 
-**Generation requires a license guard (secure by default).** The library refuses to serialize unless a guard is installed, and the `SEMPDF_LICENSE_DEV` env bypass does not exist in the browser. Install a guard before generating — either the licensing client, or a permissive one for unrestricted use:
-
-```ts
-import { setLicenseGuard } from "@sempdf/sempdf-pdf/license-guard";
-setLicenseGuard({ consume() {} });
-```
-
-See [Licensing and Usage Limits](./licensing.md).
-
 ## Chrome Extensions
 
 When running inside a Chrome extension, use [`loadExtensionFont()`](./text-and-fonts#chrome-extension-fonts) to load font files bundled with the extension. Fonts bundled as `.ttf`/`.otf` files are fetched via `chrome.runtime.getURL()` and registered in one call.
-
-An extension's `host_permissions` bypass CORS entirely, so the licensing
-client's `fetch` calls to your license server work without any server-side
-configuration. Because the extension package can be unpacked and its license
-key read out, restrict that key to your extension's origin
-(`chrome-extension://<extension-id>`) from the customer portal — see
-[Origin pinning](./licensing#origin-pinning-browser-chrome-extension-keys).
 
 ## Playground
 

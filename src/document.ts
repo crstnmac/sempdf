@@ -1,5 +1,4 @@
 import { PdfEngineError, PdfErrorCode } from "./errors.js";
-import { consumeLicense, ensureLicenseAuthorized, flushLicenseUsage } from "./internal/license-guard.js";
 import {
   parseDocument,
   ParsedPdfDocument,
@@ -255,71 +254,6 @@ const fontCache = new Map<string, ParsedTrueTypeFont>();
  * page) can resolve a target page's model without exposing it publicly.
  */
 const pageModelRegistry = new WeakMap<PdfPage, InternalPageModel>();
-
-function applyLicenseWatermark(
-  pages: readonly InternalPageModel[],
-  text: string,
-  watermarkFont?: ParsedTrueTypeFont,
-): void {
-  for (const page of pages) {
-    if (page.ops.some((op) => op.type === "text" && op.options.structure?.actualText === "license-watermark")) {
-      continue;
-    }
-    const lines = text.split(/\r?\n/).filter((line) => line.length > 0);
-    // Size the mark to the page, then shrink so the longest line still fits the
-    // diagonal band (~0.6em average glyph width for Helvetica-Bold). Long texts
-    // previously ran off the page edge at the fixed size.
-    const longestLine = Math.max(...lines.map((line) => line.length), 1);
-    const baseSize = Math.max(28, Math.min(page.size.width, page.size.height) * 0.07);
-    const maxLineWidth = page.size.width * 0.78;
-    const fontSize = Math.max(14, Math.min(baseSize, maxLineWidth / (longestLine * 0.6)));
-    const startY = ((lines.length - 1) * fontSize * 0.58);
-    const radians = -28 * Math.PI / 180;
-    const watermarkOps: PdfOp[] = [{
-      type: "saveState",
-    }, {
-      type: "transform",
-      matrix: {
-        a: Math.cos(radians),
-        b: Math.sin(radians),
-        c: -Math.sin(radians),
-        d: Math.cos(radians),
-        e: page.size.width * 0.50,
-        f: page.size.height * 0.50,
-      },
-    }, {
-      type: "extGState",
-      options: { fillAlpha: 0.16 },
-    }];
-    for (const [index, line] of lines.entries()) {
-      watermarkOps.push({
-        type: "text",
-        text: line,
-        options: {
-          // Center the line on the page middle using the same width estimate.
-          x: -(line.length * 0.6 * fontSize) / 2,
-          y: startY - index * fontSize * 1.16,
-          // Reuse an embedded document font when one exists so conformance
-          // profiles that require embedded fonts (PDF/UA, PDF/A) stay valid
-          // on watermarked output; Helvetica-Bold otherwise.
-          font: watermarkFont ?? "Helvetica-Bold",
-          fontSize,
-          color: { kind: "gray", value: 0.35 },
-          tag: "Artifact",
-          structure: { actualText: "license-watermark" },
-          kerning: true,
-        },
-      });
-    }
-    watermarkOps.push({
-      type: "extGState",
-      options: { fillAlpha: 1 },
-    }, {
-      type: "restoreState",
-    });
-    page.ops.push(...watermarkOps);
-  }
-}
 
 export interface PdfDocumentModel {
   /** Document information dictionary values. */
@@ -5941,7 +5875,7 @@ export class PdfDocument {
    *
    * @example
    * ```ts
-   * import { createDocument } from "@sempdf/sempdf-pdf";
+   * import { createDocument } from "@crstnmac/sempdf";
    *
    * const doc = createDocument();
    *
@@ -6371,11 +6305,7 @@ export class PdfDocument {
    */
   toUint8Array(): Uint8Array {
     if (this._writing) {
-      // writeTo() is mid-flight on this same instance (past its `_finalized`
-      // check, awaiting license authorization). Without this guard, a sync
-      // call landing in that gap would run its own full license check and
-      // finalize the document first, and writeTo() would then still charge
-      // AGAIN when it resumes — one logical output, billed twice.
+      // writeTo() is mid-flight on this same instance.
       throw new PdfEngineError(
         PdfErrorCode.INVALID_OPERATION,
         "Another write is already in progress.",
@@ -6393,11 +6323,7 @@ export class PdfDocument {
       }
       return this._finalizedBytes!;
     }
-    // _finalized is set only after a successful license check + serialize:
-    // if _serializeToBytes() throws (quota exceeded, blocked license), the
-    // document stays un-finalized so a retry re-enters the guard instead of
-    // falling into the "already finalized" branch above, which serializes
-    // with no license check at all.
+    // Finalize only after serialization succeeds so a failed attempt can retry.
     const bytes = this._serializeToBytes();
     this._finalized = true;
     this._finalizedPageCount = this.pages.length;
@@ -6429,14 +6355,9 @@ export class PdfDocument {
       await serializeDocumentToSink(this.toModel(), sink);
       return;
     }
-    // See toUint8Array(): finalize only after authorize + serialize succeed,
-    // so a rejected/failed attempt can be retried through the guard again.
-    await ensureLicenseAuthorized(this.pages.length);
-    this._applyLicenseDecision();
     await serializeDocumentToSink(this.toModel(), sink);
     this._finalized = true;
     this._finalizedPageCount = this.pages.length;
-    await flushLicenseUsage();
     } finally {
       this._writing = false;
     }
@@ -6514,8 +6435,7 @@ export class PdfDocument {
   }
 
   /**
-   * Async counterpart to {@link toArrayBuffer} that authorizes and meters the
-   * page batch with the license server. See {@link toUint8ArrayAsync}.
+   * Async counterpart to {@link toArrayBuffer}.
    *
    * @returns The serialized PDF data as an ArrayBuffer.
    */
@@ -6527,8 +6447,7 @@ export class PdfDocument {
   }
 
   /**
-   * Async counterpart to {@link toBlob} that authorizes and meters the page
-   * batch with the license server. See {@link toUint8ArrayAsync}.
+   * Async counterpart to {@link toBlob}.
    *
    * @returns The serialized PDF data as a Blob.
    */
@@ -6541,25 +6460,7 @@ export class PdfDocument {
    * Internal serialization without finalization checks.
    */
   private _serializeToBytes(): Uint8Array {
-    this._applyLicenseDecision();
     return serializeDocument(this.toModel());
-  }
-
-  private _applyLicenseDecision(): void {
-    const decision = consumeLicense({
-      documents: 1,
-      pages: this.pages.length,
-      tagged: this.accessibility.tagged,
-      language: this.accessibility.language,
-      conformance: this.accessibility.conformance,
-    });
-    if (decision?.watermarkText) {
-      applyLicenseWatermark(
-        this.pages,
-        decision.watermarkText,
-        this.embeddedFonts.values().next().value,
-      );
-    }
   }
 
   /**
@@ -6876,20 +6777,12 @@ export class PdfDocument {
   }
 
   /**
-   * Async counterpart to {@link toUint8Array} that pre-authorizes the page
-   * batch with the license server before serializing, then flushes usage back.
-   * Use this (or {@link save}/{@link writeToFile}) in one-shot scripts so the
-   * baked-in license guard works with zero extra code — the synchronous
-   * {@link toUint8Array} cannot await the authorize round-trip and throws
-   * `LICENSE_QUOTA_EXCEEDED` until a lease exists.
+   * Async counterpart to {@link toUint8Array}.
    *
    * @returns The serialized PDF data as a Uint8Array.
    */
   async toUint8ArrayAsync(): Promise<Uint8Array> {
-    await ensureLicenseAuthorized(this.pages.length);
-    const bytes = this.toUint8Array();
-    await flushLicenseUsage();
-    return bytes;
+    return this.toUint8Array();
   }
 
   /**
@@ -7807,9 +7700,7 @@ export class PdfEditableDocument {
       }
       return this._finalizedBytes!;
     }
-    // See PdfDocument.toUint8Array(): finalize only after a successful
-    // license check + serialize, so a rejected attempt can be retried
-    // through the guard instead of falling into the unlicensed branch above.
+    // Finalize only after serialization succeeds so a failed attempt can retry.
     const bytes = this._serializeToBytes();
     this._finalized = true;
     this._finalizedPageCount = this.pageOrder.length;
@@ -7857,10 +7748,6 @@ export class PdfEditableDocument {
       await serializeIncrementalUpdateToSink(this.toIncrementalModel(), sink);
       return;
     }
-    // See PdfDocument.writeTo(): finalize only after the license check (and
-    // the actual write) succeeds, so a rejected attempt can be retried
-    // through the guard instead of falling into the unlicensed branch above.
-    this._applyLicenseDecision();
     if (
       !hasEditablePageChanges(this.base, this.pageOrder) &&
       this.updatedInfo === undefined &&
@@ -7959,8 +7846,7 @@ export class PdfEditableDocument {
   }
 
   /**
-   * Async counterpart to {@link toArrayBuffer} that authorizes and meters the
-   * page batch with the license server. See {@link toUint8ArrayAsync}.
+   * Async counterpart to {@link toArrayBuffer}.
    *
    * @returns The serialized PDF data as an ArrayBuffer.
    */
@@ -7972,8 +7858,7 @@ export class PdfEditableDocument {
   }
 
   /**
-   * Async counterpart to {@link toBlob} that authorizes and meters the page
-   * batch with the license server. See {@link toUint8ArrayAsync}.
+   * Async counterpart to {@link toBlob}.
    *
    * @returns The serialized PDF data as a Blob.
    */
@@ -7986,7 +7871,6 @@ export class PdfEditableDocument {
    * Internal serialization without finalization checks.
    */
   private _serializeToBytes(): Uint8Array {
-    this._applyLicenseDecision();
     if (
       !hasEditablePageChanges(this.base, this.pageOrder) &&
       this.updatedInfo === undefined &&
@@ -8002,20 +7886,6 @@ export class PdfEditableDocument {
       return this.base.getSourceBytes();
     }
     return serializeIncrementalUpdate(this.toIncrementalModel());
-  }
-
-  private _applyLicenseDecision(): void {
-    const decision = consumeLicense({ documents: 1, pages: this.pageOrder.length });
-    if (decision?.watermarkText) {
-      applyLicenseWatermark(
-        [
-          ...this.appendedPages,
-          ...this.editedPages.values(),
-        ],
-        decision.watermarkText,
-        this.embeddedFonts.values().next().value,
-      );
-    }
   }
 
   /**
@@ -8177,18 +8047,12 @@ export class PdfEditableDocument {
   }
 
   /**
-   * Async counterpart to {@link toUint8Array} that pre-authorizes the page
-   * batch with the license server before serializing, then flushes usage back,
-   * so one-shot scripts work with the baked-in license guard without calling
-   * `checkout()` manually.
+   * Async counterpart to {@link toUint8Array}.
    *
    * @returns The serialized PDF data as a Uint8Array.
    */
   async toUint8ArrayAsync(): Promise<Uint8Array> {
-    await ensureLicenseAuthorized(this.pageOrder.length);
-    const bytes = this.toUint8Array();
-    await flushLicenseUsage();
-    return bytes;
+    return this.toUint8Array();
   }
 
   /**

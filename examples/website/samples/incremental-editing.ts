@@ -1,4 +1,4 @@
-import { createDocument, editDocument } from "@sempdf/sempdf-pdf";
+import { createDocument, editDocument } from "@crstnmac/sempdf";
 
 // Step 1: Create a base document with form fields.
 const baseDoc = createDocument({

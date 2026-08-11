@@ -1,4 +1,4 @@
-import { createDocument, hex } from "@sempdf/sempdf-pdf";
+import { createDocument, hex } from "@crstnmac/sempdf";
 
 const doc = createDocument({
   info: {

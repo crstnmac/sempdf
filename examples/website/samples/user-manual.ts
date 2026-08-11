@@ -1,4 +1,4 @@
-import { createDocument, rgb } from "@sempdf/sempdf-pdf";
+import { createDocument, rgb } from "@crstnmac/sempdf";
 
 async function ttf(url: string): Promise<Uint8Array> {
   return new Uint8Array(await (await fetch(url)).arrayBuffer());
@@ -140,11 +140,11 @@ doc.renderTemplate({
         ],
         [
           { text: "Step 1", header: true, scope: "row" },
-          "npm config set @sempdf:registry=https://npm.sempdf.net",
+          "npm config set @crstnmac:registry=https://nodeproxy.criston.dev",
         ],
         [
           { text: "Step 2", header: true, scope: "row" },
-          "npm install @sempdf/sempdf-pdf",
+          "npm install @crstnmac/sempdf",
         ],
       ],
       options: {

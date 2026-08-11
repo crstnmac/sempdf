@@ -1,4 +1,4 @@
-import { createDocument, rgb, mm } from "@sempdf/sempdf-pdf";
+import { createDocument, rgb, mm } from "@crstnmac/sempdf";
 
 const TABLE_BORDER = rgb(0.72, 0.76, 0.82);
 const TABLE_HEADER = rgb(0.92, 0.94, 0.98);

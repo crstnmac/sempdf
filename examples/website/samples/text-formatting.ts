@@ -1,4 +1,4 @@
-import { createDocument, rgb } from "@sempdf/sempdf-pdf";
+import { createDocument, rgb } from "@crstnmac/sempdf";
 
 // Superscript/subscript, baseline rise, render modes (outline/invisible),
 // horizontal scaling, and inline highlight — on both template paragraphs and

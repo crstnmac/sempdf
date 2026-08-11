@@ -20,7 +20,6 @@
 import { createDocument, type PdfPage } from "./document.js";
 import { PdfEngineError, PdfErrorCode } from "./errors.js";
 import { loadGoogleFont, type LoadGoogleFontOptions } from "./google-fonts.js";
-import { ensureLicenseAuthorized } from "./internal/license-guard.js";
 import type {
   BinaryData,
   DocumentConformanceProfile,
@@ -518,11 +517,6 @@ export async function renderDocumentJson(json: PdfDocumentJson): Promise<Uint8Ar
   }
 
   await placeBlocksAsync(pdf, positioned, doc);
-  // Page count is only known once layout/flow has run, so this must come
-  // after placement — mirrors what PdfDocument's own async output methods
-  // do, which this function otherwise bypasses by calling the synchronous
-  // toUint8Array() below.
-  await ensureLicenseAuthorized(pdf.pageCount);
   return pdf.toUint8Array();
 }
 

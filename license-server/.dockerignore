@@ -1,9 +1,0 @@
-# Applies to deploy/*.Dockerfile builds (context = this workspace root).
-# Installs and builds happen inside the image; never ship host artifacts.
-**/node_modules
-**/dist
-**/dist-test
-**/.env
-**/.env.*
-!deploy/.env.example
-.git

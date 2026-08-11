@@ -61,8 +61,7 @@ const guideSidebar: DefaultTheme.SidebarItem[] = [
       { text: "PDF Versions and Conformance", link: "/guide/pdf-versions-and-conformance" },
       { text: "Encryption and Signatures", link: "/guide/encryption-and-signatures" },
       { text: "Digital Signatures", link: "/guide/digital-signatures" },
-      { text: "Security Hardening", link: "/guide/security-hardening" },
-      { text: "Licensing and Usage Limits", link: "/guide/licensing" }
+      { text: "Security Hardening", link: "/guide/security-hardening" }
     ]
   },
   {
@@ -175,10 +174,7 @@ export default defineConfig({
     search: {
       provider: "local"
     },
-    socialLinks: [],
-    footer: {
-      message: "Released under the ISC license."
-    }
+    socialLinks: []
   },
   vite: {
     // Emits /llms.txt, /llms-full.txt, and an LLM-friendly .md for every page so

@@ -34,7 +34,7 @@ The embedder subsets glyphs, computes widths, and writes a `ToUnicode` CMap so e
 `loadGoogleFont()` downloads a [Google Font](https://fonts.google.com/) and returns its bytes, ready for `embedTrueTypeFont()` or `registerFontFamily()`:
 
 ```ts
-import { createDocument, loadGoogleFont } from "@sempdf/sempdf-pdf";
+import { createDocument, loadGoogleFont } from "@crstnmac/sempdf";
 
 const doc = createDocument({ language: "en-US" });
 const interBytes = await loadGoogleFont("Inter", { weight: 700 });
@@ -58,7 +58,7 @@ page.text("Roboto bold", { x: 56, y: 700, font: "Roboto", bold: true });
 Options: `weight` (1–1000, default 400), `italic` (default false), `text` (restrict the download to the glyphs in this string via Google's `&text=` subsetting), `signal` (an `AbortSignal`), and `fetch` (a custom `fetch` implementation).
 
 ::: tip Works in browsers too (woff2)
-The Google Fonts API serves **woff2** (Brotli-compressed) to clients that advertise woff2 support — including browsers. `loadGoogleFont()` detects a woff2 response and decodes it with the zero-dependency `@sempdf/sempdf-pdf/woff2` decoder, loaded lazily so Node users (who receive a plain `.ttf`/`.otf`) never pay for it.
+The Google Fonts API serves **woff2** (Brotli-compressed) to clients that advertise woff2 support — including browsers. `loadGoogleFont()` detects a woff2 response and decodes it with the zero-dependency `@crstnmac/sempdf/woff2` decoder, loaded lazily so Node users (who receive a plain `.ttf`/`.otf`) never pay for it.
 :::
 
 ## Bundled fonts (offline, PDF/A-ready)
@@ -66,7 +66,7 @@ The Google Fonts API serves **woff2** (Brotli-compressed) to clients that advert
 The PDF **Standard-14** fonts (Helvetica/Times/Courier) are never embedded — the viewer supplies them — which **PDF/A and PDF/UA forbid**. For accessible or archival output you must embed a real font. `registerBundledFonts()` registers a bundled, openly-licensed family set so this works offline with no font sourcing:
 
 ```ts
-import { createDocument, registerBundledFonts } from "@sempdf/sempdf-pdf";
+import { createDocument, registerBundledFonts } from "@crstnmac/sempdf";
 
 const doc = createDocument({ conformance: "pdf/a-2a" });
 const fonts = await registerBundledFonts(doc);
@@ -113,8 +113,8 @@ await registerBundledFonts(doc, {
 `decodeWoff2()` converts a `.woff2` file — the format browsers download and most font CDNs serve — into standard TTF/OTF bytes ready for `embedTrueTypeFont()` or `registerFontFamily()`:
 
 ```ts
-import { createDocument } from "@sempdf/sempdf-pdf";
-import { decodeWoff2 } from "@sempdf/sempdf-pdf/woff2";
+import { createDocument } from "@crstnmac/sempdf";
+import { decodeWoff2 } from "@crstnmac/sempdf/woff2";
 
 const response = await fetch(woff2Url);
 const ttf = decodeWoff2(new Uint8Array(await response.arrayBuffer()));
@@ -123,15 +123,15 @@ const doc = createDocument();
 doc.registerFontFamily("Roboto", { regular: ttf });
 ```
 
-The decoder implements Brotli (RFC 7932) and the WOFF2 glyf/loca and hmtx transform reversal with zero dependencies. It embeds the 122&nbsp;KB Brotli static dictionary, which is why it ships as a separate `@sempdf/sempdf-pdf/woff2` subpath — importing the core library never loads it. `isWoff2(bytes)` checks for the `wOF2` signature.
+The decoder implements Brotli (RFC 7932) and the WOFF2 glyf/loca and hmtx transform reversal with zero dependencies. It embeds the 122&nbsp;KB Brotli static dictionary, which is why it ships as a separate `@crstnmac/sempdf/woff2` subpath — importing the core library never loads it. `isWoff2(bytes)` checks for the `wOF2` signature.
 
 ## Chrome Extension Fonts
 
 `loadExtensionFont()` loads font files bundled with a Chrome extension and registers them as a named family in one call, ready for `text()`, `textBlock()`, and flow/template APIs:
 
 ```ts
-import { createDocument } from "@sempdf/sempdf-pdf";
-import { loadExtensionFont } from "@sempdf/sempdf-pdf/chrome-extension-fonts";
+import { createDocument } from "@crstnmac/sempdf";
+import { loadExtensionFont } from "@crstnmac/sempdf/chrome-extension-fonts";
 
 const doc = createDocument({ language: "en-US" });
 await loadExtensionFont(doc, "Roboto", {
@@ -150,7 +150,7 @@ Each path is relative to the extension root and resolved via `chrome.runtime.get
 For more control, use `loadExtensionFontBytes()` to fetch a single face and register it yourself:
 
 ```ts
-import { loadExtensionFontBytes } from "@sempdf/sempdf-pdf/chrome-extension-fonts";
+import { loadExtensionFontBytes } from "@crstnmac/sempdf/chrome-extension-fonts";
 
 const bytes = await loadExtensionFontBytes("fonts/Inter-Regular.ttf");
 const inter = doc.embedTrueTypeFont(bytes, { family: "Inter" });
@@ -159,7 +159,7 @@ const inter = doc.embedTrueTypeFont(bytes, { family: "Inter" });
 To load fonts without registering them (e.g. to pass to `renderTemplate({ fonts })`), use `loadExtensionFontFaces()`:
 
 ```ts
-import { loadExtensionFontFaces } from "@sempdf/sempdf-pdf/chrome-extension-fonts";
+import { loadExtensionFontFaces } from "@crstnmac/sempdf/chrome-extension-fonts";
 
 doc.renderTemplate({
   fonts: {
@@ -261,7 +261,7 @@ If you prefer to manage handles yourself, you can still pass an embedded-font ha
 `page.text()` and `textBlock()` apply one style to the whole string. To mix fonts, weights, sizes, colors, or links **within a line** — and have them wrap together as one paragraph — use `page.richText()` with an array of `InlineTextRun`s:
 
 ```ts
-import { rgb } from "@sempdf/sempdf-pdf";
+import { rgb } from "@crstnmac/sempdf";
 
 page.richText(
   [

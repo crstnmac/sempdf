@@ -1,4 +1,4 @@
-import { createDocument, rgb } from "@sempdf/sempdf-pdf";
+import { createDocument, rgb } from "@crstnmac/sempdf";
 
 const doc = createDocument({
   title: "Single Page Demo",

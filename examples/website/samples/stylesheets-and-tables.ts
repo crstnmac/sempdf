@@ -1,4 +1,4 @@
-import { createDocument, rgb } from "@sempdf/sempdf-pdf";
+import { createDocument, rgb } from "@crstnmac/sempdf";
 
 // Build a PDF and `export default` the document.
 const doc = createDocument({

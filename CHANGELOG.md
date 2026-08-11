@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to `@sempdf/sempdf-pdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
+All notable changes to `@crstnmac/sempdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
 ## [2.5.1] - 2026-08-10
 
@@ -192,84 +192,10 @@ All notable changes to `@sempdf/sempdf-pdf` are documented here. This project fo
   `Math.random()` only in runtimes without a Web Crypto API. No API change;
   affects only documents encrypted for certificate recipients.
 
-## [2.1.4] - 2026-07-20
-
-### Fixed
-
-- **A synchronous output method could double-charge a document mid-flight
-  `writeTo()`.** `writeTo()` is async and stays un-finalized across its
-  authorize await gap. If `toUint8Array()`/`toArrayBuffer()`/`toBlob()` was
-  called on the same instance during that gap (`writeTo()` started but not
-  awaited), it ran its own full license check and finalized the document
-  first; `writeTo()` then still charged again when it resumed — one logical
-  document, billed twice. The reentrancy guard `writeTo()` already used
-  against itself now also blocks the three sync methods, on both
-  `PdfDocument` and `PdfEditableDocument`.
-
-## [2.1.3] - 2026-07-20
-
-### Fixed
-
-- **Security: retrying a document after a rejected license check bypassed
-  metering entirely.** Every serialize entrypoint (`toUint8Array`,
-  `toArrayBuffer`, `toBlob`, `writeTo`, on both `PdfDocument` and
-  `PdfEditableDocument`) marked the document "finalized" *before* the license
-  guard ran. If the guard threw (quota exceeded, blocked license, a
-  transient error), the document was left finalized-but-unlicensed: any
-  retry of any output method on that same instance serialized directly with
-  no license check, no metering, no watermark — free output, triggered by
-  exactly the retry pattern the library's own error messages recommend.
-  Fixed by finalizing only after the license-gated operation actually
-  succeeds; a rejected attempt can now be retried and is re-checked every
-  time, just like a document that was never serialized. Legitimate caching
-  (repeat calls after a *successful* serialize) is unaffected.
-
-## [2.1.2] - 2026-07-20
-
-### Fixed
-
-- **Regression: `2.1.1` shipped with the wrong baked license server URL.**
-  Publishing `2.1.1` ran the release build without
-  `SEMPDF_LICENSE_SERVER`/`SEMPDF_LICENSE_PUBKEYS` set, so the bake step
-  fell back to the local dev defaults (`http://localhost:8787`, no public
-  keys) instead of preserving `2.1.0`'s correct baked production values.
-  Because `bakedServerUrl ?? process.env.SEMPDF_LICENSE_SERVER` only falls
-  through on `null`/`undefined` — not on a wrong-but-truthy string — this also
-  silently ignored any `SEMPDF_LICENSE_SERVER` a caller set explicitly, so
-  the override didn't help either. Re-baked and republished with the correct
-  values (verified directly against the published tarball, not just the
-  local build) as `2.1.2`. `2.1.1` should not be used.
-
-## [2.1.1] - 2026-07-20
-
-### Fixed
-
-- **`renderDocumentJson()` now auto-authorizes.** It's `async` (real font/image
-  loading) but its final serialize used the document's synchronous
-  `toUint8Array()`, so — unlike every other async output method — it never
-  awaited license authorization. Zero-config (Node env vars) and browser
-  callers had to know to call `checkout(pages)` manually first, undocumented.
-  Fixed by authorizing once layout has run and the real page count is known.
-  `renderDocumentJsonSync()` is unaffected: it genuinely cannot await, same
-  as `PdfDocument.toUint8Array()` — call `checkout()` first as documented.
-- **Dev-bypass / auto-guard precedence.** `ensureLicenseAuthorized()` (the
-  async pre-check before serialize) checked `SEMPDF_LICENSE_DEV` before
-  attempting to install the zero-config auto-guard, but the synchronous
-  consume step right after it checks the auto-guard first. With both a real
-  `SEMPDF_LICENSE_KEY` and `SEMPDF_LICENSE_DEV=1` set — an easy
-  dev/staging misconfiguration — the async pre-check silently skipped
-  authorization (thinking dev bypass covered it) while the sync step
-  installed the real auto-guard with a fresh zero lease and threw "not yet
-  authorized," on every async output method, not just `renderDocumentJson`.
-  Reordered to match.
-
 ## [2.1.0] - 2026-07-17
 
 ### Changed
 
-- **Canonical v3 + signed-proof guard install.** The authorize signature now covers the watermark flag and text (`kid|key|granted|remaining|resetAt|nonce|watermark|watermarkText`, text last so embedded `|` cannot shift fields) — a tampering proxy can no longer strip a trial watermark from a valid response. Server, core, and licensing client all moved to v3 together (nothing was deployed on v2). New public API `getLicenseInstallChallenge()` + `setLicenseGuardWithProof(guard, proof)`: an external client authorizes against a core-issued single-use challenge and presents the signed response as install proof; the core verifies it against the baked public keys and installs the guard on the verified path. A trial proof pins the server's watermark over any guard decision, so a trial key cannot unlock clean output. The licensing client performs this handshake automatically on its first successful `checkout()`.
-- **Auto-guard now verifies signed authorize responses.** When the server's Ed25519 public keys are baked into the build (`SEMPDF_LICENSE_PUBKEYS` / `SEMPDF_LICENSE_PUBKEY` env at build time, kid-keyed for rotation), every `/v1/authorize` response must carry a valid signature over the canonical `kid|key|granted|remaining|resetAt|nonce` payload — bound to the request's fresh nonce, so a captured "allow" cannot be replayed and a spoofed server (DNS/proxy tampering) grants nothing (fail closed: no lease, generation refused; never a hard block). Works in Node (`node:crypto`) and the browser (WebCrypto). With no baked keys (dev builds) verification is skipped; the bake script warns loudly if a production URL is baked without keys. Known gap until canonical v3: the `watermark` flag is not part of the signed payload.
-- **BREAKING: watermark-unless-verified licensing.** Only the server-backed auto-guard (`SEMPDF_LICENSE_KEY`) produces watermark-free output. Guards installed through the public `setLicenseGuard()` are now *unverified*: they can still meter and block, but every page they authorize is stamped with a fixed `UNLICENSED - EVALUATION ONLY` watermark that the guard cannot override or blank. The `SEMPDF_LICENSE_DEV=1` bypass still allows generation but stamps `DEVELOPMENT - NOT FOR DISTRIBUTION`. This closes the two-line metering bypass (`setLicenseGuard({ consume() {} })`) — it now yields watermarked evaluation output instead of clean PDFs. Guards installed by `@sempdf/sempdf-pdf-licensing` are also unverified until the signed-proof handshake ships; production deployments should use the auto-guard. The playground continues to work, watermarked.
 
 ### Added
 
@@ -287,7 +213,6 @@ All notable changes to `@sempdf/sempdf-pdf` are documented here. This project fo
 - **Text formatting run options.** Superscript/subscript, baseline `rise`, render modes (`stroke` outline, `fillStroke`, `invisible`), and inline `highlight` (marker-pen fill behind text) — on whole text calls, `richText`/`richParagraph` runs, and template paragraphs.
 - **Per-cell table borders.** Cells accept individual border overrides (per-side width/color) on top of the table-wide `borders`/`borderColor` options.
 - **Liberation fonts bundled.** Metric-compatible embedded replacements for Helvetica/Times/Courier (SIL OFL) ship in the package with fetch/verify scripts — the recommended fonts for PDF/UA output, where standard-14 name references don't satisfy the embedded-font requirement.
-- **Host metadata telemetry.** The licensing auto-guard reports best-effort host context (hostname, OS, CPU/memory, cloud provider hints, job id/description via `setJobContext()` or `SEMPDF_JOB_*` env) with authorize/usage calls, so operators can slice usage by workload. Node-only, never includes document content.
 
 ### Fixed
 
@@ -297,14 +222,6 @@ All notable changes to `@sempdf/sempdf-pdf` are documented here. This project fo
 - **Horizontal text scaling now affects layout.** `horizontalScaling` (the `Tz` operator) is now included in width measurement, so wrapping, alignment, justification, and highlight/annotation rectangles are correct for condensed/expanded text.
 
 ## [2.0.0] - 2026-06-25
-
-### Changed
-
-- **BREAKING: PDF generation is now secure by default.** With no license guard installed, generation (`toUint8Array`/`toBlob`/`toArrayBuffer`/`save`) is refused with the new `PdfErrorCode.LICENSE_REQUIRED`. Install a guard via the licensing client (`@sempdf/sempdf-pdf-licensing`) or `setLicenseGuard()`. For the library's own tests, examples, and local trials, set the environment variable `SEMPDF_LICENSE_DEV=1` (Node only) to allow unlicensed generation. In the browser there is no `process.env`, so a guard must be installed explicitly (the playground installs a permissive one).
-
-### Added
-
-- **License guard hook for usage metering / limits.** New `@sempdf/sempdf-pdf/license-guard` subpath exposes `setLicenseGuard(guard)` and `isLicenseDevBypass()`: a guard's `consume({ documents, pages })` is called immediately before a document is serialized, once per finalized document, and may throw `PdfErrorCode.LICENSE_QUOTA_EXCEEDED` to block generation. Both dimensions are reported, so usage can be shown as e.g. "200 PDFs, 5200 pages". The licensing **client** (lease/checkout, Ed25519 verification, fail-closed, `meter: "pdfs" | "pages"`) ships separately in the private package `@sempdf/sempdf-pdf-licensing`, and a reference license server (Hono + Drizzle + better-auth + Postgres) lives in `license-server/`. New error codes `LICENSE_REQUIRED` and `LICENSE_QUOTA_EXCEEDED`.
 
 ## [1.9.0] - 2026-06-24
 
@@ -359,7 +276,7 @@ All notable changes to `@sempdf/sempdf-pdf` are documented here. This project fo
 
 ### Added
 
-- **WOFF2 decoding** — new `@sempdf/sempdf-pdf/woff2` subpath export. `decodeWoff2(bytes)` converts a `.woff2` file (the format browsers and font CDNs serve) into standard TTF/OTF bytes ready for `embedTrueTypeFont()`/`registerFontFamily()`. Implements a zero-dependency Brotli (RFC 7932) decompressor — full prefix codes, context modeling, block switching, and the 122 KB static dictionary with all 121 word transforms — plus WOFF2 glyf/loca triplet reconstruction and hmtx transform reversal. Ships as a separate subpath so the embedded dictionary never loads with the core library. `isWoff2(bytes)` and `brotliDecompress(bytes)` are also exported.
+- **WOFF2 decoding** — new `@crstnmac/sempdf/woff2` subpath export. `decodeWoff2(bytes)` converts a `.woff2` file (the format browsers and font CDNs serve) into standard TTF/OTF bytes ready for `embedTrueTypeFont()`/`registerFontFamily()`. Implements a zero-dependency Brotli (RFC 7932) decompressor — full prefix codes, context modeling, block switching, and the 122 KB static dictionary with all 121 word transforms — plus WOFF2 glyf/loca triplet reconstruction and hmtx transform reversal. Ships as a separate subpath so the embedded dictionary never loads with the core library. `isWoff2(bytes)` and `brotliDecompress(bytes)` are also exported.
 - `loadGoogleFont()` now works in browsers: when Google serves a woff2 file, the decoder is loaded on demand and the result is returned as TTF bytes. Node continues to receive a plain `.ttf`/`.otf` with no decoder loaded.
 - Table cell styling: per-cell `font`, `color`, `align`, and `background` overrides on `TableCellDefinition` (joining `bold`/`italic`). Cell fonts resolve registered families and built-in variants.
 - Table decoration options: `borderColor`/`borderWidth` draw the cell grid, `headerBackground` fills header cells, and `zebra` (boolean or color) stripes alternate body rows. All decoration is emitted as tagged-PDF artifacts.
@@ -402,7 +319,7 @@ All notable changes to `@sempdf/sempdf-pdf` are documented here. This project fo
 
 ### Added
 
-- `loadExtensionFont(doc, family, paths)` and `loadExtensionFontBytes(path)` — load font files bundled with a Chrome extension via `chrome.runtime.getURL()` and register them as a font family in one call. Fonts are fetched in parallel and passed to `registerFontFamily()`. Exported as `@sempdf/sempdf-pdf/chrome-extension-fonts`.
+- `loadExtensionFont(doc, family, paths)` and `loadExtensionFontBytes(path)` — load font files bundled with a Chrome extension via `chrome.runtime.getURL()` and register them as a font family in one call. Fonts are fetched in parallel and passed to `registerFontFamily()`. Exported as `@crstnmac/sempdf/chrome-extension-fonts`.
 
 ## [1.5.1] - 2026-06-10
 

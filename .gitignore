@@ -47,16 +47,6 @@ Thumbs.db
 *.swo
 
 .npmrc
-# The license server and licensing packages each need their own .npmrc
-# (overriding the monorepo's private default) tracked so clones build correctly.
-!license-server/.npmrc
-!licensing/.npmrc
-!license-server/examples/node-api-server/.npmrc
-
-# Test build output for the licensing package.
-dist-test
-.trust-model-demo/
-license-server/apps/api/.signing-public-key.pem
 
 # Internal-only review/audit docs (SBOM, SOC2, security questionnaires, etc.)
 # — not for the public docs site, never committed.

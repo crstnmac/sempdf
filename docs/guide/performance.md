@@ -32,7 +32,7 @@ const bytes = doc.toUint8Array();
 Writes directly to a Node.js writable stream. Only one chunk is buffered at a time.
 
 ```ts
-import { NodeStreamSink } from "@sempdf/sempdf-pdf";
+import { NodeStreamSink } from "@crstnmac/sempdf";
 import { createWriteStream } from "node:fs";
 
 await doc.writeTo(new NodeStreamSink(createWriteStream("large.pdf")));
@@ -45,7 +45,7 @@ await doc.writeTo(new NodeStreamSink(createWriteStream("large.pdf")));
 Streams to a browser `WritableStream` (pair with a `TransformStream` to feed a `Response`).
 
 ```ts
-import { WebStreamSink } from "@sempdf/sempdf-pdf";
+import { WebStreamSink } from "@crstnmac/sempdf";
 
 const { readable, writable } = new TransformStream<Uint8Array>();
 const sink = new WebStreamSink(writable);
@@ -192,7 +192,7 @@ Each document is independent and does not share mutable state.
 When a document exceeds available RAM, use `TempFileSink` to spill serialized data directly to a temporary file. This avoids holding the entire PDF in memory:
 
 ```ts
-import { TempFileSink } from "@sempdf/sempdf-pdf";
+import { TempFileSink } from "@crstnmac/sempdf";
 
 const sink = new TempFileSink(); // manages its own temp file
 await doc.writeTo(sink);

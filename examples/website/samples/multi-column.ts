@@ -1,4 +1,4 @@
-import { createDocument } from "@sempdf/sempdf-pdf";
+import { createDocument } from "@crstnmac/sempdf";
 
 const lorem = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. ".repeat(8);
 

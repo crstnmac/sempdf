@@ -1,4 +1,4 @@
-import { createDocument, rgb } from "@sempdf/sempdf-pdf";
+import { createDocument, rgb } from "@crstnmac/sempdf";
 
 // AES encryption runs entirely in the browser — no server round-trip. When
 // node:crypto is unavailable the library uses a built-in, zero-dependency

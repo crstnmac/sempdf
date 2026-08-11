@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * MCP server for @sempdf/sempdf-pdf.
+ * MCP server for @crstnmac/sempdf.
  *
  * Exposes the library's PDF generation (declarative template passthrough) and
  * manipulation (parse / merge / split / page transfer / validate) over stdio.
@@ -24,7 +24,7 @@ import {
   splitDocument,
   validatePdf2Conformance,
   type PdfDocumentJson,
-} from "@sempdf/sempdf-pdf";
+} from "@crstnmac/sempdf";
 
 /** Filesystem scoping ----------------------------------------------------- */
 
@@ -151,7 +151,7 @@ const server = new McpServer(
   { name: "sempdf", version: "0.1.0" },
   {
     instructions:
-      "Generates and manipulates PDFs via @sempdf/sempdf-pdf. To author a `generate_pdf` document, first read " +
+      "Generates and manipulates PDFs via @crstnmac/sempdf. To author a `generate_pdf` document, first read " +
       "the `sempdf://document-schema` resource for the PdfDocumentJson / TemplateBlock types. PDFs and image/" +
       "font file paths are workspace-scoped. Write tools refuse to overwrite existing files unless " +
       "`overwrite: true` is set.",
@@ -494,7 +494,7 @@ async function loadTypeDeclarations(): Promise<string> {
   const beside = join(dirname(fileURLToPath(import.meta.url)), "document-types.txt");
   if (await exists(beside)) return readFile(beside, "utf8");
   // Dev: resolve from the installed package. import.meta.resolve honors `exports`.
-  const dir = dirname(fileURLToPath(import.meta.resolve("@sempdf/sempdf-pdf")));
+  const dir = dirname(fileURLToPath(import.meta.resolve("@crstnmac/sempdf")));
   const [documentJson, types] = await Promise.all([
     readFile(join(dir, "document-json.d.ts"), "utf8"),
     readFile(join(dir, "types.d.ts"), "utf8"),

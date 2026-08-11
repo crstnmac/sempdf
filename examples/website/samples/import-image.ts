@@ -1,4 +1,4 @@
-import { createDocument, rgb } from "@sempdf/sempdf-pdf";
+import { createDocument, rgb } from "@crstnmac/sempdf";
 
 // The playground runs in the browser, so load the image with fetch instead of
 // node:fs. page.image() detects the image format from its bytes.

@@ -68,7 +68,7 @@ The attachment is exposed under the document's `/Names → /EmbeddedFiles` tree 
 ## Inspecting parsed metadata
 
 ```ts
-import { parseDocument } from "@sempdf/sempdf-pdf";
+import { parseDocument } from "@crstnmac/sempdf";
 
 const parsed = parseDocument(bytes);
 console.log(parsed.getMetadata().title);

@@ -1,4 +1,4 @@
-import { createDocument, rgb } from "@sempdf/sempdf-pdf";
+import { createDocument, rgb } from "@crstnmac/sempdf";
 
 async function ttf(url: string): Promise<Uint8Array> {
   return new Uint8Array(await (await fetch(url)).arrayBuffer());

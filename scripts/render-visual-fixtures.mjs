@@ -8,8 +8,6 @@ import { gzipSync } from "node:zlib";
 // Fixtures must render watermark-free (the dev bypass now stamps a DEVELOPMENT
 // watermark), so install a permissive guard on the verified path. Internal
 // import — unreachable for package consumers via the exports map.
-const { setVerifiedLicenseGuard } = await import("../dist/src/internal/license-guard.js");
-setVerifiedLicenseGuard({ consume() {} });
 
 const DEFAULT_FIXTURE_DIR = "examples/visual-fixtures";
 const DEFAULT_OUTPUT_DIR = ".visual-output";

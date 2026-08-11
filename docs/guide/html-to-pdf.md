@@ -5,7 +5,7 @@
 It is a mapper, not a browser: there is no CSS, no layout engine, and no scripting. That keeps it fast, synchronous, and dependency-free, and it is why the output is predictable enough to ship in a report pipeline.
 
 ```ts
-import { createDocument, htmlToBlocks } from "@sempdf/sempdf-pdf"
+import { createDocument, htmlToBlocks } from "@crstnmac/sempdf"
 
 const doc = createDocument({ title: "Report", tagged: true, language: "en" })
 doc.renderTemplate({
@@ -90,7 +90,7 @@ Characters with no ASCII equivalent — Devanagari, CJK, emoji — are deliberat
 **2. Embed a font (best output).** Register once, then point the block options at it:
 
 ```ts
-import { createDocument, htmlToBlocks, registerBundledFonts } from "@sempdf/sempdf-pdf"
+import { createDocument, htmlToBlocks, registerBundledFonts } from "@crstnmac/sempdf"
 
 const doc = createDocument({ title: "Report", tagged: true, language: "en" })
 const fonts = await registerBundledFonts(doc)   // { sans, serif, mono }
