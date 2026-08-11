@@ -1671,6 +1671,36 @@ test("footnote appends a marker and renders the note at the page bottom", () => 
   const noteRun = runs.find((r) => r.text.includes("Smith 2020"))!;
   const bodyRun = runs.find((r) => r.text.includes("Referencing"))!;
   assert.ok(noteRun.y < bodyRun.y, "footnote should render below its reference");
+
+  const documentElement = parseDocument(doc.toUint8Array()).inspectStructureElements()[0]!;
+  const paragraph = (documentElement.children ?? []).find((element) => element.role === "P")!;
+  assert.ok(
+    (paragraph.children ?? []).some((element) => element.role === "Reference" && element.text?.includes("[1]")),
+    "footnote marker should be a Reference nested in its paragraph",
+  );
+  const notes = (documentElement.children ?? []).filter((element) => element.role === "Note");
+  assert.equal(notes.length, 2);
+  assert.deepEqual(notes[0]!.children?.map((element) => element.role), ["Lbl", "P"]);
+  assert.equal(notes[0]!.children?.[0]?.text, "1.");
+  assert.equal(notes[0]!.children?.[1]?.text, "Smith 2020, p. 42.");
+});
+
+test("rich paragraph footnotes include a tagged reference marker", () => {
+  const doc = createDocument();
+  doc.renderTemplate({
+    blocks: [
+      {
+        type: "richParagraph",
+        runs: [{ text: "Styled claim", bold: true }],
+        footnote: "Supporting note.",
+      },
+    ],
+  });
+
+  const root = parseDocument(doc.toUint8Array()).inspectStructureElements()[0]!;
+  const paragraph = (root.children ?? []).find((element) => element.role === "P")!;
+  assert.ok((paragraph.children ?? []).some((element) => element.role === "Reference"));
+  assert.ok((root.children ?? []).some((element) => element.role === "Note"));
 });
 
 test("master-page background renders on every page behind the content", () => {
