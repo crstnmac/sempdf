@@ -75,10 +75,10 @@ For longer reports, use `renderTemplate()` to render a reusable block tree with 
 doc.renderTemplate({
   title: "Accessibility Audit Report",
   info: {
-    author: "sempdf"
+    author: "SemPDF"
   },
   xmpMetadata: {
-    creator: "sempdf",
+    creator: "SemPDF",
     createDate: "2026-05-05T00:00:00Z",
     modifyDate: "2026-05-05T00:00:00Z",
     metadataDate: "2026-05-05T00:00:00Z"

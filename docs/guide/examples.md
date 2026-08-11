@@ -1,6 +1,6 @@
 # Examples
 
-These are the starter snippets bundled with the [live playground](https://sempdfplayground.sempdf.net/).
+These are the starter snippets bundled with the [live playground](https://playsempdf.criston.dev/).
 Each one is a complete, self-contained program: it imports from
 `@crstnmac/sempdf`, builds a document, and `export default`s it. Paste any of
 them into the playground (or a local script) and run it as-is.
@@ -9,7 +9,7 @@ The snippets below are embedded directly from the playground's sample files, so
 the code here and the code you see in the playground are always identical.
 
 ::: tip Run these
-Open the [playground](https://sempdfplayground.sempdf.net/) and pick a sample from
+Open the [playground](https://playsempdf.criston.dev/) and pick a sample from
 the dropdown, or copy a snippet into your own project. For non-browser usage,
 swap `export default doc;` for `await writeFile("out.pdf", doc.toUint8Array());`.
 :::

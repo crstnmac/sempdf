@@ -2,6 +2,31 @@
 
 All notable changes to `@crstnmac/sempdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.8.0] - 2026-08-11
+
+### Changed
+
+- Renamed the published package to `@crstnmac/sempdf` and configured releases
+  for `https://nodeproxy.criston.dev/`.
+- Removed all first-party licensing, activation, quota, authorization, and
+  evaluation-watermark behavior. PDF generation and editing now work directly
+  without a license key or guard.
+- Renamed the companion MCP package to `@crstnmac/sempdf-mcp`; its next
+  release is `0.5.0`.
+
+### Included
+
+- Includes the latest generation, editing, accessibility, document-JSON,
+  HTML-to-PDF, code-block, font-fallback, and compliance improvements recorded
+  in the development history below.
+
+## Legacy development history
+
+The entries below describe the source project before the package name and
+public version line were reset for `@crstnmac/sempdf`. They are retained for
+technical traceability and do not represent published versions under the new
+package name.
+
 ## [2.5.1] - 2026-08-10
 
 ### Added
@@ -229,7 +254,7 @@ All notable changes to `@crstnmac/sempdf` are documented here. This project foll
 
 - **AES PDF encryption now works in the browser.** AES (`aes-128`, `aes-256`, `aes-256-r6`) previously required Node's `crypto` and threw `"AES PDF encryption requires Node.js crypto support"` in browsers. The library now falls back to a built-in, zero-dependency AES-CBC + SHA-256/384/512 implementation when `node:crypto` is unavailable, so encrypting and decrypting run client-side. Output is byte-for-byte compatible with the Node path (verified against Node's native crypto), so a document encrypted in the browser opens with the same password in any reader. Node continues to use its native crypto for speed. The only browser requirement is a secure-random source for the IV/key, read from the Web Crypto API. A "Browser AES encryption" playground sample and docs were added.
 
-## [1.8.0] - 2026-06-24
+## [Legacy 1.8.0] - 2026-06-24
 
 ### Added
 

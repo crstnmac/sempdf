@@ -15,8 +15,8 @@ const doc = createDocument({
   conformance: "pdfua-1",
   tagged: true,
   structureRoot: "Document",
-  title: "SemPDF PDF Engine Integration Guide",
-  info: { author: "Accessibility Engineering Division" },
+  title: "AtlasGrid Production Integration Guide",
+  info: { author: "Platform Enablement Team" },
   defaults: { fontSize: 11, color: rgb(0.1, 0.1, 0.15) },
 });
 
@@ -59,18 +59,18 @@ doc.renderTemplate({
   blocks: [
     {
       type: "heading",
-      text: "sempdf/sempdf-pdf User Manual",
+      text: "AtlasGrid PDF Integration Manual",
       options: { level: 1 },
     },
     {
       type: "paragraph",
-      text: "Version: 1.7.0  |  Target Framework: Node.js / TypeScript  |  Compliance: PDF/UA-1 & WCAG 2.2",
+      text: "Version: 1.8.0  |  Runtime: Node.js 22 / TypeScript  |  Profiles: PDF/UA-1, PDF/A and WCAG 2.2 workflows",
       class: "muted",
     },
 
     {
       type: "heading",
-      text: "1. Environmental Compliance Profiles",
+      text: "1. Production Environment",
       options: { level: 2 },
     },
     {
@@ -92,7 +92,7 @@ doc.renderTemplate({
             bold: true,
             scope: "row",
           },
-          { text: "v18.12.0 LTS or superior runtime engine" },
+          { text: "Node.js 22 LTS or newer" },
         ],
         [
           {
@@ -125,7 +125,7 @@ doc.renderTemplate({
     },
     {
       type: "paragraph",
-      text: "Pull the package binaries down from your private registry endpoints using standard shell environment commands:",
+      text: "Configure the organization registry once, then install the package with npm:",
     },
     {
       type: "table",
@@ -163,7 +163,7 @@ doc.renderTemplate({
     },
     {
       type: "paragraph",
-      text: "To maintain legal compliance profiles, you must explicitly declare document languages and screen-reader landscape variables:",
+      text: "For accessible output, declare the document language and enable a tagged structure tree:",
     },
     {
       type: "table",
@@ -210,7 +210,7 @@ doc.renderTemplate({
     },
     {
       type: "paragraph",
-      text: "When passing multi-dimensional elements across the framework parser grid, map columns properties safely to clear semantic nodes.",
+      text: "Use explicit table headers and scopes so assistive technology can announce row and column context reliably.",
     },
     {
       type: "heading",
@@ -276,7 +276,7 @@ doc.renderTemplate({
   footer: ({ pageNumber, totalPages }) => [
     {
       type: "paragraph",
-      text: "Accessibility Documentation",
+      text: "AtlasGrid Production Integration Guide",
       options: {
         fontSize: 10,
         tag: pageNumber === totalPages ? "P" : "Artifact",

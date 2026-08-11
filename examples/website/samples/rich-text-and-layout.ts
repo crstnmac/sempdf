@@ -39,7 +39,7 @@ page.richText(
     { text: ", " },
     { text: "underline", underline: true },
     { text: ", and a " },
-    { text: "clickable link", color: rgb(0.10, 0.30, 0.80), link: "https://sempdf.sempdf.net" },
+    { text: "clickable link", color: rgb(0.10, 0.30, 0.80), link: "https://sempdf.criston.dev" },
     { text: " on the same wrapping lines." }
   ],
   { x: mm(20), y: mm(247), width: mm(170), fontSize: 13, lineHeight: 18 }
@@ -95,7 +95,7 @@ doc.renderTemplate({
         { text: "Status: " },
         { text: "PASSED", bold: true, color: rgb(0, 0.5, 0) },
         { text: " - see the " },
-        { text: "report", link: "https://sempdf.sempdf.net", color: rgb(0.1, 0.3, 0.8) },
+        { text: "report", link: "https://sempdf.criston.dev", color: rgb(0.1, 0.3, 0.8) },
         { text: " for details." }
       ]
     }

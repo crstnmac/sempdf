@@ -1103,7 +1103,7 @@ test("generates XMP metadata from structured options", () => {
     },
     xmpMetadata: {
       title: "Structured <XMP>",
-      creators: ["Codex", "sempdf"],
+      creators: ["Codex", "SemPDF"],
       createDate: new Date("2026-05-05T00:00:00Z"),
       modifyDate: "2026-05-06T00:00:00Z",
       metadataDate: "2026-05-07T00:00:00Z"
@@ -1117,7 +1117,7 @@ test("generates XMP metadata from structured options", () => {
   const parsed = parseDocument(doc.toUint8Array());
   const xmp = parsed.getXmpMetadata() ?? "";
   assert.match(xmp, /Structured &lt;XMP&gt;/);
-  assert.match(xmp, /<rdf:li>Codex<\/rdf:li><rdf:li>sempdf<\/rdf:li>/);
+  assert.match(xmp, /<rdf:li>Codex<\/rdf:li><rdf:li>SemPDF<\/rdf:li>/);
   assert.match(xmp, /<xmp:CreateDate>2026-05-05T00:00:00Z<\/xmp:CreateDate>/);
   assert.match(xmp, /<xmp:ModifyDate>2026-05-06T00:00:00Z<\/xmp:ModifyDate>/);
   assert.match(xmp, /<xmp:MetadataDate>2026-05-07T00:00:00Z<\/xmp:MetadataDate>/);
@@ -1782,11 +1782,11 @@ test("renderTemplate applies document info and structured XMP metadata", () => {
   doc.renderTemplate({
     info: {
       title: "Template Metadata",
-      author: "sempdf"
+      author: "SemPDF"
     },
     xmpMetadata: {
       title: "Template <Metadata>",
-      creator: "sempdf",
+      creator: "SemPDF",
       createDate: "2026-05-05T00:00:00Z",
       modifyDate: "2026-05-06T00:00:00Z",
       metadataDate: "2026-05-07T00:00:00Z"
@@ -1801,9 +1801,9 @@ test("renderTemplate applies document info and structured XMP metadata", () => {
   const xmp = parsed.getXmpMetadata() ?? "";
 
   assert.equal(parsed.getMetadata().title, "Template Metadata");
-  assert.equal(parsed.getMetadata().author, "sempdf");
+  assert.equal(parsed.getMetadata().author, "SemPDF");
   assert.match(xmp, /Template &lt;Metadata&gt;/);
-  assert.match(xmp, /<rdf:li>sempdf<\/rdf:li>/);
+  assert.match(xmp, /<rdf:li>SemPDF<\/rdf:li>/);
   assert.match(xmp, /<xmp:MetadataDate>2026-05-07T00:00:00Z<\/xmp:MetadataDate>/);
 });
 
@@ -1813,7 +1813,7 @@ test("renderTemplate title populates info and structured XMP metadata", () => {
   doc.renderTemplate({
     title: "Template Unified Title",
     xmpMetadata: {
-      creator: "sempdf"
+      creator: "SemPDF"
     },
     blocks: [
       { type: "heading", text: "Template Unified Title" }
@@ -1825,7 +1825,7 @@ test("renderTemplate title populates info and structured XMP metadata", () => {
 
   assert.equal(parsed.getMetadata().title, "Template Unified Title");
   assert.match(xmp, /Template Unified Title/);
-  assert.match(xmp, /<rdf:li>sempdf<\/rdf:li>/);
+  assert.match(xmp, /<rdf:li>SemPDF<\/rdf:li>/);
 });
 
 test("renderTemplate title creates XMP without separate metadata options", () => {

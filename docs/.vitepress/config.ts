@@ -76,8 +76,8 @@ const guideSidebar: DefaultTheme.SidebarItem[] = [
     // Absolute URLs so the static files load directly instead of SPA-routing.
     text: "For LLMs",
     items: [
-      { text: "llms.txt", link: "https://sempdf.sempdf.net/llms.txt" },
-      { text: "llms-full.txt", link: "https://sempdf.sempdf.net/llms-full.txt" }
+      { text: "llms.txt", link: "https://sempdf.criston.dev/llms.txt" },
+      { text: "llms-full.txt", link: "https://sempdf.criston.dev/llms-full.txt" }
     ]
   }
 ];
@@ -165,7 +165,7 @@ export default defineConfig({
       { text: "API", link: "/api/" },
       { text: "Examples", link: "/guide/examples" },
       { text: "Changelog", link: "/changelog" },
-      { text: "Playground", link: "https://sempdfplayground.sempdf.net/" }
+      { text: "Playground", link: "https://playsempdf.criston.dev/" }
     ],
     sidebar: {
       "/guide/": guideSidebar,
@@ -179,6 +179,6 @@ export default defineConfig({
   vite: {
     // Emits /llms.txt, /llms-full.txt, and an LLM-friendly .md for every page so
     // AI assistants (Claude, ChatGPT, etc.) can fetch grounded documentation.
-    plugins: [llmstxt({ domain: "https://sempdf.sempdf.net" })]
+    plugins: [llmstxt({ domain: "https://sempdf.criston.dev" })]
   }
 });

@@ -1,7 +1,23 @@
 [
-  { "label": "SaaS Invoice", "file": "saas-invoice.ts" },
-  { "label": "Bank Statement", "file": "bank-statement.ts" },
-  { "label": "Joining Letter", "file": "joining-letter.ts" },
-  { "label": "User Manual", "file": "user-manual.ts" },
-  { "label": "Report features (TOC, footnotes, cross-refs)", "file": "report-features.ts" }
+  { "label": "Rivermint SaaS Invoice", "file": "saas-invoice.ts" },
+  { "label": "Oakline Bank Statement", "file": "bank-statement.ts" },
+  { "label": "Brightforge Employment Offer", "file": "joining-letter.ts" },
+  { "label": "AtlasGrid Integration Guide", "file": "user-manual.ts" },
+  { "label": "Crestview Q2 Business Review", "file": "report-features.ts" },
+  { "label": "Hello World", "file": "hello-world.ts" },
+  { "label": "Single Page", "file": "single-page.ts" },
+  { "label": "Invoice", "file": "invoice.ts" },
+  { "label": "Multi-column Layout", "file": "multi-column.ts" },
+  { "label": "Rich Text and Layout", "file": "rich-text-and-layout.ts" },
+  { "label": "Text Formatting", "file": "text-formatting.ts" },
+  { "label": "Stylesheets and Tables", "file": "stylesheets-and-tables.ts" },
+  { "label": "Annotations", "file": "annotations.ts" },
+  { "label": "Form Fields", "file": "form-fields.ts" },
+  { "label": "Outlines", "file": "outlines.ts" },
+  { "label": "Colors", "file": "colors.ts" },
+  { "label": "Graphics State", "file": "graphics-state.ts" },
+  { "label": "Import Image", "file": "import-image.ts" },
+  { "label": "Google Fonts", "file": "google-fonts.ts" },
+  { "label": "Encryption", "file": "encryption.ts" },
+  { "label": "Incremental Editing", "file": "incremental-editing.ts" }
 ]
