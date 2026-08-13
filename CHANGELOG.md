@@ -2,6 +2,13 @@
 
 All notable changes to `@crstnmac/sempdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.8.2] - 2026-08-13
+
+### Changed
+
+- Default PDF producer and related metadata now identify the engine as
+  `sempdf`. Documentation, examples, and the MCP server name match.
+
 ## [1.8.1] - 2026-08-11
 
 ### Changed
