@@ -1,6 +1,6 @@
 {
   "name": "@crstnmac/zeropdf",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "description": "Zero-dependency PDF generation engine built in TypeScript.",
   "type": "module",
   "author": {
