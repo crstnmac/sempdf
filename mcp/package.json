@@ -1,6 +1,6 @@
 {
   "name": "@crstnmac/sempdf-mcp",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Model Context Protocol server exposing @crstnmac/sempdf PDF generation and manipulation as tools.",
   "type": "module",
   "bin": {
@@ -26,9 +26,9 @@
     "registry": "https://nodeproxy.criston.dev/"
   },
   "dependencies": {
-    "@crstnmac/sempdf": "^1.8.0",
-    "@modelcontextprotocol/sdk": "^1.12.0",
-    "zod": "^3.23.8"
+    "@crstnmac/sempdf": "^1.9.1",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^3.25.0"
   },
   "devDependencies": {
     "@anthropic-ai/mcpb": "^1.1.0",

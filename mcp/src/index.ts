@@ -9,7 +9,7 @@
  */
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -61,6 +61,23 @@ function ok(text: string, structuredContent?: Record<string, unknown>) {
 function fail(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   return { isError: true, content: [{ type: "text" as const, text: `Error: ${message}` }] };
+}
+
+/** A protocol-native result for tools that create a PDF on disk. */
+function writtenPdf(message: string, path: string, byteLength: number) {
+  return {
+    content: [
+      { type: "text" as const, text: message },
+      {
+        type: "resource_link" as const,
+        uri: pathToFileURL(path).href,
+        name: path.split(/[\\/]/).at(-1) ?? "output.pdf",
+        description: "PDF created by sempdf",
+        mimeType: "application/pdf",
+      },
+    ],
+    structuredContent: { path, byteLength },
+  };
 }
 
 /** Reads any file (PDF or image), scoped to the workspace root and size-capped. */
@@ -145,10 +162,25 @@ const overwriteParam = z
   .default(false)
   .describe("Replace the output file if it already exists. Defaults to false (refuse to clobber).");
 
+const writtenPdfOutput = {
+  path: z.string().describe("Absolute path of the PDF that was written."),
+  byteLength: z.number().int().nonnegative().describe("Size of the written PDF in bytes."),
+};
+
+const splitPdfOutput = {
+  paths: z.array(z.string()).describe("Absolute paths of the single-page PDFs that were written."),
+  count: z.number().int().nonnegative().describe("Number of PDFs written."),
+};
+
 /** Server ----------------------------------------------------------------- */
 
 const server = new McpServer(
-  { name: "sempdf", version: "0.1.0" },
+  {
+    name: "sempdf",
+    version: "0.6.0",
+    title: "SemPDF",
+    websiteUrl: "https://sempdf.criston.dev",
+  },
   {
     instructions:
       "Generates and manipulates PDFs via @crstnmac/sempdf. To author a `generate_pdf` document, first read " +
@@ -189,6 +221,7 @@ server.registerTool(
       outputPath: z.string().describe("Filesystem path to write the resulting PDF to."),
       overwrite: overwriteParam,
     },
+    outputSchema: writtenPdfOutput,
     annotations: write("Generate PDF from a JSON document"),
   },
   async ({ document, outputPath, overwrite }) => {
@@ -196,7 +229,7 @@ server.registerTool(
       await inlineLocalSources(document); // scope file paths, reject url, inline as base64
       const bytes = await renderDocumentJson(document as unknown as PdfDocumentJson);
       const full = await writePdf(outputPath, bytes, overwrite);
-      return ok(`Wrote ${bytes.length} bytes to ${full}`);
+      return writtenPdf(`Wrote ${bytes.length} bytes to ${full}`, full, bytes.length);
     } catch (error) {
       return fail(error);
     }
@@ -331,6 +364,7 @@ server.registerTool(
       outputPath: z.string().describe("Path to write the merged PDF."),
       overwrite: overwriteParam,
     },
+    outputSchema: writtenPdfOutput,
     annotations: write("Merge PDFs"),
   },
   async ({ paths, outputPath, overwrite }) => {
@@ -338,7 +372,7 @@ server.registerTool(
       const sources = await Promise.all(paths.map(readBytes));
       const bytes = mergeDocuments(sources);
       const full = await writePdf(outputPath, bytes, overwrite);
-      return ok(`Merged ${paths.length} PDFs → ${full} (${bytes.length} bytes)`);
+      return writtenPdf(`Merged ${paths.length} PDFs → ${full} (${bytes.length} bytes)`, full, bytes.length);
     } catch (error) {
       return fail(error);
     }
@@ -360,6 +394,7 @@ server.registerTool(
       prefix: z.string().default("page").describe("Filename prefix. Files are <prefix>-<n>.pdf, 1-based."),
       overwrite: overwriteParam,
     },
+    outputSchema: splitPdfOutput,
     annotations: write("Split a PDF into single pages"),
   },
   async ({ path, outputDir, prefix, overwrite }) => {
@@ -370,7 +405,19 @@ server.registerTool(
         const full = await writePdf(join(outputDir, `${prefix}-${i + 1}.pdf`), parts[i]!, overwrite);
         written.push(full);
       }
-      return ok(`Split into ${parts.length} files:\n${written.join("\n")}`);
+      return {
+        content: [
+          { type: "text" as const, text: `Split into ${parts.length} files:\n${written.join("\n")}` },
+          ...written.map((path) => ({
+            type: "resource_link" as const,
+            uri: pathToFileURL(path).href,
+            name: path.split(/[\\/]/).at(-1) ?? "page.pdf",
+            description: "Single-page PDF created by sempdf",
+            mimeType: "application/pdf",
+          })),
+        ],
+        structuredContent: { paths: written, count: written.length },
+      };
     } catch (error) {
       return fail(error);
     }
@@ -392,13 +439,14 @@ server.registerTool(
       outputPath: z.string().describe("Path to write the extracted PDF."),
       overwrite: overwriteParam,
     },
+    outputSchema: writtenPdfOutput,
     annotations: write("Extract specific pages"),
   },
   async ({ path, pages, outputPath, overwrite }) => {
     try {
       const bytes = extractPages(await readBytes(path), pages);
       const full = await writePdf(outputPath, bytes, overwrite);
-      return ok(`Extracted ${pages.length} pages → ${full} (${bytes.length} bytes)`);
+      return writtenPdf(`Extracted ${pages.length} pages → ${full} (${bytes.length} bytes)`, full, bytes.length);
     } catch (error) {
       return fail(error);
     }
@@ -424,13 +472,14 @@ server.registerTool(
       outputPath: z.string().describe("Path to write the combined PDF."),
       overwrite: overwriteParam,
     },
+    outputSchema: writtenPdfOutput,
     annotations: write("Append pages from one PDF to another"),
   },
   async ({ targetPath, sourcePath, pages, outputPath, overwrite }) => {
     try {
       const bytes = appendPages(await readBytes(targetPath), await readBytes(sourcePath), pages);
       const full = await writePdf(outputPath, bytes, overwrite);
-      return ok(`Appended → ${full} (${bytes.length} bytes)`);
+      return writtenPdf(`Appended → ${full} (${bytes.length} bytes)`, full, bytes.length);
     } catch (error) {
       return fail(error);
     }
@@ -514,7 +563,7 @@ server.server.oninitialized = async () => {
     const { roots } = await server.server.listRoots();
     if (roots[0]?.uri) workspaceRoot = fileURLToPath(roots[0].uri);
   } catch {
-    // Host advertised roots but the call failed — stay unscoped.
+    // Host advertised roots but the call failed — retain the cwd boundary.
   }
 };
 
