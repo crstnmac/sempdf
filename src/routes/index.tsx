@@ -1,8 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Dithering } from "@paper-design/shaders-react";
 import { HomeLayout } from "fumadocs-ui/layouts/home";
 import { ArrowRight, ArrowUpRight, Check, Copy, FileCheck2, Files, PenTool } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { LiquidMetalMark } from "@/components/liquid-metal-mark";
 import { baseOptions } from "@/lib/layout.shared";
 
 export const Route = createFileRoute("/")({ component: Home });
@@ -22,41 +22,6 @@ function HighlightedExample() {
       <span className="syntax-property">x</span>: <span className="syntax-number">56</span>, <span className="syntax-property">y</span>: <span className="syntax-number">780</span>{" });"}
       {"\n\n"}<span className="syntax-keyword">const</span> bytes = doc.<span className="syntax-function">toUint8Array</span>();
     </code>
-  );
-}
-
-function HeroShader() {
-  const [reduceMotion, setReduceMotion] = useState(false);
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const updateMotionPreference = () => setReduceMotion(mediaQuery.matches);
-
-    updateMotionPreference();
-    mediaQuery.addEventListener("change", updateMotionPreference);
-
-    return () => mediaQuery.removeEventListener("change", updateMotionPreference);
-  }, []);
-
-  return (
-    <div className="home-hero-shader" aria-hidden="true">
-      <Dithering
-        width="100%"
-        height="100%"
-        colorBack="#10120f"
-        colorFront="#ace35c"
-        shape="warp"
-        type="4x4"
-        size={2.5}
-        speed={reduceMotion ? 0 : 1}
-        scale={1}
-        rotation={0}
-        offsetX={0}
-        offsetY={0}
-        fit="cover"
-        maxPixelCount={1_400_000}
-      />
-    </div>
   );
 }
 
@@ -104,8 +69,8 @@ function Home() {
 
           <div className="home-output" aria-label="TypeScript source producing PDF bytes">
             <div className="home-output-signal">
-              <HeroShader />
-              <span>source → bytes</span>
+              <LiquidMetalMark variant="hero" />
+              <strong className="home-output-brand">zeropdf</strong>
             </div>
             <div className="home-output-bar">
               <span>invoice.ts</span>
