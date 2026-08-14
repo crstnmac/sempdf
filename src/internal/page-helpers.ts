@@ -297,7 +297,8 @@ export function verticalAlignOffset(
   contentHeight: number
 ): number {
   const slack = Math.max(boxHeight - contentHeight, 0);
-  return align === "middle" ? slack / 2 : align === "bottom" ? slack : 0;
+  if (align === "middle") return slack / 2;
+  return align === "bottom" ? slack : 0;
 }
 
 /** Returns copies of the runs moved down the page (smaller `y`) by `offset`. */
@@ -372,6 +373,12 @@ export function pushTextHighlights(
   }
 }
 
+/** Picks the PDF paint mode implied by which of fill/stroke a rect style sets. */
+function resolveRectPaint(style: { fill?: PdfColor; stroke?: { color: PdfColor; width: number } }): "fill" | "stroke" | "fillStroke" {
+  if (style.fill === undefined) return "stroke";
+  return style.stroke === undefined ? "fill" : "fillStroke";
+}
+
 /** Builds a rectangle path op for table cell backgrounds and borders, tagged as an artifact. */
 function tableCellRectOp(
   x: number,
@@ -390,7 +397,7 @@ function tableCellRectOp(
       { type: "closePath" },
     ],
     style: normalizePathStyle({
-      paint: style.fill !== undefined && style.stroke !== undefined ? "fillStroke" : style.fill !== undefined ? "fill" : "stroke",
+      paint: resolveRectPaint(style),
       ...(style.fill !== undefined ? { fill: { color: style.fill } } : {}),
       ...(style.stroke !== undefined ? { stroke: style.stroke } : {}),
       tag: "Artifact",
@@ -600,6 +607,74 @@ export function emitParagraphTextAnnotations(
   }
 }
 
+/** Highlight over the matched text, padded 2pt above and below by default. */
+function emitHighlightOverRect(
+  page: InternalPageModel,
+  annotation: Extract<ParagraphTextAnnotation, { type: "highlight" }>,
+  rect: SubstringRect,
+  parent?: InternalStructureNode
+): void {
+  const padding = resolveAnnotationPadding(annotation.padding, { top: 2, bottom: 2, left: 0, right: 0 });
+  const placed = normalizeHighlightAnnotationOptions({
+    x: rect.x - padding.left,
+    y: rect.y - padding.bottom,
+    width: rect.width + padding.left + padding.right,
+    height: rect.fontSize + padding.top + padding.bottom,
+    ...(annotation.color !== undefined ? { color: annotation.color } : {}),
+    ...(annotation.tag !== undefined ? { tag: annotation.tag } : {})
+  });
+  const annotationIndex = page.annotations.length;
+  const structureGroupId = addAnnotationStructureNode(
+    page,
+    "Annot",
+    annotationIndex,
+    placed.tag,
+    placed.structure,
+    placementBoundingBox(placed),
+    parent
+  );
+  page.annotations.push({
+    type: "highlight",
+    options: placed,
+    ...(structureGroupId === undefined ? {} : { structureGroupId })
+  });
+}
+
+/** Sticky note in the margin beside the match, before it unless anchored after. */
+function emitNoteBesideRect(
+  page: InternalPageModel,
+  annotation: Extract<ParagraphTextAnnotation, { type: "note" }>,
+  rect: SubstringRect,
+  parent?: InternalStructureNode
+): void {
+  const size = annotation.size ?? rect.fontSize + 4;
+  const anchor = annotation.anchor ?? "before";
+  const placed = normalizeNoteAnnotationOptions({
+    x: anchor === "after" ? rect.x + rect.width + 2 : rect.x - size - 2,
+    y: rect.y,
+    width: size,
+    height: size,
+    contents: annotation.contents,
+    ...(annotation.open !== undefined ? { open: annotation.open } : {}),
+    ...(annotation.tag !== undefined ? { tag: annotation.tag } : {})
+  });
+  const annotationIndex = page.annotations.length;
+  const structureGroupId = addAnnotationStructureNode(
+    page,
+    "Annot",
+    annotationIndex,
+    placed.tag,
+    placed.structure,
+    placementBoundingBox(placed),
+    parent
+  );
+  page.annotations.push({
+    type: "note",
+    options: placed,
+    ...(structureGroupId === undefined ? {} : { structureGroupId })
+  });
+}
+
 function emitParagraphTextAnnotation(
   page: InternalPageModel,
   annotation: ParagraphTextAnnotation,
@@ -607,30 +682,7 @@ function emitParagraphTextAnnotation(
   parent?: InternalStructureNode
 ): void {
   if (annotation.type === "highlight") {
-    const padding = resolveAnnotationPadding(annotation.padding, { top: 2, bottom: 2, left: 0, right: 0 });
-    const annotationIndex = page.annotations.length;
-    const placed = normalizeHighlightAnnotationOptions({
-      x: rect.x - padding.left,
-      y: rect.y - padding.bottom,
-      width: rect.width + padding.left + padding.right,
-      height: rect.fontSize + padding.top + padding.bottom,
-      ...(annotation.color !== undefined ? { color: annotation.color } : {}),
-      ...(annotation.tag !== undefined ? { tag: annotation.tag } : {})
-    });
-    const structureGroupId = addAnnotationStructureNode(
-      page,
-      "Annot",
-      annotationIndex,
-      placed.tag,
-      placed.structure,
-      placementBoundingBox(placed),
-      parent
-    );
-    page.annotations.push({
-      type: "highlight",
-      options: placed,
-      ...(structureGroupId === undefined ? {} : { structureGroupId })
-    });
+    emitHighlightOverRect(page, annotation, rect, parent);
     return;
   }
 
@@ -640,33 +692,7 @@ function emitParagraphTextAnnotation(
   }
 
   if (annotation.type === "note") {
-    const size = annotation.size ?? rect.fontSize + 4;
-    const anchor = annotation.anchor ?? "before";
-    const x = anchor === "after" ? rect.x + rect.width + 2 : rect.x - size - 2;
-    const annotationIndex = page.annotations.length;
-    const placed = normalizeNoteAnnotationOptions({
-      x,
-      y: rect.y,
-      width: size,
-      height: size,
-      contents: annotation.contents,
-      ...(annotation.open !== undefined ? { open: annotation.open } : {}),
-      ...(annotation.tag !== undefined ? { tag: annotation.tag } : {})
-    });
-    const structureGroupId = addAnnotationStructureNode(
-      page,
-      "Annot",
-      annotationIndex,
-      placed.tag,
-      placed.structure,
-      placementBoundingBox(placed),
-      parent
-    );
-    page.annotations.push({
-      type: "note",
-      options: placed,
-      ...(structureGroupId === undefined ? {} : { structureGroupId })
-    });
+    emitNoteBesideRect(page, annotation, rect, parent);
     return;
   }
 
@@ -702,12 +728,12 @@ function emitTextMarkupSubtype(
     ...(annotation.color !== undefined ? { color: annotation.color } : {}),
     ...(annotation.tag !== undefined ? { tag: annotation.tag } : {})
   };
-  const placed =
-    annotation.type === "underline"
-      ? normalizeUnderlineAnnotationOptions(rawOptions)
-      : annotation.type === "strikeOut"
-        ? normalizeStrikeOutAnnotationOptions(rawOptions)
-        : normalizeSquigglyAnnotationOptions(rawOptions);
+  let placed = normalizeSquigglyAnnotationOptions(rawOptions);
+  if (annotation.type === "underline") {
+    placed = normalizeUnderlineAnnotationOptions(rawOptions);
+  } else if (annotation.type === "strikeOut") {
+    placed = normalizeStrikeOutAnnotationOptions(rawOptions);
+  }
   const annotationIndex = page.annotations.length;
   const structureGroupId = addAnnotationStructureNode(
     page,
@@ -833,6 +859,66 @@ export function pushPositionedTextRuns(
   }
 }
 
+/**
+ * Lays out one list item's body — rich runs or plain text — and returns its
+ * height. Zero when the item has no body content.
+ */
+function layoutListItemBody(
+  page: InternalPageModel,
+  bodyNode: InternalStructureNode,
+  item: NormalizedListItem,
+  geometry: { x: number; y: number; width: number; direction: "ltr" | "rtl" },
+  options: NormalizedListOptions,
+  embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>
+): number {
+  if (item.richRuns !== undefined && item.richRuns.length > 0) {
+    return addRichTextToPage(
+      page,
+      embeddedFonts,
+      item.richRuns,
+      {
+        x: geometry.x,
+        y: geometry.y,
+        width: geometry.width,
+        // Undefined when the caller gave no lineHeight, so the inline
+        // layout auto-expands to the largest run font size.
+        lineHeight: options.explicitLineHeight,
+        align: options.align,
+        direction: geometry.direction,
+        writingMode: "horizontal"
+      },
+      undefined,
+      bodyNode
+    );
+  }
+
+  if (item.body.length === 0) return 0;
+
+  const bodyRuns = layoutTextBlock(
+    item.body,
+    { ...options, x: geometry.x, y: geometry.y, width: geometry.width, tag: "LBody" },
+    embeddedFonts
+  );
+  pushPositionedTextRuns(page, bodyRuns, bodyNode.id);
+  if (item.annotations && item.annotations.length > 0) {
+    emitParagraphTextAnnotations(page, bodyRuns, item.annotations, embeddedFonts, bodyNode);
+  }
+  return measurePositionedRunHeight(bodyRuns, options.lineHeight);
+}
+
+/** Widest label across the items — every body starts after that column. */
+function measureLabelColumnWidth(
+  items: readonly NormalizedListItem[],
+  options: NormalizedListOptions,
+  embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>
+): number {
+  return Math.max(
+    ...items.map((item, index) =>
+      measureTextWidth(resolveListItemLabel(item, index, options), options, embeddedFonts)
+    )
+  );
+}
+
 export function layoutList(
   page: InternalPageModel,
   listNode: InternalStructureNode,
@@ -842,11 +928,7 @@ export function layoutList(
 ): number {
   const listDirection =
     options.direction === "auto" ? resolveListDirection(items, options) : options.direction;
-  const labelColumnWidth = Math.max(
-    ...items.map((item, index) =>
-      measureTextWidth(resolveListItemLabel(item, index, options), options, embeddedFonts)
-    )
-  );
+  const labelColumnWidth = measureLabelColumnWidth(items, options, embeddedFonts);
   const bodyWidth = options.width - labelColumnWidth - options.labelGap;
   if (bodyWidth <= 0) {
     throw new PdfEngineError(
@@ -869,9 +951,8 @@ export function layoutList(
   for (const [index, item] of items.entries()) {
     const itemNode = createStructureNode(page, "LI", undefined, listNode);
     const labelNode = createStructureNode(page, "Lbl", undefined, itemNode);
-    const labelText = resolveListItemLabel(item, index, options);
     const labelRuns = layoutTextBlock(
-      labelText,
+      resolveListItemLabel(item, index, options),
       {
         ...options,
         x: labelX,
@@ -886,45 +967,14 @@ export function layoutList(
     pushPositionedTextRuns(page, labelRuns, labelNode.id);
 
     const bodyNode = createStructureNode(page, "LBody", undefined, itemNode);
-    let bodyHeight = 0;
-
-    if (item.richRuns !== undefined && item.richRuns.length > 0) {
-      bodyHeight = addRichTextToPage(
-        page,
-        embeddedFonts,
-        item.richRuns,
-        {
-          x: bodyX,
-          y,
-          width: bodyWidth,
-          // Undefined when the caller gave no lineHeight, so the inline
-          // layout auto-expands to the largest run font size.
-          lineHeight: options.explicitLineHeight,
-          align: options.align,
-          direction: listDirection,
-          writingMode: "horizontal"
-        },
-        undefined,
-        bodyNode
-      );
-    } else if (item.body.length > 0) {
-      const bodyRuns = layoutTextBlock(
-        item.body,
-        {
-          ...options,
-          x: bodyX,
-          y,
-          width: bodyWidth,
-          tag: "LBody"
-        },
-        embeddedFonts
-      );
-      pushPositionedTextRuns(page, bodyRuns, bodyNode.id);
-      if (item.annotations && item.annotations.length > 0) {
-        emitParagraphTextAnnotations(page, bodyRuns, item.annotations, embeddedFonts, bodyNode);
-      }
-      bodyHeight = measurePositionedRunHeight(bodyRuns, options.lineHeight);
-    }
+    const bodyHeight = layoutListItemBody(
+      page,
+      bodyNode,
+      item,
+      { x: bodyX, y, width: bodyWidth, direction: listDirection },
+      options,
+      embeddedFonts
+    );
 
     const labelHeight = measurePositionedRunHeight(labelRuns, options.lineHeight);
     y -= Math.max(labelHeight, bodyHeight || options.lineHeight) + options.itemSpacing;
@@ -935,12 +985,7 @@ export function layoutList(
         page,
         childListNode,
         item.children,
-        {
-          ...options,
-          x: bodyX + options.indent,
-          y,
-          width: bodyWidth - options.indent
-        },
+        { ...options, x: bodyX + options.indent, y, width: bodyWidth - options.indent },
         embeddedFonts
       );
     }
@@ -961,6 +1006,188 @@ function firstLineBaselineDrop(lineHeight: number): number {
   return lineHeight * 0.75;
 }
 
+/** A table cell after its text has been laid out, before vertical alignment. */
+interface PlacedTableCell {
+  readonly cell: NormalizedTableCell;
+  readonly node: InternalStructureNode;
+  readonly x: number;
+  readonly width: number;
+  readonly startColumn: number;
+  readonly runs: readonly PositionedTextRun[];
+  readonly lineHeight: number;
+  readonly decorations?: readonly InlineDecoration[] | undefined;
+  readonly links?: readonly InlineLinkRect[] | undefined;
+}
+
+/** Geometry of one laid-out row, kept so borders can be drawn after all rows. */
+interface TableRowGeometry {
+  readonly top: number;
+  readonly height: number;
+  readonly cells: Array<{ x: number; width: number; border?: NormalizedCellBorders | undefined }>;
+}
+
+/**
+ * Lays out one cell's text at the current row top and returns its geometry.
+ * Rich runs carry their own line height; plain text inherits the table's.
+ */
+function placeTableCell(
+  page: InternalPageModel,
+  rowNode: InternalStructureNode,
+  cell: NormalizedTableCell,
+  position: { rowIndex: number; startColumn: number; endColumn: number; y: number },
+  options: NormalizedTableOptions,
+  embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>
+): PlacedTableCell {
+  const { rowIndex, startColumn, endColumn, y } = position;
+  const role = isHeaderTableCell(cell, rowIndex, startColumn, options) ? "TH" : "TD";
+  const cellNode = createStructureNode(
+    page,
+    role,
+    buildTableCellStructureOptions(cell, role, rowIndex, startColumn, options),
+    rowNode
+  );
+  const cellX = options.x + sumNumbers(options.columnWidths.slice(0, startColumn));
+  const cellWidth = sumNumbers(options.columnWidths.slice(startColumn, endColumn));
+  const textWidth = Math.max(1, cellWidth - options.cellPadding * 2);
+  const shared = { cell, node: cellNode, x: cellX, width: cellWidth, startColumn };
+
+  if (cell.richRuns !== undefined) {
+    const normalizedRuns = normalizeRichRuns(cell.richRuns);
+    const lineHeight = Math.max(options.lineHeight, richLineHeight(normalizedRuns));
+    const result = layoutInlineRuns(
+      normalizedRuns,
+      {
+        x: cellX + options.cellPadding,
+        y: y - options.cellPadding - firstLineBaselineDrop(lineHeight),
+        width: textWidth,
+        lineHeight,
+        align: cell.align ?? options.align,
+        direction: resolveTextDirection(cell.text, options.direction),
+        writingMode: "horizontal"
+      },
+      embeddedFonts
+    );
+    return {
+      ...shared,
+      runs: result.runs,
+      lineHeight,
+      decorations: result.decorations,
+      links: result.links
+    };
+  }
+
+  const runs = layoutTextBlock(
+    cell.text,
+    {
+      ...options,
+      ...(cell.font !== undefined ? { font: cell.font } : {}),
+      ...(cell.color !== undefined ? { color: cell.color } : {}),
+      ...(cell.align !== undefined ? { align: cell.align } : {}),
+      x: cellX + options.cellPadding,
+      y: y - options.cellPadding - firstLineBaselineDrop(options.lineHeight),
+      width: textWidth,
+      tag: role
+    },
+    embeddedFonts
+  );
+  return { ...shared, runs, lineHeight: options.lineHeight };
+}
+
+/** Fills each cell's background: explicit cell color, else header or zebra tint. */
+function paintRowBackgrounds(
+  page: InternalPageModel,
+  placedCells: readonly PlacedTableCell[],
+  rowIndex: number,
+  rowTop: number,
+  rowHeight: number,
+  options: NormalizedTableOptions
+): void {
+  const isStripedBodyRow =
+    options.zebraColor !== undefined &&
+    rowIndex >= options.headerRows &&
+    (rowIndex - options.headerRows) % 2 === 1;
+
+  for (const placed of placedCells) {
+    let rowBackground: typeof options.headerBackground;
+    if (isHeaderTableCell(placed.cell, rowIndex, placed.startColumn, options)) {
+      rowBackground = options.headerBackground;
+    } else if (isStripedBodyRow) {
+      rowBackground = options.zebraColor;
+    }
+    const background = placed.cell.background ?? rowBackground;
+    if (background !== undefined) {
+      page.ops.push(
+        tableCellRectOp(placed.x, rowTop - rowHeight, placed.width, rowHeight, { fill: background })
+      );
+    }
+  }
+}
+
+/**
+ * Emits a placed cell's content, shifted down by its vertical-align offset:
+ * highlights first, then text runs, then decorations, links, and annotations.
+ */
+function emitPlacedTableCell(
+  page: InternalPageModel,
+  placed: PlacedTableCell,
+  innerHeight: number,
+  options: NormalizedTableOptions,
+  embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>
+): void {
+  const align = placed.cell.verticalAlign ?? options.verticalAlign;
+  const contentHeight = measurePositionedRunHeight(placed.runs, placed.lineHeight);
+  const offset = align === "top" ? 0 : verticalAlignOffset(align, innerHeight, contentHeight);
+  const runs = offset === 0 ? placed.runs : shiftRunsDown(placed.runs, offset);
+
+  let shiftedDecorations = placed.decorations;
+  if (placed.decorations !== undefined && offset !== 0) {
+    shiftedDecorations = placed.decorations.map((d) => ({ ...d, baselineY: d.baselineY - offset }));
+  }
+  if (shiftedDecorations !== undefined) pushInlineHighlights(page, shiftedDecorations);
+  pushPositionedTextRuns(page, runs, placed.node.id);
+  if (shiftedDecorations !== undefined) pushInlineDecorations(page, shiftedDecorations);
+
+  if (placed.links !== undefined) {
+    for (const link of placed.links) {
+      addLinkToPage(
+        page,
+        link.url,
+        { x: link.x, y: link.y - offset, width: link.width, height: link.height },
+        placed.node,
+      );
+    }
+  }
+  if (placed.cell.annotations && placed.cell.annotations.length > 0) {
+    emitParagraphTextAnnotations(page, runs, placed.cell.annotations, embeddedFonts, placed.node);
+  }
+}
+
+/** Per-cell edge borders, drawn last so they sit on top of the table preset. */
+function drawPerCellBorders(page: InternalPageModel, rowGeometry: readonly TableRowGeometry[]): void {
+  for (const row of rowGeometry) {
+    for (const cell of row.cells) {
+      if (cell.border === undefined) continue;
+      const left = cell.x;
+      const right = cell.x + cell.width;
+      const top = row.top;
+      const bottom = row.top - row.height;
+      if (cell.border.top) page.ops.push(tableLineOp(left, top, right, top, cell.border.top));
+      if (cell.border.bottom) page.ops.push(tableLineOp(left, bottom, right, bottom, cell.border.bottom));
+      if (cell.border.left) page.ops.push(tableLineOp(left, bottom, left, top, cell.border.left));
+      if (cell.border.right) page.ops.push(tableLineOp(right, bottom, right, top, cell.border.right));
+    }
+  }
+}
+
+/** Column the next cell starts in, skipping columns held by an active rowspan. */
+function nextFreeColumn(rowSpanOccupancy: ReadonlyMap<number, number>, from: number): number {
+  let columnIndex = from;
+  while ((rowSpanOccupancy.get(columnIndex) ?? 0) > 0) {
+    columnIndex += 1;
+  }
+  return columnIndex;
+}
+
 export function layoutTable(
   page: InternalPageModel,
   tableNode: InternalStructureNode,
@@ -975,106 +1202,33 @@ export function layoutTable(
   const rowSpanOccupancy = new Map<number, number>();
   // Per-row geometry collected during layout so borders can be drawn once, after
   // all rows are placed (needed for "outer" and "horizontal" styles).
-  const rowGeometry: Array<{
-    top: number;
-    height: number;
-    cells: Array<{ x: number; width: number; border?: NormalizedCellBorders | undefined }>;
-  }> = [];
+  const rowGeometry: TableRowGeometry[] = [];
 
   for (const [rowIndex, row] of rows.entries()) {
     const rowNode = createStructureNode(page, "TR", undefined, tableNode);
-    const placedCells: Array<{
-      cell: NormalizedTableCell;
-      node: InternalStructureNode;
-      x: number;
-      width: number;
-      startColumn: number;
-      runs: readonly PositionedTextRun[];
-      lineHeight: number;
-      decorations?: readonly InlineDecoration[] | undefined;
-      links?: readonly InlineLinkRect[] | undefined;
-    }> = [];
+    const placedCells: PlacedTableCell[] = [];
     let columnIndex = 0;
 
     for (const cell of row) {
-      while ((rowSpanOccupancy.get(columnIndex) ?? 0) > 0) {
-        columnIndex += 1;
-      }
-
-      const startColumn = columnIndex;
+      const startColumn = nextFreeColumn(rowSpanOccupancy, columnIndex);
       const endColumn = Math.min(startColumn + cell.colSpan, options.columnWidths.length);
       if (endColumn - startColumn !== cell.colSpan) {
         throw new PdfEngineError(
           PdfErrorCode.INVALID_TEXT,
           "Table cell span exceeds the available columns.",
-          { rowIndex, columnIndex, colSpan: cell.colSpan }
+          { rowIndex, columnIndex: startColumn, colSpan: cell.colSpan }
         );
       }
 
-      const role = isHeaderTableCell(cell, rowIndex, startColumn, options) ? "TH" : "TD";
-      const cellNode = createStructureNode(
-        page,
-        role,
-        buildTableCellStructureOptions(cell, role, rowIndex, startColumn, options),
-        rowNode
+      placedCells.push(
+        placeTableCell(page, rowNode, cell, { rowIndex, startColumn, endColumn, y }, options, embeddedFonts)
       );
-      const cellX = options.x + sumNumbers(options.columnWidths.slice(0, startColumn));
-      const cellWidth = sumNumbers(options.columnWidths.slice(startColumn, endColumn));
-      const textWidth = Math.max(1, cellWidth - options.cellPadding * 2);
-      if (cell.richRuns !== undefined) {
-        const normalizedRuns = normalizeRichRuns(cell.richRuns);
-        const lineHeight = Math.max(options.lineHeight, richLineHeight(normalizedRuns));
-        const result = layoutInlineRuns(
-          normalizedRuns,
-          {
-            x: cellX + options.cellPadding,
-            y: y - options.cellPadding - firstLineBaselineDrop(lineHeight),
-            width: textWidth,
-            lineHeight,
-            align: cell.align ?? options.align,
-            direction: resolveTextDirection(cell.text, options.direction),
-            writingMode: "horizontal"
-          },
-          embeddedFonts
-        );
-        placedCells.push({
-          cell,
-          node: cellNode,
-          x: cellX,
-          width: cellWidth,
-          startColumn,
-          runs: result.runs,
-          lineHeight,
-          decorations: result.decorations,
-          links: result.links
-        });
-      } else {
-        const runs = layoutTextBlock(
-          cell.text,
-          {
-            ...options,
-            ...(cell.font !== undefined ? { font: cell.font } : {}),
-            ...(cell.color !== undefined ? { color: cell.color } : {}),
-            ...(cell.align !== undefined ? { align: cell.align } : {}),
-            x: cellX + options.cellPadding,
-            y: y - options.cellPadding - firstLineBaselineDrop(options.lineHeight),
-            width: textWidth,
-            tag: role
-          },
-          embeddedFonts
-        );
-        placedCells.push({ cell, node: cellNode, x: cellX, width: cellWidth, startColumn, runs, lineHeight: options.lineHeight });
-      }
 
       if (cell.rowSpan > 1) {
-        for (
-          let occupiedColumn = startColumn;
-          occupiedColumn < endColumn;
-          occupiedColumn += 1
-        ) {
+        for (let occupied = startColumn; occupied < endColumn; occupied += 1) {
           rowSpanOccupancy.set(
-            occupiedColumn,
-            Math.max(rowSpanOccupancy.get(occupiedColumn) ?? 0, cell.rowSpan - 1)
+            occupied,
+            Math.max(rowSpanOccupancy.get(occupied) ?? 0, cell.rowSpan - 1)
           );
         }
       }
@@ -1088,20 +1242,7 @@ export function layoutTable(
       )
     );
 
-    const innerHeight = rowHeight - options.cellPadding * 2;
-    for (const placed of placedCells) {
-      const isHeader = isHeaderTableCell(placed.cell, rowIndex, placed.startColumn, options);
-      const isStripedBodyRow =
-        options.zebraColor !== undefined &&
-        rowIndex >= options.headerRows &&
-        (rowIndex - options.headerRows) % 2 === 1;
-      const background =
-        placed.cell.background ??
-        (isHeader ? options.headerBackground : isStripedBodyRow ? options.zebraColor : undefined);
-      if (background !== undefined) {
-        page.ops.push(tableCellRectOp(placed.x, y - rowHeight, placed.width, rowHeight, { fill: background }));
-      }
-    }
+    paintRowBackgrounds(page, placedCells, rowIndex, y, rowHeight, options);
     rowGeometry.push({
       top: y,
       height: rowHeight,
@@ -1111,37 +1252,10 @@ export function layoutTable(
         ...(placed.cell.border !== undefined ? { border: placed.cell.border } : {}),
       })),
     });
+
+    const innerHeight = rowHeight - options.cellPadding * 2;
     for (const placed of placedCells) {
-      const align = placed.cell.verticalAlign ?? options.verticalAlign;
-      const offset =
-        align === "top"
-          ? 0
-          : verticalAlignOffset(align, innerHeight, measurePositionedRunHeight(placed.runs, placed.lineHeight));
-      const runs = offset === 0 ? placed.runs : shiftRunsDown(placed.runs, offset);
-      const shiftedDecorations =
-        placed.decorations === undefined
-          ? undefined
-          : offset === 0
-            ? placed.decorations
-            : placed.decorations.map((d) => ({ ...d, baselineY: d.baselineY - offset }));
-      if (shiftedDecorations !== undefined) pushInlineHighlights(page, shiftedDecorations);
-      pushPositionedTextRuns(page, runs, placed.node.id);
-      if (shiftedDecorations !== undefined) {
-        pushInlineDecorations(page, shiftedDecorations);
-      }
-      if (placed.links !== undefined) {
-        for (const link of placed.links) {
-          addLinkToPage(
-            page,
-            link.url,
-            { x: link.x, y: link.y - offset, width: link.width, height: link.height },
-            placed.node,
-          );
-        }
-      }
-      if (placed.cell.annotations && placed.cell.annotations.length > 0) {
-        emitParagraphTextAnnotations(page, runs, placed.cell.annotations, embeddedFonts, placed.node);
-      }
+      emitPlacedTableCell(page, placed, innerHeight, options, embeddedFonts);
     }
 
     decrementRowSpanOccupancy(rowSpanOccupancy);
@@ -1156,20 +1270,7 @@ export function layoutTable(
     });
   }
 
-  // Per-cell edge borders, drawn last so they sit on top of the table preset.
-  for (const row of rowGeometry) {
-    for (const cell of row.cells) {
-      if (cell.border === undefined) continue;
-      const left = cell.x;
-      const right = cell.x + cell.width;
-      const top = row.top;
-      const bottom = row.top - row.height;
-      if (cell.border.top) page.ops.push(tableLineOp(left, top, right, top, cell.border.top));
-      if (cell.border.bottom) page.ops.push(tableLineOp(left, bottom, right, bottom, cell.border.bottom));
-      if (cell.border.left) page.ops.push(tableLineOp(left, bottom, left, top, cell.border.left));
-      if (cell.border.right) page.ops.push(tableLineOp(right, bottom, right, top, cell.border.right));
-    }
-  }
+  drawPerCellBorders(page, rowGeometry);
 
   return y;
 }
@@ -1192,7 +1293,7 @@ function drawTableBorders(
   }
 
   const top = rows[0]!.top;
-  const last = rows[rows.length - 1]!;
+  const last = rows.at(-1)!;
   const bottom = last.top - last.height;
 
   if (style === "outer") {

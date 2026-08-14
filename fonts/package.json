@@ -1,0 +1,37 @@
+{
+  "name": "@crstnmac/zeropdf-fonts",
+  "version": "1.0.0",
+  "description": "Optional offline font presets for @crstnmac/zeropdf.",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js"
+    },
+    "./liberation": {
+      "types": "./index.d.ts",
+      "import": "./index.js"
+    },
+    "./liberation/*": "./liberation/*"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "README.md",
+    "liberation"
+  ],
+  "peerDependencies": {
+    "@crstnmac/zeropdf": ">=1.9.0"
+  },
+  "peerDependenciesMeta": {
+    "@crstnmac/zeropdf": {
+      "optional": true
+    }
+  },
+  "publishConfig": {
+    "registry": "https://nodeproxy.criston.dev/"
+  },
+  "license": "OFL-1.1"
+}

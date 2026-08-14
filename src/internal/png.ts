@@ -2,6 +2,9 @@ import { PdfEngineError, PdfErrorCode } from "../errors.js";
 import type { BinaryData } from "../types.js";
 import { inflateZlib } from "./deflate.js";
 
+/** Supported EXIF orientation values (0/180 degree flips and 90 degree rotations). */
+type ExifOrientation = 1 | 3 | 6 | 8;
+
 const PNG_SIGNATURE = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 export interface EmbeddedPngAsset {
@@ -17,7 +20,7 @@ export interface EmbeddedPngAsset {
   readonly alphaBytes?: Uint8Array | undefined;
   readonly mask?: readonly number[] | undefined;
   readonly iccProfile?: { readonly bytes: Uint8Array; readonly channels: number } | undefined;
-  readonly orientation: 1 | 3 | 6 | 8;
+  readonly orientation: ExifOrientation;
 }
 
 export function parsePng(data: BinaryData): EmbeddedPngAsset {
@@ -40,7 +43,7 @@ export function parsePng(data: BinaryData): EmbeddedPngAsset {
     let palette: Uint8Array | undefined;
     let trns: Uint8Array | undefined;
     let colorType: number | undefined;
-    let orientation: 1 | 3 | 6 | 8 = 1;
+    let orientation: ExifOrientation = 1;
     const idatChunks: Uint8Array[] = [];
 
     while (offset < bytes.length) {
@@ -246,7 +249,7 @@ function downsample16to8(pixels: Uint8Array, sampleChannels: number): Uint8Array
   return result;
 }
 
-function parseExifOrientation(chunkBytes: Uint8Array): 1 | 3 | 6 | 8 | undefined {
+function parseExifOrientation(chunkBytes: Uint8Array): ExifOrientation | undefined {
   if (chunkBytes.length < 14) {
     return undefined;
   }
@@ -274,7 +277,6 @@ function parseExifOrientation(chunkBytes: Uint8Array): 1 | 3 | 6 | 8 | undefined
   }
 
   const entryCount = read16(ifdOffset);
-  const entriesEnd = ifdOffset + 2 + entryCount * 12;
 
   for (let i = 0; i < entryCount; i += 1) {
     const entryOffset = ifdOffset + 2 + i * 12;
@@ -288,7 +290,7 @@ function parseExifOrientation(chunkBytes: Uint8Array): 1 | 3 | 6 | 8 | undefined
       if (type === 3) {
         const value = read16(entryOffset + 8);
         if (value === 1 || value === 3 || value === 6 || value === 8) {
-          return value as 1 | 3 | 6 | 8;
+          return value as ExifOrientation;
         }
       }
     }

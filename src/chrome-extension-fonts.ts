@@ -22,7 +22,7 @@ function resolveUrl(path: string): string {
   if (ABSOLUTE_URL.test(path)) {
     return path;
   }
-  if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.getURL) {
+  if (typeof chrome === "undefined" || !chrome.runtime?.getURL) {
     throw new PdfEngineError(
       PdfErrorCode.INVALID_FONT,
       "chrome.runtime.getURL is not available. This module must run in a Chrome extension context (service worker, background script, or extension page).",

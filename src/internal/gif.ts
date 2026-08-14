@@ -33,9 +33,7 @@ export function parseGif(data: BinaryData): EmbeddedGifAsset {
     const width = readUint16LE(bytes, 6);
     const height = readUint16LE(bytes, 8);
     const packed = bytes[10]!;
-    const backgroundColorIndex = bytes[11]!;
     const hasGlobalColorTable = (packed & 0x80) !== 0;
-    const colorResolution = ((packed & 0x70) >> 4) + 1;
     const gctSize = 1 << ((packed & 0x07) + 1);
     let offset = 13;
 
@@ -64,8 +62,7 @@ export function parseGif(data: BinaryData): EmbeddedGifAsset {
         const extensionLabel = bytes[offset];
         offset += 1;
         if (extensionLabel === 0xf9) {
-          const blockSize = bytes[offset]!;
-          offset += 1;
+          offset += 1; // graphic control extension block size
           const gcePacked = bytes[offset]!;
           offset += 1;
           const hasTransparent = (gcePacked & 0x01) !== 0;
@@ -100,18 +97,15 @@ export function parseGif(data: BinaryData): EmbeddedGifAsset {
         const framePacked = bytes[offset + 8]!;
         offset += 9;
         const hasLocalColorTable = (framePacked & 0x80) !== 0;
-        const interlaced = (framePacked & 0x40) !== 0;
 
         let lctSize = gctSize;
         if (hasLocalColorTable && globalColorTable === undefined) {
           lctSize = 1 << ((framePacked & 0x07) + 1);
         }
 
-        let colorTable = globalColorTable;
         if (hasLocalColorTable) {
-          const tableLen = lctSize * 3;
-          colorTable = bytes.slice(offset, offset + tableLen);
-          offset += tableLen;
+          // Local color tables are skipped: only the first frame is decoded.
+          offset += lctSize * 3;
         }
 
         const minCodeSize = bytes[offset]!;
@@ -338,7 +332,7 @@ function toBytes(data: BinaryData): Uint8Array {
 }
 
 function readTag(bytes: Uint8Array, offset: number): string {
-  return String.fromCharCode(
+  return String.fromCodePoint(
     bytes[offset] ?? 0,
     bytes[offset + 1] ?? 0,
     bytes[offset + 2] ?? 0,

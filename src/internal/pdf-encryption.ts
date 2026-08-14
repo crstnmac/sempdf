@@ -673,7 +673,8 @@ function shaHash(algorithm: "sha256" | "sha384" | "sha512", data: Uint8Array): U
     return Uint8Array.from(hash.update(data).digest());
   }
   // Portable fallback (browsers / runtimes without node:crypto).
-  return algorithm === "sha256" ? sha256(data) : algorithm === "sha384" ? sha384(data) : sha512(data);
+  if (algorithm === "sha256") return sha256(data);
+  return algorithm === "sha384" ? sha384(data) : sha512(data);
 }
 
 function aesCbcNoPad(key: Uint8Array, iv: Uint8Array, data: Uint8Array, encrypt: boolean): Uint8Array {
@@ -712,7 +713,7 @@ function algorithm2B(password: Uint8Array, salt: Uint8Array, additional: Uint8Ar
     const next: "sha256" | "sha384" | "sha512" = mod3 === 0 ? "sha256" : mod3 === 1 ? "sha384" : "sha512";
     K = shaHash(next, E);
     round += 1;
-    if (round >= 64 && E[E.length - 1]! <= round - 32) {
+    if (round >= 64 && E.at(-1)! <= round - 32) {
       break;
     }
   }

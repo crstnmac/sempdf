@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, extname, join, normalize, resolve } from "node:path";
+import { basename, extname, isAbsolute, join, normalize, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
 import { deflateSync, gunzipSync, gzipSync } from "node:zlib";
@@ -30,6 +30,15 @@ const MAX_DIFF_RATIO = 0.001;
 const HOMEBREW_POPPLER_DYLIB = "/usr/local/Cellar/poppler/0.66.0/lib/libpoppler.77.dylib";
 const TRUSTED_BIN_DIRS = ["/usr/bin", "/bin", "/usr/local/bin", "/opt/homebrew/bin", "/usr/sbin", "/sbin"];
 const SAFE_SPAWN_ENV = { ...process.env, PATH: TRUSTED_BIN_DIRS.join(":") };
+
+/** Resolves a binary name to an absolute path inside the trusted bin dirs. */
+function resolveTrustedBin(name) {
+  for (const dir of TRUSTED_BIN_DIRS) {
+    const candidate = join(dir, name);
+    if (existsSync(candidate)) return candidate;
+  }
+  return undefined;
+}
 
 const renderer = process.env.PDF_VISUAL_RENDERER ?? findSystemRenderer() ?? findBundledRenderer() ?? "pdftoppm";
 const port = Number(process.env.PORT ?? readArg("--port") ?? 4174);
@@ -100,7 +109,10 @@ async function routePost(request, response, url) {
 server.listen(port, "127.0.0.1", () => {
   const url = `http://127.0.0.1:${port}`;
   console.log(`Visual preview running at ${url}`);
-  if (shouldOpen) spawn("open", [url], { stdio: "ignore", detached: true, env: SAFE_SPAWN_ENV }).unref();
+  const openBin = resolveTrustedBin("open");
+  if (shouldOpen && openBin !== undefined) {
+    spawn(openBin, [url], { stdio: "ignore", detached: true, env: SAFE_SPAWN_ENV }).unref();
+  }
 });
 
 async function listFixtures() {
@@ -331,8 +343,10 @@ function ensureRenderer() {
 }
 
 function findSystemRenderer() {
-  const result = spawnSync("pdftoppm", ["-h"], { encoding: "utf8", env: SAFE_SPAWN_ENV });
-  return result.status === 0 ? "pdftoppm" : undefined;
+  const bin = resolveTrustedBin("pdftoppm");
+  if (bin === undefined) return undefined;
+  const result = spawnSync(bin, ["-h"], { encoding: "utf8", env: SAFE_SPAWN_ENV });
+  return result.status === 0 ? bin : undefined;
 }
 
 function findBundledRenderer() {
@@ -359,7 +373,9 @@ function prepareBundledRenderer(rendererPath) {
   if (process.platform !== "darwin") return;
   const bundledDylib = resolve(ROOT, "node_modules/pdf-poppler/lib/osx/poppler-0.66/lib/libpoppler.77.0.0.dylib");
   if (!existsSync(bundledDylib)) return;
-  spawnSync("install_name_tool", ["-change", HOMEBREW_POPPLER_DYLIB, bundledDylib, resolved], {
+  const installNameTool = resolveTrustedBin("install_name_tool");
+  if (installNameTool === undefined) return;
+  spawnSync(installNameTool, ["-change", HOMEBREW_POPPLER_DYLIB, bundledDylib, resolved], {
     encoding: "utf8",
     env: SAFE_SPAWN_ENV,
   });
@@ -428,19 +444,29 @@ function crc32(buffer) {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
+/** Characters allowed in a request path: no drive letters, no traversal dots. */
+const SAFE_RELATIVE_PATH = /^[\w.\-/]+$/;
+
 function sendSafeFile(response, root, relativePath) {
-  const segments = relativePath.split(/[/\\]/);
-  const hasTraversal = segments.some((segment) => segment === "..");
-  if (hasTraversal) {
+  const notFound = () => {
     response.writeHead(404);
     response.end("Not found");
+  };
+  // Validate the raw request path before it is canonicalized: an allow-list of
+  // characters plus an explicit `..` segment check.
+  if (!SAFE_RELATIVE_PATH.test(relativePath) || relativePath.split("/").includes("..")) {
+    notFound();
     return;
   }
   const target = resolve(root, normalize(relativePath));
-  const withinRoot = target === root || target.startsWith(root + "/");
-  if (!withinRoot || !existsSync(target) || !statSync(target).isFile()) {
-    response.writeHead(404);
-    response.end("Not found");
+  // Canonicalized path must stay inside the served root.
+  const inside = relative(root, target);
+  if (inside === "" || inside.startsWith("..") || isAbsolute(inside)) {
+    notFound();
+    return;
+  }
+  if (!existsSync(target) || !statSync(target).isFile()) {
+    notFound();
     return;
   }
   sendFile(response, target);
@@ -478,7 +504,7 @@ function artifactUrl(path) {
 }
 
 function sanitizeName(name) {
-  const cleaned = String(name).trim().replace(/[^a-zA-Z0-9._-]+/g, "-");
+  const cleaned = String(name).trim().replaceAll(/[^a-zA-Z0-9._-]+/g, "-");
   const trimmed = cleaned.replace(/^-+/, "").replace(/-+$/, "");
   return trimmed || "fixture";
 }

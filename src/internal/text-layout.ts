@@ -54,7 +54,7 @@ export function layoutTextBlock(
   options: NormalizedTextBlockOptions,
   embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>
 ): PositionedTextRun[] {
-  const paragraphs = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  const paragraphs = text.replaceAll(/\r\n/g, "\n").replaceAll(/\r/g, "\n").split("\n");
   const lines: PositionedTextRun[] = [];
   let y = options.y;
   const lineLimit = options.maxLines ?? Number.POSITIVE_INFINITY;
@@ -114,6 +114,66 @@ export function layoutTextBlock(
   return lines;
 }
 
+/** Run options shared by every vertical-mode run: same x/style, descending y. */
+function verticalRunOptions(
+  options: NormalizedTextBaseOptions,
+  font: PdfFont,
+  y: number,
+): NormalizedTextOptions {
+  return {
+    x: options.x,
+    y,
+    font,
+    fontSize: options.fontSize,
+    color: options.color,
+    kerning: options.kerning,
+    ...(options.tag !== undefined ? { tag: options.tag } : {}),
+    ...(options.characterSpacing !== undefined ? { characterSpacing: options.characterSpacing } : {}),
+    ...(options.wordSpacing !== undefined ? { wordSpacing: options.wordSpacing } : {}),
+    ...(options.leading !== undefined ? { leading: options.leading } : {}),
+    ...carriedRunStyle(options)
+  };
+}
+
+/**
+ * Lays runs out top-to-bottom, one em per run, with any horizontal-in-vertical
+ * group (tate-chu-yoko) merged into a single run that occupies one em per
+ * member so the following runs keep their positions.
+ */
+function positionTateChuYokoRuns(
+  runs: readonly ShapedTextRun[],
+  options: NormalizedTextBaseOptions
+): PositionedTextRun[] {
+  const positionedRuns: PositionedTextRun[] = [];
+  let y = options.y;
+
+  for (const group of buildTateChuYokoGroups(runs)) {
+    if (group.kind === "vertical") {
+      for (const run of group.runs) {
+        positionedRuns.push({
+          text: run.text,
+          options: verticalRunOptions(options, run.font, y),
+          ...(run.glyphs ? { glyphs: run.glyphs } : {})
+        });
+        y -= options.fontSize;
+      }
+      continue;
+    }
+
+    const combinedGlyphs = group.runs.every((r) => r.glyphs)
+      ? group.runs.flatMap((r) => r.glyphs!)
+      : undefined;
+    positionedRuns.push({
+      text: group.runs.map((r) => r.text).join(""),
+      options: verticalRunOptions(options, group.runs[0]!.font, y),
+      ...(combinedGlyphs ? { glyphs: combinedGlyphs } : {})
+    });
+    y -= options.fontSize * group.runs.length;
+  }
+
+  return positionedRuns;
+}
+
 export function positionTextRunsVertical(
   text: string,
   options: NormalizedTextBaseOptions,
@@ -121,84 +181,20 @@ export function positionTextRunsVertical(
 ): PositionedTextRun[] {
   const resolvedDirection = resolveTextDirection(text, options.direction);
   const runs = shapeTextRuns(text, options, embeddedFonts, resolvedDirection);
-  const positionedRuns: PositionedTextRun[] = [];
-  let y = options.y;
-  const charHeight = options.fontSize;
 
   if (options.tateChuYoko !== false && runs.some((r) => hasHorizontalInVerticalChars(r.text))) {
-    const tcyGroups = buildTateChuYokoGroups(runs);
-
-    for (const group of tcyGroups) {
-      if (group.kind === "vertical") {
-        for (const run of group.runs) {
-          positionedRuns.push({
-            text: run.text,
-            options: {
-              x: options.x,
-              y,
-              font: run.font,
-              fontSize: options.fontSize,
-              color: options.color,
-              kerning: options.kerning,
-              ...(options.tag !== undefined ? { tag: options.tag } : {}),
-              ...(options.characterSpacing !== undefined ? { characterSpacing: options.characterSpacing } : {}),
-              ...(options.wordSpacing !== undefined ? { wordSpacing: options.wordSpacing } : {}),
-              ...(options.leading !== undefined ? { leading: options.leading } : {}),
-              ...carriedRunStyle(options)
-            },
-            ...(run.glyphs ? { glyphs: run.glyphs } : {})
-          });
-          y -= charHeight;
-        }
-      } else {
-        const combinedText = group.runs.map((r) => r.text).join("");
-        const combinedGlyphs = group.runs.every((r) => r.glyphs)
-          ? group.runs.flatMap((r) => r.glyphs!)
-          : undefined;
-
-        positionedRuns.push({
-          text: combinedText,
-          options: {
-            x: options.x,
-            y,
-            font: group.runs[0]!.font,
-            fontSize: options.fontSize,
-            color: options.color,
-            kerning: options.kerning,
-            ...(options.tag !== undefined ? { tag: options.tag } : {}),
-            ...(options.characterSpacing !== undefined ? { characterSpacing: options.characterSpacing } : {}),
-            ...(options.wordSpacing !== undefined ? { wordSpacing: options.wordSpacing } : {}),
-            ...(options.leading !== undefined ? { leading: options.leading } : {}),
-            ...carriedRunStyle(options)
-          },
-          ...(combinedGlyphs ? { glyphs: combinedGlyphs } : {})
-        });
-        y -= charHeight * group.runs.length;
-      }
-    }
-
-    return positionedRuns;
+    return positionTateChuYokoRuns(runs, options);
   }
 
+  const positionedRuns: PositionedTextRun[] = [];
+  let y = options.y;
   for (const run of runs) {
     positionedRuns.push({
       text: run.text,
-      options: {
-        x: options.x,
-        y,
-        font: run.font,
-        fontSize: options.fontSize,
-        color: options.color,
-        kerning: options.kerning,
-        ...(options.tag !== undefined ? { tag: options.tag } : {}),
-        ...(options.characterSpacing !== undefined ? { characterSpacing: options.characterSpacing } : {}),
-        ...(options.wordSpacing !== undefined ? { wordSpacing: options.wordSpacing } : {}),
-        ...(options.leading !== undefined ? { leading: options.leading } : {}),
-        ...carriedRunStyle(options)
-      },
+      options: verticalRunOptions(options, run.font, y),
       ...(run.glyphs ? { glyphs: run.glyphs } : {})
     });
-    y -= charHeight;
+    y -= options.fontSize;
   }
 
   return positionedRuns;
@@ -327,16 +323,8 @@ interface LineInfo {
  * are supported; mixed-bidi paragraphs may miss matches that straddle a
  * direction boundary.
  */
-export function findSubstringRects(
-  runs: readonly PositionedTextRun[],
-  match: string,
-  occurrence: number | undefined,
-  embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>
-): SubstringRect[] {
-  if (match.length === 0) {
-    return [];
-  }
-
+/** Groups positioned runs into visual lines, top-down, each sorted left-to-right. */
+function groupRunsIntoLines(runs: readonly PositionedTextRun[]): LineInfo[] {
   const linesByY = new Map<number, PositionedTextRun[]>();
   const orderedYs: number[] = [];
   for (const run of runs) {
@@ -352,15 +340,54 @@ export function findSubstringRects(
   orderedYs.sort((a, b) => b - a);
 
   const lines: LineInfo[] = [];
-  let fullText = "";
+  let consumed = 0;
   for (const y of orderedYs) {
     const sortedRuns = [...linesByY.get(y)!].sort((a, b) => a.options.x - b.options.x);
     const text = sortedRuns.map((run) => run.text).join("");
     const direction = resolveTextDirection(text, "auto");
-    lines.push({ y, runs: sortedRuns, text, direction, startInFull: fullText.length });
-    fullText += text;
+    lines.push({ y, runs: sortedRuns, text, direction, startInFull: consumed });
+    consumed += text.length;
+  }
+  return lines;
+}
+
+/** Rects covering `[start, end)` of the concatenated text, one per line touched. */
+function rectsForRange(
+  lines: readonly LineInfo[],
+  start: number,
+  end: number,
+  embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>
+): SubstringRect[] {
+  const rects: SubstringRect[] = [];
+  for (const line of lines) {
+    const lineEnd = line.startInFull + line.text.length;
+    if (lineEnd <= start) continue;
+    if (line.startInFull >= end) break;
+    const segStart = Math.max(start, line.startInFull) - line.startInFull;
+    const segEnd = Math.min(end, lineEnd) - line.startInFull;
+    const rect = computeLineRect(line.runs, segStart, segEnd, line.y, embeddedFonts);
+    if (rect) {
+      rects.push(rect);
+    }
+  }
+  return rects;
+}
+
+export function findSubstringRects(
+  runs: readonly PositionedTextRun[],
+  match: string,
+  occurrence: number | undefined,
+  embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>
+): SubstringRect[] {
+  if (match.length === 0) {
+    return [];
   }
 
+  const lines = groupRunsIntoLines(runs);
+  const fullText = lines.map((line) => line.text).join("");
+
+  // An all-RTL block stores its text in logical order, so the needle is
+  // reversed to match the visual order the rects are measured in.
   const allRtl = lines.length > 0 && lines.every((line) => line.direction === "rtl");
   const searchTerm = allRtl ? reverseStringCodePoints(match) : match;
 
@@ -374,21 +401,8 @@ export function findSubstringRects(
       break;
     }
 
-    const shouldEmit = occurrence === undefined || occurrence === occurrenceCounter;
-    if (shouldEmit) {
-      const start = idx;
-      const end = idx + searchTerm.length;
-      for (const line of lines) {
-        const lineEnd = line.startInFull + line.text.length;
-        if (lineEnd <= start) continue;
-        if (line.startInFull >= end) break;
-        const segStart = Math.max(start, line.startInFull) - line.startInFull;
-        const segEnd = Math.min(end, lineEnd) - line.startInFull;
-        const rect = computeLineRect(line.runs, segStart, segEnd, line.y, embeddedFonts);
-        if (rect) {
-          rects.push(rect);
-        }
-      }
+    if (occurrence === undefined || occurrence === occurrenceCounter) {
+      rects.push(...rectsForRange(lines, idx, idx + searchTerm.length, embeddedFonts));
     }
 
     occurrenceCounter += 1;
@@ -478,37 +492,36 @@ function measureRunSubstring(
   };
 }
 
-function measureRunSubstringWithGlyphs(
-  run: PositionedTextRun,
-  embedded: ParsedTrueTypeFont,
-  charStart: number,
-  charEnd: number
-): { prefixWidth: number; segWidth: number } {
+/** One glyph's char range plus the run's rendered width before and after it. */
+interface GlyphSpan {
+  readonly startChar: number;
+  readonly endChar: number;
+  readonly widthBefore: number;
+  readonly widthAfter: number;
+}
+
+/**
+ * Walks a run's glyphs once, accumulating kerning, per-glyph character spacing,
+ * and word spacing, and records the running width at each glyph boundary.
+ */
+function glyphSpans(run: PositionedTextRun, embedded: ParsedTrueTypeFont): GlyphSpan[] {
   const fontSize = run.options.fontSize;
   const upe = embedded.unitsPerEm || 1;
   const charSpacing = run.options.characterSpacing ?? 0;
   const wordSpacing = run.options.wordSpacing ?? 0;
   const kerning = run.options.kerning;
+  const glyphs = run.glyphs!;
 
+  const spans: GlyphSpan[] = [];
   let advanceUnits = 0;
   let additivePoints = 0;
-  let lastGlyphId: number | undefined;
   let charCursor = 0;
-  let prefixWidth: number | undefined;
-  let segEndWidth: number | undefined;
+  let lastGlyphId: number | undefined;
+  const widthSoFar = (): number => (advanceUnits / upe) * fontSize + additivePoints;
 
-  const totalChars = run.glyphs!.reduce((sum, g) => sum + g.unicode.length, 0);
-  const safeStart = Math.max(0, Math.min(charStart, totalChars));
-  const safeEnd = Math.max(safeStart, Math.min(charEnd, totalChars));
-
-  for (let i = 0; i < run.glyphs!.length; i += 1) {
-    const glyph = run.glyphs![i]!;
-    const glyphStartChar = charCursor;
-    const glyphEndChar = charCursor + glyph.unicode.length;
-
-    if (prefixWidth === undefined && glyphStartChar >= safeStart) {
-      prefixWidth = (advanceUnits / upe) * fontSize + additivePoints;
-    }
+  for (let i = 0; i < glyphs.length; i += 1) {
+    const glyph = glyphs[i]!;
+    const widthBefore = widthSoFar();
 
     if (kerning && lastGlyphId !== undefined) {
       const pair = embedded.kerningPairs.get(makeKerningPairKey(lastGlyphId, glyph.glyphId));
@@ -524,20 +537,34 @@ function measureRunSubstringWithGlyphs(
       if (ch === " ") additivePoints += wordSpacing;
     }
 
-    charCursor = glyphEndChar;
+    const startChar = charCursor;
+    charCursor += glyph.unicode.length;
     lastGlyphId = glyph.glyphId;
-
-    if (segEndWidth === undefined && charCursor >= safeEnd) {
-      segEndWidth = (advanceUnits / upe) * fontSize + additivePoints;
-    }
+    spans.push({ startChar, endChar: charCursor, widthBefore, widthAfter: widthSoFar() });
   }
 
-  const fullWidth = (advanceUnits / upe) * fontSize + additivePoints;
-  const resolvedPrefix = prefixWidth ?? fullWidth;
-  const resolvedSegEnd = segEndWidth ?? fullWidth;
+  return spans;
+}
+
+function measureRunSubstringWithGlyphs(
+  run: PositionedTextRun,
+  embedded: ParsedTrueTypeFont,
+  charStart: number,
+  charEnd: number
+): { prefixWidth: number; segWidth: number } {
+  const spans = glyphSpans(run, embedded);
+  const last = spans.at(-1);
+  const totalChars = last?.endChar ?? 0;
+  const fullWidth = last?.widthAfter ?? 0;
+
+  const safeStart = Math.max(0, Math.min(charStart, totalChars));
+  const safeEnd = Math.max(safeStart, Math.min(charEnd, totalChars));
+  const prefixWidth = spans.find((span) => span.startChar >= safeStart)?.widthBefore ?? fullWidth;
+  const segEndWidth = spans.find((span) => span.endChar >= safeEnd)?.widthAfter ?? fullWidth;
+
   // Match measureTextWidth: rendered advance is scaled horizontally by Tz.
   const scale = horizontalScaleFactor(run.options.horizontalScaling);
-  return { prefixWidth: resolvedPrefix * scale, segWidth: Math.max(resolvedSegEnd - resolvedPrefix, 0) * scale };
+  return { prefixWidth: prefixWidth * scale, segWidth: Math.max(segEndWidth - prefixWidth, 0) * scale };
 }
 
 export function measureTextWidth(
@@ -579,7 +606,7 @@ function shapeTextRuns(
   for (let index = 0; index < characters.length; index += 1) {
     const character = characters[index]!;
     const font = resolvedFonts[index]!;
-    const previousRun = runs[runs.length - 1];
+    const previousRun = runs.at(-1);
     if (previousRun && isSameFont(previousRun.font, font)) {
       previousRun.text += character;
       previousRun.hasFollowingCharacter = index < characters.length - 1;
@@ -643,7 +670,7 @@ function resolveFontForCharacter(
   const hex = `U+${codePoint.toString(16).toUpperCase().padStart(4, "0")}`;
   const usingBuiltIn = typeof primaryFont === "string";
   const remedy = usingBuiltIn
-    ? "The built-in fonts encode ASCII only: embed a font that covers this character (registerBundledFonts(), embedTrueTypeFont(), or loadGoogleFont()), pass it as `fallbackFonts`, or normalize the text to ASCII."
+    ? "The built-in fonts encode ASCII only: embed a font family with `await doc.fonts(...)`, use embedTrueTypeFont(), pass it as `fallbackFonts`, or normalize the text to ASCII."
     : "Embed a font that covers this character, or add one to `fallbackFonts`.";
   throw new PdfEngineError(
     PdfErrorCode.UNSUPPORTED_CHARACTER,
@@ -966,7 +993,7 @@ function wrapParagraph(
   options: NormalizedTextBlockOptions,
   embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>
 ): string[] {
-  const normalizedParagraph = paragraph.replace(/\t/g, "    ").trim();
+  const normalizedParagraph = paragraph.replaceAll(/\t/g, "    ").trim();
   if (normalizedParagraph.length === 0) {
     return [];
   }
@@ -1007,7 +1034,7 @@ function wrapParagraph(
 
       const brokenWord = breakWord(word, options, embeddedFonts);
       lines.push(...brokenWord.slice(0, -1));
-      currentLine = brokenWord[brokenWord.length - 1] ?? "";
+      currentLine = brokenWord.at(-1) ?? "";
       currentWidth = currentLine.length === 0 ? 0 : measureTextWidth(currentLine, options, embeddedFonts);
       continue;
     }
@@ -1040,7 +1067,7 @@ function wrapParagraph(
 
     const brokenWord = breakWord(word, options, embeddedFonts);
     lines.push(...brokenWord.slice(0, -1));
-    currentLine = brokenWord[brokenWord.length - 1] ?? "";
+    currentLine = brokenWord.at(-1) ?? "";
     currentWidth = currentLine.length === 0 ? 0 : measureTextWidth(currentLine, options, embeddedFonts);
   }
 
@@ -1076,7 +1103,7 @@ function wrapParagraphVertical(
   options: NormalizedTextBlockOptions,
   embeddedFonts: ReadonlyMap<string, ParsedTrueTypeFont>
 ): string[] {
-  const normalizedParagraph = paragraph.replace(/\t/g, "    ").trim();
+  const normalizedParagraph = paragraph.replaceAll(/\t/g, "    ").trim();
   if (normalizedParagraph.length === 0) {
     return [];
   }
@@ -1472,7 +1499,7 @@ function segmentThaiWords(text: string): string[] {
         words.push(...segmentThaiToWords(current));
         current = "";
       }
-      const lastWord = words[words.length - 1];
+      const lastWord = words.at(-1);
       if (lastWord !== undefined && !isThai(lastWord.codePointAt(0)!)) {
         words[words.length - 1] = lastWord + character;
       } else {

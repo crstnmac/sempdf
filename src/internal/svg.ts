@@ -16,7 +16,7 @@ export function parseSvg(svgText: string, scaleX?: number, scaleY?: number): Svg
       );
     }
 
-    const svgTagMatch = normalized.match(/<svg\b([^>]*)>/is);
+    const svgTagMatch = /<svg\b([^>]*)>/is.exec(normalized);
     if (!svgTagMatch) {
       throw new PdfEngineError(
         PdfErrorCode.INVALID_IMAGE,
@@ -28,7 +28,7 @@ export function parseSvg(svgText: string, scaleX?: number, scaleY?: number): Svg
     let viewBox: { x: number; y: number; width: number; height: number } | undefined;
     if (attrs.viewBox) {
       const parts = attrs.viewBox.split(/[\s,]+/).map(Number);
-      if (parts.length >= 4 && parts.every((n) => !isNaN(n))) {
+      if (parts.length >= 4 && parts.every((n) => !Number.isNaN(n))) {
         viewBox = {
           x: parts[0]!,
           y: parts[1]!,
@@ -68,12 +68,10 @@ export function parseSvg(svgText: string, scaleX?: number, scaleY?: number): Svg
       const sy = height / viewBox.height;
       const tx = -viewBox.x * sx;
       const ty = height + viewBox.y * sy;
-      pdfCommands.push(`q`);
-      pdfCommands.push(`${formatNum(sx)} 0 0 ${formatNum(-sy)} ${formatNum(tx)} ${formatNum(ty)} cm`);
+      pdfCommands.push(`q`, `${formatNum(sx)} 0 0 ${formatNum(-sy)} ${formatNum(tx)} ${formatNum(ty)} cm`);
     } else {
       // Flip Y coordinate
-      pdfCommands.push(`q`);
-      pdfCommands.push(`1 0 0 -1 0 ${formatNum(height)} cm`);
+      pdfCommands.push(`q`, `1 0 0 -1 0 ${formatNum(height)} cm`);
     }
 
     for (const el of elements) {
@@ -140,11 +138,14 @@ function parseSvgElements(text: string): SvgElement[] {
 
 function parseAttributes(attrStr: string): Record<string, string> {
   const attrs: Record<string, string> = {};
-  const attrPattern = /([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))/g;
+  // The value group is optional so the scan never backtracks over a long name
+  // that turns out to have no `=` after it.
+  const attrPattern = /([\w:][\w:.-]*)\s*(?:=\s*("[^"]*"|'[^']*'|[^\s"'>]+))?/g;
   let match;
   while ((match = attrPattern.exec(attrStr)) !== null) {
     const name = match[1]!;
-    let value = match[2] ?? match[3] ?? match[4] ?? "";
+    const rawValue = match[2] ?? "";
+    let value = rawValue.startsWith('"') || rawValue.startsWith("'") ? rawValue.slice(1, -1) : rawValue;
     // Strip % sign
     if (value.endsWith("%")) {
       value = value.slice(0, -1);
@@ -157,8 +158,8 @@ function parseAttributes(attrStr: string): Record<string, string> {
 function parseFloatAttr(value: string | undefined, defaultValue: number): number {
   if (value === undefined) return defaultValue;
   // Handle units like px, pt, cm, mm, in
-  const num = parseFloat(value);
-  if (isNaN(num)) return defaultValue;
+  const num = Number.parseFloat(value);
+  if (Number.isNaN(num)) return defaultValue;
 
   if (value.endsWith("pt")) return num;
   if (value.endsWith("in")) return num * 72;
@@ -168,7 +169,7 @@ function parseFloatAttr(value: string | undefined, defaultValue: number): number
 }
 
 function formatNum(n: number): string {
-  return Number.isInteger(n) ? n.toString() : n.toFixed(3).replace(/\.?0+$/, "");
+  return Number.isInteger(n) ? n.toString() : n.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function resolveFillStroke(attrs: Record<string, string>, style: Record<string, string | number | undefined>): { fill: boolean; stroke: boolean; fillColor: string; strokeColor: string; strokeWidth: number } {
@@ -228,17 +229,17 @@ function parseColorValue(color: string): string {
       hex = hex[0]! + hex[0]! + hex[1]! + hex[1]! + hex[2]! + hex[2]!;
     }
     if (hex.length === 6) {
-      const r = parseInt(hex.slice(0, 2), 16) / 255;
-      const g = parseInt(hex.slice(2, 4), 16) / 255;
-      const b = parseInt(hex.slice(4, 6), 16) / 255;
+      const r = Number.parseInt(hex.slice(0, 2), 16) / 255;
+      const g = Number.parseInt(hex.slice(2, 4), 16) / 255;
+      const b = Number.parseInt(hex.slice(4, 6), 16) / 255;
       return `${formatNum(r)} ${formatNum(g)} ${formatNum(b)}`;
     }
   }
 
   if (color.startsWith("rgb")) {
-    const match = color.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/);
+    const match = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/.exec(color);
     if (match) {
-      return `${formatNum(parseFloat(match[1]!) / 255)} ${formatNum(parseFloat(match[2]!) / 255)} ${formatNum(parseFloat(match[3]!) / 255)}`;
+      return `${formatNum(Number.parseFloat(match[1]!) / 255)} ${formatNum(Number.parseFloat(match[2]!) / 255)} ${formatNum(Number.parseFloat(match[3]!) / 255)}`;
     }
   }
 
@@ -249,8 +250,8 @@ function setStyle(attrs: Record<string, string>, style: { fill?: string; stroke?
   if (attrs.fill !== undefined) style.fill = attrs.fill;
   if (attrs.stroke !== undefined) style.stroke = attrs.stroke;
   if (attrs["stroke-width"] !== undefined || attrs["strokeWidth"] !== undefined) {
-    const sw = parseFloat(attrs["stroke-width"] ?? attrs["strokeWidth"]!);
-    if (!isNaN(sw)) style.strokeWidth = sw;
+    const sw = Number.parseFloat(attrs["stroke-width"] ?? attrs["strokeWidth"]!);
+    if (!Number.isNaN(sw)) style.strokeWidth = sw;
   }
 }
 
@@ -266,20 +267,11 @@ function renderRect(attrs: Record<string, string>, style: { fill?: string; strok
   cmds.push(`${formatNum(x)} ${formatNum(y)} ${formatNum(w)} ${formatNum(h)} re`);
 
   if (fill && stroke) {
-    cmds.push(`q`);
-    cmds.push(`${strokeColor} RG`);
-    cmds.push(`${strokeWidth} w`);
-    cmds.push(`S`);
-    cmds.push(`Q`);
-    cmds.push(`${fillColor} rg`);
-    cmds.push(`f`);
+    cmds.push(`q`, `${strokeColor} RG`, `${strokeWidth} w`, `S`, `Q`, `${fillColor} rg`, `f`);
   } else if (fill) {
-    cmds.push(`${fillColor} rg`);
-    cmds.push(`f`);
+    cmds.push(`${fillColor} rg`, `f`);
   } else if (stroke) {
-    cmds.push(`${strokeColor} RG`);
-    cmds.push(`${strokeWidth} w`);
-    cmds.push(`S`);
+    cmds.push(`${strokeColor} RG`, `${strokeWidth} w`, `S`);
   }
 
   return cmds;
@@ -295,27 +287,20 @@ function renderCircle(attrs: Record<string, string>, style: { fill?: string; str
 
   const k = 0.5522847498;
   const kx = r * k;
-  cmds.push(`${formatNum(cx - r)} ${formatNum(cy)} m`);
-  cmds.push(`${formatNum(cx - r)} ${formatNum(cy + kx)} ${formatNum(cx - kx)} ${formatNum(cy + r)} ${formatNum(cx)} ${formatNum(cy + r)} c`);
-  cmds.push(`${formatNum(cx + kx)} ${formatNum(cy + r)} ${formatNum(cx + r)} ${formatNum(cy + kx)} ${formatNum(cx + r)} ${formatNum(cy)} c`);
-  cmds.push(`${formatNum(cx + r)} ${formatNum(cy - kx)} ${formatNum(cx + kx)} ${formatNum(cy - r)} ${formatNum(cx)} ${formatNum(cy - r)} c`);
-  cmds.push(`${formatNum(cx - kx)} ${formatNum(cy - r)} ${formatNum(cx - r)} ${formatNum(cy - kx)} ${formatNum(cx - r)} ${formatNum(cy)} c`);
+  cmds.push(
+    `${formatNum(cx - r)} ${formatNum(cy)} m`,
+    `${formatNum(cx - r)} ${formatNum(cy + kx)} ${formatNum(cx - kx)} ${formatNum(cy + r)} ${formatNum(cx)} ${formatNum(cy + r)} c`,
+    `${formatNum(cx + kx)} ${formatNum(cy + r)} ${formatNum(cx + r)} ${formatNum(cy + kx)} ${formatNum(cx + r)} ${formatNum(cy)} c`,
+    `${formatNum(cx + r)} ${formatNum(cy - kx)} ${formatNum(cx + kx)} ${formatNum(cy - r)} ${formatNum(cx)} ${formatNum(cy - r)} c`,
+    `${formatNum(cx - kx)} ${formatNum(cy - r)} ${formatNum(cx - r)} ${formatNum(cy - kx)} ${formatNum(cx - r)} ${formatNum(cy)} c`,
+  );
 
   if (fill && stroke) {
-    cmds.push(`q`);
-    cmds.push(`${strokeColor} RG`);
-    cmds.push(`${strokeWidth} w`);
-    cmds.push(`s`);
-    cmds.push(`Q`);
-    cmds.push(`${fillColor} rg`);
-    cmds.push(`f`);
+    cmds.push(`q`, `${strokeColor} RG`, `${strokeWidth} w`, `s`, `Q`, `${fillColor} rg`, `f`);
   } else if (fill) {
-    cmds.push(`${fillColor} rg`);
-    cmds.push(`f`);
+    cmds.push(`${fillColor} rg`, `f`);
   } else if (stroke) {
-    cmds.push(`${strokeColor} RG`);
-    cmds.push(`${strokeWidth} w`);
-    cmds.push(`s`);
+    cmds.push(`${strokeColor} RG`, `${strokeWidth} w`, `s`);
   }
 
   return cmds;
@@ -333,27 +318,20 @@ function renderEllipse(attrs: Record<string, string>, style: { fill?: string; st
   const k = 0.5522847498;
   const kx = rx * k;
   const ky = ry * k;
-  cmds.push(`${formatNum(cx - rx)} ${formatNum(cy)} m`);
-  cmds.push(`${formatNum(cx - rx)} ${formatNum(cy + ky)} ${formatNum(cx - kx)} ${formatNum(cy + ry)} ${formatNum(cx)} ${formatNum(cy + ry)} c`);
-  cmds.push(`${formatNum(cx + kx)} ${formatNum(cy + ry)} ${formatNum(cx + rx)} ${formatNum(cy + ky)} ${formatNum(cx + rx)} ${formatNum(cy)} c`);
-  cmds.push(`${formatNum(cx + rx)} ${formatNum(cy - ky)} ${formatNum(cx + kx)} ${formatNum(cy - ry)} ${formatNum(cx)} ${formatNum(cy - ry)} c`);
-  cmds.push(`${formatNum(cx - kx)} ${formatNum(cy - ry)} ${formatNum(cx - rx)} ${formatNum(cy - ky)} ${formatNum(cx - rx)} ${formatNum(cy)} c`);
+  cmds.push(
+    `${formatNum(cx - rx)} ${formatNum(cy)} m`,
+    `${formatNum(cx - rx)} ${formatNum(cy + ky)} ${formatNum(cx - kx)} ${formatNum(cy + ry)} ${formatNum(cx)} ${formatNum(cy + ry)} c`,
+    `${formatNum(cx + kx)} ${formatNum(cy + ry)} ${formatNum(cx + rx)} ${formatNum(cy + ky)} ${formatNum(cx + rx)} ${formatNum(cy)} c`,
+    `${formatNum(cx + rx)} ${formatNum(cy - ky)} ${formatNum(cx + kx)} ${formatNum(cy - ry)} ${formatNum(cx)} ${formatNum(cy - ry)} c`,
+    `${formatNum(cx - kx)} ${formatNum(cy - ry)} ${formatNum(cx - rx)} ${formatNum(cy - ky)} ${formatNum(cx - rx)} ${formatNum(cy)} c`,
+  );
 
   if (fill && stroke) {
-    cmds.push(`q`);
-    cmds.push(`${strokeColor} RG`);
-    cmds.push(`${strokeWidth} w`);
-    cmds.push(`s`);
-    cmds.push(`Q`);
-    cmds.push(`${fillColor} rg`);
-    cmds.push(`f`);
+    cmds.push(`q`, `${strokeColor} RG`, `${strokeWidth} w`, `s`, `Q`, `${fillColor} rg`, `f`);
   } else if (fill) {
-    cmds.push(`${fillColor} rg`);
-    cmds.push(`f`);
+    cmds.push(`${fillColor} rg`, `f`);
   } else if (stroke) {
-    cmds.push(`${strokeColor} RG`);
-    cmds.push(`${strokeWidth} w`);
-    cmds.push(`s`);
+    cmds.push(`${strokeColor} RG`, `${strokeWidth} w`, `s`);
   }
 
   return cmds;
@@ -369,18 +347,20 @@ function renderLine(attrs: Record<string, string>, style: { fill?: string; strok
   const { stroke, strokeColor, strokeWidth } = resolveFillStroke(attrs, style);
 
   if (stroke) {
-    cmds.push(`${formatNum(x1)} ${formatNum(y1)} m`);
-    cmds.push(`${formatNum(x2)} ${formatNum(y2)} l`);
-    cmds.push(`${strokeColor} RG`);
-    cmds.push(`${strokeWidth} w`);
-    cmds.push(`S`);
+    cmds.push(
+      `${formatNum(x1)} ${formatNum(y1)} m`,
+      `${formatNum(x2)} ${formatNum(y2)} l`,
+      `${strokeColor} RG`,
+      `${strokeWidth} w`,
+      `S`,
+    );
   }
 
   return cmds;
 }
 
 function renderPolygon(attrs: Record<string, string>, style: { fill?: string; stroke?: string; strokeWidth?: number }, close: boolean): string[] {
-  const points = (attrs.points ?? "").trim().split(/[\s,]+/).map(Number).filter((n) => !isNaN(n));
+  const points = (attrs.points ?? "").trim().split(/[\s,]+/).map(Number).filter((n) => !Number.isNaN(n));
 
   if (points.length < 4) return [];
 
@@ -396,20 +376,11 @@ function renderPolygon(attrs: Record<string, string>, style: { fill?: string; st
   }
 
   if (fill && stroke) {
-    cmds.push(`q`);
-    cmds.push(`${strokeColor} RG`);
-    cmds.push(`${strokeWidth} w`);
-    cmds.push(close ? `b` : `S`);
-    cmds.push(`Q`);
-    cmds.push(`${fillColor} rg`);
-    cmds.push(`f`);
+    cmds.push(`q`, `${strokeColor} RG`, `${strokeWidth} w`, close ? `b` : `S`, `Q`, `${fillColor} rg`, `f`);
   } else if (fill) {
-    cmds.push(`${fillColor} rg`);
-    cmds.push(close ? `b` : `f`);
+    cmds.push(`${fillColor} rg`, close ? `b` : `f`);
   } else if (stroke) {
-    cmds.push(`${strokeColor} RG`);
-    cmds.push(`${strokeWidth} w`);
-    cmds.push(close ? `b` : `S`);
+    cmds.push(`${strokeColor} RG`, `${strokeWidth} w`, close ? `b` : `S`);
   }
 
   return cmds;
@@ -426,20 +397,11 @@ function renderPath(attrs: Record<string, string>, style: { fill?: string; strok
   cmds.push(...pathCmds);
 
   if (fill && stroke) {
-    cmds.push(`q`);
-    cmds.push(`${strokeColor} RG`);
-    cmds.push(`${strokeWidth} w`);
-    cmds.push(`S`);
-    cmds.push(`Q`);
-    cmds.push(`${fillColor} rg`);
-    cmds.push(`f*`);
+    cmds.push(`q`, `${strokeColor} RG`, `${strokeWidth} w`, `S`, `Q`, `${fillColor} rg`, `f*`);
   } else if (fill) {
-    cmds.push(`${fillColor} rg`);
-    cmds.push(`f*`);
+    cmds.push(`${fillColor} rg`, `f*`);
   } else if (stroke) {
-    cmds.push(`${strokeColor} RG`);
-    cmds.push(`${strokeWidth} w`);
-    cmds.push(`S`);
+    cmds.push(`${strokeColor} RG`, `${strokeWidth} w`, `S`);
   }
 
   return cmds;
@@ -449,8 +411,8 @@ function parsePathCommands(d: string): string[] {
   const cmds: string[] = [];
   // Parse SVG path commands
   const tokens = d
-    .replace(/([MmLlCcQqAaZzHhVvSsTt])/g, " $1 ")
-    .replace(/[\s,]+/g, " ")
+    .replaceAll(/([MmLlCcQqAaZzHhVvSsTt])/g, " $1 ")
+    .replaceAll(/[\s,]+/g, " ")
     .trim()
     .split(/\s+/);
 
@@ -468,8 +430,8 @@ function parsePathCommands(d: string): string[] {
 
     const args: number[] = [];
     while (i < tokens.length && !/^[MmLlCcQqAaZzHhVvSsTt]$/.test(tokens[i]!)) {
-      const arg = parseFloat(tokens[i]!);
-      if (!isNaN(arg)) args.push(arg);
+      const arg = Number.parseFloat(tokens[i]!);
+      if (!Number.isNaN(arg)) args.push(arg);
       i += 1;
     }
 

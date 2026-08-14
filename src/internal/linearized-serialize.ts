@@ -488,7 +488,7 @@ function writeSparseXrefTable(
       const objectId = objectIds[index]!;
       if (
         subsection.length > 0 &&
-        objectId !== subsection[subsection.length - 1]! + 1
+        objectId !== subsection.at(-1)! + 1
       ) {
         break;
       }

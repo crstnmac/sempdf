@@ -2,7 +2,7 @@
   "$schema": "https://typedoc-plugin-markdown.org/schema.json",
   "plugin": ["typedoc-plugin-markdown"],
   "entryPoints": ["src/index.ts"],
-  "out": "docs/api",
+  "out": "content/docs/api",
   "readme": "none",
   "name": "zeropdf",
   "includeVersion": true,

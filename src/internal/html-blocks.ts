@@ -26,6 +26,7 @@ import type {
   ListItemDefinition,
   PdfFont,
   TableCell,
+  TableHeaderScope,
   TableRow,
   TemplateBlock,
   TemplateImageBlock,
@@ -219,7 +220,7 @@ export function decodeHtmlEntities(text: string, maxPasses = 3): string {
 
 function decodeOnce(text: string): string {
   if (!text.includes('&')) return text;
-  return text.replace(/&(#[xX]?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]{1,31});/g, (match, body: string) => {
+  return text.replaceAll(/&(#[xX]?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]{1,31});/g, (match, body: string) => {
     if (body.startsWith('#')) {
       const isHex = body[1] === 'x' || body[1] === 'X';
       const code = Number.parseInt(isHex ? body.slice(2) : body.slice(1), isHex ? 16 : 10);
@@ -242,10 +243,111 @@ function findLastIndex<T>(items: readonly T[], predicate: (item: T) => boolean):
 }
 
 /** Parses tag soup into a node tree, recovering from unclosed/stray tags. */
+type HtmlElementNode = Extract<HtmlNode, { kind: 'element' }>;
+
+/** A start or end tag, already split into the parts the parser acts on. */
+interface ParsedTag {
+  readonly raw: string;
+  readonly isClosing: boolean;
+  readonly tag: string;
+  readonly attributeText: string;
+  readonly selfClosing: boolean;
+}
+
+/**
+ * Matches one tag at `html[from]`. The attribute run keeps quoted sections
+ * intact so a `>` inside a value does not end the tag; each alternative starts
+ * with a distinct character, so the scan is linear. A trailing `/` is peeled
+ * off afterwards rather than matched by an optional group, which would make the
+ * pattern ambiguous.
+ */
+function matchTag(html: string, from: number): ParsedTag | undefined {
+  const match = /^<(\/?)([a-zA-Z][a-zA-Z0-9:-]*)((?:"[^"]*"|'[^']*'|[^>"'])*)>/.exec(html.slice(from));
+  if (!match) return undefined;
+  const [raw, closing, rawTag, rawAttributes] = match;
+  const selfClosing = rawAttributes!.endsWith('/');
+  return {
+    raw,
+    isClosing: closing === '/',
+    tag: rawTag!.toLowerCase(),
+    attributeText: selfClosing ? rawAttributes!.slice(0, -1) : rawAttributes!,
+    selfClosing,
+  };
+}
+
+/**
+ * Skips a comment, CDATA section, doctype, or processing instruction starting at
+ * `lt`, emitting CDATA content as text. Returns the index to resume at, or
+ * `undefined` when `lt` starts none of those.
+ */
+function skipNonElement(
+  html: string,
+  lt: number,
+  pushText: (raw: string) => void,
+): number | undefined {
+  if (html.startsWith('<!--', lt)) {
+    const end = html.indexOf('-->', lt + 4);
+    return end === -1 ? html.length : end + 3;
+  }
+  if (html.startsWith('<![CDATA[', lt)) {
+    const end = html.indexOf(']]>', lt + 9);
+    pushText(html.slice(lt + 9, end === -1 ? html.length : end));
+    return end === -1 ? html.length : end + 3;
+  }
+  if (html.startsWith('<!', lt) || html.startsWith('<?', lt)) {
+    const end = html.indexOf('>', lt);
+    return end === -1 ? html.length : end + 1;
+  }
+  return undefined;
+}
+
+/**
+ * Pops elements the incoming `tag` implicitly closes: an open paragraph, plus
+ * the per-tag `IMPLICIT_CLOSES` rules, which walk up only as far as the
+ * enclosing list/table so nesting survives.
+ */
+function closeImplicitElements(stack: HtmlElementNode[], tag: string): void {
+  if (tag === 'p' || CLOSES_PARAGRAPH.has(tag)) {
+    const openParagraph = findLastIndex(stack, (node) => node.tag === 'p');
+    if (openParagraph > 0) stack.length = openParagraph;
+  }
+  const implicit = IMPLICIT_CLOSES.get(tag);
+  if (!implicit) return;
+  for (let level = stack.length - 1; level > 0; level -= 1) {
+    const open = stack[level]!.tag;
+    if (implicit.scope.has(open)) break;
+    if (implicit.closes.has(open)) {
+      stack.length = level;
+      break;
+    }
+  }
+}
+
+/**
+ * Takes `<pre>` content verbatim up to its close tag so indentation and inner
+ * markup-looking text survive, lifting the language hint off an inner
+ * `<code class="language-x">` that the raw capture would otherwise discard.
+ * Returns the index after the close tag.
+ */
+function capturePreElement(html: string, from: number, element: HtmlElementNode): number {
+  const end = findClosingTag(html, from, 'pre');
+  const inner = html.slice(from, end.contentEnd);
+  const innerCode = /^\s*<code\b((?:"[^"]*"|'[^']*'|[^>"'])*)>/i.exec(inner);
+  if (innerCode) {
+    const codeAttributes = parseAttributes(innerCode[1] ?? '');
+    if (codeAttributes.class !== undefined) element.attributes['data-code-class'] = codeAttributes.class;
+    for (const key of ['data-language', 'data-lang'] as const) {
+      if (codeAttributes[key] !== undefined) element.attributes[key] ??= codeAttributes[key]!;
+    }
+  }
+  element.children.push({ kind: 'text', text: decodeHtmlEntities(stripTags(inner)) });
+  return end.next;
+}
+
 function parseHtml(html: string): HtmlNode[] {
-  const root: HtmlNode = { kind: 'element', tag: '#root', attributes: {}, children: [] };
-  const stack: Array<Extract<HtmlNode, { kind: 'element' }>> = [root as Extract<HtmlNode, { kind: 'element' }>];
-  const top = (): Extract<HtmlNode, { kind: 'element' }> => stack[stack.length - 1]!;
+  const root: HtmlElementNode = { kind: 'element', tag: '#root', attributes: {}, children: [] };
+  const stack: HtmlElementNode[] = [root];
+  const top = (): HtmlElementNode => stack.at(-1)!;
   const pushText = (raw: string): void => {
     if (raw.length === 0) return;
     top().children.push({ kind: 'text', text: decodeHtmlEntities(raw) });
@@ -260,98 +362,52 @@ function parseHtml(html: string): HtmlNode[] {
     }
     if (lt > index) pushText(html.slice(index, lt));
 
-    // Comments, doctypes, CDATA: skipped wholesale.
-    if (html.startsWith('<!--', lt)) {
-      const end = html.indexOf('-->', lt + 4);
-      index = end === -1 ? html.length : end + 3;
-      continue;
-    }
-    if (html.startsWith('<![CDATA[', lt)) {
-      const end = html.indexOf(']]>', lt + 9);
-      pushText(html.slice(lt + 9, end === -1 ? html.length : end));
-      index = end === -1 ? html.length : end + 3;
-      continue;
-    }
-    if (html.startsWith('<!', lt) || html.startsWith('<?', lt)) {
-      const end = html.indexOf('>', lt);
-      index = end === -1 ? html.length : end + 1;
+    const skipped = skipNonElement(html, lt, pushText);
+    if (skipped !== undefined) {
+      index = skipped;
       continue;
     }
 
-    const match = /^<(\/?)([a-zA-Z][a-zA-Z0-9:-]*)((?:"[^"]*"|'[^']*'|[^>"'])*?)(\/?)>/.exec(html.slice(lt));
-    if (!match) {
+    const parsed = matchTag(html, lt);
+    if (!parsed) {
       // A bare `<` that starts no tag is literal text.
       pushText('<');
       index = lt + 1;
       continue;
     }
-    const [raw, closing, rawTag, attributeText, selfClosing] = match;
-    const tag = rawTag!.toLowerCase();
-    index = lt + raw.length;
+    index = lt + parsed.raw.length;
 
-    if (closing === '/') {
-      const openIndex = findLastIndex(stack, (node) => node.tag === tag);
+    if (parsed.isClosing) {
+      const openIndex = findLastIndex(stack, (node) => node.tag === parsed.tag);
       // A stray end tag with no matching start is ignored, as browsers do.
       if (openIndex > 0) stack.length = openIndex;
       continue;
     }
 
-    if (DROPPED_ELEMENTS.has(tag)) {
-      index = skipDroppedElement(html, index, tag, selfClosing === '/');
+    if (DROPPED_ELEMENTS.has(parsed.tag)) {
+      index = skipDroppedElement(html, index, parsed.tag, parsed.selfClosing);
       continue;
     }
 
-    if (tag === 'p' || CLOSES_PARAGRAPH.has(tag)) {
-      const openParagraph = findLastIndex(stack, (node) => node.tag === 'p');
-      if (openParagraph > 0) stack.length = openParagraph;
-    }
-    const implicit = IMPLICIT_CLOSES.get(tag);
-    if (implicit) {
-      // Walk up only as far as the enclosing list/table, so nesting survives.
-      for (let level = stack.length - 1; level > 0; level -= 1) {
-        const open = stack[level]!.tag;
-        if (implicit.scope.has(open)) break;
-        if (implicit.closes.has(open)) {
-          stack.length = level;
-          break;
-        }
-      }
-    }
+    closeImplicitElements(stack, parsed.tag);
 
-    const element: Extract<HtmlNode, { kind: 'element' }> = {
+    const element: HtmlElementNode = {
       kind: 'element',
-      tag,
-      attributes: parseAttributes(attributeText ?? ''),
+      tag: parsed.tag,
+      attributes: parseAttributes(parsed.attributeText),
       children: [],
     };
     top().children.push(element);
-    if (selfClosing === '/' || VOID_ELEMENTS.has(tag)) continue;
+    if (parsed.selfClosing || VOID_ELEMENTS.has(parsed.tag)) continue;
 
-    if (tag === 'pre') {
-      // `<pre>` content is raw text: take it verbatim up to its close tag so
-      // indentation and inner markup-looking text survive.
-      const end = findClosingTag(html, index, 'pre');
-      const inner = html.slice(index, end.contentEnd);
-      // The language usually lives on an inner `<code class="language-x">`,
-      // which the raw capture would otherwise discard.
-      const innerCode = /^\s*<code\b((?:"[^"]*"|'[^']*'|[^>"'])*)>/i.exec(inner);
-      if (innerCode) {
-        const codeAttributes = parseAttributes(innerCode[1] ?? '');
-        if (codeAttributes.class !== undefined) element.attributes['data-code-class'] = codeAttributes.class;
-        for (const key of ['data-language', 'data-lang'] as const) {
-          if (codeAttributes[key] !== undefined) element.attributes[key] ??= codeAttributes[key]!;
-        }
-      }
-      element.children.push({ kind: 'text', text: decodeHtmlEntities(stripTags(inner)) });
-      index = end.next;
+    if (parsed.tag === 'pre') {
+      index = capturePreElement(html, index, element);
       continue;
     }
     stack.push(element);
   }
 
-  return (stack[0] ?? (root as Extract<HtmlNode, { kind: 'element' }>)).children.length > 0
-    ? (root as Extract<HtmlNode, { kind: 'element' }>).children
-    : [];
+  return root.children;
 }
 
 /** Advances past a dropped element and everything inside it. */
@@ -362,7 +418,7 @@ function skipDroppedElement(html: string, from: number, tag: string, selfClosing
 
 /** Locates `</tag>`, returning the content end and the index after the tag. */
 function findClosingTag(html: string, from: number, tag: string): { contentEnd: number; next: number } {
-  const pattern = new RegExp(`</${tag}\\s*>`, 'i');
+  const pattern = new RegExp(String.raw`</${tag}\s*>`, 'i');
   const rest = html.slice(from);
   const found = pattern.exec(rest);
   if (!found) return { contentEnd: html.length, next: html.length };
@@ -371,22 +427,20 @@ function findClosingTag(html: string, from: number, tag: string): { contentEnd: 
 
 /** Removes tags from a raw text region, keeping the text between them. */
 function stripTags(text: string): string {
-  return text.replace(/<\/?[a-zA-Z][^>]*>/g, '');
+  return text.replaceAll(/<\/?[a-zA-Z][^>]*>/g, '');
 }
 
 function parseAttributes(text: string): Record<string, string> {
   const attributes: Record<string, string> = {};
-  const pattern = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*(?:=\s*("[^"]*"|'[^']*'|[^\s"'>]+))?/g;
+  const pattern = /([\w:][\w:.-]*)\s*(?:=\s*("[^"]*"|'[^']*'|[^\s"'>]+))?/g;
   let match = pattern.exec(text);
   while (match !== null) {
     const name = match[1]!.toLowerCase();
     const raw = match[2];
-    const value =
-      raw === undefined
-        ? ''
-        : raw.startsWith('"') || raw.startsWith("'")
-          ? raw.slice(1, -1)
-          : raw;
+    let value = raw ?? '';
+    if (value.startsWith('"') || value.startsWith("'")) {
+      value = value.slice(1, -1);
+    }
     attributes[name] = decodeHtmlEntities(value);
     match = pattern.exec(text);
   }
@@ -453,12 +507,12 @@ export function foldToAscii(text: string, asciiOnly = false): string {
       out += mapped;
       continue;
     }
-    if (character.charCodeAt(0) < 0x80) {
+    if (character.codePointAt(0)! < 0x80) {
       out += character;
       continue;
     }
     // Decompose, then drop the combining marks: é → e, Å → A, ǰ → j.
-    const stripped = character.normalize('NFKD').replace(/\p{M}+/gu, '');
+    const stripped = character.normalize('NFKD').replaceAll(/\p{M}+/gu, '');
     if (stripped.length > 0 && isAscii(stripped)) {
       out += stripped;
       continue;
@@ -470,7 +524,7 @@ export function foldToAscii(text: string, asciiOnly = false): string {
 
 function isAscii(text: string): boolean {
   for (let index = 0; index < text.length; index += 1) {
-    if (text.charCodeAt(index) >= 0x80) return false;
+    if (text.codePointAt(index)! >= 0x80) return false;
   }
   return true;
 }
@@ -733,7 +787,8 @@ function paragraphBlocks(
   // tightly-spaced fragments that read as one block.
   const lines = splitRunsOnBreaks(runs);
   const visible = lines.filter((line) => line.some((run) => run.text.trim().length > 0));
-  const emitted = visible.length > 0 ? visible : options.keepEmptyParagraphs ? lines : [];
+  const emptyFallback = options.keepEmptyParagraphs === true ? lines : [];
+  const emitted = visible.length > 0 ? visible : emptyFallback;
   return emitted.map((line, index) => ({
     type: 'richParagraph',
     runs: line,
@@ -767,7 +822,7 @@ function splitRunsOnBreaks(runs: readonly InlineTextRun[]): InlineTextRun[][] {
     for (let index = 0; index < parts.length; index += 1) {
       if (index > 0) lines.push([]);
       const text = parts[index]!;
-      if (text.length > 0) lines[lines.length - 1]!.push({ ...run, text });
+      if (text.length > 0) lines.at(-1)!.push({ ...run, text });
     }
   }
   return lines.map((line) => trimRuns(line)).filter((line) => line.length > 0 || lines.length === 1);
@@ -893,19 +948,26 @@ function textRuns(text: string, style: InlineStyle): InlineTextRun[] {
 function collapse(text: string): string {
   // Explicit class, not `\s`: a non-breaking space is content, not layout
   // whitespace, and `normalizeText: "none"` must preserve it.
-  return text.replace(/[\t\n\v\f\r ]+/g, ' ');
+  return text.replaceAll(/[\t\n\v\f\r ]+/g, ' ');
 }
 
 function trimRuns(runs: readonly InlineTextRun[]): InlineTextRun[] {
   const out = runs.filter((run) => run.text.length > 0).map((run) => ({ ...run }));
   while (out.length > 0 && out[0]!.text.trimStart().length === 0) out.shift();
   if (out.length > 0) out[0] = { ...out[0]!, text: out[0]!.text.replace(/^[^\S\n]+/, '') };
-  while (out.length > 0 && out[out.length - 1]!.text.trimEnd().length === 0) out.pop();
+  while (out.length > 0 && out.at(-1)!.text.trimEnd().length === 0) out.pop();
   if (out.length > 0) {
-    const last = out[out.length - 1]!;
-    out[out.length - 1] = { ...last, text: last.text.replace(/[^\S\n]+$/, '') };
+    const last = out.at(-1)!;
+    out[out.length - 1] = { ...last, text: trimTrailingSpaces(last.text) };
   }
   return out.filter((run) => run.text.length > 0);
+}
+
+/** Drops trailing spaces and tabs while keeping a trailing newline intact. */
+function trimTrailingSpaces(text: string): string {
+  let end = text.length;
+  while (end > 0 && text[end - 1] !== '\n' && /\s/.test(text[end - 1]!)) end -= 1;
+  return text.slice(0, end);
 }
 
 /** Flattens an element's text content, ignoring styling. */
@@ -926,7 +988,7 @@ function codeBlock(
   options: ResolvedOptions,
 ): TemplateBlock {
   // `<pre>` content was captured raw; drop one leading newline as browsers do.
-  const raw = plainText(node).replace(/^\r?\n/, '').replace(/\s+$/, '');
+  const raw = plainText(node).replace(/^\r?\n/, '').trimEnd();
   const language = languageFromClass(node) ?? languageFromClass(firstElementChild(node));
   return {
     type: 'code',
@@ -974,6 +1036,19 @@ function listBlock(
   };
 }
 
+/**
+ * Attaches items from a list nested directly inside a list (no `<li>` wrapper)
+ * to the previous item, or opens a body-less item when there is none.
+ */
+function attachNestedItems(items: ListItem[], nested: readonly ListItem[]): void {
+  const previous = items.at(-1);
+  if (typeof previous === 'object' && previous !== null) {
+    items[items.length - 1] = { ...previous, children: [...(previous.children ?? []), ...nested] };
+    return;
+  }
+  items.push({ body: typeof previous === 'string' ? previous : '', children: [...nested] });
+}
+
 function listItems(
   node: Extract<HtmlNode, { kind: 'element' }>,
   options: ResolvedOptions,
@@ -983,20 +1058,41 @@ function listItems(
   for (const child of node.children) {
     if (child.kind !== 'element') continue;
     if (child.tag === 'ul' || child.tag === 'ol') {
-      // A list nested directly in a list (no `<li>`): attach to the previous item.
-      const nested = nestedItems(child, options, ordered);
-      const previous = items[items.length - 1];
-      if (typeof previous === 'object' && previous !== null) {
-        items[items.length - 1] = { ...previous, children: [...(previous.children ?? []), ...nested] };
-      } else {
-        items.push({ body: typeof previous === 'string' ? previous : '', children: nested });
-      }
+      attachNestedItems(items, nestedItems(child, options, ordered));
       continue;
     }
     if (child.tag !== 'li') continue;
     items.push(listItem(child, options, ordered));
   }
   return items;
+}
+
+/**
+ * Appends one `<li>` child to the item body or to its nested-item list. Block
+ * content contributes its plain text, since a list item body is one paragraph.
+ */
+function collectListItemChild(
+  child: HtmlNode,
+  options: ResolvedOptions,
+  ordered: boolean,
+  bodyRuns: InlineTextRun[],
+  children: ListItem[],
+): void {
+  if (child.kind === 'text') {
+    bodyRuns.push(...textRuns(child.text, {}));
+    return;
+  }
+  if (child.tag === 'ul' || child.tag === 'ol') {
+    children.push(...nestedItems(child, options, ordered));
+    return;
+  }
+  if (isInlineElement(child.tag)) {
+    if (child.tag === 'br') bodyRuns.push({ text: ' ' });
+    else bodyRuns.push(...inlineRuns(child, options, {}));
+    return;
+  }
+  const text = collapse(plainText(child)).replaceAll(/\n+/g, ' ').trim();
+  if (text.length > 0) bodyRuns.push({ text: bodyRuns.length > 0 ? ` ${text}` : text });
 }
 
 function listItem(
@@ -1006,43 +1102,21 @@ function listItem(
 ): ListItemDefinition {
   const bodyRuns: InlineTextRun[] = [];
   const children: ListItem[] = [];
-  const trailing: TemplateBlock[] = [];
 
   for (const child of node.children) {
-    if (child.kind === 'text') {
-      bodyRuns.push(...textRuns(child.text, {}));
-      continue;
-    }
-    if (child.tag === 'ul' || child.tag === 'ol') {
-      children.push(...nestedItems(child, options, ordered));
-      continue;
-    }
-    if (isInlineElement(child.tag)) {
-      if (child.tag === 'br') {
-        bodyRuns.push({ text: ' ' });
-        continue;
-      }
-      bodyRuns.push(...inlineRuns(child, options, {}));
-      continue;
-    }
-    // Block content inside an item: its text joins the item body, since a list
-    // item body is a single paragraph.
-    const text = collapse(plainText(child)).replace(/\n+/g, ' ').trim();
-    if (text.length > 0) bodyRuns.push({ text: bodyRuns.length > 0 ? ` ${text}` : text });
+    collectListItemChild(child, options, ordered, bodyRuns, children);
   }
-  void trailing;
 
-  const runs = trimRuns(bodyRuns).map((run) => ({ ...run, text: run.text.replace(/\n+/g, ' ') }));
+  const runs = trimRuns(bodyRuns).map((run) => ({ ...run, text: run.text.replaceAll(/\n+/g, ' ') }));
   const body: string | readonly InlineTextRun[] = runs.every((run) => isPlainRun(run))
     ? runs.map((run) => run.text).join('')
     : runs;
   const explicitLabel = node.attributes.value;
+  const hasNumericLabel = explicitLabel !== undefined && ordered && /^\d+$/.test(explicitLabel);
   return {
     body,
     ...(children.length > 0 ? { children } : {}),
-    ...(explicitLabel !== undefined && ordered && /^\d+$/.test(explicitLabel)
-      ? { label: `${explicitLabel}.` }
-      : {}),
+    ...(hasNumericLabel ? { label: `${explicitLabel}.` } : {}),
   };
 }
 
@@ -1121,6 +1195,39 @@ function collectRows(
   }
 }
 
+/** Maps an HTML `scope` attribute onto the table-cell scope the API takes. */
+function cellScope(scope: string | undefined): TableHeaderScope | undefined {
+  if (scope === 'row' || scope === 'both') return scope;
+  return scope === 'col' ? 'column' : undefined;
+}
+
+/** A span attribute counts only when it parses to a number above 1. */
+function cellSpan(raw: string | undefined): number | undefined {
+  const span = Number.parseInt(raw ?? '', 10);
+  return Number.isFinite(span) && span > 1 ? span : undefined;
+}
+
+function tableCell(
+  cell: Extract<HtmlNode, { kind: 'element' }>,
+  options: ResolvedOptions,
+): TableCell {
+  const runs = trimRuns(inlineRuns(cell, options, {})).map((run) => ({
+    ...run,
+    text: run.text.replaceAll(/\n+/g, ' '),
+  }));
+  const scope = cellScope(cell.attributes.scope);
+  const colSpan = cellSpan(cell.attributes.colspan);
+  const rowSpan = cellSpan(cell.attributes.rowspan);
+  const plain = runs.every((run) => isPlainRun(run));
+  return {
+    ...(plain ? { text: runs.map((run) => run.text).join('') } : { runs }),
+    ...(cell.tag === 'th' ? { header: true } : {}),
+    ...(scope !== undefined ? { scope } : {}),
+    ...(colSpan !== undefined ? { colSpan } : {}),
+    ...(rowSpan !== undefined ? { rowSpan } : {}),
+  };
+}
+
 function tableCells(
   row: Extract<HtmlNode, { kind: 'element' }>,
   options: ResolvedOptions,
@@ -1129,23 +1236,7 @@ function tableCells(
   for (const child of row.children) {
     if (child.kind !== 'element') continue;
     if (child.tag !== 'td' && child.tag !== 'th') continue;
-    const runs = trimRuns(inlineRuns(child, options, {})).map((run) => ({
-      ...run,
-      text: run.text.replace(/\n+/g, ' '),
-    }));
-    const colSpan = Number.parseInt(child.attributes.colspan ?? '', 10);
-    const rowSpan = Number.parseInt(child.attributes.rowspan ?? '', 10);
-    const scope = child.attributes.scope;
-    const plain = runs.every((run) => isPlainRun(run));
-    cells.push({
-      ...(plain ? { text: runs.map((run) => run.text).join('') } : { runs }),
-      ...(child.tag === 'th' ? { header: true } : {}),
-      ...(scope === 'row' || scope === 'col' || scope === 'both'
-        ? { scope: scope === 'col' ? 'column' : scope }
-        : {}),
-      ...(Number.isFinite(colSpan) && colSpan > 1 ? { colSpan } : {}),
-      ...(Number.isFinite(rowSpan) && rowSpan > 1 ? { rowSpan } : {}),
-    });
+    cells.push(tableCell(child, options));
   }
   return cells;
 }
@@ -1255,12 +1346,17 @@ function needsExpansion(block: TemplateBlock): boolean {
   return block.type === 'html' || (block.type === 'section' && block.blocks.some((child) => needsExpansion(child)));
 }
 
+/** Normalizes a class attribute value into a list of class names. */
+function asClassList(value: string | readonly string[]): readonly string[] {
+  return typeof value === 'string' ? [value] : value;
+}
+
 function mergeClasses(
   className: string | readonly string[],
   child: TemplateBlock,
 ): readonly string[] {
   const own = (child as { class?: string | readonly string[] | undefined }).class;
-  const outer = typeof className === 'string' ? [className] : className;
-  const inner = own === undefined ? [] : typeof own === 'string' ? [own] : own;
+  const outer = asClassList(className);
+  const inner = own === undefined ? [] : asClassList(own);
   return [...outer, ...inner];
 }

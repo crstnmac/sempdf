@@ -177,5 +177,5 @@ function isWhitespace(byte: number): boolean {
 }
 
 function ascii(bytes: Uint8Array): string {
-  return String.fromCharCode(...bytes);
+  return String.fromCodePoint(...bytes);
 }

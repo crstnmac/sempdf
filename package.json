@@ -1,6 +1,6 @@
 {
   "name": "@crstnmac/zeropdf",
-  "version": "1.8.2",
+  "version": "1.9.0",
   "description": "Zero-dependency PDF generation engine built in TypeScript.",
   "type": "module",
   "author": {
@@ -28,7 +28,7 @@
   },
   "files": [
     "dist/src",
-    "fonts/liberation",
+    "brand/logo-mark.svg",
     "README.md"
   ],
   "scripts": {
@@ -37,10 +37,11 @@
     "build": "rm -rf dist && tsc -p tsconfig.json",
     "build:lib": "rm -rf dist && tsc -p tsconfig.build.json",
     "docs": "npm run docs:build",
-    "docs:api": "rm -rf docs/api && typedoc",
-    "docs:build": "npm run docs:api && vitepress build docs",
-    "docs:dev": "npm run docs:api && vitepress dev docs --host 0.0.0.0",
-    "docs:preview": "vitepress preview docs --host 0.0.0.0",
+    "docs:api": "rm -rf content/docs/api && typedoc && node scripts/prepare-fumadocs.mjs",
+    "docs:build": "npm run docs:api && vite build",
+    "docs:dev": "npm run docs:api && vite dev --host 0.0.0.0",
+    "docs:preview": "vite preview --host 0.0.0.0",
+    "docs:check": "tsc --noEmit -p tsconfig.docs.json",
     "test": "npm run build && node --test dist/test/**/*.test.js",
     "test:performance": "npm run build && node --test dist/test/performance.test.js",
     "test:stress": "npm run build && node --test dist/test/stress.test.js",
@@ -69,7 +70,6 @@
     "example:template-annotations": "npm run build && node dist/examples/template-annotations.js",
     "example:template-graphics": "npm run build && node dist/examples/template-graphics.js",
     "example:template-custom": "npm run build && node dist/examples/template-custom.js",
-    "example:web": "npm run build && node examples/website/server.mjs",
     "example:json": "npm run build && node dist/examples/json-to-pdf.js",
     "example:rich-text": "npm run build && node dist/examples/rich-text.js"
   },
@@ -82,18 +82,39 @@
     "node": ">=22"
   },
   "devDependencies": {
+    "@crstnmac/zeropdf-fonts": "file:./fonts",
+    "@fontsource-variable/geist": "^5.3.0",
+    "@monaco-editor/react": "^4.7.0",
+    "@paper-design/shaders-react": "^0.0.80",
     "@pdf-lib/fontkit": "^1.1.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@tanstack/react-router": "1.170.27",
+    "@tanstack/react-router-devtools": "1.167.1",
+    "@tanstack/react-start": "1.168.44",
+    "@types/mdx": "^2.0.14",
     "@types/node": "^25.6.0",
     "@types/node-forge": "^1.3.14",
     "@types/pdfkit": "^0.17.6",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
+    "cnfast": "^0.1.0",
+    "fumadocs-core": "16.14.4",
+    "fumadocs-mdx": "15.2.3",
+    "fumadocs-ui": "npm:@fumadocs/base-ui@16.14.4",
+    "lucide-react": "^1.31.0",
+    "monaco-editor": "^0.56.0",
+    "nitro": "3.0.260610-beta",
     "node-forge": "^1.4.0",
     "pdf-lib": "^1.17.1",
     "pdf-poppler": "^0.2.3",
     "pdfkit": "^0.18.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tailwindcss": "^4.3.3",
     "typedoc": "^0.28.19",
     "typedoc-plugin-markdown": "^4.11.0",
     "typescript": "^6.0.2",
-    "vitepress": "^1.6.4",
-    "vitepress-plugin-llms": "^1.13.1"
+    "vite": "^8.2.1"
   }
 }

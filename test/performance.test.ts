@@ -532,6 +532,7 @@ test("memory: parsing peak RSS (250 pages)", async (t) => {
   const peak = process.memoryUsage().heapUsed;
   const heapDelta = peak - baseline;
   t.diagnostic(`mem-parse     heap: ${formatBytes(heapDelta)}  input: ${formatBytes(fixture.length)}  ratio: ${(Math.max(0, heapDelta) / fixture.length).toFixed(1)}x memory/input`);
+  assert.ok(fixture.length > 0, "parsing fixture must not be empty");
 });
 
 // ─── 7. Clone Performance ──────────────────────────────────────────────
