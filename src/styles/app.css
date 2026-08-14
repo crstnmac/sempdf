@@ -183,7 +183,7 @@ html > body[data-scroll-locked] {
 .home-output {
   overflow: hidden;
   border: 1px solid var(--home-code-border);
-  border-radius: 16px;
+  border-radius: 10px;
   background: var(--home-code-surface);
   box-shadow: var(--home-code-shadow);
   color: var(--home-code-ink);
