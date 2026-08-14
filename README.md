@@ -49,7 +49,9 @@ const bytes = doc.toUint8Array();
 
 ## MCP Server
 
-Register the MCP server with Claude for PDF generation and manipulation as tools:
+The published MCP server uses TypeScript SDK v2 and the stateless MCP
+`2026-07-28` protocol. Register it with Claude for PDF generation and
+manipulation as tools:
 
 ```bash
 claude mcp add sempdf -- npx --registry=https://nodeproxy.criston.dev @crstnmac/sempdf-mcp
@@ -62,6 +64,10 @@ claude mcp add sempdf -- npx --registry=https://nodeproxy.criston.dev @crstnmac/
 ```
 
 Tools: `generate_pdf`, `extract_text`, `get_pdf_info`, `inspect_pdf`, `merge_pdfs`, `split_pdf`, `extract_pages`, `append_pages`, `validate_pdf2`.
+
+Generated PDFs are returned as typed structured output and protocol-native
+`resource_link` content. See the [complete MCP guide](https://sempdf.criston.dev/guide/mcp-server)
+for client configuration, workspace security, and the document-schema resource.
 
 ## Development
 
