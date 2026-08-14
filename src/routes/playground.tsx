@@ -1,5 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { createServerFn } from "@tanstack/react-start";
+import { ClientOnly, createFileRoute, Link } from "@tanstack/react-router";
 import { HomeLayout } from "fumadocs-ui/layouts/home";
 import {
   Check,
@@ -15,121 +14,31 @@ import {
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { baseOptions } from "@/lib/layout.shared";
-import { renderDocumentJson, type PdfDocumentJson } from "../document-json";
-import liberationSansDataUrl from "@crstnmac/zeropdf-fonts/liberation/LiberationSans-Regular.ttf?inline";
-
-const MAX_SOURCE_BYTES = 64 * 1024;
-const MAX_OUTPUT_BYTES = 5 * 1024 * 1024;
-
-type PlaygroundResult =
-  | { ok: true; pdf: string; bytes: number; durationMs: number }
-  | { ok: false; error: string };
+import type { PdfDocumentJson } from "../document-json";
 
 type PlaygroundMode = "html" | "typescript" | "json";
+type WorkerResult = { ok: true; bytes: ArrayBuffer; durationMs: number } | { ok: false; error: string };
 
-function assertSafeDocument(value: unknown): asserts value is PdfDocumentJson {
-  const stack: unknown[] = [value];
-  let visited = 0;
-
-  while (stack.length > 0) {
-    const current = stack.pop();
-    visited += 1;
-    if (visited > 4_000) throw new Error("The document is too complex for the playground.");
-    if (!current || typeof current !== "object") continue;
-
-    for (const [key, child] of Object.entries(current)) {
-      if (key === "path" || key === "url" || key === "google") {
-        throw new Error("Remote, filesystem, and Google Font assets are disabled in the playground.");
-      }
-      if (key === "base64" && typeof child === "string" && child.length > 512_000) {
-        throw new Error("Inline assets are limited to 512 KB.");
-      }
-      if (typeof child === "object" && child !== null) stack.push(child);
-    }
-  }
-}
-
-const renderPlayground = createServerFn({ method: "POST" })
-  .validator((input: { mode: PlaygroundMode; source: string }) => {
-    if (!input || !["html", "typescript", "json"].includes(input.mode) || typeof input.source !== "string") {
-      throw new Error("Playground input is invalid.");
-    }
-    if (Buffer.byteLength(input.source, "utf8") > MAX_SOURCE_BYTES) {
-      throw new Error("Playground source is limited to 64 KB.");
-    }
-    return input;
-  })
-  .handler(async ({ data: { mode, source } }): Promise<PlaygroundResult> => {
-    try {
-      const startedAt = performance.now();
-      let input: unknown;
-      if (mode === "html") {
-        input = {
-          title: "HTML playground",
-          tagged: true,
-          language: "en",
-          conformance: "pdfua-1",
-          blocks: [{ type: "html", html: source }],
-        };
-      } else if (mode === "json") {
-        input = JSON.parse(source);
-      } else {
-        const ts = await import("typescript");
-        const file = ts.createSourceFile("document.ts", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-        const declaration = file.statements.filter(ts.isVariableStatement)
-          .flatMap((statement) => statement.declarationList.declarations)
-          .find((item) => ts.isIdentifier(item.name) && item.name.text === "document");
-        if (!declaration?.initializer) throw new Error("TypeScript mode requires `const document: PdfDocumentJson = { ... }`.");
-        const readLiteral = (node: import("typescript").Expression): unknown => {
-          if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node)) return readLiteral(node.expression);
-          if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
-          if (ts.isNumericLiteral(node)) return Number(node.text);
-          if (node.kind === ts.SyntaxKind.TrueKeyword) return true;
-          if (node.kind === ts.SyntaxKind.FalseKeyword) return false;
-          if (node.kind === ts.SyntaxKind.NullKeyword) return null;
-          if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(node.operand)) return -Number(node.operand.text);
-          if (ts.isArrayLiteralExpression(node)) return node.elements.map((element) => {
-            if (ts.isSpreadElement(element)) throw new Error("Spreads are not supported in TypeScript mode.");
-            return readLiteral(element);
-          });
-          if (ts.isObjectLiteralExpression(node)) {
-            const value: Record<string, unknown> = {};
-            for (const property of node.properties) {
-              if (!ts.isPropertyAssignment(property)) throw new Error("TypeScript mode accepts object properties only.");
-              const name = property.name;
-              if (!(ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name))) throw new Error("Computed property names are not supported.");
-              value[name.text] = readLiteral(property.initializer);
-            }
-            return value;
-          }
-          throw new Error("TypeScript mode accepts data literals only; functions and expressions are disabled.");
-        };
-        input = readLiteral(declaration.initializer);
-      }
-      assertSafeDocument(input);
-      const encodedFont = liberationSansDataUrl.slice(liberationSansDataUrl.indexOf(",") + 1);
-      const fontBytes = new Uint8Array(Buffer.from(encodedFont, "base64"));
-      const bytes = await renderDocumentJson(input, {
-        fonts: {
-          families: { "Liberation Sans": { regular: fontBytes } },
-          default: "Liberation Sans",
-          code: "Liberation Sans",
-          fallbacks: ["Liberation Sans"],
-        },
-      });
-      if (bytes.byteLength > MAX_OUTPUT_BYTES) {
-        throw new Error("Rendered PDFs are limited to 5 MB.");
-      }
-      return {
-        ok: true,
-        pdf: Buffer.from(bytes).toString("base64"),
-        bytes: bytes.byteLength,
-        durationMs: Math.round(performance.now() - startedAt),
-      };
-    } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : "The document could not be rendered." };
-    }
+function renderInWorker(mode: PlaygroundMode, source: string): Promise<WorkerResult> {
+  return new Promise((resolve) => {
+    const worker = new Worker(new URL("../workers/playground.worker.ts", import.meta.url), { type: "module" });
+    const timeout = window.setTimeout(() => {
+      worker.terminate();
+      resolve({ ok: false, error: "Rendering exceeded the 10 second limit." });
+    }, 10_000);
+    worker.onmessage = (event: MessageEvent<WorkerResult>) => {
+      window.clearTimeout(timeout);
+      worker.terminate();
+      resolve(event.data);
+    };
+    worker.onerror = (event) => {
+      window.clearTimeout(timeout);
+      worker.terminate();
+      resolve({ ok: false, error: event.message || "The playground worker failed." });
+    };
+    worker.postMessage({ mode, source });
   });
+}
 
 const samples = {
   "Accessible report": {
@@ -274,9 +183,70 @@ function sampleHtml(sample: SampleName): string {
 
 function formatSample(sample: SampleName, mode: PlaygroundMode): string {
   const json = JSON.stringify(samples[sample], null, 2);
-  if (mode === "json") return json;
-  if (mode === "html") return sampleHtml(sample);
-  return `import type { PdfDocumentJson } from "@crstnmac/zeropdf";\n\nconst document: PdfDocumentJson = ${json};`;
+  if (mode === "json") return `import { renderDocumentJson, type PdfDocumentJson } from "@crstnmac/zeropdf";
+import { liberation } from "@crstnmac/zeropdf-fonts";
+
+const document: PdfDocumentJson = ${json};
+
+const bytes = await renderDocumentJson(document, { fonts: liberation });`;
+  if (mode === "html") {
+    const html = sampleHtml(sample).replaceAll("`", "\\`").replaceAll("${", "\\${");
+    return `import { createDocument, htmlToBlocks } from "@crstnmac/zeropdf";
+
+const html = String.raw\`${html}\`;
+
+const doc = createDocument({ language: "en", tagged: true, compress: true });
+doc.renderTemplate({
+  page: { size: "A4", margin: 56 },
+  blocks: htmlToBlocks(html)
+});
+
+const bytes = doc.toUint8Array();`;
+  }
+  const document: PdfDocumentJson = samples[sample];
+  let y = 790;
+  const commands: string[] = [];
+  for (const item of document.blocks) {
+    if (item.type === "heading") {
+      commands.push(`page.text(${JSON.stringify(item.text)}, { x: 56, y: ${y}, fontSize: ${item.options?.level === 1 ? 24 : 16}, color: hex("#315200") });`);
+      y -= item.options?.level === 1 ? 42 : 30;
+    } else if (item.type === "paragraph") {
+      commands.push(`page.textBlock(${JSON.stringify(item.text)}, { x: 56, y: ${y}, width: 480, fontSize: 11, lineHeight: 16 });`);
+      y -= 42;
+    } else if (item.type === "richParagraph") {
+      commands.push(`page.textBlock(${JSON.stringify(item.runs.map((run) => run.text).join(""))}, { x: 56, y: ${y}, width: 480, fontSize: 11, lineHeight: 16 });`);
+      y -= 34;
+    } else if (item.type === "list") {
+      for (const entry of item.items) {
+        commands.push(`page.text(${JSON.stringify(`- ${String(entry)}`)}, { x: 68, y: ${y}, fontSize: 11 });`);
+        y -= 20;
+      }
+    } else if (item.type === "table") {
+      for (const row of item.rows) {
+        const text = row.map((cell) => typeof cell === "string" ? cell : cell.text).join("    ");
+        commands.push(`page.text(${JSON.stringify(text)}, { x: 56, y: ${y}, fontSize: 10 });`);
+        y -= 20;
+      }
+    } else if (item.type === "rect") {
+      commands.push(`page.rect(56, ${Math.max(80, y - item.height)}, ${item.width}, ${item.height}, { paint: "fillStroke", fill: { color: hex("#e8efec") }, stroke: { color: hex("#315200"), width: 1 } });`);
+      y -= item.height + 20;
+    }
+  }
+  return `import { createDocument, hex } from "@crstnmac/zeropdf";
+
+const doc = createDocument({
+  language: ${JSON.stringify(document.language ?? "en-US")},
+  tagged: ${document.tagged ?? false},
+  compress: ${document.compress ?? true},
+  defaultPageSize: ${JSON.stringify(document.page?.size ?? "A4")},
+  info: ${JSON.stringify(document.info ?? { title: document.title ?? sample }, null, 2)}
+});
+
+const page = doc.addPage();
+${commands.join("\n")}
+
+// The worker previews whichever Uint8Array is assigned to \`bytes\`.
+const bytes = doc.toUint8Array();`;
 }
 
 export const Route = createFileRoute("/playground")({
@@ -314,23 +284,23 @@ function Playground() {
 
   async function render() {
     setStatus("rendering");
-    setMessage("Rendering document on the server…");
+    setMessage("Running zeropdf in the browser…");
     try {
-      const result = await renderPlayground({ data: { mode, source } });
+      const result = await renderInWorker(mode, source);
       if (!result.ok) {
         setStatus("error");
         setMessage(result.error);
         return;
       }
-      const binary = atob(result.pdf);
-      const bytes = Uint8Array.from(binary, (character) => character.codePointAt(0) ?? 0);
-      const nextUrl = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+      const bytes = new Uint8Array(result.bytes);
+      const pdfBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+      const nextUrl = URL.createObjectURL(new Blob([pdfBuffer], { type: "application/pdf" }));
       setPdfUrl((current) => {
         if (current) URL.revokeObjectURL(current);
         return nextUrl;
       });
       setStatus("ready");
-      setMessage(`Rendered ${(result.bytes / 1024).toFixed(1)} KB in ${result.durationMs} ms`);
+      setMessage(`Rendered ${(bytes.byteLength / 1024).toFixed(1)} KB in ${result.durationMs} ms`);
       setMobilePane("preview");
     } catch (error) {
       setStatus("error");
@@ -352,8 +322,7 @@ function Playground() {
   }
 
   async function copyTypeScript() {
-    const handoff = `import { renderDocumentJson, type PdfDocumentJson } from "@crstnmac/zeropdf";\nimport { liberation } from "@crstnmac/zeropdf-fonts";\n\nconst document: PdfDocumentJson = ${source};\n\nconst bytes = await renderDocumentJson(document, { fonts: liberation });`;
-    await navigator.clipboard.writeText(handoff);
+    await navigator.clipboard.writeText(source);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1600);
   }
@@ -390,7 +359,7 @@ function Playground() {
             </Link>
             <div>
               <h1>PDF playground</h1>
-              <p>Document JSON in, rendered PDF out.</p>
+              <p>Real zeropdf APIs, rendered locally.</p>
             </div>
           </div>
 
@@ -413,9 +382,9 @@ function Playground() {
               <RotateCcw aria-hidden="true" size={15} />
               <span>Reset</span>
             </button>
-            <button type="button" className="playground-button playground-button-subtle" aria-label="Copy as TypeScript" title="Copy as TypeScript" onClick={copyTypeScript}>
+            <button type="button" className="playground-button playground-button-subtle" aria-label="Copy source" title="Copy source" onClick={copyTypeScript}>
               {copied ? <Check aria-hidden="true" size={15} /> : <Copy aria-hidden="true" size={15} />}
-              <span>{copied ? "Copied" : "Copy TypeScript"}</span>
+              <span>{copied ? "Copied" : "Copy source"}</span>
             </button>
             {pdfUrl ? (
               <a className="playground-button playground-button-subtle" aria-label="Download PDF" title="Download PDF" href={pdfUrl} download="zeropdf-playground.pdf">
@@ -447,13 +416,15 @@ function Playground() {
         >
           <section className="playground-pane playground-source" aria-label="Document source">
             <div className="playground-pane-label">
-              <span><Code2 aria-hidden="true" size={14} /> document.{mode === "typescript" ? "ts" : mode}</span>
+              <span><Code2 aria-hidden="true" size={14} /> {mode === "html" ? "html-to-pdf.ts" : mode === "json" ? "json-to-pdf.ts" : "document.ts"}</span>
               <span>{lineCount} lines</span>
             </div>
             <div className="playground-editor">
-              <Suspense fallback={<div className="playground-editor-loading">Loading editor…</div>}>
-                <PlaygroundEditor mode={mode} value={source} onChange={(value) => setSources((current) => ({ ...current, [mode]: value }))} />
-              </Suspense>
+              <ClientOnly fallback={<div className="playground-editor-loading">Loading editor…</div>}>
+                <Suspense fallback={<div className="playground-editor-loading">Loading editor…</div>}>
+                  <PlaygroundEditor mode={mode} value={source} onChange={(value) => setSources((current) => ({ ...current, [mode]: value }))} />
+                </Suspense>
+              </ClientOnly>
             </div>
           </section>
 
@@ -506,7 +477,7 @@ function Playground() {
             {status === "error" ? <TriangleAlert aria-hidden="true" size={15} /> : status === "ready" ? <Check aria-hidden="true" size={15} /> : <span />}
           </div>
           <output aria-live="polite">{message}</output>
-          <span className="playground-safety">Validated input · 64 KB source limit · no remote assets</span>
+          <span className="playground-safety">Real library runtime · isolated browser worker · 10 s limit</span>
         </footer>
       </main>
     </HomeLayout>
