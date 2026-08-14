@@ -10,9 +10,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
+import { Client } from "@modelcontextprotocol/client";
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const serverEntry = join(here, "..", "dist", "index.js");
@@ -39,7 +38,10 @@ describe("sempdf MCP server", () => {
       args: [serverEntry],
       env: { ...process.env, WORKSPACE_DIR: dir },
     });
-    client = new Client({ name: "test", version: "0.0.0" });
+    client = new Client(
+      { name: "test", version: "0.0.0" },
+      { versionNegotiation: { mode: { pin: "2026-07-28" } } },
+    );
     await client.connect(transport);
   });
 
@@ -62,10 +64,11 @@ describe("sempdf MCP server", () => {
   });
 
   it("uses an SDK that implements the latest MCP protocol and advertises current server metadata", () => {
-    assert.equal(LATEST_PROTOCOL_VERSION, "2025-11-25");
+    assert.equal(client.getProtocolEra(), "modern");
+    assert.equal(client.getNegotiatedProtocolVersion(), "2026-07-28");
     assert.deepEqual(client.getServerVersion(), {
       name: "sempdf",
-      version: "0.6.0",
+      version: "0.6.1",
       title: "SemPDF",
       websiteUrl: "https://sempdf.criston.dev",
     });
