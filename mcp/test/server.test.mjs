@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const serverEntry = join(here, "..", "dist", "index.js");
@@ -60,6 +61,16 @@ describe("zeropdf MCP server", () => {
     }
   });
 
+  it("uses an SDK that implements the latest MCP protocol and advertises current server metadata", () => {
+    assert.equal(LATEST_PROTOCOL_VERSION, "2025-11-25");
+    assert.deepEqual(client.getServerVersion(), {
+      name: "zeropdf",
+      version: "0.6.0",
+      title: "zeroPDF",
+      websiteUrl: "https://zeropdf.criston.dev",
+    });
+  });
+
   it("generate_pdf writes a multi-page PDF from a template spec", async () => {
     const spec = {
       title: "Doc A",
@@ -73,6 +84,9 @@ describe("zeropdf MCP server", () => {
     };
     const res = await call("generate_pdf", { document: spec, outputPath: a });
     assert.ok(!res.isError, res.content[0].text);
+    assert.equal(res.structuredContent.path, a);
+    assert.equal(res.content[1].type, "resource_link");
+    assert.equal(res.content[1].mimeType, "application/pdf");
     assert.ok(isPdf(a));
   });
 
