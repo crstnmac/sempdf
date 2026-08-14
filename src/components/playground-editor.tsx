@@ -9,7 +9,7 @@ interface PlaygroundEditorProps {
 
 const typeDeclarations = `declare module "@crstnmac/sempdf" {
   export type PageSize = "A0" | "A1" | "A2" | "A3" | "A4" | "A5" | "A6" | "Letter" | "Legal" | "Tabloid" | { width: number; height: number };
-  export interface TextOptions { font?: string; fontSize?: number; color?: string; align?: "left" | "center" | "right" | "justify"; lineHeight?: number; bold?: boolean; italic?: boolean; underline?: boolean; marginTop?: number; marginRight?: number; marginBottom?: number; marginLeft?: number; }
+  export interface TextOptions { font?: string; fontSize?: number; color?: string; align?: "left" | "center" | "right" | "justify"; lineHeight?: number; bold?: boolean; italic?: boolean; underline?: boolean; marginTop?: number; marginRight?: number; marginBottom?: number; marginLeft?: number; tag?: string; }
   export type DocumentBlock =
     | { type: "heading"; text: string; options?: TextOptions & { level?: 1 | 2 | 3 | 4 | 5 | 6 }; class?: string | readonly string[]; keepWithNext?: boolean }
     | { type: "paragraph"; text: string; options?: TextOptions; class?: string | readonly string[]; keepWithNext?: boolean }
