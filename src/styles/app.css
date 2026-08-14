@@ -11,6 +11,13 @@
   --home-muted: #5c6268;
   --home-line: #dfe3e1;
   --home-surface: #f5f8f7;
+  --home-code-surface: #f8faf7;
+  --home-code-ink: #202621;
+  --home-code-muted: #68736c;
+  --home-code-line: rgba(19, 31, 23, 0.11);
+  --home-code-border: rgba(13, 25, 17, 0.13);
+  --home-code-signal-overlay: linear-gradient(90deg, rgba(248, 250, 247, 0.32), rgba(248, 250, 247, 0.04));
+  --home-code-shadow: 0 1px 2px rgba(10, 18, 14, 0.08), 0 20px 48px rgba(20, 45, 28, 0.11);
 }
 
 .dark {
@@ -20,6 +27,13 @@
   --home-muted: #aeb8b3;
   --home-line: #303936;
   --home-surface: #18201e;
+  --home-code-surface: #10120f;
+  --home-code-ink: #ecf0e9;
+  --home-code-muted: #96a39e;
+  --home-code-line: #303936;
+  --home-code-border: rgba(255, 255, 255, 0.1);
+  --home-code-signal-overlay: linear-gradient(90deg, rgba(16, 18, 15, 0.78), rgba(16, 18, 15, 0.16));
+  --home-code-shadow: 0 1px 2px rgba(10, 18, 14, 0.18), 0 20px 48px rgba(10, 35, 28, 0.14);
 }
 
 html {
@@ -43,12 +57,20 @@ html > body[data-scroll-locked] {
   letter-spacing: -0.02em;
 }
 
-.brand-mark {
-  width: 18px;
-  height: 18px;
+.brand-shader-mark {
+  display: block;
+  width: 22px;
+  height: 22px;
   flex: 0 0 auto;
-  border-radius: 2px;
-  background: var(--color-fd-primary);
+  overflow: hidden;
+  border: 1px solid var(--home-code-border);
+  border-radius: 5px;
+  background: var(--home-code-surface);
+  box-shadow: 0 1px 3px rgba(10, 18, 14, 0.14);
+}
+
+.brand-shader-mark canvas {
+  display: block;
 }
 
 .home-shell {
@@ -160,10 +182,11 @@ html > body[data-scroll-locked] {
 
 .home-output {
   overflow: hidden;
+  border: 1px solid var(--home-code-border);
   border-radius: 16px;
-  background: #10120f;
-  box-shadow: 0 24px 62px rgba(10, 35, 28, 0.16);
-  color: #ecf0e9;
+  background: var(--home-code-surface);
+  box-shadow: var(--home-code-shadow);
+  color: var(--home-code-ink);
 }
 
 .home-output-signal {
@@ -174,14 +197,14 @@ html > body[data-scroll-locked] {
   align-items: flex-end;
   overflow: hidden;
   padding: 1rem;
-  color: #f8faf2;
+  color: var(--home-code-ink);
 }
 
 .home-output-signal::after {
   position: absolute;
   z-index: -1;
   inset: 0;
-  background: linear-gradient(90deg, rgba(16, 18, 15, 0.78), rgba(16, 18, 15, 0.16));
+  background: var(--home-code-signal-overlay);
   content: "";
   pointer-events: none;
 }
@@ -190,6 +213,8 @@ html > body[data-scroll-locked] {
   position: absolute;
   z-index: -2;
   inset: 0;
+  overflow: hidden;
+  background: var(--home-code-surface);
 }
 
 .home-hero-shader canvas {
@@ -208,6 +233,19 @@ html > body[data-scroll-locked] {
   text-transform: uppercase;
 }
 
+.home-output-brand {
+  position: absolute;
+  top: 50%;
+  left: calc(50% + 0.6rem);
+  color: var(--home-code-ink);
+  font-size: 1.12rem;
+  font-weight: 720;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  text-shadow: 0 1px 18px var(--home-code-surface);
+  transform: translateY(-50%);
+}
+
 .home-output-bar,
 .home-output-result {
   display: flex;
@@ -215,11 +253,11 @@ html > body[data-scroll-locked] {
   justify-content: space-between;
   gap: 1rem;
   padding: 0.78rem 1rem;
-  color: #96a39e;
+  color: var(--home-code-muted);
 }
 
 .home-output-bar {
-  border-bottom: 1px solid #303936;
+  border-bottom: 1px solid var(--home-code-line);
 }
 
 .home-output pre {
@@ -230,28 +268,33 @@ html > body[data-scroll-locked] {
 }
 
 .home-output .syntax-keyword {
-  color: #ff8f7d;
+  color: #b44435;
 }
 
 .home-output .syntax-function {
-  color: #e8efec;
+  color: var(--home-code-ink);
 }
 
 .home-output .syntax-property {
-  color: #ace35c;
+  color: #315200;
 }
 
 .home-output .syntax-string {
-  color: #96a59f;
+  color: #5e6d64;
 }
 
 .home-output .syntax-number {
-  color: #d7dcd9;
+  color: #3f5f4b;
 }
 
 .home-output-result {
-  border-top: 1px solid #303936;
+  border-top: 1px solid var(--home-code-line);
 }
+
+.dark .home-output .syntax-keyword { color: #ff8f7d; }
+.dark .home-output .syntax-property { color: #ace35c; }
+.dark .home-output .syntax-string { color: #96a59f; }
+.dark .home-output .syntax-number { color: #d7dcd9; }
 
 .home-output-result > span,
 .home-output-result a {
