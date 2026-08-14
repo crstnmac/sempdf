@@ -1,18 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { existsSync, readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-
-import { createDocument, registerBundledFonts } from "../src/index.js";
-
-// The suite runs from `dist/`, so resolve the fonts against the checkout root
-// rather than the module's own location.
-const FONT_DIR = [
-  fileURLToPath(new URL("../fonts/liberation/", import.meta.url)),
-  fileURLToPath(new URL("../../fonts/liberation/", import.meta.url)),
-  fileURLToPath(new URL("../../../fonts/liberation/", import.meta.url)),
-].find((dir) => existsSync(dir));
+import { createDocument } from "../src/index.js";
+import { liberationFixture } from "./font-preset.js";
 
 /**
  * A character outside WinAnsi: the built-in fonts cannot encode it, the
@@ -22,15 +12,12 @@ const FONT_DIR = [
 const OUT_OF_RANGE = "ĉ"; // ĉ
 
 async function documentWithDefaultFallback() {
-  assert.ok(FONT_DIR, "bundled Liberation fonts are missing; run `npm run fetch-fonts`");
   const doc = createDocument({
     tagged: true,
     language: "en-US",
     defaults: { font: "Helvetica", fallbackFonts: ["Liberation Sans"] },
   });
-  // Read from the checkout rather than the packaged layout, so the test does
-  // not depend on where the module was loaded from.
-  await registerBundledFonts(doc, { read: (file) => readFileSync(FONT_DIR + file) });
+  await doc.fonts({ ...liberationFixture, default: "Helvetica", fallbacks: ["Liberation Sans"] });
   return doc;
 }
 

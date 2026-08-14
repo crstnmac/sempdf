@@ -1,7 +1,5 @@
 import { PdfEngineError, PdfErrorCode } from "../errors.js";
-import type { AttachmentOptions, BmpImageOptions, BuiltInPageSize, CheckBoxOptions, ChoiceFieldMode, ChoiceFieldOptions, CustomPageSize, DocumentConformanceProfile, DocumentEncryptionAlgorithm, DocumentEncryptionOptions, DocumentInfo, DocumentPermissions, ExtGStateOptions, FieldActions, FillStyle, FontName, FreeTextAnnotationOptions, HighlightAnnotationOptions, JpegImageOptions, LineCap, LineJoin, ListItem, ListOptions, NoteAnnotationOptions, OutlineOptions, PageLabelOptions, PageLabelStyle, PageLinkOptions, PageSize, ParagraphTextAnnotation, PathCommand, PathStyle, PdfColor, PdfComplianceIssue, PdfComplianceLocation, PdfContainerTag, PdfFigureStructureTag, PdfFont, PdfRoleMap, PdfStandardStructureTag, PdfStructureAttributeValue, PdfStructureOptions, PdfStructureTag, PdfTextStructureTag, PngImageOptions, PushButtonOptions, RadioGroupOptions, SignatureFieldOptions, SquigglyAnnotationOptions, StrikeOutAnnotationOptions, StrokeStyle, TableCell, TableCellBorders, TableCellBorderSide, TableHeaderScope, TableOptions, TextAlign, TextBlockOptions, TextDirection, TextFieldOptions, TextOptions, Transform, UnderlineAnnotationOptions, UriLinkOptions, VerticalAlign, ColorInput, XmpMetadataInput } from "../types.js";
-import { PAGE_SIZES, gray, color as resolveColorName } from "../types.js";
-import type { InlineTextRun } from "../types.js";
+import { PAGE_SIZES, gray, color as resolveColorName, type AttachmentOptions, type BmpImageOptions, type BuiltInPageSize, type CheckBoxOptions, type ChoiceFieldMode, type ChoiceFieldOptions, type CustomPageSize, type DocumentConformanceProfile, type DocumentEncryptionAlgorithm, type DocumentEncryptionOptions, type DocumentInfo, type DocumentPermissions, type ExtGStateOptions, type FieldActions, type FillStyle, type FontName, type FreeTextAnnotationOptions, type HighlightAnnotationOptions, type JpegImageOptions, type LineCap, type LineJoin, type ListItem, type ListOptions, type NoteAnnotationOptions, type OutlineOptions, type PageLabelOptions, type PageLabelStyle, type PageLinkOptions, type PageSize, type ParagraphTextAnnotation, type PathCommand, type PathStyle, type PdfColor, type PdfComplianceIssue, type PdfComplianceLocation, type PdfContainerTag, type PdfFigureStructureTag, type PdfFont, type PdfRoleMap, type PdfStandardStructureTag, type PdfStructureAttributeValue, type PdfStructureOptions, type PdfStructureTag, type PdfTextStructureTag, type PngImageOptions, type PushButtonOptions, type RadioGroupOptions, type SignatureFieldOptions, type SquigglyAnnotationOptions, type StrikeOutAnnotationOptions, type StrokeStyle, type TableCell, type TableCellBorders, type TableCellBorderSide, type TableHeaderScope, type TableOptions, type TextAlign, type TextBlockOptions, type TextDirection, type TextFieldOptions, type TextOptions, type Transform, type UnderlineAnnotationOptions, type UriLinkOptions, type VerticalAlign, type ColorInput, type XmpMetadataInput, type InlineTextRun } from "../types.js";
 import type { NormalizedImageOptions, NormalizedPathStyle, NormalizedTextOptions } from "./ops.js";
 import type { RichRunInput } from "./page-helpers.js";
 import { buildXmpMetadataPacket } from "./xmp.js";
@@ -102,7 +100,12 @@ export function resolveStyledFont(font: PdfFont, bold?: boolean, italic?: boolea
   if (variants === undefined) {
     return font;
   }
-  const picked = bold && italic ? variants.boldItalic : bold ? variants.bold : variants.italic;
+  let picked = variants.italic;
+  if (bold && italic) {
+    picked = variants.boldItalic;
+  } else if (bold) {
+    picked = variants.bold;
+  }
   return picked ?? font;
 }
 
@@ -1138,9 +1141,7 @@ export function normalizeTextBaseOptions(options: TextOptions | TextBlockOptions
   let rise = normalizeOptionalNumber(options.rise, "rise");
   if (options.superscript === true || options.subscript === true) {
     effectiveFontSize = fontSize * 0.62;
-    if (rise === undefined) {
-      rise = options.superscript === true ? fontSize * 0.33 : -(fontSize * 0.18);
-    }
+    rise ??= options.superscript === true ? fontSize * 0.33 : -(fontSize * 0.18);
   }
 
   const renderMode = options.renderMode;
@@ -1404,23 +1405,13 @@ function normalizeTableCell(cell: TableCell, rowIndex: number, cellIndex: number
         cellIndex
       });
     }
-    if (definition.runs.length === 0) {
-      throw new PdfEngineError(PdfErrorCode.INVALID_TEXT, "Table cell runs must not be empty.", {
-        rowIndex,
-        cellIndex
-      });
-    }
     for (const run of definition.runs) {
       validateText(run.text);
     }
   } else {
-    if (definition.text === undefined || definition.text.trim().length === 0) {
-      throw new PdfEngineError(PdfErrorCode.INVALID_TEXT, "Table cell text must not be empty.", {
-        rowIndex,
-        cellIndex
-      });
-    }
-    validateText(definition.text);
+    // Blank cells are valid table structure. They still occupy a row, paint
+    // backgrounds/borders, participate in spans, and emit TD/TH structure.
+    if (definition.text !== undefined && definition.text.length > 0) validateText(definition.text);
   }
 
   const rowSpan = definition.rowSpan ?? 1;
@@ -1435,8 +1426,8 @@ function normalizeTableCell(cell: TableCell, rowIndex: number, cellIndex: number
   }
 
   return {
-    text: definition.text ?? definition.runs!.map((run) => run.text).join(""),
-    ...(definition.runs !== undefined ? { runs: definition.runs } : {}),
+    text: definition.text ?? definition.runs?.map((run) => run.text).join("") ?? "",
+    ...(definition.runs !== undefined && definition.runs.length > 0 ? { runs: definition.runs } : {}),
     header: definition.header ?? false,
     ...(definition.scope !== undefined ? { scope: definition.scope } : {}),
     rowSpan,

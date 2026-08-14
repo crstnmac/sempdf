@@ -17,6 +17,7 @@ import type {
   PathCommand,
   PdfColor,
   PdfStructureAttributeValue,
+  PdfStructureOptions,
   PdfStructureTag,
   ProcessColor,
   SeparationColor,
@@ -39,9 +40,6 @@ import {
   maxVersion,
   type PdfVersion,
 } from './pdf-version.js';
-import {
-  computeContentHash,
-} from './incremental-serialize.js';
 import {
   array,
   dict,
@@ -69,6 +67,7 @@ import { writeLinearizedPdf } from './linearized-serialize.js';
 import {
   applyDetachedSignature,
   compressedStream,
+  computeContentHash,
   getMaxObjectIdFromOffsets,
   getMaxSerializedObjectId,
   getObjectEncryptionContext,
@@ -110,6 +109,9 @@ import {
   buildAssociatedFilespecDictionary,
   buildAssociatedFileStream,
 } from './tagged-pdf-serialize.js';
+
+/** Image kinds whose decoded pixels can carry an alpha channel. */
+type AlphaCapableImageKind = 'png' | 'bmp' | 'webp' | 'gif';
 
 interface SerializedTextField {
   fieldObjectId: number;
@@ -735,6 +737,569 @@ function getSerializedPageContentBytes(page: SerializedPage): Uint8Array {
   return page.contentBytes;
 }
 
+/** Object-id maps for every document-level asset, filled in allocation order. */
+interface AssetObjectIdAllocation {
+  readonly builtInFontToUnicodeObjectIds: Map<FontName, number>;
+  readonly softMaskFormObjectIds: Map<string, number>;
+}
+
+/**
+ * Reserves object ids for fonts, images, soft masks, and attachments, in the
+ * order the objects are later written. `allocate(n)` hands out `n` consecutive
+ * ids and returns the first.
+ */
+function allocateAssetObjectIds(input: {
+  model: PdfDocumentModel;
+  builtInFonts: ReadonlyMap<FontName, BuiltInFontEncoding>;
+  images: readonly EmbeddedImageAsset[];
+  embeddedFontContexts: ReadonlyMap<string, EmbeddedFontContext>;
+  builtInFontObjectIds: Map<FontName, number>;
+  embeddedFontObjectIds: Map<string, EmbeddedFontObjectIds>;
+  imageObjectIds: Map<string, ImageObjectIds>;
+  attachmentObjectIds: Map<string, AttachmentObjectIds>;
+  allocate: (count: number) => number;
+}): AssetObjectIdAllocation {
+  const { model, allocate } = input;
+  const builtInFontToUnicodeObjectIds = new Map<FontName, number>();
+  for (const [fontName] of input.builtInFonts) {
+    input.builtInFontObjectIds.set(fontName, allocate(1));
+    // A tagged document needs a ToUnicode CMap for the standard-14 fonts too.
+    if (model.tagged === true) {
+      builtInFontToUnicodeObjectIds.set(fontName, allocate(1));
+    }
+  }
+
+  for (const context of input.embeddedFontContexts.values()) {
+    const base = allocate(7);
+    input.embeddedFontObjectIds.set(context.font.id, {
+      type0: base,
+      descendant: base + 1,
+      descriptor: base + 2,
+      fontFile: base + 3,
+      toUnicode: base + 4,
+      cidToGid: base + 5,
+      metadata: base + 6,
+    });
+  }
+
+  for (const image of input.images) {
+    const objectIds: ImageObjectIds = { base: allocate(1) };
+    const alphaCapable =
+      image.kind === 'png' || image.kind === 'bmp' || image.kind === 'webp' || image.kind === 'gif';
+    if (alphaCapable && image.alphaBytes) {
+      objectIds.smask = allocate(1);
+    }
+    if (image.iccProfile) {
+      objectIds.icc = allocate(1);
+    }
+    input.imageObjectIds.set(image.key, objectIds);
+  }
+
+  const softMaskFormObjectIds = new Map<string, number>();
+  for (const mask of model.softMasks ?? []) {
+    softMaskFormObjectIds.set(mask.key, allocate(1));
+  }
+
+  for (const attachment of model.attachments) {
+    const base = allocate(2);
+    input.attachmentObjectIds.set(attachment.name, { fileSpec: base, embeddedFile: base + 1 });
+  }
+
+  return { builtInFontToUnicodeObjectIds, softMaskFormObjectIds };
+}
+
+/** `/AF` refs: file attachments plus any MathML associated files. */
+function buildAssociatedFilesArray(
+  model: PdfDocumentModel,
+  attachmentObjectIds: ReadonlyMap<string, AttachmentObjectIds>,
+  taggedElements: readonly { mathmlFilespecObjectId?: number | undefined }[],
+): PdfValue | undefined {
+  const attachmentRefs = model.attachments.map((attachment) =>
+    ref(attachmentObjectIds.get(attachment.name)!.fileSpec),
+  );
+  const mathmlRefs = taggedElements
+    .filter((element) => element.mathmlFilespecObjectId !== undefined)
+    .map((element) => ref(element.mathmlFilespecObjectId!));
+  const all = [...attachmentRefs, ...mathmlRefs];
+  return all.length > 0 ? array(all) : undefined;
+}
+
+/** Conformance profiles that must set `ViewerPreferences/DisplayDocTitle`. */
+const DISPLAY_DOC_TITLE_PROFILES = new Set(['pdfua-1', 'pdfua-2', 'wtpdf']);
+
+/** The document catalog (object 1), wiring every optional top-level feature. */
+function buildCatalogDictionary(input: {
+  model: PdfDocumentModel;
+  namesDictionary: PdfValue | undefined;
+  pageLabelsDictionary: PdfValue | undefined;
+  metadataObjectId: number | undefined;
+  taggedPdfAllocation: TaggedPdfAllocation | undefined;
+  acroFormObjectId: number | undefined;
+  outlinesRootObjectId: number | undefined;
+  outputIntentObjectId: number | undefined;
+  attachmentObjectIds: ReadonlyMap<string, AttachmentObjectIds>;
+}): PdfDict {
+  const { model, taggedPdfAllocation, outlinesRootObjectId } = input;
+  const wantsDocTitle =
+    model.info.title !== undefined ||
+    (model.conformance !== undefined && DISPLAY_DOC_TITLE_PROFILES.has(model.conformance));
+  return dict([
+    ['Type', name('Catalog')],
+    ['Pages', ref(2)],
+    ['Names', input.namesDictionary],
+    ['Metadata', input.metadataObjectId ? ref(input.metadataObjectId) : undefined],
+    ['Lang', model.language ? literalString(model.language) : undefined],
+    [
+      'MarkInfo',
+      model.tagged
+        ? dict([
+            ['Marked', true],
+            ['Suspects', false],
+          ])
+        : undefined,
+    ],
+    ['ViewerPreferences', wantsDocTitle ? dict([['DisplayDocTitle', true]]) : undefined],
+    [
+      'StructTreeRoot',
+      taggedPdfAllocation ? ref(taggedPdfAllocation.structTreeRootObjectId) : undefined,
+    ],
+    ['PageLabels', input.pageLabelsDictionary],
+    ['AcroForm', input.acroFormObjectId ? ref(input.acroFormObjectId) : undefined],
+    [
+      'AF',
+      buildAssociatedFilesArray(
+        model,
+        input.attachmentObjectIds,
+        taggedPdfAllocation?.elements ?? [],
+      ),
+    ],
+    ['Outlines', outlinesRootObjectId ? ref(outlinesRootObjectId) : undefined],
+    ['PageMode', outlinesRootObjectId ? name('UseOutlines') : undefined],
+    [
+      'OutputIntents',
+      input.outputIntentObjectId !== undefined ? array([ref(input.outputIntentObjectId)]) : undefined,
+    ],
+  ]);
+}
+
+type PrepareByteStream = (value: PdfStream) => PdfStream | PdfLazyStream;
+
+/** Standard-14 font objects, each with a ToUnicode CMap in tagged documents. */
+function buildBuiltInFontObjects(
+  builtInFonts: ReadonlyMap<FontName, BuiltInFontEncoding>,
+  builtInFontObjectIds: ReadonlyMap<FontName, number>,
+  builtInFontToUnicodeObjectIds: ReadonlyMap<FontName, number>,
+  prepareByteStream: PrepareByteStream,
+): PdfIndirectObject[] {
+  const objects: PdfIndirectObject[] = [];
+  for (const [fontName, encoding] of builtInFonts) {
+    const toUnicodeId = builtInFontToUnicodeObjectIds.get(fontName);
+    objects.push({
+      id: builtInFontObjectIds.get(fontName)!,
+      value: dict([
+        ['Type', name('Font')],
+        ['Subtype', name('Type1')],
+        ['BaseFont', name(fontName)],
+        ...(encoding !== undefined ? [['Encoding', name(encodingToName(encoding))] as [string, PdfValue]] : []),
+        ['ToUnicode', toUnicodeId !== undefined ? ref(toUnicodeId) : undefined],
+      ]),
+    });
+    if (toUnicodeId !== undefined) {
+      objects.push({
+        id: toUnicodeId,
+        value: prepareByteStream(stream(dict([]), buildBase14ToUnicodeCMapBytes())),
+      });
+    }
+  }
+  return objects;
+}
+
+/**
+ * The seven objects an embedded font needs: subset file, metadata, descriptor,
+ * descendant CIDFont, ToUnicode CMap, CIDToGIDMap, and the Type0 wrapper.
+ */
+function buildEmbeddedFontObjects(
+  embeddedFontContexts: ReadonlyMap<string, EmbeddedFontContext>,
+  embeddedFontObjectIds: ReadonlyMap<string, EmbeddedFontObjectIds>,
+  compress: boolean | undefined,
+  prepareByteStream: PrepareByteStream,
+): PdfIndirectObject[] {
+  const objects: PdfIndirectObject[] = [];
+  for (const context of embeddedFontContexts.values()) {
+    const objectIds = embeddedFontObjectIds.get(context.font.id)!;
+    const subsetBytes = subsetTrueTypeFont(context.font.bytes, context.glyphToUnicode.keys());
+    objects.push({
+      id: objectIds.fontFile,
+      value: prepareByteStream(
+        compressedStream(
+          dict([
+            ['Length1', subsetBytes.length],
+            ...(context.font.isCff ? [['Subtype', name('Type1C')] as [string, PdfValue]] : []),
+          ]),
+          subsetBytes,
+          compress,
+        ),
+      ),
+    });
+
+    objects.push({
+      id: objectIds.metadata,
+      value: buildXmpMetadataStream(buildFontMetadataXmp(context.font)),
+    });
+
+    objects.push({
+      id: objectIds.descriptor,
+      value: dict([
+        ['Type', name('FontDescriptor')],
+        ['FontName', name(context.font.postScriptName)],
+        ['Flags', context.font.flags],
+        ['FontBBox', array([...context.font.bbox])],
+        ['ItalicAngle', context.font.italicAngle],
+        ['Ascent', scaleMetric(context.font.ascent, context.font.unitsPerEm)],
+        ['Descent', scaleMetric(context.font.descent, context.font.unitsPerEm)],
+        ['CapHeight', scaleMetric(context.font.capHeight, context.font.unitsPerEm)],
+        ['StemV', context.font.stemV],
+        ...(context.font.isCff
+          ? [['FontFile3', ref(objectIds.fontFile)] as [string, PdfValue]]
+          : [['FontFile2', ref(objectIds.fontFile)] as [string, PdfValue]]),
+        ['Metadata', ref(objectIds.metadata)],
+      ]),
+    });
+
+    objects.push({
+      id: objectIds.descendant,
+      value: dict([
+        ['Type', name('Font')],
+        ['Subtype', name(context.font.isCff ? 'CIDFontType0C' : 'CIDFontType2')],
+        ['BaseFont', name(context.font.postScriptName)],
+        [
+          'CIDSystemInfo',
+          dict([
+            ['Registry', literalString('Adobe')],
+            ['Ordering', literalString('Identity')],
+            ['Supplement', 0],
+          ]),
+        ],
+        ['FontDescriptor', ref(objectIds.descriptor)],
+        ['CIDToGIDMap', ref(objectIds.cidToGid)],
+        ['DW', 1000],
+        ['W', buildEmbeddedFontWidths(context)],
+      ]),
+    });
+
+    objects.push({
+      id: objectIds.toUnicode,
+      value: compressedStream(dict([]), encoder.encode(buildToUnicodeCMap(context)), compress),
+    });
+
+    objects.push({
+      id: objectIds.cidToGid,
+      value: compressedStream(dict([]), buildCidToGidMapBytes(context), compress),
+    });
+
+    objects.push({
+      id: objectIds.type0,
+      value: dict([
+        ['Type', name('Font')],
+        ['Subtype', name('Type0')],
+        ['BaseFont', name(context.font.postScriptName)],
+        ['Encoding', name('Identity-H')],
+        ['DescendantFonts', array([ref(objectIds.descendant)])],
+        ['ToUnicode', ref(objectIds.toUnicode)],
+      ]),
+    });
+  }
+  return objects;
+}
+
+/** Image XObjects, preceded by their soft mask and ICC profile streams. */
+function buildImageObjects(
+  images: readonly EmbeddedImageAsset[],
+  imageObjectIds: ReadonlyMap<string, ImageObjectIds>,
+  prepareByteStream: PrepareByteStream,
+): PdfIndirectObject[] {
+  const objects: PdfIndirectObject[] = [];
+  for (const image of images) {
+    const objectIds = imageObjectIds.get(image.key)!;
+    if (objectIds.smask !== undefined) {
+      objects.push({
+        id: objectIds.smask,
+        value: prepareByteStream(
+          buildSoftMaskStream(image as Extract<EmbeddedImageAsset, { kind: AlphaCapableImageKind }>),
+        ),
+      });
+    }
+    if (image.iccProfile && objectIds.icc !== undefined) {
+      objects.push({
+        id: objectIds.icc,
+        value: prepareByteStream(buildIccProfileStream(image.iccProfile)),
+      });
+    }
+    objects.push({
+      id: objectIds.base,
+      value: prepareByteStream(buildImageStream(image, objectIds.smask, objectIds.icc)),
+    });
+  }
+  return objects;
+}
+
+/** Form XObjects backing luminosity soft masks. */
+function buildSoftMaskFormObjects(
+  model: PdfDocumentModel,
+  softMaskFormObjectIds: ReadonlyMap<string, number>,
+  prepareByteStream: PrepareByteStream,
+): PdfIndirectObject[] {
+  return (model.softMasks ?? []).map((mask) => ({
+    id: softMaskFormObjectIds.get(mask.key)!,
+    value: prepareByteStream(buildSoftMaskFormStream(mask)),
+  }));
+}
+
+/** Embedded file streams and their file specifications. */
+function buildAttachmentObjects(
+  model: PdfDocumentModel,
+  attachmentObjectIds: ReadonlyMap<string, AttachmentObjectIds>,
+  prepareByteStream: PrepareByteStream,
+): PdfIndirectObject[] {
+  const objects: PdfIndirectObject[] = [];
+  for (const attachment of model.attachments) {
+    const objectIds = attachmentObjectIds.get(attachment.name)!;
+    objects.push({
+      id: objectIds.embeddedFile,
+      value: prepareByteStream(buildEmbeddedFileStream(attachment)),
+    });
+    objects.push({
+      id: objectIds.fileSpec,
+      value: buildFileSpecDictionary(attachment, objectIds.embeddedFile),
+    });
+  }
+  return objects;
+}
+
+/**
+ * Document-level objects that exist only when the corresponding feature is
+ * used: XMP metadata, encryption, output intent, outline root, AcroForm, and
+ * the detached-signature pair. Emitted in allocation order.
+ */
+function buildDocumentLevelObjects(input: {
+  model: PdfDocumentModel;
+  effectiveXmpMetadata: string | undefined;
+  encryptionContext: PdfEncryptionContext | undefined;
+  metadataObjectId: number | undefined;
+  encryptionObjectId: number | undefined;
+  outputProfileObjectId: number | undefined;
+  outputIntentObjectId: number | undefined;
+  outlinesRootObjectId: number | undefined;
+  outlineAllocation: OutlineAllocation | undefined;
+  acroFormObjectId: number | undefined;
+  signatureFieldObjectId: number | undefined;
+  signatureDictionaryObjectId: number | undefined;
+  formFields: readonly { fieldObjectId: number }[];
+  parentFieldAllocation: { parentFieldObjects: readonly PdfIndirectObject[] };
+  formFontResourceMap: ReadonlyMap<FontName, string>;
+  builtInFontObjectIds: ReadonlyMap<FontName, number>;
+}): PdfIndirectObject[] {
+  const { model, outputProfileObjectId, outputIntentObjectId } = input;
+  const objects: PdfIndirectObject[] = [];
+
+  if (input.metadataObjectId !== undefined) {
+    objects.push({
+      id: input.metadataObjectId,
+      value: buildXmpMetadataStream(input.effectiveXmpMetadata!),
+    });
+  }
+
+  if (input.encryptionObjectId !== undefined && input.encryptionContext) {
+    objects.push({
+      id: input.encryptionObjectId,
+      value: buildEncryptionDictionary(input.encryptionContext),
+    });
+  }
+
+  if (outputProfileObjectId !== undefined) {
+    objects.push({ id: outputProfileObjectId, value: buildOutputProfileStream(model) });
+  }
+
+  if (outputIntentObjectId !== undefined && outputProfileObjectId !== undefined) {
+    objects.push({
+      id: outputIntentObjectId,
+      value: buildOutputIntentDictionary(outputProfileObjectId, model),
+    });
+  }
+
+  if (input.outlinesRootObjectId !== undefined && input.outlineAllocation) {
+    objects.push({
+      id: input.outlinesRootObjectId,
+      value: buildOutlineRootDictionary(input.outlineAllocation),
+    });
+  }
+
+  if (input.acroFormObjectId !== undefined) {
+    objects.push({
+      id: input.acroFormObjectId,
+      value: buildAcroFormDictionary(
+        [
+          ...input.parentFieldAllocation.parentFieldObjects.map((obj) => ref(obj.id)),
+          ...input.formFields.map((field) => ref(field.fieldObjectId)),
+          ...(input.signatureFieldObjectId !== undefined ? [ref(input.signatureFieldObjectId)] : []),
+        ],
+        input.formFontResourceMap,
+        input.builtInFontObjectIds,
+        model.calculationOrder,
+      ),
+    });
+  }
+
+  if (
+    input.signatureFieldObjectId !== undefined &&
+    input.signatureDictionaryObjectId !== undefined &&
+    model.signature !== undefined
+  ) {
+    objects.push({
+      id: input.signatureFieldObjectId,
+      value: buildDetachedSignatureFieldDictionary(model.signature, input.signatureDictionaryObjectId),
+    });
+    objects.push({
+      id: input.signatureDictionaryObjectId,
+      value: buildDetachedSignatureDictionary(model.signature),
+    });
+  }
+
+  return objects;
+}
+
+/**
+ * Writer options derived from the model: encryption context and ids, the
+ * metadata id when metadata is left unencrypted, plus object-stream,
+ * linearization, and version settings.
+ */
+function buildPreparedSerializationOptions(input: {
+  model: PdfDocumentModel;
+  encryptionContext: PdfEncryptionContext | undefined;
+  encryptionObjectId: number | undefined;
+  encryptionFileId: Uint8Array | undefined;
+  metadataObjectId: number | undefined;
+  pdfVersion: PdfVersion;
+}): PreparedPdfSerialization['options'] {
+  const { model, encryptionContext, metadataObjectId } = input;
+  const unencryptedMetadata =
+    encryptionContext !== undefined &&
+    encryptionContext.encryptMetadata === false &&
+    metadataObjectId !== undefined;
+  return {
+    ...(encryptionContext !== undefined ? { encryption: encryptionContext } : {}),
+    ...(input.encryptionObjectId !== undefined ? { encryptionObjectId: input.encryptionObjectId } : {}),
+    ...(input.encryptionFileId !== undefined ? { fileId: input.encryptionFileId } : {}),
+    ...(unencryptedMetadata ? { metadataObjectId } : {}),
+    ...(model.objectStreams !== undefined ? { objectStreams: model.objectStreams } : {}),
+    ...(model.linearize !== undefined ? { linearize: model.linearize } : {}),
+    pdfVersion: input.pdfVersion,
+  };
+}
+
+/** PDF/A profiles that always carry an OutputIntent with an ICC profile. */
+const OUTPUT_INTENT_PROFILES = new Set(['pdfa-1b', 'pdfa-2b', 'pdfa-3b', 'pdfa-4']);
+
+/** Ids reserved directly after the catalog/pages/info triple (objects 1–3). */
+interface ReservedDocumentObjectIds {
+  readonly metadataObjectId: number | undefined;
+  readonly encryptionObjectId: number | undefined;
+  readonly outputProfileObjectId: number | undefined;
+  readonly outputIntentObjectId: number | undefined;
+  readonly encryptionFileId: Uint8Array | undefined;
+  readonly encryptionContext: PdfEncryptionContext | undefined;
+  /** First id still free once the reservations above are made. */
+  readonly nextObjectId: number;
+}
+
+/**
+ * Reserves the low object ids for document-level features and builds the
+ * encryption context, whose file id is derived from the model's content.
+ */
+function reserveDocumentObjectIds(
+  model: PdfDocumentModel,
+  hasMetadata: boolean,
+): ReservedDocumentObjectIds {
+  let reservedObjectId = 4;
+  const metadataObjectId = hasMetadata ? reservedObjectId++ : undefined;
+  const encryptionObjectId = model.encryption !== undefined ? reservedObjectId++ : undefined;
+  const hasOutputIntent =
+    (model.conformance !== undefined && OUTPUT_INTENT_PROFILES.has(model.conformance)) ||
+    model.outputIntent !== undefined;
+  const outputProfileObjectId = hasOutputIntent ? reservedObjectId++ : undefined;
+  const outputIntentObjectId = hasOutputIntent ? reservedObjectId++ : undefined;
+
+  const encryptionFileId =
+    model.encryption !== undefined
+      ? createDocumentFileId(buildEncryptionFileIdSeed(model))
+      : undefined;
+  const encryptionContext =
+    model.encryption !== undefined && encryptionFileId !== undefined
+      ? createPdfEncryptionContext(model.encryption, encryptionFileId)
+      : undefined;
+
+  return {
+    metadataObjectId,
+    encryptionObjectId,
+    outputProfileObjectId,
+    outputIntentObjectId,
+    encryptionFileId,
+    encryptionContext,
+    nextObjectId: reservedObjectId,
+  };
+}
+
+/** Outline root id plus the per-node allocation, when the model has outlines. */
+function allocateOutlinePlan(
+  model: PdfDocumentModel,
+  fromObjectId: number,
+): { rootObjectId: number | undefined; allocation: OutlineAllocation | undefined; nextObjectId: number } {
+  if (model.outlines.length === 0) {
+    return { rootObjectId: undefined, allocation: undefined, nextObjectId: fromObjectId };
+  }
+  const rootObjectId = fromObjectId;
+  const allocation = allocateOutlineNodes(model.outlines, fromObjectId + 1, rootObjectId);
+  return { rootObjectId, allocation, nextObjectId: allocation.nextObjectId };
+}
+
+/** Ids and resources for form fields, the signature pair, and the AcroForm. */
+function allocateFormObjectIds(
+  model: PdfDocumentModel,
+  serializedPages: readonly SerializedPage[],
+  fromObjectId: number,
+): {
+  formFields: ReturnType<typeof collectFormFieldAnnotations>;
+  parentFieldAllocation: ReturnType<typeof collectParentFieldMapping>;
+  formFontResourceMap: ReturnType<typeof buildFormFontResourceMap>;
+  signatureFieldObjectId: number | undefined;
+  signatureDictionaryObjectId: number | undefined;
+  acroFormObjectId: number | undefined;
+  nextObjectId: number;
+} {
+  const formFields = collectFormFieldAnnotations(serializedPages);
+  const parentFieldAllocation = collectParentFieldMapping(serializedPages, formFields, fromObjectId);
+  let nextObjectId = parentFieldAllocation.nextObjectId;
+  const formFontResourceMap = buildFormFontResourceMap(collectFormFontNames(serializedPages));
+
+  const signatureFieldObjectId = model.signature !== undefined ? nextObjectId++ : undefined;
+  const signatureDictionaryObjectId = model.signature !== undefined ? nextObjectId++ : undefined;
+  const needsAcroForm =
+    formFields.length > 0 ||
+    parentFieldAllocation.parentFieldObjects.length > 0 ||
+    signatureFieldObjectId !== undefined;
+  const acroFormObjectId = needsAcroForm ? nextObjectId++ : undefined;
+
+  return {
+    formFields,
+    parentFieldAllocation,
+    formFontResourceMap,
+    signatureFieldObjectId,
+    signatureDictionaryObjectId,
+    acroFormObjectId,
+    nextObjectId,
+  };
+}
+
 function prepareDocumentSerialization(
   model: PdfDocumentModel,
   options: PrepareDocumentSerializationOptions = {},
@@ -747,31 +1312,17 @@ function prepareDocumentSerialization(
   const imageObjectIds = new Map<string, ImageObjectIds>();
   const attachmentObjectIds = new Map<string, AttachmentObjectIds>();
   const effectiveXmpMetadata = buildEffectiveXmpMetadata(model);
-  let reservedObjectId = 4;
-  const metadataObjectId =
-    effectiveXmpMetadata !== undefined ? reservedObjectId++ : undefined;
-  const encryptionObjectId =
-    model.encryption !== undefined ? reservedObjectId++ : undefined;
-  const hasOutputIntent =
-    model.conformance === 'pdfa-1b' ||
-    model.conformance === 'pdfa-2b' ||
-    model.conformance === 'pdfa-3b' ||
-    model.conformance === 'pdfa-4' ||
-    model.outputIntent !== undefined;
-  const outputProfileObjectId = hasOutputIntent
-    ? reservedObjectId++
-    : undefined;
-  const outputIntentObjectId = hasOutputIntent ? reservedObjectId++ : undefined;
-  const encryptionFileId =
-    model.encryption !== undefined
-      ? createDocumentFileId(buildEncryptionFileIdSeed(model))
-      : undefined;
-  const encryptionContext =
-    model.encryption !== undefined && encryptionFileId !== undefined
-      ? createPdfEncryptionContext(model.encryption, encryptionFileId)
-      : undefined;
+  const {
+    metadataObjectId,
+    encryptionObjectId,
+    outputProfileObjectId,
+    outputIntentObjectId,
+    encryptionFileId,
+    encryptionContext,
+    nextObjectId: firstFreeObjectId,
+  } = reserveDocumentObjectIds(model, effectiveXmpMetadata !== undefined);
 
-  let nextObjectId = reservedObjectId;
+  let nextObjectId = firstFreeObjectId;
   // Lazy-stream length objects (deferred /Length N 0 R) must occupy a fresh ID
   // range *above* every real object. This is seeded to the final nextObjectId
   // once all real objects are allocated (see below); the initial value here is a
@@ -785,52 +1336,21 @@ function prepareDocumentSerialization(
         )
       : value;
 
-  const builtInFontToUnicodeObjectIds = new Map<FontName, number>();
-  for (const [fontName] of builtInFonts) {
-    builtInFontObjectIds.set(fontName, nextObjectId);
-    nextObjectId += 1;
-    if (model.tagged === true) {
-      builtInFontToUnicodeObjectIds.set(fontName, nextObjectId);
-      nextObjectId += 1;
-    }
-  }
-  for (const context of embeddedFontContexts.values()) {
-    embeddedFontObjectIds.set(context.font.id, {
-      type0: nextObjectId,
-      descendant: nextObjectId + 1,
-      descriptor: nextObjectId + 2,
-      fontFile: nextObjectId + 3,
-      toUnicode: nextObjectId + 4,
-      cidToGid: nextObjectId + 5,
-      metadata: nextObjectId + 6,
-    });
-    nextObjectId += 7;
-  }
-  for (const image of images) {
-    const objectIds: ImageObjectIds = { base: nextObjectId };
-    nextObjectId += 1;
-    if ((image.kind === 'png' || image.kind === 'bmp' || image.kind === 'webp' || image.kind === 'gif') && image.alphaBytes) {
-      objectIds.smask = nextObjectId;
-      nextObjectId += 1;
-    }
-    if (image.iccProfile) {
-      objectIds.icc = nextObjectId;
-      nextObjectId += 1;
-    }
-    imageObjectIds.set(image.key, objectIds);
-  }
-  const softMaskFormObjectIds = new Map<string, number>();
-  for (const mask of model.softMasks ?? []) {
-    softMaskFormObjectIds.set(mask.key, nextObjectId);
-    nextObjectId += 1;
-  }
-  for (const attachment of model.attachments) {
-    attachmentObjectIds.set(attachment.name, {
-      fileSpec: nextObjectId,
-      embeddedFile: nextObjectId + 1,
-    });
-    nextObjectId += 2;
-  }
+  const { builtInFontToUnicodeObjectIds, softMaskFormObjectIds } = allocateAssetObjectIds({
+    model,
+    builtInFonts,
+    images,
+    embeddedFontContexts,
+    builtInFontObjectIds,
+    embeddedFontObjectIds,
+    imageObjectIds,
+    attachmentObjectIds,
+    allocate: (count) => {
+      const id = nextObjectId;
+      nextObjectId += count;
+      return id;
+    },
+  });
 
   const allocatedPages = planSerializedPages(
     model.pages,
@@ -880,42 +1400,20 @@ function prepareDocumentSerialization(
     model.pageLabels,
     pageObjectIdsByModel,
   );
-  const hasOutlines = model.outlines.length > 0;
-  const outlinesRootObjectId = hasOutlines ? nextObjectId : undefined;
-  if (outlinesRootObjectId !== undefined) {
-    nextObjectId += 1;
-  }
+  const outlinePlan = allocateOutlinePlan(model, nextObjectId);
+  nextObjectId = outlinePlan.nextObjectId;
+  const { rootObjectId: outlinesRootObjectId, allocation: outlineAllocation } = outlinePlan;
 
-  const outlineAllocation =
-    outlinesRootObjectId !== undefined
-      ? allocateOutlineNodes(model.outlines, nextObjectId, outlinesRootObjectId)
-      : undefined;
-
-  if (outlineAllocation) {
-    nextObjectId = outlineAllocation.nextObjectId;
-  }
-
-  const formFields = collectFormFieldAnnotations(serializedPages);
-  const parentFieldAllocation = collectParentFieldMapping(
-    serializedPages,
+  const formPlan = allocateFormObjectIds(model, serializedPages, nextObjectId);
+  nextObjectId = formPlan.nextObjectId;
+  const {
     formFields,
-    nextObjectId,
-  );
-  nextObjectId = parentFieldAllocation.nextObjectId;
-  const formFontResourceMap = buildFormFontResourceMap(
-    collectFormFontNames(serializedPages),
-  );
-  const signatureFieldObjectId =
-    model.signature !== undefined ? nextObjectId++ : undefined;
-  const signatureDictionaryObjectId =
-    model.signature !== undefined ? nextObjectId++ : undefined;
-  const acroFormObjectId =
-    formFields.length > 0 || parentFieldAllocation.parentFieldObjects.length > 0 || signatureFieldObjectId !== undefined
-      ? nextObjectId
-      : undefined;
-  if (acroFormObjectId !== undefined) {
-    nextObjectId += 1;
-  }
+    parentFieldAllocation,
+    formFontResourceMap,
+    signatureFieldObjectId,
+    signatureDictionaryObjectId,
+    acroFormObjectId,
+  } = formPlan;
 
   // All real object IDs are now allocated. Place lazy-stream length objects
   // immediately above them so deferred /Length references never collide with a
@@ -925,63 +1423,17 @@ function prepareDocumentSerialization(
   const documentObjects: PdfIndirectObject[] = [];
   documentObjects.push({
     id: 1,
-    value: dict([
-      ['Type', name('Catalog')],
-      ['Pages', ref(2)],
-      ['Names', namesDictionary],
-      ['Metadata', metadataObjectId ? ref(metadataObjectId) : undefined],
-      ['Lang', model.language ? literalString(model.language) : undefined],
-      [
-        'MarkInfo',
-        model.tagged
-          ? dict([
-              ['Marked', true],
-              ['Suspects', false],
-            ])
-          : undefined,
-      ],
-      [
-        'ViewerPreferences',
-        model.info.title !== undefined ||
-        model.conformance === 'pdfua-1' ||
-        model.conformance === 'pdfua-2' ||
-        model.conformance === 'wtpdf'
-          ? dict([['DisplayDocTitle', true]])
-          : undefined,
-      ],
-      [
-        'StructTreeRoot',
-        taggedPdfAllocation
-          ? ref(taggedPdfAllocation.structTreeRootObjectId)
-          : undefined,
-      ],
-      ['PageLabels', pageLabelsDictionary],
-      ['AcroForm', acroFormObjectId ? ref(acroFormObjectId) : undefined],
-      [
-        'AF',
-        (() => {
-          const attachmentRefs = model.attachments.map((attachment) =>
-            ref(attachmentObjectIds.get(attachment.name)!.fileSpec),
-          );
-          const mathmlRefs = (taggedPdfAllocation?.elements ?? [])
-            .filter((element) => element.mathmlFilespecObjectId !== undefined)
-            .map((element) => ref(element.mathmlFilespecObjectId!));
-          const all = [...attachmentRefs, ...mathmlRefs];
-          return all.length > 0 ? array(all) : undefined;
-        })(),
-      ],
-      [
-        'Outlines',
-        outlinesRootObjectId ? ref(outlinesRootObjectId) : undefined,
-      ],
-      ['PageMode', outlinesRootObjectId ? name('UseOutlines') : undefined],
-      [
-        'OutputIntents',
-        outputIntentObjectId !== undefined
-          ? array([ref(outputIntentObjectId)])
-          : undefined,
-      ],
-    ]),
+    value: buildCatalogDictionary({
+      model,
+      namesDictionary,
+      pageLabelsDictionary,
+      metadataObjectId,
+      taggedPdfAllocation,
+      acroFormObjectId,
+      outlinesRootObjectId,
+      outputIntentObjectId,
+      attachmentObjectIds,
+    }),
   });
 
   documentObjects.push({
@@ -998,79 +1450,26 @@ function prepareDocumentSerialization(
     value: buildInfoDictionary(model.info),
   });
 
-  if (metadataObjectId !== undefined) {
-    documentObjects.push({
-      id: metadataObjectId,
-      value: buildXmpMetadataStream(effectiveXmpMetadata!),
-    });
-  }
-
-  if (encryptionObjectId !== undefined && encryptionContext) {
-    documentObjects.push({
-      id: encryptionObjectId,
-      value: buildEncryptionDictionary(encryptionContext),
-    });
-  }
-
-  if (outputProfileObjectId !== undefined) {
-    documentObjects.push({
-      id: outputProfileObjectId,
-      value: buildOutputProfileStream(model),
-    });
-  }
-
-  if (
-    outputIntentObjectId !== undefined &&
-    outputProfileObjectId !== undefined
-  ) {
-    documentObjects.push({
-      id: outputIntentObjectId,
-      value: buildOutputIntentDictionary(outputProfileObjectId, model),
-    });
-  }
-
-  if (outlinesRootObjectId !== undefined && outlineAllocation) {
-    documentObjects.push({
-      id: outlinesRootObjectId,
-      value: buildOutlineRootDictionary(outlineAllocation),
-    });
-  }
-
-  if (acroFormObjectId !== undefined) {
-    documentObjects.push({
-      id: acroFormObjectId,
-      value: buildAcroFormDictionary(
-        [
-          ...parentFieldAllocation.parentFieldObjects.map((obj) => ref(obj.id)),
-          ...formFields.map((field) => ref(field.fieldObjectId)),
-          ...(signatureFieldObjectId !== undefined
-            ? [ref(signatureFieldObjectId)]
-            : []),
-        ],
-        formFontResourceMap,
-        builtInFontObjectIds,
-        model.calculationOrder,
-      ),
-    });
-  }
-
-  if (
-    signatureFieldObjectId !== undefined &&
-    signatureDictionaryObjectId !== undefined &&
-    model.signature !== undefined
-  ) {
-    documentObjects.push({
-      id: signatureFieldObjectId,
-      value: buildDetachedSignatureFieldDictionary(
-        model.signature,
-        signatureDictionaryObjectId,
-      ),
-    });
-    documentObjects.push({
-      id: signatureDictionaryObjectId,
-      value: buildDetachedSignatureDictionary(model.signature),
-    });
-  }
+  documentObjects.push(
+    ...buildDocumentLevelObjects({
+      model,
+      effectiveXmpMetadata,
+      encryptionContext,
+      metadataObjectId,
+      encryptionObjectId,
+      outputProfileObjectId,
+      outputIntentObjectId,
+      outlinesRootObjectId,
+      outlineAllocation,
+      acroFormObjectId,
+      signatureFieldObjectId,
+      signatureDictionaryObjectId,
+      formFields,
+      parentFieldAllocation,
+      formFontResourceMap,
+      builtInFontObjectIds,
+    }),
+  );
 
   if (taggedPdfAllocation) {
     documentObjects.push(
@@ -1081,171 +1480,16 @@ function prepareDocumentSerialization(
     );
   }
 
-  for (const [fontName, encoding] of builtInFonts) {
-    const toUnicodeId = builtInFontToUnicodeObjectIds.get(fontName);
-    documentObjects.push({
-      id: builtInFontObjectIds.get(fontName)!,
-      value: dict([
-        ['Type', name('Font')],
-        ['Subtype', name('Type1')],
-        ['BaseFont', name(fontName)],
-        ...(encoding !== undefined ? [['Encoding', name(encodingToName(encoding))] as [string, PdfValue]] : []),
-        ['ToUnicode', toUnicodeId !== undefined ? ref(toUnicodeId) : undefined],
-      ]),
-    });
-    if (toUnicodeId !== undefined) {
-      documentObjects.push({
-        id: toUnicodeId,
-        value: prepareByteStream(
-          stream(dict([]), buildBase14ToUnicodeCMapBytes()),
-        ),
-      });
-    }
-  }
+  documentObjects.push(
+    ...buildBuiltInFontObjects(builtInFonts, builtInFontObjectIds, builtInFontToUnicodeObjectIds, prepareByteStream),
+    ...buildEmbeddedFontObjects(embeddedFontContexts, embeddedFontObjectIds, model.compress, prepareByteStream),
+  );
 
-  for (const context of embeddedFontContexts.values()) {
-    const objectIds = embeddedFontObjectIds.get(context.font.id)!;
-    const subsetBytes = subsetTrueTypeFont(
-      context.font.bytes,
-      context.glyphToUnicode.keys(),
-    );
-    documentObjects.push({
-      id: objectIds.fontFile,
-      value: prepareByteStream(
-        compressedStream(
-          dict([
-            ['Length1', subsetBytes.length],
-            ...(context.font.isCff ? [['Subtype', name('Type1C')] as [string, PdfValue]] : []),
-          ]),
-          subsetBytes,
-          'compress' in model
-            ? (model as { compress?: boolean }).compress
-            : undefined,
-        ),
-      ),
-    });
-
-    documentObjects.push({
-      id: objectIds.metadata,
-      value: buildXmpMetadataStream(buildFontMetadataXmp(context.font)),
-    });
-
-    documentObjects.push({
-      id: objectIds.descriptor,
-      value: dict([
-        ['Type', name('FontDescriptor')],
-        ['FontName', name(context.font.postScriptName)],
-        ['Flags', context.font.flags],
-        ['FontBBox', array([...context.font.bbox])],
-        ['ItalicAngle', context.font.italicAngle],
-        ['Ascent', scaleMetric(context.font.ascent, context.font.unitsPerEm)],
-        ['Descent', scaleMetric(context.font.descent, context.font.unitsPerEm)],
-        [
-          'CapHeight',
-          scaleMetric(context.font.capHeight, context.font.unitsPerEm),
-        ],
-        ['StemV', context.font.stemV],
-        ...(context.font.isCff
-          ? [['FontFile3', ref(objectIds.fontFile)] as [string, PdfValue]]
-          : [['FontFile2', ref(objectIds.fontFile)] as [string, PdfValue]]),
-        ['Metadata', ref(objectIds.metadata)],
-      ]),
-    });
-
-    documentObjects.push({
-      id: objectIds.descendant,
-      value: dict([
-        ['Type', name('Font')],
-        ['Subtype', name(context.font.isCff ? 'CIDFontType0C' : 'CIDFontType2')],
-        ['BaseFont', name(context.font.postScriptName)],
-        [
-          'CIDSystemInfo',
-          dict([
-            ['Registry', literalString('Adobe')],
-            ['Ordering', literalString('Identity')],
-            ['Supplement', 0],
-          ]),
-        ],
-        ['FontDescriptor', ref(objectIds.descriptor)],
-        ['CIDToGIDMap', ref(objectIds.cidToGid)],
-        ['DW', 1000],
-        ['W', buildEmbeddedFontWidths(context)],
-      ]),
-    });
-
-    documentObjects.push({
-      id: objectIds.toUnicode,
-      value: compressedStream(
-        dict([]),
-        encoder.encode(buildToUnicodeCMap(context)),
-        model.compress,
-      ),
-    });
-
-    documentObjects.push({
-      id: objectIds.cidToGid,
-      value: compressedStream(
-        dict([]),
-        buildCidToGidMapBytes(context),
-        model.compress,
-      ),
-    });
-
-    documentObjects.push({
-      id: objectIds.type0,
-      value: dict([
-        ['Type', name('Font')],
-        ['Subtype', name('Type0')],
-        ['BaseFont', name(context.font.postScriptName)],
-        ['Encoding', name('Identity-H')],
-        ['DescendantFonts', array([ref(objectIds.descendant)])],
-        ['ToUnicode', ref(objectIds.toUnicode)],
-      ]),
-    });
-  }
-
-  for (const image of images) {
-    const objectIds = imageObjectIds.get(image.key)!;
-    if ((image.kind === 'png' || image.kind === 'bmp' || image.kind === 'webp' || image.kind === 'gif') && objectIds.smask !== undefined) {
-      documentObjects.push({
-        id: objectIds.smask,
-        value: prepareByteStream(buildSoftMaskStream(image as Extract<EmbeddedImageAsset, { kind: 'png' | 'bmp' | 'webp' | 'gif' }>)),
-      });
-    }
-    if (image.iccProfile && objectIds.icc !== undefined) {
-      documentObjects.push({
-        id: objectIds.icc,
-        value: prepareByteStream(buildIccProfileStream(image.iccProfile)),
-      });
-    }
-
-    documentObjects.push({
-      id: objectIds.base,
-      value: prepareByteStream(
-        buildImageStream(image, objectIds.smask, objectIds.icc),
-      ),
-    });
-  }
-
-  for (const mask of model.softMasks ?? []) {
-    const formObjectId = softMaskFormObjectIds.get(mask.key)!;
-    documentObjects.push({
-      id: formObjectId,
-      value: prepareByteStream(buildSoftMaskFormStream(mask)),
-    });
-  }
-
-  for (const attachment of model.attachments) {
-    const objectIds = attachmentObjectIds.get(attachment.name)!;
-    documentObjects.push({
-      id: objectIds.embeddedFile,
-      value: prepareByteStream(buildEmbeddedFileStream(attachment)),
-    });
-    documentObjects.push({
-      id: objectIds.fileSpec,
-      value: buildFileSpecDictionary(attachment, objectIds.embeddedFile),
-    });
-  }
+  documentObjects.push(
+    ...buildImageObjects(images, imageObjectIds, prepareByteStream),
+    ...buildSoftMaskFormObjects(model, softMaskFormObjectIds, prepareByteStream),
+    ...buildAttachmentObjects(model, attachmentObjectIds, prepareByteStream),
+  );
 
   if (outlineAllocation) {
     for (const node of outlineAllocation.nodes) {
@@ -1285,23 +1529,14 @@ function prepareDocumentSerialization(
         parentFieldMapping: parentFieldAllocation.childParentMap,
       });
     },
-    options: {
-      ...(encryptionContext !== undefined
-        ? { encryption: encryptionContext }
-        : {}),
-      ...(encryptionObjectId !== undefined ? { encryptionObjectId } : {}),
-      ...(encryptionFileId !== undefined ? { fileId: encryptionFileId } : {}),
-      ...(encryptionContext !== undefined &&
-        encryptionContext.encryptMetadata === false &&
-        metadataObjectId !== undefined
-        ? { metadataObjectId }
-        : {}),
-      ...(model.objectStreams !== undefined
-        ? { objectStreams: model.objectStreams }
-        : {}),
-      ...(model.linearize !== undefined ? { linearize: model.linearize } : {}),
+    options: buildPreparedSerializationOptions({
+      model,
+      encryptionContext,
+      encryptionObjectId,
+      encryptionFileId,
+      metadataObjectId,
       pdfVersion: computedPdfVersion,
-    },
+    }),
   };
 }
 
@@ -1362,23 +1597,13 @@ export async function serializeDocumentToSink(
   await writePdfToSink(prepared.objects(), sink, prepared.options);
 }
 
-function prepareIncrementalUpdateSerialization(
+/** True when an incremental update carries no change worth writing. */
+function isIncrementalUpdateEmpty(
   model: PdfIncrementalUpdateModel,
-  options: PrepareIncrementalSerializationOptions = {},
-): PreparedIncrementalSerialization {
-  const basePageObjectIds = model.base.listPages().map((page) => page.objectId);
-  const hasPageChanges =
-    model.pageOrder.length !== basePageObjectIds.length ||
-    model.pageOrder.some(
-      (entry, index) =>
-        entry.kind !== 'existing' ||
-        entry.objectId !== basePageObjectIds[index],
-    );
-  const baseXmpMetadata = model.base.getXmpMetadata();
-  const hasXmpMetadataChange =
-    model.hasXmpMetadataUpdate && model.xmpMetadata !== baseXmpMetadata;
-
-  if (
+  hasPageChanges: boolean,
+  hasXmpMetadataChange: boolean,
+): boolean {
+  return (
     !hasPageChanges &&
     model.info === undefined &&
     !hasXmpMetadataChange &&
@@ -1389,7 +1614,489 @@ function prepareIncrementalUpdateSerialization(
     model.structureAltTextUpdates.size === 0 &&
     model.structureChildrenOrderUpdates.size === 0 &&
     model.signature === undefined
+  );
+}
+
+/**
+ * Assigns a `StructParents` key and MCID start to every tagged page in the
+ * update. An edited page that already has a key keeps it, and its MCIDs continue
+ * after the entries already in the base document's parent tree; new pages take
+ * the next free key and start at MCID 0.
+ */
+function assignStructParentKeys(input: {
+  model: PdfIncrementalUpdateModel;
+  mutatedPages: readonly PdfDocumentModel['pages'][number][];
+  existingTaggedState: ExistingTaggedState | undefined;
+  fixedPageObjectIds: ReadonlyMap<PdfDocumentModel['pages'][number], number>;
+  fixedStructParentsKeys: Map<PdfDocumentModel['pages'][number], number>;
+  mcidStartByPage: Map<PdfDocumentModel['pages'][number], number>;
+}): void {
+  const { model, mutatedPages, existingTaggedState } = input;
+  if (!existingTaggedState && !mutatedPages.some((page) => pageHasTaggedContent(page))) {
+    return;
+  }
+
+  let nextParentTreeKey = existingTaggedState?.nextParentTreeKey ?? 0;
+  for (const page of mutatedPages) {
+    if (!pageHasTaggedContent(page)) continue;
+
+    const existingPageObjectId = input.fixedPageObjectIds.get(page);
+    const existingStructParentsKey =
+      existingPageObjectId === undefined
+        ? undefined
+        : existingTaggedState?.pageStructParents.get(existingPageObjectId);
+    if (existingStructParentsKey !== undefined) {
+      input.fixedStructParentsKeys.set(page, existingStructParentsKey);
+      input.mcidStartByPage.set(
+        page,
+        collectPdfArrayValues(
+          model.base,
+          existingTaggedState?.parentTreeEntries.get(existingStructParentsKey),
+        ).length,
+      );
+      continue;
+    }
+
+    input.fixedStructParentsKeys.set(page, nextParentTreeKey);
+    input.mcidStartByPage.set(page, 0);
+    nextParentTreeKey += 1;
+  }
+}
+
+/**
+ * Reserves ids for the fonts and images an incremental update adds. Unlike a
+ * full document these need no ToUnicode CMap for built-ins and no ICC objects.
+ * Returns the first id still free.
+ */
+function allocateIncrementalAssetObjectIds(input: {
+  builtInFonts: ReadonlyMap<FontName, BuiltInFontEncoding>;
+  images: readonly EmbeddedImageAsset[];
+  embeddedFontContexts: ReadonlyMap<string, EmbeddedFontContext>;
+  builtInFontObjectIds: Map<FontName, number>;
+  embeddedFontObjectIds: Map<string, EmbeddedFontObjectIds>;
+  imageObjectIds: Map<string, ImageObjectIds>;
+  fromObjectId: number;
+}): number {
+  let nextObjectId = input.fromObjectId;
+
+  for (const [fontName] of input.builtInFonts) {
+    input.builtInFontObjectIds.set(fontName, nextObjectId);
+    nextObjectId += 1;
+  }
+
+  for (const context of input.embeddedFontContexts.values()) {
+    input.embeddedFontObjectIds.set(context.font.id, {
+      type0: nextObjectId,
+      descendant: nextObjectId + 1,
+      descriptor: nextObjectId + 2,
+      fontFile: nextObjectId + 3,
+      toUnicode: nextObjectId + 4,
+      cidToGid: nextObjectId + 5,
+      metadata: nextObjectId + 6,
+    });
+    nextObjectId += 7;
+  }
+
+  for (const image of input.images) {
+    const objectIds: ImageObjectIds = { base: nextObjectId };
+    nextObjectId += 1;
+    const alphaCapable =
+      image.kind === 'png' || image.kind === 'bmp' || image.kind === 'webp' || image.kind === 'gif';
+    if (alphaCapable && image.alphaBytes) {
+      objectIds.smask = nextObjectId;
+      nextObjectId += 1;
+    }
+    input.imageObjectIds.set(image.key, objectIds);
+  }
+
+  return nextObjectId;
+}
+
+/**
+ * Existing page objects the update must rewrite: every retained page when the
+ * page tree changed, plus edited pages whose content or annotations differ.
+ */
+function collectExistingPageRewrites(input: {
+  base: PdfIncrementalUpdateModel['base'];
+  hasPageChanges: boolean;
+  retainedExistingPageIds: ReadonlySet<number>;
+  editedPagesByObjectId: ReadonlyMap<number, SerializedPage>;
+}): Set<number> {
+  const rewrites = new Set<number>(input.hasPageChanges ? input.retainedExistingPageIds : []);
+  for (const [objectId, overlay] of input.editedPagesByObjectId) {
+    if (!input.retainedExistingPageIds.has(objectId)) continue;
+    const existingPageDict = asPdfDict(input.base.getObject(objectId)?.value, 'Page');
+    const unchanged =
+      isPageContentUnchanged(input.base, existingPageDict, overlay) &&
+      overlay.annotationObjectIds.length === 0;
+    if (!unchanged) rewrites.add(objectId);
+  }
+  return rewrites;
+}
+
+/**
+ * Patched copies of the structure elements whose role, alt text, or child order
+ * changed, written in ascending object-id order. Patching the root parent needs
+ * the merged StructTreeRoot rather than a plain StructElem.
+ */
+function buildStructurePatchObjects(
+  model: PdfIncrementalUpdateModel,
+  existingTaggedState: ExistingTaggedState | undefined,
+  taggedPdfAllocation: TaggedPdfAllocation | undefined,
+): PdfIndirectObject[] {
+  const objectIds = new Set<number>([
+    ...model.structureRoleUpdates.keys(),
+    ...model.structureAltTextUpdates.keys(),
+    ...model.structureChildrenOrderUpdates.keys(),
+  ]);
+
+  const objects: PdfIndirectObject[] = [];
+  for (const objectId of [...objectIds].sort((left, right) => left - right)) {
+    const isRootParent = objectId === existingTaggedState?.rootParentObjectId;
+    const sourceDict = isRootParent
+      ? buildMergedStructTreeRootDictionary(
+          asPdfDict(
+            model.base.getObject(existingTaggedState.structTreeRootObjectId)?.value,
+            'StructTreeRoot',
+          ),
+          existingTaggedState.rootKids,
+          existingTaggedState.parentTreeObjectId,
+          taggedPdfAllocation ?? {
+            structTreeRootObjectId: existingTaggedState.structTreeRootObjectId,
+            parentTreeObjectId: existingTaggedState.parentTreeObjectId,
+            rootElementObjectIds: [],
+            elements: [],
+            annotationParentTreeKeys: new Map(),
+            nextObjectId: 0,
+          },
+          undefined,
+        )
+      : asPdfDict(model.base.getObject(objectId)?.value, 'StructElem');
+
+    const removedKeys: string[] = [];
+    const overrides: Array<[string, PdfValue | undefined]> = [];
+
+    const role = model.structureRoleUpdates.get(objectId);
+    if (role !== undefined) overrides.push(['S', name(role)]);
+
+    if (model.structureAltTextUpdates.has(objectId)) {
+      const altText = model.structureAltTextUpdates.get(objectId);
+      overrides.push(['Alt', altText !== undefined ? literalString(altText) : undefined]);
+      if (altText === undefined) removedKeys.push('Alt');
+    }
+
+    if (model.structureChildrenOrderUpdates.has(objectId)) {
+      overrides.push([
+        'K',
+        reorderStructElementRefs(
+          getPdfDictValue(sourceDict, 'K'),
+          model.structureChildrenOrderUpdates.get(objectId)!,
+        ),
+      ]);
+    }
+
+    objects.push({ id: objectId, value: patchPdfDict(sourceDict, dict(overrides), removedKeys) });
+  }
+  return objects;
+}
+
+/**
+ * Minimum PDF version this update needs, and whether that is newer than the
+ * base document's (only meaningful for a numeric base version).
+ */
+function resolveIncrementalVersion(model: PdfIncrementalUpdateModel): {
+  requiredVersion: PdfVersion;
+  needsVersionBump: boolean;
+} {
+  const baseEffectiveVersion = model.base.getEffectiveVersion();
+  let requiredVersion: PdfVersion = '1.4';
+  // A detached signature needs the 1.7 signature dictionary form.
+  if (model.signature !== undefined) requiredVersion = maxVersion(requiredVersion, '1.7');
+
+  if (!/^\d+\.\d+$/.test(baseEffectiveVersion)) {
+    return { requiredVersion, needsVersionBump: false };
+  }
+  const [baseMajor, baseMinor] = baseEffectiveVersion.split('.').map(Number);
+  const [requiredMajor, requiredMinor] = requiredVersion.split('.').map(Number);
+  const needsVersionBump =
+    requiredMajor! > baseMajor! || (requiredMajor === baseMajor && requiredMinor! > baseMinor!);
+  return { requiredVersion, needsVersionBump };
+}
+
+/**
+ * Catalog patch for an incremental update, or `undefined` when nothing in the
+ * catalog changed. Written when the update introduces an AcroForm, changes XMP
+ * metadata, adds a structure tree, bumps the version, or adds encryption.
+ */
+function buildIncrementalCatalogPatch(input: {
+  model: PdfIncrementalUpdateModel;
+  existingCatalog: PdfDict;
+  existingAcroFormRef: PdfRef | undefined;
+  existingTaggedState: ExistingTaggedState | undefined;
+  taggedPdfAllocation: TaggedPdfAllocation | undefined;
+  shouldUpdateAcroForm: boolean;
+  acroFormObjectId: number | undefined;
+  xmpMetadataObjectId: number | undefined;
+  hasXmpMetadataChange: boolean;
+  needsVersionBump: boolean;
+  requiredVersion: PdfVersion;
+  newEncryptObjectId: number | undefined;
+}): PdfIndirectObject | undefined {
+  const { model, taggedPdfAllocation, existingTaggedState } = input;
+  const addsAcroForm =
+    !input.existingAcroFormRef && input.shouldUpdateAcroForm && input.acroFormObjectId !== undefined;
+  const addsStructureTree = taggedPdfAllocation !== undefined && existingTaggedState === undefined;
+  const shouldUpdateCatalog =
+    addsAcroForm ||
+    input.hasXmpMetadataChange ||
+    addsStructureTree ||
+    input.needsVersionBump ||
+    input.newEncryptObjectId !== undefined;
+  if (!shouldUpdateCatalog) return undefined;
+
+  return {
+    id: model.base.getRootObjectId(),
+    value: patchPdfDict(
+      input.existingCatalog,
+      dict([
+        ['Type', name('Catalog')],
+        ['AcroForm', addsAcroForm ? ref(input.acroFormObjectId!) : undefined],
+        [
+          'Metadata',
+          input.xmpMetadataObjectId !== undefined ? ref(input.xmpMetadataObjectId) : undefined,
+        ],
+        [
+          'MarkInfo',
+          taggedPdfAllocation !== undefined
+            ? dict([
+                ['Marked', true],
+                ['Suspects', false],
+              ])
+            : undefined,
+        ],
+        [
+          'StructTreeRoot',
+          taggedPdfAllocation !== undefined
+            ? ref(
+                existingTaggedState?.structTreeRootObjectId ??
+                  taggedPdfAllocation.structTreeRootObjectId,
+              )
+            : undefined,
+        ],
+        ['Version', input.needsVersionBump ? name(input.requiredVersion) : undefined],
+        [
+          'Encrypt',
+          input.newEncryptObjectId !== undefined ? ref(input.newEncryptObjectId) : undefined,
+        ],
+      ]),
+      input.hasXmpMetadataChange && model.xmpMetadata === undefined ? ['Metadata'] : [],
+    ),
+  };
+}
+
+/** True when the update reorders, adds, or removes pages relative to the base. */
+function pageOrderDiffersFromBase(model: PdfIncrementalUpdateModel): boolean {
+  const basePageObjectIds = model.base.listPages().map((page) => page.objectId);
+  if (model.pageOrder.length !== basePageObjectIds.length) return true;
+  return model.pageOrder.some(
+    (entry, index) => entry.kind !== 'existing' || entry.objectId !== basePageObjectIds[index],
+  );
+}
+
+/**
+ * Pages this update writes content for — appended pages and edited overlays —
+ * wrapped in a throwaway document model so the shared collectors (fonts,
+ * images) can run over them.
+ */
+function collectMutatedPages(model: PdfIncrementalUpdateModel): {
+  mutatedPages: PdfDocumentModel['pages'][number][];
+  mutatedModel: PdfDocumentModel;
+} {
+  const editedPageModelsByObjectId = new Map(
+    model.editedPages.map((entry) => [entry.objectId, entry.page] as const),
+  );
+  const mutatedPages = model.pageOrder
+    .map((entry) =>
+      entry.kind === 'appended' ? entry.page : editedPageModelsByObjectId.get(entry.objectId),
+    )
+    .filter((page): page is PdfDocumentModel['pages'][number] => page !== undefined);
+
+  return {
+    mutatedPages,
+    mutatedModel: {
+      info: model.info ?? { producer: 'zeropdf' },
+      tagged: false,
+      embeddedFonts: model.embeddedFonts,
+      namedDestinations: [],
+      xmpMetadata: undefined,
+      pageLabels: [],
+      attachments: [],
+      outlines: [],
+      pages: mutatedPages,
+    },
+  };
+}
+
+/**
+ * Allocates the structure-tree objects an update needs, reusing the base
+ * document's root and parent tree when it is already tagged. PDF 2.0 bases also
+ * get the two namespace objects.
+ */
+function planIncrementalTaggedPdf(input: {
+  model: PdfIncrementalUpdateModel;
+  mutatedPages: readonly PdfDocumentModel['pages'][number][];
+  serializedPages: SerializedPage[];
+  existingTaggedState: ExistingTaggedState | undefined;
+  fromObjectId: number;
+}): {
+  allocation: TaggedPdfAllocation | undefined;
+  namespaceObjectIds: { pdf2: number; pdf17: number } | undefined;
+  nextObjectId: number;
+} {
+  const { model, existingTaggedState } = input;
+  const isTagged =
+    existingTaggedState !== undefined ||
+    input.mutatedPages.some((page) => pageHasTaggedContent(page));
+  if (!isTagged) {
+    return { allocation: undefined, namespaceObjectIds: undefined, nextObjectId: input.fromObjectId };
+  }
+
+  const allocation = allocateTaggedPdf(
+    input.serializedPages,
+    input.fromObjectId,
+    existingTaggedState?.nextParentTreeKey ?? 0,
+    existingTaggedState
+      ? {
+          structTreeRootObjectId: existingTaggedState.structTreeRootObjectId,
+          parentTreeObjectId: existingTaggedState.parentTreeObjectId,
+        }
+      : undefined,
+    undefined,
+  );
+  let nextObjectId = allocation?.nextObjectId ?? input.fromObjectId;
+
+  const namespaceObjectIds =
+    allocation !== undefined && model.base.getEffectiveVersion() === '2.0'
+      ? { pdf17: nextObjectId, pdf2: nextObjectId + 1 }
+      : undefined;
+  if (namespaceObjectIds) nextObjectId += 2;
+
+  return { allocation, namespaceObjectIds, nextObjectId };
+}
+
+/**
+ * The Info and XMP metadata objects an update rewrites, plus the field-value
+ * updates applied to existing widgets.
+ */
+function buildIncrementalMetadataObjects(input: {
+  model: PdfIncrementalUpdateModel;
+  infoObjectId: number | undefined;
+  xmpMetadataObjectId: number | undefined;
+  hasXmpMetadataChange: boolean;
+}): PdfIndirectObject[] {
+  const { model, infoObjectId, xmpMetadataObjectId } = input;
+  const objects: PdfIndirectObject[] = [];
+
+  if (model.info !== undefined && infoObjectId !== undefined) {
+    // Reusing the base Info object means merging onto what it already holds.
+    const existingInfo =
+      infoObjectId === model.base.getInfoObjectId()
+        ? asPdfDict(model.base.getObject(infoObjectId)?.value, 'Info')
+        : undefined;
+    objects.push({
+      id: infoObjectId,
+      value: mergePdfDict(existingInfo ?? dict([]), buildInfoDictionary(model.info)),
+    });
+  }
+
+  if (input.hasXmpMetadataChange && xmpMetadataObjectId !== undefined && model.xmpMetadata !== undefined) {
+    objects.push({ id: xmpMetadataObjectId, value: buildXmpMetadataStream(model.xmpMetadata) });
+  }
+
+  for (const update of model.fieldUpdates) {
+    objects.push({
+      id: update.objectId,
+      value: buildUpdatedExistingFieldDictionary(model.base, update),
+    });
+  }
+
+  return objects;
+}
+
+/** Rewritten page tree carrying the update's page order and count. */
+function buildUpdatedPageTreeObject(
+  model: PdfIncrementalUpdateModel,
+  pageContainerObjectId: number,
+  appendedPagesByModel: ReadonlyMap<PdfDocumentModel['pages'][number], SerializedPage>,
+): PdfIndirectObject {
+  const orderedPageRefs = model.pageOrder.map((entry) =>
+    entry.kind === 'existing'
+      ? ref(entry.objectId)
+      : ref(appendedPagesByModel.get(entry.page)!.pageObjectId),
+  );
+  return {
+    id: pageContainerObjectId,
+    value: mergePdfDict(
+      asPdfDict(model.base.getObject(pageContainerObjectId)?.value, 'Pages'),
+      dict([
+        ['Type', name('Pages')],
+        ['Count', model.pageOrder.length],
+        ['Kids', array(orderedPageRefs)],
+      ]),
+    ),
+  };
+}
+
+/** The detached-signature field and its signature dictionary, when signing. */
+function buildDetachedSignatureObjects(
+  model: PdfIncrementalUpdateModel,
+  signatureFieldObjectId: number | undefined,
+  signatureDictionaryObjectId: number | undefined,
+): PdfIndirectObject[] {
+  if (
+    signatureFieldObjectId === undefined ||
+    signatureDictionaryObjectId === undefined ||
+    model.signature === undefined
   ) {
+    return [];
+  }
+  return [
+    {
+      id: signatureFieldObjectId,
+      value: buildDetachedSignatureFieldDictionary(model.signature, signatureDictionaryObjectId),
+    },
+    { id: signatureDictionaryObjectId, value: buildDetachedSignatureDictionary(model.signature) },
+  ];
+}
+
+/**
+ * Encryption dictionary for an update that adds or upgrades encryption, reusing
+ * the base document's file id so existing object keys stay derivable.
+ */
+function buildEncryptionUpgradeObject(
+  model: PdfIncrementalUpdateModel,
+  objectId: number,
+): PdfIndirectObject | undefined {
+  if (model.encryption === undefined) return undefined;
+  const encryptFileId =
+    model.base.getEncryptionContext()?.fileId ??
+    createDocumentFileId(latin1Bytes('zeropdf-upgrade'));
+  return {
+    id: objectId,
+    value: buildEncryptionDictionary(createPdfEncryptionContext(model.encryption, encryptFileId)),
+  };
+}
+
+function prepareIncrementalUpdateSerialization(
+  model: PdfIncrementalUpdateModel,
+  options: PrepareIncrementalSerializationOptions = {},
+): PreparedIncrementalSerialization {
+  const hasPageChanges = pageOrderDiffersFromBase(model);
+  const baseXmpMetadata = model.base.getXmpMetadata();
+  const hasXmpMetadataChange =
+    model.hasXmpMetadataUpdate && model.xmpMetadata !== baseXmpMetadata;
+
+  if (isIncrementalUpdateEmpty(model, hasPageChanges, hasXmpMetadataChange)) {
     return {
       kind: 'unchanged',
       bytes: model.base.getSourceBytes(),
@@ -1417,29 +2124,7 @@ function prepareIncrementalUpdateSerialization(
       ? (existingMetadataRef?.objectId ?? nextObjectId++)
       : undefined;
 
-  const editedPageModelsByObjectId = new Map(
-    model.editedPages.map((entry) => [entry.objectId, entry.page] as const),
-  );
-  const mutatedPages = model.pageOrder
-    .map((entry) =>
-      entry.kind === 'appended'
-        ? entry.page
-        : editedPageModelsByObjectId.get(entry.objectId),
-    )
-    .filter(
-      (page): page is PdfDocumentModel['pages'][number] => page !== undefined,
-    );
-  const mutatedModel: PdfDocumentModel = {
-    info: model.info ?? { producer: 'zeropdf' },
-    tagged: false,
-    embeddedFonts: model.embeddedFonts,
-    namedDestinations: [],
-    xmpMetadata: undefined,
-    pageLabels: [],
-    attachments: [],
-    outlines: [],
-    pages: mutatedPages,
-  };
+  const { mutatedPages, mutatedModel } = collectMutatedPages(model);
 
   const builtInFonts = collectBuiltInFonts(mutatedModel);
   const images = collectImages(mutatedModel);
@@ -1456,68 +2141,24 @@ function prepareIncrementalUpdateSerialization(
     model.editedPages.map((entry) => [entry.page, entry.objectId] as const),
   );
 
-  if (
-    existingTaggedState ||
-    mutatedPages.some((page) => pageHasTaggedContent(page))
-  ) {
-    let nextParentTreeKey = existingTaggedState?.nextParentTreeKey ?? 0;
-    for (const page of mutatedPages) {
-      if (!pageHasTaggedContent(page)) {
-        continue;
-      }
+  assignStructParentKeys({
+    model,
+    mutatedPages,
+    existingTaggedState,
+    fixedPageObjectIds,
+    fixedStructParentsKeys,
+    mcidStartByPage,
+  });
 
-      const existingPageObjectId = fixedPageObjectIds.get(page);
-      if (existingPageObjectId !== undefined) {
-        const existingStructParentsKey =
-          existingTaggedState?.pageStructParents.get(existingPageObjectId);
-        if (existingStructParentsKey !== undefined) {
-          fixedStructParentsKeys.set(page, existingStructParentsKey);
-          mcidStartByPage.set(
-            page,
-            collectPdfArrayValues(
-              model.base,
-              existingTaggedState?.parentTreeEntries.get(
-                existingStructParentsKey,
-              ),
-            ).length,
-          );
-          continue;
-        }
-      }
-
-      fixedStructParentsKeys.set(page, nextParentTreeKey);
-      mcidStartByPage.set(page, 0);
-      nextParentTreeKey += 1;
-    }
-  }
-
-  for (const [fontName] of builtInFonts) {
-    builtInFontObjectIds.set(fontName, nextObjectId);
-    nextObjectId += 1;
-  }
-
-  for (const context of embeddedFontContexts.values()) {
-    embeddedFontObjectIds.set(context.font.id, {
-      type0: nextObjectId,
-      descendant: nextObjectId + 1,
-      descriptor: nextObjectId + 2,
-      fontFile: nextObjectId + 3,
-      toUnicode: nextObjectId + 4,
-      cidToGid: nextObjectId + 5,
-      metadata: nextObjectId + 6,
-    });
-    nextObjectId += 7;
-  }
-
-  for (const image of images) {
-    const objectIds: ImageObjectIds = { base: nextObjectId };
-    nextObjectId += 1;
-    if ((image.kind === 'png' || image.kind === 'bmp' || image.kind === 'webp' || image.kind === 'gif') && image.alphaBytes) {
-      objectIds.smask = nextObjectId;
-      nextObjectId += 1;
-    }
-    imageObjectIds.set(image.key, objectIds);
-  }
+  nextObjectId = allocateIncrementalAssetObjectIds({
+    builtInFonts,
+    images,
+    embeddedFontContexts,
+    builtInFontObjectIds,
+    embeddedFontObjectIds,
+    imageObjectIds,
+    fromObjectId: nextObjectId,
+  });
 
   const allocatedPages = planSerializedPages(
     mutatedPages,
@@ -1534,35 +2175,16 @@ function prepareIncrementalUpdateSerialization(
           embeddedFontContexts,
         );
   nextObjectId = allocatedPages.nextObjectId;
-  const taggedPdfAllocation =
-    existingTaggedState ||
-    mutatedPages.some((page) => pageHasTaggedContent(page))
-      ? allocateTaggedPdf(
-          serializedPages,
-          nextObjectId,
-          existingTaggedState?.nextParentTreeKey ?? 0,
-          existingTaggedState
-            ? {
-                structTreeRootObjectId:
-                  existingTaggedState.structTreeRootObjectId,
-                parentTreeObjectId: existingTaggedState.parentTreeObjectId,
-              }
-            : undefined,
-          undefined,
-        )
-      : undefined;
-  if (taggedPdfAllocation) {
-    nextObjectId = taggedPdfAllocation.nextObjectId;
-  }
-
-  const incrementalNamespaceObjectIds:
-    | { pdf2: number; pdf17: number }
-    | undefined =
-    taggedPdfAllocation !== undefined &&
-    model.base.getEffectiveVersion() === '2.0'
-      ? { pdf17: nextObjectId, pdf2: nextObjectId + 1 }
-      : undefined;
-  if (incrementalNamespaceObjectIds) nextObjectId += 2;
+  const taggedPlan = planIncrementalTaggedPdf({
+    model,
+    mutatedPages,
+    serializedPages,
+    existingTaggedState,
+    fromObjectId: nextObjectId,
+  });
+  nextObjectId = taggedPlan.nextObjectId;
+  const { allocation: taggedPdfAllocation, namespaceObjectIds: incrementalNamespaceObjectIds } =
+    taggedPlan;
 
   const pageObjectIdsByModel = new Map<
     PdfDocumentModel['pages'][number],
@@ -1648,221 +2270,43 @@ function prepareIncrementalUpdateSerialization(
         )
       : value;
 
-  if (model.info !== undefined && infoObjectId !== undefined) {
-    const existingInfo =
-      infoObjectId === model.base.getInfoObjectId()
-        ? asPdfDict(model.base.getObject(infoObjectId)?.value, 'Info')
-        : undefined;
-    prefixObjects.push({
-      id: infoObjectId,
-      value: mergePdfDict(
-        existingInfo ?? dict([]),
-        buildInfoDictionary(model.info),
-      ),
-    });
-  }
+  prefixObjects.push(
+    ...buildIncrementalMetadataObjects({
+      model,
+      infoObjectId,
+      xmpMetadataObjectId,
+      hasXmpMetadataChange,
+    }),
+    ...parentFieldAllocation.parentFieldObjects,
+  );
 
-  if (
-    hasXmpMetadataChange &&
-    xmpMetadataObjectId !== undefined &&
-    model.xmpMetadata !== undefined
-  ) {
-    prefixObjects.push({
-      id: xmpMetadataObjectId,
-      value: buildXmpMetadataStream(model.xmpMetadata),
-    });
-  }
-
-  for (const update of model.fieldUpdates) {
-    prefixObjects.push({
-      id: update.objectId,
-      value: buildUpdatedExistingFieldDictionary(model.base, update),
-    });
-  }
-
-  for (const parentObj of parentFieldAllocation.parentFieldObjects) {
-    prefixObjects.push(parentObj);
-  }
-
-  for (const [fontName, encoding] of builtInFonts) {
-    prefixObjects.push({
-      id: builtInFontObjectIds.get(fontName)!,
-      value: dict([
-        ['Type', name('Font')],
-        ['Subtype', name('Type1')],
-        ['BaseFont', name(fontName)],
-        ...(encoding !== undefined ? [['Encoding', name(encodingToName(encoding))] as [string, PdfValue]] : []),
-      ]),
-    });
-  }
-
-  for (const context of embeddedFontContexts.values()) {
-    const objectIds = embeddedFontObjectIds.get(context.font.id)!;
-    const subsetBytes = subsetTrueTypeFont(
-      context.font.bytes,
-      context.glyphToUnicode.keys(),
-    );
-    prefixObjects.push({
-      id: objectIds.fontFile,
-      value: prepareByteStream(
-        compressedStream(
-          dict([
-            ['Length1', subsetBytes.length],
-            ...(context.font.isCff ? [['Subtype', name('Type1C')] as [string, PdfValue]] : []),
-          ]),
-          subsetBytes,
-          'compress' in model
-            ? (model as { compress?: boolean }).compress
-            : undefined,
-        ),
-      ),
-    });
-
-    prefixObjects.push({
-      id: objectIds.metadata,
-      value: buildXmpMetadataStream(buildFontMetadataXmp(context.font)),
-    });
-
-    prefixObjects.push({
-      id: objectIds.descriptor,
-      value: dict([
-        ['Type', name('FontDescriptor')],
-        ['FontName', name(context.font.postScriptName)],
-        ['Flags', context.font.flags],
-        ['FontBBox', array([...context.font.bbox])],
-        ['ItalicAngle', context.font.italicAngle],
-        ['Ascent', scaleMetric(context.font.ascent, context.font.unitsPerEm)],
-        ['Descent', scaleMetric(context.font.descent, context.font.unitsPerEm)],
-        [
-          'CapHeight',
-          scaleMetric(context.font.capHeight, context.font.unitsPerEm),
-        ],
-        ['StemV', context.font.stemV],
-        ...(context.font.isCff
-          ? [['FontFile3', ref(objectIds.fontFile)] as [string, PdfValue]]
-          : [['FontFile2', ref(objectIds.fontFile)] as [string, PdfValue]]),
-        ['Metadata', ref(objectIds.metadata)],
-      ]),
-    });
-
-    prefixObjects.push({
-      id: objectIds.descendant,
-      value: dict([
-        ['Type', name('Font')],
-        ['Subtype', name(context.font.isCff ? 'CIDFontType0C' : 'CIDFontType2')],
-        ['BaseFont', name(context.font.postScriptName)],
-        [
-          'CIDSystemInfo',
-          dict([
-            ['Registry', literalString('Adobe')],
-            ['Ordering', literalString('Identity')],
-            ['Supplement', 0],
-          ]),
-        ],
-        ['FontDescriptor', ref(objectIds.descriptor)],
-        ['CIDToGIDMap', ref(objectIds.cidToGid)],
-        ['DW', 1000],
-        ['W', buildEmbeddedFontWidths(context)],
-      ]),
-    });
-
-    prefixObjects.push({
-      id: objectIds.toUnicode,
-      value: compressedStream(
-        dict([]),
-        encoder.encode(buildToUnicodeCMap(context)),
-        'compress' in model
-          ? (model as { compress?: boolean }).compress
-          : undefined,
-      ),
-    });
-
-    prefixObjects.push({
-      id: objectIds.cidToGid,
-      value: compressedStream(
-        dict([]),
-        buildCidToGidMapBytes(context),
-        'compress' in model
-          ? (model as { compress?: boolean }).compress
-          : undefined,
-      ),
-    });
-
-    prefixObjects.push({
-      id: objectIds.type0,
-      value: dict([
-        ['Type', name('Font')],
-        ['Subtype', name('Type0')],
-        ['BaseFont', name(context.font.postScriptName)],
-        ['Encoding', name('Identity-H')],
-        ['DescendantFonts', array([ref(objectIds.descendant)])],
-        ['ToUnicode', ref(objectIds.toUnicode)],
-      ]),
-    });
-  }
-
-  for (const image of images) {
-    const objectIds = imageObjectIds.get(image.key)!;
-    if ((image.kind === 'png' || image.kind === 'bmp' || image.kind === 'webp' || image.kind === 'gif') && objectIds.smask !== undefined) {
-      prefixObjects.push({
-        id: objectIds.smask,
-        value: prepareByteStream(buildSoftMaskStream(image as Extract<EmbeddedImageAsset, { kind: 'png' | 'bmp' | 'webp' | 'gif' }>)),
-      });
-    }
-    if (image.iccProfile && objectIds.icc !== undefined) {
-      prefixObjects.push({
-        id: objectIds.icc,
-        value: prepareByteStream(buildIccProfileStream(image.iccProfile)),
-      });
-    }
-
-    prefixObjects.push({
-      id: objectIds.base,
-      value: prepareByteStream(
-        buildImageStream(image, objectIds.smask, objectIds.icc),
-      ),
-    });
-  }
+  const incrementalCompress = 'compress' in model ? (model as { compress?: boolean }).compress : undefined;
+  prefixObjects.push(
+    // Incremental updates never add ToUnicode CMaps for the standard-14 fonts:
+    // the base document's tagging (if any) already covers them.
+    ...buildBuiltInFontObjects(builtInFonts, builtInFontObjectIds, new Map(), prepareByteStream),
+    ...buildEmbeddedFontObjects(embeddedFontContexts, embeddedFontObjectIds, incrementalCompress, prepareByteStream),
+    ...buildImageObjects(images, imageObjectIds, prepareByteStream),
+  );
 
   const firstPageLazyLengthObjectId = nextLazyLengthObjectId;
   const suffixObjects: PdfIndirectObject[] = [];
 
-  const existingPageIdsToRewrite = new Set<number>(
-    hasPageChanges ? retainedExistingPageIds : [],
-  );
-  for (const objectId of editedPagesByObjectId.keys()) {
-    if (retainedExistingPageIds.has(objectId)) {
-      const overlay = editedPagesByObjectId.get(objectId);
-      if (overlay) {
-        const existingPageDict = asPdfDict(
-          model.base.getObject(objectId)?.value,
-          'Page',
-        );
-        const unchanged =
-          isPageContentUnchanged(model.base, existingPageDict, overlay) &&
-          overlay.annotationObjectIds.length === 0;
-        if (!unchanged) {
-          existingPageIdsToRewrite.add(objectId);
-        }
-      }
-    }
-  }
+  const existingPageIdsToRewrite = collectExistingPageRewrites({
+    base: model.base,
+    hasPageChanges,
+    retainedExistingPageIds,
+    editedPagesByObjectId,
+  });
 
-  for (const objectId of [...existingPageIdsToRewrite].sort(
-    (left, right) => left - right,
-  )) {
-    const existingPageDict = asPdfDict(
-      model.base.getObject(objectId)?.value,
-      'Page',
-    );
-    const overlay = editedPagesByObjectId.get(objectId);
+  for (const objectId of [...existingPageIdsToRewrite].sort((left, right) => left - right)) {
     suffixObjects.push({
       id: objectId,
       value: buildUpdatedExistingPageDictionary(
         model.base,
-        existingPageDict,
+        asPdfDict(model.base.getObject(objectId)?.value, 'Page'),
         pageContainerObjectId,
-        overlay,
+        editedPagesByObjectId.get(objectId),
         existingTaggedState?.pageStructParents.get(objectId),
         flattenedAnnotationObjectIds,
         builtInFontObjectIds,
@@ -1873,27 +2317,9 @@ function prepareIncrementalUpdateSerialization(
   }
 
   if (hasPageChanges) {
-    const orderedPageRefs = model.pageOrder.map((entry) =>
-      entry.kind === 'existing'
-        ? ref(entry.objectId)
-        : ref(appendedPagesByModel.get(entry.page)!.pageObjectId),
+    suffixObjects.push(
+      buildUpdatedPageTreeObject(model, pageContainerObjectId, appendedPagesByModel),
     );
-
-    const existingPagesDict = asPdfDict(
-      model.base.getObject(pageContainerObjectId)?.value,
-      'Pages',
-    );
-    suffixObjects.push({
-      id: pageContainerObjectId,
-      value: mergePdfDict(
-        existingPagesDict,
-        dict([
-          ['Type', name('Pages')],
-          ['Count', model.pageOrder.length],
-          ['Kids', array(orderedPageRefs)],
-        ]),
-      ),
-    });
   }
 
   if (shouldUpdateAcroForm && acroFormObjectId !== undefined) {
@@ -1904,9 +2330,7 @@ function prepareIncrementalUpdateSerialization(
           ...retainedExistingFieldRefs.refs,
           ...parentFieldAllocation.parentFieldObjects.map((obj) => ref(obj.id)),
           ...formFields.map((field) => ref(field.fieldObjectId)),
-          ...(signatureFieldObjectId !== undefined
-            ? [ref(signatureFieldObjectId)]
-            : []),
+          ...(signatureFieldObjectId !== undefined ? [ref(signatureFieldObjectId)] : []),
         ],
         formFontResourceMap,
         builtInFontObjectIds,
@@ -1916,37 +2340,20 @@ function prepareIncrementalUpdateSerialization(
     });
   }
 
-  if (
-    signatureFieldObjectId !== undefined &&
-    signatureDictionaryObjectId !== undefined &&
-    model.signature !== undefined
-  ) {
-    suffixObjects.push({
-      id: signatureFieldObjectId,
-      value: buildDetachedSignatureFieldDictionary(
-        model.signature,
-        signatureDictionaryObjectId,
-      ),
-    });
-    suffixObjects.push({
-      id: signatureDictionaryObjectId,
-      value: buildDetachedSignatureDictionary(model.signature),
-    });
-  }
+  suffixObjects.push(
+    ...buildDetachedSignatureObjects(model, signatureFieldObjectId, signatureDictionaryObjectId),
+  );
 
   if (taggedPdfAllocation) {
-    const existingStructTreeRoot = existingTaggedState
-      ? asPdfDict(
-          model.base.getObject(existingTaggedState.structTreeRootObjectId)
-            ?.value,
-          'StructTreeRoot',
-        )
-      : undefined;
-
     suffixObjects.push(
       ...buildTaggedPdfObjects(taggedPdfAllocation, {
         existingTaggedState,
-        existingStructTreeRoot,
+        existingStructTreeRoot: existingTaggedState
+          ? asPdfDict(
+              model.base.getObject(existingTaggedState.structTreeRootObjectId)?.value,
+              'StructTreeRoot',
+            )
+          : undefined,
         ...(incrementalNamespaceObjectIds
           ? { namespaceObjectIds: incrementalNamespaceObjectIds }
           : {}),
@@ -1954,165 +2361,35 @@ function prepareIncrementalUpdateSerialization(
     );
   }
 
-  const structureObjectIdsToPatch = new Set<number>([
-    ...model.structureRoleUpdates.keys(),
-    ...model.structureAltTextUpdates.keys(),
-    ...model.structureChildrenOrderUpdates.keys(),
-  ]);
-  for (const objectId of [...structureObjectIdsToPatch].sort(
-    (left, right) => left - right,
-  )) {
-    const isRootParent = objectId === existingTaggedState?.rootParentObjectId;
-    const sourceDict = isRootParent
-      ? buildMergedStructTreeRootDictionary(
-          asPdfDict(
-            model.base.getObject(existingTaggedState!.structTreeRootObjectId)
-              ?.value,
-            'StructTreeRoot',
-          ),
-          existingTaggedState?.rootKids,
-          existingTaggedState!.parentTreeObjectId,
-          taggedPdfAllocation ?? {
-            structTreeRootObjectId: existingTaggedState!.structTreeRootObjectId,
-            parentTreeObjectId: existingTaggedState!.parentTreeObjectId,
-            rootElementObjectIds: [],
-            elements: [],
-            annotationParentTreeKeys: new Map(),
-            nextObjectId: 0,
-          },
-          undefined,
-        )
-      : asPdfDict(model.base.getObject(objectId)?.value, 'StructElem');
+  suffixObjects.push(
+    ...buildStructurePatchObjects(model, existingTaggedState, taggedPdfAllocation),
+  );
 
-    const removedKeys: string[] = [];
-    const overrides: Array<[string, PdfValue | undefined]> = [];
-    const role = model.structureRoleUpdates.get(objectId);
-    if (role !== undefined) {
-      overrides.push(['S', name(role)]);
-    }
+  const { requiredVersion: incrementalRequiredVersion, needsVersionBump } =
+    resolveIncrementalVersion(model);
 
-    if (model.structureAltTextUpdates.has(objectId)) {
-      const altText = model.structureAltTextUpdates.get(objectId);
-      overrides.push([
-        'Alt',
-        altText !== undefined ? literalString(altText) : undefined,
-      ]);
-      if (altText === undefined) {
-        removedKeys.push('Alt');
-      }
-    }
-
-    if (model.structureChildrenOrderUpdates.has(objectId)) {
-      overrides.push([
-        'K',
-        reorderStructElementRefs(
-          getPdfDictValue(sourceDict, 'K'),
-          model.structureChildrenOrderUpdates.get(objectId)!,
-        ),
-      ]);
-    }
-
-    suffixObjects.push({
-      id: objectId,
-      value: patchPdfDict(sourceDict, dict(overrides), removedKeys),
-    });
-  }
-
-  const baseEffectiveVersion = model.base.getEffectiveVersion();
-  const incrementalRequiredVersion: PdfVersion = (() => {
-    let v: PdfVersion = '1.4';
-    if (model.signature !== undefined) v = maxVersion(v, '1.7');
-    return v;
-  })();
-  const needsVersionBump =
-    /^\d+\.\d+$/.test(baseEffectiveVersion) &&
-    (() => {
-      const [bm, bn] = baseEffectiveVersion.split('.').map(Number);
-      const [rm, rn] = incrementalRequiredVersion.split('.').map(Number);
-      return rm! > bm! || (rm === bm && rn! > bn!);
-    })();
-
-  let newEncryptObjectId: number | undefined;
-  if (model.encryption !== undefined) {
-    newEncryptObjectId = nextObjectId;
+  const encryptionUpgrade = buildEncryptionUpgradeObject(model, nextObjectId);
+  const newEncryptObjectId = encryptionUpgrade?.id;
+  if (encryptionUpgrade) {
     nextObjectId += 1;
-    const encryptFileId =
-      model.base.getEncryptionContext()?.fileId ??
-      createDocumentFileId(latin1Bytes('zeropdf-upgrade'));
-    const newEncryptContext = createPdfEncryptionContext(
-      model.encryption,
-      encryptFileId,
-    );
-    suffixObjects.push({
-      id: newEncryptObjectId,
-      value: buildEncryptionDictionary(newEncryptContext),
-    });
+    suffixObjects.push(encryptionUpgrade);
   }
 
-  const shouldUpdateCatalog =
-    (!existingAcroFormRef &&
-      shouldUpdateAcroForm &&
-      acroFormObjectId !== undefined) ||
-    hasXmpMetadataChange ||
-    (taggedPdfAllocation !== undefined && existingTaggedState === undefined) ||
-    needsVersionBump ||
-    newEncryptObjectId !== undefined;
-  if (shouldUpdateCatalog) {
-    suffixObjects.push({
-      id: model.base.getRootObjectId(),
-      value: patchPdfDict(
-        existingCatalog,
-        dict([
-          ['Type', name('Catalog')],
-          [
-            'AcroForm',
-            !existingAcroFormRef &&
-            shouldUpdateAcroForm &&
-            acroFormObjectId !== undefined
-              ? ref(acroFormObjectId)
-              : undefined,
-          ],
-          [
-            'Metadata',
-            xmpMetadataObjectId !== undefined
-              ? ref(xmpMetadataObjectId)
-              : undefined,
-          ],
-          [
-            'MarkInfo',
-            taggedPdfAllocation !== undefined
-              ? dict([
-                  ['Marked', true],
-                  ['Suspects', false],
-                ])
-              : undefined,
-          ],
-          [
-            'StructTreeRoot',
-            taggedPdfAllocation !== undefined
-              ? ref(
-                  existingTaggedState?.structTreeRootObjectId ??
-                    taggedPdfAllocation.structTreeRootObjectId,
-                )
-              : undefined,
-          ],
-          [
-            'Version',
-            needsVersionBump ? name(incrementalRequiredVersion) : undefined,
-          ],
-          [
-            'Encrypt',
-            newEncryptObjectId !== undefined
-              ? ref(newEncryptObjectId)
-              : undefined,
-          ],
-        ]),
-        hasXmpMetadataChange && model.xmpMetadata === undefined
-          ? ['Metadata']
-          : [],
-      ),
-    });
-  }
+  const catalogPatch = buildIncrementalCatalogPatch({
+    model,
+    existingCatalog,
+    existingAcroFormRef,
+    existingTaggedState,
+    taggedPdfAllocation,
+    shouldUpdateAcroForm,
+    acroFormObjectId,
+    xmpMetadataObjectId,
+    hasXmpMetadataChange,
+    needsVersionBump,
+    requiredVersion: incrementalRequiredVersion,
+    newEncryptObjectId,
+  });
+  if (catalogPatch) suffixObjects.push(catalogPatch);
 
   return {
     kind: 'changed',
@@ -2359,34 +2636,43 @@ async function writePdfToSink(
   await writer.close();
 }
 
-function collectBuiltInFonts(model: PdfDocumentModel): Map<FontName, "winansi" | "macroman" | "pdfdoc" | undefined> {
-  const fonts = new Map<FontName, "winansi" | "macroman" | "pdfdoc" | undefined>();
+/** Built-in font names an annotation type carries in its appearance stream. */
+const FONT_BEARING_ANNOTATIONS = new Set(['textField', 'choiceField', 'freeText', 'pushButton']);
+
+type BuiltInFontEncoding = "winansi" | "macroman" | "pdfdoc" | undefined;
+
+/**
+ * Records a built-in font use. The first use that names an encoding wins; later
+ * uses never downgrade a recorded encoding to undefined.
+ */
+function recordBuiltInFont(
+  fonts: Map<FontName, BuiltInFontEncoding>,
+  fontName: FontName,
+  encoding: BuiltInFontEncoding,
+): void {
+  const existing = fonts.get(fontName);
+  if (existing === undefined && encoding !== undefined) {
+    fonts.set(fontName, encoding);
+  } else if (!fonts.has(fontName)) {
+    fonts.set(fontName, undefined);
+  }
+}
+
+function collectBuiltInFonts(model: PdfDocumentModel): Map<FontName, BuiltInFontEncoding> {
+  const fonts = new Map<FontName, BuiltInFontEncoding>();
   for (const page of model.pages) {
     for (const op of page.ops) {
+      // A string font here is always a built-in standard-14 name; family names
+      // and embedded handles are resolved before serialization.
       if (op.type === 'text' && typeof op.options.font === 'string') {
-        // A string font here is always a built-in standard-14 name; family
-        // names and embedded handles are resolved before serialization.
-        const fontName = op.options.font as FontName;
-        const existing = fonts.get(fontName);
-        if (existing === undefined && op.options.encoding !== undefined) {
-          fonts.set(fontName, op.options.encoding);
-        } else if (!fonts.has(fontName)) {
-          fonts.set(fontName, undefined);
-        }
+        recordBuiltInFont(fonts, op.options.font as FontName, op.options.encoding);
       }
     }
 
     for (const annotation of page.annotations) {
-      if (
-        annotation.type === 'textField' ||
-        annotation.type === 'choiceField' ||
-        annotation.type === 'freeText' ||
-        annotation.type === 'pushButton'
-      ) {
-        if (!fonts.has(annotation.options.font)) {
-          fonts.set(annotation.options.font, undefined);
-        }
-      }
+      if (!FONT_BEARING_ANNOTATIONS.has(annotation.type)) continue;
+      const font = (annotation.options as { font: FontName }).font;
+      if (!fonts.has(font)) fonts.set(font, undefined);
     }
   }
   return fonts;
@@ -2844,9 +3130,11 @@ function buildEncryptionFileIdSeed(model: PdfDocumentModel): Uint8Array {
   ];
 
   for (const page of model.pages) {
-    parts.push(`${page.size.width}x${page.size.height}`);
-    parts.push(String(page.ops.length));
-    parts.push(String(page.annotations.length));
+    parts.push(
+      `${page.size.width}x${page.size.height}`,
+      String(page.ops.length),
+      String(page.annotations.length),
+    );
   }
 
   for (const attachment of model.attachments) {
@@ -2899,8 +3187,7 @@ function buildNamedDestinationsNameTree(
       );
     }
 
-    entries.push(literalString(destination.name));
-    entries.push(array([ref(targetPageObjectId), name('Fit')]));
+    entries.push(literalString(destination.name), array([ref(targetPageObjectId), name('Fit')]));
   }
 
   return dict([['Names', array(entries)]]);
@@ -2926,8 +3213,7 @@ function buildEmbeddedFilesNameTree(
       );
     }
 
-    entries.push(literalString(attachment.name));
-    entries.push(ref(objectIds.fileSpec));
+    entries.push(literalString(attachment.name), ref(objectIds.fileSpec));
   }
 
   return dict([['Names', array(entries)]]);
@@ -3134,6 +3420,120 @@ function buildOutlineTarget(
   return array([ref(targetPageObjectId), name('Fit')]);
 }
 
+type AnnotationDictEntry = [string, PdfValue | undefined];
+
+/** Widget-ish annotation options shared by every form field. */
+interface CommonFieldOptions {
+  readonly description?: string | undefined;
+  readonly borderWidth: number;
+  readonly encrypt?: boolean | undefined;
+  readonly actions?: FieldActions | undefined;
+  readonly appearance?: { normal?: string | undefined } | undefined;
+}
+
+/** Resolves a form/annotation font to its page resource name, or fails loudly. */
+function resolveFormFontResource(
+  font: FontName,
+  formFontResourceMap: ReadonlyMap<FontName, string>,
+  kind: 'annotation' | 'form',
+): string {
+  const resourceName = formFontResourceMap.get(font);
+  if (!resourceName) {
+    throw new PdfEngineError(
+      PdfErrorCode.INTERNAL_ERROR,
+      `Unable to resolve ${kind} font resource for ${font}.`,
+    );
+  }
+  return resourceName;
+}
+
+/** `DA` string for a field: an explicit appearance wins over the built one. */
+function fieldAppearanceString(
+  options: { appearance?: { normal?: string | undefined } | undefined; fontSize: number; color: PdfColor },
+  resourceName: string,
+): string {
+  return (
+    options.appearance?.normal ??
+    buildTextFieldAppearance(resourceName, options.fontSize, options.color)
+  );
+}
+
+/** `Type`/`Subtype`/`FT`/`T`/`TU`/`Rect`/`Parent`/`Border` — in that key order. */
+function widgetPrefixEntries(
+  fieldType: 'Tx' | 'Ch' | 'Btn' | 'Sig',
+  fieldName: string,
+  options: CommonFieldOptions,
+  rect: PdfValue,
+  parentFieldObjectId: number | undefined,
+): AnnotationDictEntry[] {
+  return [
+    ['Type', name('Annot')],
+    ['Subtype', name('Widget')],
+    ['F', 4],
+    ['FT', name(fieldType)],
+    ['T', literalString(fieldName)],
+    ['TU', options.description !== undefined ? literalString(options.description) : undefined],
+    ['Rect', rect],
+    ['Parent', parentFieldObjectId !== undefined ? ref(parentFieldObjectId) : undefined],
+    ['Border', array([0, 0, options.borderWidth])],
+  ];
+}
+
+/** `Ff`/`Encrypt`/`AA`/`StructParent`/`P` — the trailing keys every widget shares. */
+function widgetSuffixEntries(
+  flags: number,
+  options: CommonFieldOptions,
+  structParentKey: number | undefined,
+  pageObjectId: number,
+  keepZeroFlags = false,
+): AnnotationDictEntry[] {
+  return [
+    ['Ff', keepZeroFlags || flags !== 0 ? flags : undefined],
+    ['Encrypt', options.encrypt === false ? null : undefined],
+    ['AA', buildAdditionalActionsDict(options.actions)],
+    ['StructParent', structParentKey],
+    ['P', ref(pageObjectId)],
+  ];
+}
+
+/** Text-markup annotations (highlight/underline/strikeOut/squiggly) share a shape. */
+function buildTextMarkupAnnotationDict(
+  subtype: 'Highlight' | 'Underline' | 'StrikeOut' | 'Squiggly',
+  options: Parameters<typeof buildHighlightQuadPoints>[0] & { color: PdfColor },
+  rect: PdfValue,
+  structParentKey: number | undefined,
+): PdfDict {
+  return dict([
+    ['Type', name('Annot')],
+    ['Subtype', name(subtype)],
+    ['F', 4],
+    ['Rect', rect],
+    ['QuadPoints', buildHighlightQuadPoints(options)],
+    ['StructParent', structParentKey],
+    ['C', buildAnnotationColorArray(options.color)],
+  ]);
+}
+
+/** `Link` annotation for both external URIs and internal page destinations. */
+function buildLinkAnnotationDict(
+  options: { borderWidth: number; structure?: PdfStructureOptions | undefined },
+  rect: PdfValue,
+  structParentKey: number | undefined,
+  contents: string,
+  action: AnnotationDictEntry,
+): PdfDict {
+  return dict([
+    ['Type', name('Annot')],
+    ['Subtype', name('Link')],
+    ['F', 4],
+    ['Rect', rect],
+    ['Border', array([0, 0, options.borderWidth])],
+    ['Contents', buildLinkContents(options.structure, contents)],
+    ['StructParent', structParentKey],
+    action,
+  ]);
+}
+
 function buildAnnotationDictionary(
   annotation: PdfDocumentModel['pages'][number]['annotations'][number],
   pageObjectId: number,
@@ -3159,24 +3559,12 @@ function buildAnnotationDictionary(
 
   switch (annotation.type) {
     case 'uri':
-      return dict([
-        ['Type', name('Annot')],
-        ['Subtype', name('Link')],
-        ['F', 4],
-        ['Rect', rect],
-        ['Border', array([0, 0, annotation.options.borderWidth])],
-        [
-          'Contents',
-          buildLinkContents(annotation.options.structure, annotation.url),
-        ],
-        ['StructParent', structParentKey],
-        [
-          'A',
-          dict([
-            ['S', name('URI')],
-            ['URI', literalString(annotation.url)],
-          ]),
-        ],
+      return buildLinkAnnotationDict(annotation.options, rect, structParentKey, annotation.url, [
+        'A',
+        dict([
+          ['S', name('URI')],
+          ['URI', literalString(annotation.url)],
+        ]),
       ]);
     case 'page': {
       const targetPageObjectId = pageObjectIdsByModel.get(annotation.target);
@@ -3186,61 +3574,22 @@ function buildAnnotationDictionary(
           'Unable to resolve target page for internal link annotation.',
         );
       }
-
-      return dict([
-        ['Type', name('Annot')],
-        ['Subtype', name('Link')],
-        ['F', 4],
-        ['Rect', rect],
-        ['Border', array([0, 0, annotation.options.borderWidth])],
-        [
-          'Contents',
-          buildLinkContents(annotation.options.structure, 'Internal page link'),
-        ],
-        ['StructParent', structParentKey],
+      return buildLinkAnnotationDict(
+        annotation.options,
+        rect,
+        structParentKey,
+        'Internal page link',
         ['Dest', array([ref(targetPageObjectId), name('Fit')])],
-      ]);
+      );
     }
     case 'highlight':
-      return dict([
-        ['Type', name('Annot')],
-        ['Subtype', name('Highlight')],
-        ['F', 4],
-        ['Rect', rect],
-        ['QuadPoints', buildHighlightQuadPoints(annotation.options)],
-        ['StructParent', structParentKey],
-        ['C', buildAnnotationColorArray(annotation.options.color)],
-      ]);
+      return buildTextMarkupAnnotationDict('Highlight', annotation.options, rect, structParentKey);
     case 'underline':
-      return dict([
-        ['Type', name('Annot')],
-        ['Subtype', name('Underline')],
-        ['F', 4],
-        ['Rect', rect],
-        ['QuadPoints', buildHighlightQuadPoints(annotation.options)],
-        ['StructParent', structParentKey],
-        ['C', buildAnnotationColorArray(annotation.options.color)],
-      ]);
+      return buildTextMarkupAnnotationDict('Underline', annotation.options, rect, structParentKey);
     case 'strikeOut':
-      return dict([
-        ['Type', name('Annot')],
-        ['Subtype', name('StrikeOut')],
-        ['F', 4],
-        ['Rect', rect],
-        ['QuadPoints', buildHighlightQuadPoints(annotation.options)],
-        ['StructParent', structParentKey],
-        ['C', buildAnnotationColorArray(annotation.options.color)],
-      ]);
+      return buildTextMarkupAnnotationDict('StrikeOut', annotation.options, rect, structParentKey);
     case 'squiggly':
-      return dict([
-        ['Type', name('Annot')],
-        ['Subtype', name('Squiggly')],
-        ['F', 4],
-        ['Rect', rect],
-        ['QuadPoints', buildHighlightQuadPoints(annotation.options)],
-        ['StructParent', structParentKey],
-        ['C', buildAnnotationColorArray(annotation.options.color)],
-      ]);
+      return buildTextMarkupAnnotationDict('Squiggly', annotation.options, rect, structParentKey);
     case 'note':
       return dict([
         ['Type', name('Annot')],
@@ -3252,14 +3601,11 @@ function buildAnnotationDictionary(
         ['Open', annotation.options.open],
       ]);
     case 'freeText': {
-      const resourceName = formFontResourceMap.get(annotation.options.font);
-      if (!resourceName) {
-        throw new PdfEngineError(
-          PdfErrorCode.INTERNAL_ERROR,
-          `Unable to resolve annotation font resource for ${annotation.options.font}.`,
-        );
-      }
-
+      const resourceName = resolveFormFontResource(
+        annotation.options.font,
+        formFontResourceMap,
+        'annotation',
+      );
       return dict([
         ['Type', name('Annot')],
         ['Subtype', name('FreeText')],
@@ -3281,194 +3627,45 @@ function buildAnnotationDictionary(
       ]);
     }
     case 'textField': {
-      const resourceName = formFontResourceMap.get(annotation.options.font);
-      if (!resourceName) {
-        throw new PdfEngineError(
-          PdfErrorCode.INTERNAL_ERROR,
-          `Unable to resolve form font resource for ${annotation.options.font}.`,
-        );
-      }
-
-      const flags = buildTextFieldFlags(annotation);
-      const hasCustomAppearance = annotation.options.appearance?.normal !== undefined;
+      const resourceName = resolveFormFontResource(annotation.options.font, formFontResourceMap, 'form');
+      const options = annotation.options;
       return dict([
-        ['Type', name('Annot')],
-        ['Subtype', name('Widget')],
-        ['F', 4],
-        ['FT', name('Tx')],
-        ['T', literalString(annotation.name)],
-        [
-          'TU',
-          annotation.options.description !== undefined
-            ? literalString(annotation.options.description)
-            : undefined,
-        ],
-        ['Rect', rect],
-        ['Parent', parentFieldObjectId !== undefined ? ref(parentFieldObjectId) : undefined],
-        ['Border', array([0, 0, annotation.options.borderWidth])],
-        [
-          'DA',
-          hasCustomAppearance
-            ? literalString(annotation.options.appearance!.normal!)
-            : literalString(
-                buildTextFieldAppearance(
-                  resourceName,
-                  annotation.options.fontSize,
-                  annotation.options.color,
-                ),
-              ),
-        ],
-        [
-          'V',
-          annotation.options.value !== undefined
-            ? literalString(annotation.options.value)
-            : undefined,
-        ],
-        [
-          'RV',
-          annotation.options.richValue !== undefined
-            ? literalString(annotation.options.richValue)
-            : undefined,
-        ],
-        ['Ff', flags !== 0 ? flags : undefined],
-        ['Encrypt', annotation.options.encrypt === false ? null : undefined],
-        ['AA', buildAdditionalActionsDict(annotation.options.actions)],
-        ['StructParent', structParentKey],
-        ['P', ref(pageObjectId)],
+        ...widgetPrefixEntries('Tx', annotation.name, options, rect, parentFieldObjectId),
+        ['DA', literalString(fieldAppearanceString(options, resourceName))],
+        ['V', options.value !== undefined ? literalString(options.value) : undefined],
+        ['RV', options.richValue !== undefined ? literalString(options.richValue) : undefined],
+        ...widgetSuffixEntries(buildTextFieldFlags(annotation), options, structParentKey, pageObjectId),
       ]);
     }
     case 'choiceField': {
-      const resourceName = formFontResourceMap.get(annotation.options.font);
-      if (!resourceName) {
-        throw new PdfEngineError(
-          PdfErrorCode.INTERNAL_ERROR,
-          `Unable to resolve form font resource for ${annotation.options.font}.`,
-        );
-      }
-
-      const flags = buildChoiceFieldFlags(annotation);
-      const hasCustomAppearance = annotation.options.appearance?.normal !== undefined;
+      const resourceName = resolveFormFontResource(annotation.options.font, formFontResourceMap, 'form');
+      const options = annotation.options;
       return dict([
-        ['Type', name('Annot')],
-        ['Subtype', name('Widget')],
-        ['F', 4],
-        ['FT', name('Ch')],
-        ['T', literalString(annotation.name)],
-        [
-          'TU',
-          annotation.options.description !== undefined
-            ? literalString(annotation.options.description)
-            : undefined,
-        ],
-        ['Rect', rect],
-        ['Parent', parentFieldObjectId !== undefined ? ref(parentFieldObjectId) : undefined],
-        ['Border', array([0, 0, annotation.options.borderWidth])],
-        [
-          'DA',
-          hasCustomAppearance
-            ? literalString(annotation.options.appearance!.normal!)
-            : literalString(
-                buildTextFieldAppearance(
-                  resourceName,
-                  annotation.options.fontSize,
-                  annotation.options.color,
-                ),
-              ),
-        ],
-        [
-          'Opt',
-          array(
-            annotation.options.options.map((option) => literalString(option)),
-          ),
-        ],
-        [
-          'V',
-          annotation.options.value !== undefined
-            ? literalString(annotation.options.value)
-            : undefined,
-        ],
-        ['Ff', flags !== 0 ? flags : undefined],
-        ['Encrypt', annotation.options.encrypt === false ? null : undefined],
-        ['AA', buildAdditionalActionsDict(annotation.options.actions)],
-        ['StructParent', structParentKey],
-        ['P', ref(pageObjectId)],
+        ...widgetPrefixEntries('Ch', annotation.name, options, rect, parentFieldObjectId),
+        ['DA', literalString(fieldAppearanceString(options, resourceName))],
+        ['Opt', array(options.options.map((option) => literalString(option)))],
+        ['V', options.value !== undefined ? literalString(options.value) : undefined],
+        ...widgetSuffixEntries(buildChoiceFieldFlags(annotation), options, structParentKey, pageObjectId),
       ]);
     }
     case 'pushButton': {
-      const resourceName = formFontResourceMap.get(annotation.options.font);
-      if (!resourceName) {
-        throw new PdfEngineError(
-          PdfErrorCode.INTERNAL_ERROR,
-          `Unable to resolve form font resource for ${annotation.options.font}.`,
-        );
-      }
-
-      const flags = buildPushButtonFlags(annotation);
-      const hasCustomAppearance = annotation.options.appearance?.normal !== undefined;
+      const resourceName = resolveFormFontResource(annotation.options.font, formFontResourceMap, 'form');
+      const options = annotation.options;
       return dict([
-        ['Type', name('Annot')],
-        ['Subtype', name('Widget')],
-        ['F', 4],
-        ['FT', name('Btn')],
-        ['T', literalString(annotation.name)],
-        [
-          'TU',
-          annotation.options.description !== undefined
-            ? literalString(annotation.options.description)
-            : undefined,
-        ],
-        ['Rect', rect],
-        ['Parent', parentFieldObjectId !== undefined ? ref(parentFieldObjectId) : undefined],
-        ['Border', array([0, 0, annotation.options.borderWidth])],
-        [
-          'DA',
-          hasCustomAppearance
-            ? literalString(annotation.options.appearance!.normal!)
-            : literalString(
-                buildTextFieldAppearance(
-                  resourceName,
-                  annotation.options.fontSize,
-                  annotation.options.color,
-                ),
-              ),
-        ],
-        ['MK', dict([['CA', literalString(annotation.options.label)]])],
-        ['Ff', flags],
-        ['Encrypt', annotation.options.encrypt === false ? null : undefined],
-        ['AA', buildAdditionalActionsDict(annotation.options.actions)],
-        ['StructParent', structParentKey],
-        ['P', ref(pageObjectId)],
+        ...widgetPrefixEntries('Btn', annotation.name, options, rect, parentFieldObjectId),
+        ['DA', literalString(fieldAppearanceString(options, resourceName))],
+        ['MK', dict([['CA', literalString(options.label)]])],
+        // Push buttons always write `Ff`: the pushbutton flag is never zero.
+        ...widgetSuffixEntries(buildPushButtonFlags(annotation), options, structParentKey, pageObjectId, true),
       ]);
     }
     case 'signatureField': {
-      const flags = buildSignatureFieldFlags(annotation);
-      const hasCustomAppearance = annotation.options.appearance?.normal !== undefined;
+      const options = annotation.options;
       return dict([
-        ['Type', name('Annot')],
-        ['Subtype', name('Widget')],
-        ['F', 4],
-        ['FT', name('Sig')],
-        ['T', literalString(annotation.name)],
-        [
-          'TU',
-          annotation.options.description !== undefined
-            ? literalString(annotation.options.description)
-            : undefined,
-        ],
-        ['Rect', rect],
-        ['Parent', parentFieldObjectId !== undefined ? ref(parentFieldObjectId) : undefined],
-        ['Border', array([0, 0, annotation.options.borderWidth])],
-        ['Ff', flags !== 0 ? flags : undefined],
-        ['Encrypt', annotation.options.encrypt === false ? null : undefined],
-        ['AA', buildAdditionalActionsDict(annotation.options.actions)],
-        ['StructParent', structParentKey],
-        ['P', ref(pageObjectId)],
-        [
-          'DA',
-          hasCustomAppearance
-            ? literalString(annotation.options.appearance!.normal!)
-            : undefined,
-        ],
+        ...widgetPrefixEntries('Sig', annotation.name, options, rect, parentFieldObjectId),
+        ...widgetSuffixEntries(buildSignatureFieldFlags(annotation), options, structParentKey, pageObjectId),
+        // A signature widget carries `DA` only when the caller supplied one.
+        ['DA', options.appearance?.normal !== undefined ? literalString(options.appearance.normal) : undefined],
       ]);
     }
     case 'checkBox': {
@@ -3478,25 +3675,12 @@ function buildAnnotationDictionary(
           'Missing checkbox appearance ids.',
         );
       }
-
-      const flags = buildCheckBoxFlags(annotation);
+      const options = annotation.options;
+      const state = name(options.checked ? 'Yes' : 'Off');
       return dict([
-        ['Type', name('Annot')],
-        ['Subtype', name('Widget')],
-        ['F', 4],
-        ['FT', name('Btn')],
-        ['T', literalString(annotation.name)],
-        [
-          'TU',
-          annotation.options.description !== undefined
-            ? literalString(annotation.options.description)
-            : undefined,
-        ],
-        ['Rect', rect],
-        ['Parent', parentFieldObjectId !== undefined ? ref(parentFieldObjectId) : undefined],
-        ['Border', array([0, 0, annotation.options.borderWidth])],
-        ['V', name(annotation.options.checked ? 'Yes' : 'Off')],
-        ['AS', name(annotation.options.checked ? 'Yes' : 'Off')],
+        ...widgetPrefixEntries('Btn', annotation.name, options, rect, parentFieldObjectId),
+        ['V', state],
+        ['AS', state],
         [
           'AP',
           dict([
@@ -3509,11 +3693,7 @@ function buildAnnotationDictionary(
             ],
           ]),
         ],
-        ['Ff', flags !== 0 ? flags : undefined],
-        ['Encrypt', annotation.options.encrypt === false ? null : undefined],
-        ['AA', buildAdditionalActionsDict(annotation.options.actions)],
-        ['StructParent', structParentKey],
-        ['P', ref(pageObjectId)],
+        ...widgetSuffixEntries(buildCheckBoxFlags(annotation), options, structParentKey, pageObjectId),
       ]);
     }
     default:
@@ -3845,7 +4025,7 @@ function getOriginalPageContentStreamBytes(
   }
 
   if (Array.isArray(contentsValue) && !isPdfDictValue(contentsValue)) {
-    const last = contentsValue[contentsValue.length - 1];
+    const last = contentsValue.at(-1);
     if (last && typeof last === 'object' && 'kind' in last && last.kind === 'ref') {
       const resolved = resolvePdfValue(base, last);
       if (resolved !== undefined && isPdfStream(resolved)) {
@@ -4390,7 +4570,7 @@ function buildImageStream(
 }
 
 function buildSoftMaskStream(
-  image: Extract<EmbeddedImageAsset, { kind: 'png' | 'bmp' | 'webp' | 'gif' }>,
+  image: Extract<EmbeddedImageAsset, { kind: AlphaCapableImageKind }>,
 ): ReturnType<typeof stream> {
   if (!image.alphaBytes) {
     throw new PdfEngineError(
@@ -4957,12 +5137,16 @@ function* serializePageContentLines(
         const intrinsicW = swapAspect ? op.image.pixelHeight : op.image.pixelWidth;
         const intrinsicH = swapAspect ? op.image.pixelWidth : op.image.pixelHeight;
         const clip = op.options.clip ?? 'none';
-        const { dx, dy, dw, dh } = imageFitRect(
-          op.options.fit,
-          op.options.position,
-          x, y, width, height,
-          intrinsicW, intrinsicH,
-        );
+        const { dx, dy, dw, dh } = imageFitRect({
+          fit: op.options.fit,
+          position: op.options.position,
+          x,
+          y,
+          w: width,
+          h: height,
+          iw: intrinsicW,
+          ih: intrinsicH,
+        });
         const f = formatPdfNumber;
         opLines.push('q');
         if (clip === 'circle' || clip === 'ellipse') {
@@ -5041,9 +5225,11 @@ function serializePath(
   const lines: string[] = [];
 
   if (style.stroke) {
-    lines.push(`${formatPdfNumber(style.stroke.width)} w`);
-    lines.push(`${style.stroke.lineCap} J`);
-    lines.push(`${style.stroke.lineJoin} j`);
+    lines.push(
+      `${formatPdfNumber(style.stroke.width)} w`,
+      `${style.stroke.lineCap} J`,
+      `${style.stroke.lineJoin} j`,
+    );
     if (style.stroke.miterLimit !== undefined) {
       lines.push(`${formatPdfNumber(style.stroke.miterLimit)} M`);
     }
@@ -5658,16 +5844,17 @@ function formatMatrix(matrix: Transform): string {
  * dimensions used for aspect ratio. `fill` (or unknown intrinsic size) returns
  * the box unchanged.
  */
-function imageFitRect(
-  fit: 'fill' | 'contain' | 'cover' | undefined,
-  position: string | undefined,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  iw: number,
-  ih: number,
-): { dx: number; dy: number; dw: number; dh: number } {
+function imageFitRect(box: {
+  fit: 'fill' | 'contain' | 'cover' | undefined;
+  position: string | undefined;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  iw: number;
+  ih: number;
+}): { dx: number; dy: number; dw: number; dh: number } {
+  const { fit, position, x, y, w, h, iw, ih } = box;
   if (fit === undefined || fit === 'fill' || iw <= 0 || ih <= 0) {
     return { dx: x, dy: y, dw: w, dh: h };
   }
@@ -5679,9 +5866,19 @@ function imageFitRect(
   const right = pos === 'right' || pos === 'top-right' || pos === 'bottom-right';
   const top = pos === 'top' || pos === 'top-left' || pos === 'top-right';
   const bottom = pos === 'bottom' || pos === 'bottom-left' || pos === 'bottom-right';
-  const dx = left ? x : right ? x + (w - dw) : x + (w - dw) / 2;
+  let dx = x + (w - dw) / 2;
+  if (left) {
+    dx = x;
+  } else if (right) {
+    dx = x + (w - dw);
+  }
   // PDF y grows upward, so "top" aligns the image's top edge to the box top.
-  const dy = bottom ? y : top ? y + (h - dh) : y + (h - dh) / 2;
+  let dy = y + (h - dh) / 2;
+  if (bottom) {
+    dy = y;
+  } else if (top) {
+    dy = y + (h - dh);
+  }
   return { dx, dy, dw, dh };
 }
 

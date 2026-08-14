@@ -1567,7 +1567,8 @@ test("toc levelStyles renders entries at per-level font sizes", () => {
   const runs = parseDocument(doc.toUint8Array()).extractText()[0]!.runs;
   const big = runs.find((r) => r.text.includes("BigChapter"));
   const small = runs.find((r) => r.text.includes("SmallSection"));
-  assert.ok(big && small);
+  assert.ok(big, "expected a level-1 TOC entry");
+  assert.ok(small, "expected a level-2 TOC entry");
   // The level-1 entry is rendered larger than the level-2 entry.
   assert.ok((big!.fontSize ?? 0) > (small!.fontSize ?? 0), `expected L1 > L2, got ${big!.fontSize} vs ${small!.fontSize}`);
 });
@@ -1785,7 +1786,8 @@ test("master-page background renders on every page behind the content", () => {
   assert.ok(wm0);
   assert.ok(pages[1]!.runs.some((r) => r.text.includes("WATERMARK")));
   // ...and lands on the page (below the top edge), not clipped above it.
-  assert.ok(wm0!.y > 0 && wm0!.y <= 200 - 10, `background text should be on-page, got y=${wm0!.y}`);
+  assert.ok(wm0!.y > 0, `background text must sit above the bottom edge, got y=${wm0!.y}`);
+  assert.ok(wm0!.y <= 200 - 10, `background text must sit below the top edge, got y=${wm0!.y}`);
   // It is drawn behind the body: on page 1 the watermark op precedes the body op.
   const text = new TextDecoder("latin1").decode(bytes);
   assert.ok(text.indexOf("WATERMARK") < text.indexOf("Body one"), "background must draw before body");
@@ -1812,7 +1814,8 @@ test("document pageBackground applies to template pages exactly once", () => {
   // Inherited by the template, drawn once per page and back-most.
   assert.equal((text.match(/0 0 200 300 re/g) ?? []).length, 1);
   const fill = text.search(/0 0 200 300 re/);
-  assert.ok(fill < text.indexOf("(DRAFT)") && fill < text.indexOf("(Body)"));
+  assert.ok(fill < text.indexOf("(DRAFT)"), "page background must draw before the watermark");
+  assert.ok(fill < text.indexOf("(Body)"), "page background must draw before the body");
 });
 
 test("pageBackground fills every page behind all content as an artifact", () => {
@@ -1828,7 +1831,9 @@ test("pageBackground fills every page behind all content as an artifact", () => 
   assert.equal((text.match(/0 0 200 300 re/g) ?? []).length, 2);
   // Behind everything: the fill precedes the watermark and body on page 1.
   const fill = text.indexOf("0 0 200 300 re");
-  assert.ok(fill >= 0 && fill < text.indexOf("(DRAFT)") && fill < text.indexOf("(Body one)"), "page background must draw first");
+  assert.ok(fill >= 0, "page background rectangle must be emitted");
+  assert.ok(fill < text.indexOf("(DRAFT)"), "page background must draw before the watermark");
+  assert.ok(fill < text.indexOf("(Body one)"), "page background must draw before the body");
 });
 
 test("watermark renders a rotated, centered artifact behind content on every page", () => {

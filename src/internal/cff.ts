@@ -342,7 +342,7 @@ function parseTopDict(data: Uint8Array): (number | DictOperand[])[] {
         value += nibbleToReal(nibble2);
         j += 1;
       }
-      operands.push({ value: parseFloat(value) || 0 });
+      operands.push({ value: Number.parseFloat(value) || 0 });
       i = j + 1;
       continue;
     }

@@ -1,4 +1,8 @@
-# zeropdf
+<p align="center">
+  <img src="./brand/logo-mark.svg" alt="zeropdf" width="112" height="112" />
+</p>
+
+<h1 align="center">zeropdf</h1>
 
 Zero-dependency PDF generation engine written in TypeScript. Pure `Uint8Array`
 output, PDF 1.4–2.0, embedded fonts and images, parsing and incremental editing,
@@ -65,13 +69,25 @@ Tools: `generate_pdf`, `extract_text`, `get_pdf_info`, `inspect_pdf`, `merge_pdf
 npm install
 npm test
 npm run docs:dev      # work on the docs site locally
-npm run example:web   # browser playground at http://localhost:4173/
 ```
 
-## Bundled fonts
+## Optional font package
 
-The bundled fonts in [`fonts/liberation/`](./fonts/liberation) — Liberation
-Sans, Serif, and Mono, used by `registerBundledFonts()` — are © Red Hat, Inc. and Google, distributed under the
+```sh
+npm i @crstnmac/zeropdf-fonts
+```
+
+```ts
+import { createDocument } from "@crstnmac/zeropdf";
+import { liberation } from "@crstnmac/zeropdf-fonts/liberation";
+
+const doc = createDocument();
+await doc.fonts(liberation);
+doc.addPage().text("Typography · café — Привет", { x: 56, y: 760 });
+```
+
+The optional `@crstnmac/zeropdf-fonts` package contains the Liberation Sans,
+Serif, and Mono files under [`fonts/liberation/`](./fonts/liberation). They are © Red Hat, Inc. and Google, distributed under the
 **SIL Open Font License 1.1** (see [`fonts/liberation/LICENSE`](./fonts/liberation/LICENSE)).
 The OFL permits bundling and embedding the fonts in software and documents; the
 fonts retain reserved names ("Liberation", "Arimo", "Tinos", "Cousine") and may

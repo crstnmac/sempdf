@@ -101,7 +101,7 @@ export function inflateZlib(data: Uint8Array): Uint8Array {
     throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Preset dictionaries are not supported in zlib streams.");
   }
 
-  const compressed = data.subarray(2, data.length - 4);
+  const compressed = data.subarray(2, -4);
   const reader = new BitReader(compressed);
   const output: number[] = [];
 
@@ -290,7 +290,7 @@ function readDynamicTables(reader: BitReader): { literalTable: HuffmanTable; dis
     }
 
     if (symbol === 16) {
-      const previous = lengths[lengths.length - 1];
+      const previous = lengths.at(-1);
       if (previous === undefined) {
         throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Deflate repeat code encountered without a previous value.");
       }
@@ -463,7 +463,7 @@ export function inflateZlibStreaming(data: Uint8Array, chunkSize: number): Uint8
     throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Preset dictionaries are not supported in zlib streams.");
   }
 
-  const compressed = data.subarray(2, data.length - 4);
+  const compressed = data.subarray(2, -4);
   const reader = new BitReader(compressed);
   const chunks: Uint8Array[] = [];
   let currentChunk: number[] = [];
@@ -551,7 +551,7 @@ export function* inflateZlibChunked(
     throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Preset dictionaries are not supported in zlib streams.");
   }
 
-  const compressed = data.subarray(2, data.length - 4);
+  const compressed = data.subarray(2, -4);
   const reader = new BitReader(compressed);
   const fullOutput: number[] = [];
   let currentChunk: number[] = [];

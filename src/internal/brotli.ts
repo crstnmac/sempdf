@@ -132,7 +132,7 @@ class PrefixCode {
     while (read < this.maxLength) {
       bits |= reader.readBits(1) << read;
       read += 1;
-      const entry = this.table[bits | 0]!;
+      const entry = this.table[bits]!;
       if (entry !== -1 && (entry & 31) === read) {
         return entry >> 5;
       }
@@ -426,7 +426,6 @@ class BlockState {
       this.secondLastType = this.previousType;
       this.previousType = this.blockType;
       this.blockType = newType;
-      void this.secondLastType;
       this.blockLength = readBlockLength(this.lengthCode, reader);
     }
     this.blockLength -= 1;
@@ -780,9 +779,7 @@ export function brotliDecompress(input: Uint8Array, expectedSize?: number): Uint
         if (remaining < 0) {
           fail("dictionary word overflows meta-block");
         }
-        void copyLength;
       }
-      void distanceRing;
     }
   }
 

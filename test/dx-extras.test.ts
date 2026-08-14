@@ -59,7 +59,8 @@ test("placeTextBlock returns block metrics and supports manual stacking", () => 
   assert.ok(a.lineCount > 1);
   assert.equal(a.height, a.lineCount * 16);
   assert.equal(a.endY, 760 - a.height);
-  assert.ok(a.width > 0 && a.width <= 200);
+  assert.ok(a.width > 0, `expected a positive measured width, got ${a.width}`);
+  assert.ok(a.width <= 200, `measured width must stay inside the box, got ${a.width}`);
 
   // Stacking the next block at the returned endY stays below the first.
   const b = page.placeTextBlock("Second.", { x: 56, y: a.endY - 8, width: 180, fontSize: 12, lineHeight: 16 });

@@ -9,6 +9,7 @@ import {
   renderDocumentJsonSync,
   type PdfDocumentJson,
 } from "../src/index.js";
+import { liberationFixture } from "./font-preset.js";
 
 // A hand-built 1x1 24-bit BMP (no CRC/compression — always valid), base64-encoded.
 function bmp1x1Base64(): string {
@@ -50,6 +51,22 @@ test("renders a minimal document from JSON and round-trips its text", async () =
   const text = pageText(bytes);
   assert.match(text, /Greeting/);
   assert.match(text, /Hello from JSON\./);
+});
+
+test("runtime font presets make document JSON PDF/UA font-compliant", async () => {
+  const bytes = await renderDocumentJson(
+    {
+      title: "Accessible",
+      tagged: true,
+      language: "en-US",
+      conformance: "pdfua-1",
+      blocks: [{ type: "paragraph", text: "Accessibility review · complete" }],
+    },
+    { fonts: liberationFixture },
+  );
+  const source = new TextDecoder().decode(bytes);
+  assert.match(source, /\/FontFile2/);
+  assert.doesNotMatch(source, /\/BaseFont \/Helvetica/);
 });
 
 test("registers a base64 font and resolves it by name", async () => {

@@ -157,7 +157,7 @@ async function runVeraPdf(
   bin: string,
   args: readonly string[],
   timeoutMs: number,
-): Promise<unknown | undefined> {
+): Promise<unknown> {
   return await new Promise((resolve, reject) => {
     const child = spawn(bin, args as string[], { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
@@ -224,15 +224,18 @@ export function parseVeraPdfReport(report: unknown): {
       const s = summary as Record<string, unknown>;
       if (s.ruleStatus !== undefined && s.ruleStatus !== "FAILED") continue;
       const clause = typeof s.clause === "string" ? s.clause : "?";
-      const testNumber = s.testNumber === undefined ? "" : `-${String(s.testNumber)}`;
-      const description =
-        typeof s.description === "string" && s.description !== ""
-          ? s.description
-          : typeof s.message === "string"
-            ? s.message
-            : "veraPDF rule failed.";
+      const testNumber =
+        typeof s.testNumber === "string" || typeof s.testNumber === "number"
+          ? `-${s.testNumber}`
+          : "";
+      let description = "veraPDF rule failed.";
+      if (typeof s.description === "string" && s.description !== "") {
+        description = s.description;
+      } else if (typeof s.message === "string") {
+        description = s.message;
+      }
       issues.push({
-        code: `VERAPDF_${clause}${testNumber}`.replace(/[^A-Za-z0-9_]/g, "_"),
+        code: `VERAPDF_${clause}${testNumber}`.replaceAll(/\W/g, "_"),
         severity: "error",
         message: description,
       });

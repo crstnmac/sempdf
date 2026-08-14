@@ -158,21 +158,21 @@ function isPdfDict(value: PdfArray | PdfDict): value is PdfDict {
 }
 
 function escapeName(value: string): string {
-  return value.replace(/[^A-Za-z0-9!#$%&'*+\-.^_`|~]/g, (character) =>
+  return value.replaceAll(/[^A-Za-z0-9!#$%&'*+\-.^_`|~]/g, (character) =>
     `#${character.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`
   );
 }
 
 function escapeString(value: string): string {
   return value
-    .replace(/\\/g, "\\\\")
-    .replace(/\(/g, "\\(")
-    .replace(/\)/g, "\\)")
-    .replace(/\r/g, "\\r")
-    .replace(/\n/g, "\\n")
-    .replace(/\t/g, "\\t")
-    .replace(/\f/g, "\\f")
-    .replace(/\u0008/g, "\\b");
+    .replaceAll(/\\/g, "\\\\")
+    .replaceAll(/\(/g, "\\(")
+    .replaceAll(/\)/g, "\\)")
+    .replaceAll(/\r/g, "\\r")
+    .replaceAll(/\n/g, "\\n")
+    .replaceAll(/\t/g, "\\t")
+    .replaceAll(/\f/g, "\\f")
+    .replaceAll(/\u0008/g, "\\b");
 }
 
 function assertNever(value: never): never {

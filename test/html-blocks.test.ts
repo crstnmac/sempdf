@@ -9,9 +9,9 @@ import {
   parseDocument,
   PdfEngineError,
   PdfErrorCode,
-  registerBundledFonts,
   renderDocumentJsonSync,
 } from "../src/index.js";
+import { liberationFixture } from "./font-preset.js";
 import type { PdfDocumentJson, TemplateBlock } from "../src/index.js";
 
 function textOf(bytes: Uint8Array): string {
@@ -310,7 +310,11 @@ test("accents fold so base-14 fonts can render European text", () => {
 
 test("characters with no ASCII form survive 'ascii' and are dropped by 'ascii-only'", () => {
   const kept = htmlToBlocks("<p>Report नमस्ते done</p>")[0]!;
-  assert.ok(kept.type === "paragraph" && kept.text.includes("नमस्ते"), "content must not vanish silently");
+  assert.equal(kept.type, "paragraph");
+  assert.ok(
+    kept.type === "paragraph" && kept.text.includes("नमस्ते"),
+    "content must not vanish silently",
+  );
 
   const stripped = htmlToBlocks("<p>Report नमस्ते ✅ 日本語 done</p>", { normalizeText: "ascii-only" })[0]!;
   assert.equal(stripped.type === "paragraph" && stripped.text, "Report done");
@@ -342,12 +346,12 @@ test("an unencodable character reports what it is, where, and how to fix it", ()
 
 test("an embedded font renders the original characters with normalizeText: none", async () => {
   const doc = createDocument({ title: "Unicode" });
-  const fonts = await registerBundledFonts(doc);
+  await doc.fonts(liberationFixture);
   doc.renderTemplate({
-    page: { font: fonts.sans },
+    page: { font: "Liberation Sans" },
     blocks: htmlToBlocks("<p>Café Muñoz — Привет</p>", {
       normalizeText: "none",
-      paragraph: { font: fonts.sans },
+      paragraph: { font: "Liberation Sans" },
     }),
   });
   const text = textOf(new Uint8Array(doc.toArrayBuffer()));

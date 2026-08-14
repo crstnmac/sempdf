@@ -15,6 +15,16 @@ const HOMEBREW_POPPLER_DYLIB = "/usr/local/Cellar/poppler/0.66.0/lib/libpoppler.
 const TRUSTED_BIN_DIRS = ["/usr/bin", "/bin", "/usr/local/bin", "/opt/homebrew/bin", "/usr/sbin", "/sbin"];
 const SAFE_SPAWN_ENV = { ...process.env, PATH: TRUSTED_BIN_DIRS.join(":") };
 
+/** Resolves a binary name to an absolute path inside the trusted bin dirs. */
+function resolveTrustedBin(name) {
+  for (const dir of TRUSTED_BIN_DIRS) {
+    const candidate = join(dir, name);
+    if (existsSync(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+
 export async function renderFixtures({
   fixtureDir = DEFAULT_FIXTURE_DIR,
   outputDir = DEFAULT_OUTPUT_DIR,
@@ -31,13 +41,13 @@ export async function renderFixtures({
     const fixture = await import(pathToFileURL(resolve(fixturePath)).href);
     const name = sanitizeName(fixture.name ?? basename(fixturePath, ".mjs"));
     if (typeof fixture.render !== "function") {
-      throw new Error(`Visual fixture ${fixturePath} must export render().`);
+      throw new TypeError(`Visual fixture ${fixturePath} must export render().`);
     }
 
     for (const dataSet of dataSetsForFixture(fixture)) {
       const bytes = await fixture.render(dataSet.data, { dataSet });
       if (!(bytes instanceof Uint8Array)) {
-        throw new Error(`Visual fixture ${fixturePath} render() must return Uint8Array.`);
+        throw new TypeError(`Visual fixture ${fixturePath} render() must return Uint8Array.`);
       }
 
       const outputName = dataSet.id === "default" ? name : `${name}/${dataSet.id}`;
@@ -111,18 +121,20 @@ function ensureRenderer(renderer) {
 }
 
 function findBundledRenderer() {
-  const candidates =
-    process.platform === "darwin"
-      ? ["node_modules/pdf-poppler/lib/osx/poppler-0.66/bin/pdftoppm"]
-      : process.platform === "win32"
-        ? ["node_modules/pdf-poppler/lib/win/poppler-0.51/bin/pdftoppm.exe"]
-        : [];
+  let candidates = [];
+  if (process.platform === "darwin") {
+    candidates = ["node_modules/pdf-poppler/lib/osx/poppler-0.66/bin/pdftoppm"];
+  } else if (process.platform === "win32") {
+    candidates = ["node_modules/pdf-poppler/lib/win/poppler-0.51/bin/pdftoppm.exe"];
+  }
   return candidates.map((candidate) => resolve(candidate)).find((candidate) => existsSync(candidate));
 }
 
 function findSystemRenderer() {
-  const result = spawnSync("pdftoppm", ["-h"], { encoding: "utf8", env: SAFE_SPAWN_ENV });
-  return result.status === 0 ? "pdftoppm" : undefined;
+  const bin = resolveTrustedBin("pdftoppm");
+  if (bin === undefined) return undefined;
+  const result = spawnSync(bin, ["-h"], { encoding: "utf8", env: SAFE_SPAWN_ENV });
+  return result.status === 0 ? bin : undefined;
 }
 
 function prepareBundledRenderer(renderer) {
@@ -136,14 +148,16 @@ function prepareBundledRenderer(renderer) {
   if (process.platform !== "darwin") return;
   const bundledDylib = resolve("node_modules/pdf-poppler/lib/osx/poppler-0.66/lib/libpoppler.77.0.0.dylib");
   if (!existsSync(bundledDylib)) return;
-  spawnSync("install_name_tool", ["-change", HOMEBREW_POPPLER_DYLIB, bundledDylib, resolved], {
+  const installNameTool = resolveTrustedBin("install_name_tool");
+  if (installNameTool === undefined) return;
+  spawnSync(installNameTool, ["-change", HOMEBREW_POPPLER_DYLIB, bundledDylib, resolved], {
     encoding: "utf8",
     env: SAFE_SPAWN_ENV,
   });
 }
 
 function sanitizeName(name) {
-  return String(name).trim().replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "fixture";
+  return String(name).trim().replaceAll(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+/, "").replace(/-+$/, "") || "fixture";
 }
 
 function dataSetsForFixture(fixture) {
@@ -174,14 +188,13 @@ function parseArgs(argv) {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  renderFixtures(parseArgs(process.argv.slice(2)))
-    .then((results) => {
-      for (const result of results) {
-        console.log(`Rendered ${result.name}: ${result.pages.length} page(s)`);
-      }
-    })
-    .catch((error) => {
-      console.error(error instanceof Error ? error.message : String(error));
-      process.exit(1);
-    });
+  try {
+    const results = await renderFixtures(parseArgs(process.argv.slice(2)));
+    for (const result of results) {
+      console.log(`Rendered ${result.name}: ${result.pages.length} page(s)`);
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
 }
