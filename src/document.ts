@@ -115,6 +115,7 @@ import {
   type NormalizedListItem,
   type NormalizedPageLabelOptions,
   type NormalizedTableRow,
+  type NormalizedTextBaseOptions,
   type ResolvedPageSize,
 } from "./internal/validation.js";
 import {
@@ -438,23 +439,40 @@ interface EditableAppendedPageEntry {
 type EditablePageEntry = EditableExistingPageEntry | EditableAppendedPageEntry;
 
 /** Builds a {@link PathStyle} from the simplified {@link ShapeStyle}, inferring paint mode. */
+/** Stroke settings a {@link ShapeStyle} carries, omitting the keys it leaves out. */
+function shapeStrokeStyle(style: ShapeStyle | undefined): NonNullable<PathStyle["stroke"]> {
+  return {
+    ...(style?.stroke !== undefined ? { color: style.stroke } : {}),
+    ...(style?.lineWidth !== undefined ? { width: style.lineWidth } : {}),
+    ...(style?.lineCap !== undefined ? { lineCap: style.lineCap } : {}),
+    ...(style?.lineJoin !== undefined ? { lineJoin: style.lineJoin } : {}),
+    ...(style?.dashArray !== undefined ? { dashArray: style.dashArray } : {}),
+  };
+}
+
+/** True when any stroke-related key is set, which implies a stroked paint mode. */
+function shapeHasStroke(style: ShapeStyle | undefined): boolean {
+  return (
+    style?.stroke !== undefined ||
+    style?.lineWidth !== undefined ||
+    style?.lineCap !== undefined ||
+    style?.lineJoin !== undefined ||
+    style?.dashArray !== undefined
+  );
+}
+
 function shapeToPathStyle(style?: ShapeStyle): PathStyle {
   const hasFill = style?.fill !== undefined;
-  const hasStroke = style?.stroke !== undefined || style?.lineWidth !== undefined || style?.lineCap !== undefined ||
-    style?.lineJoin !== undefined || style?.dashArray !== undefined;
-  const paint: PathStyle["paint"] = hasFill && hasStroke ? "fillStroke" : hasFill ? "fill" : "stroke";
+  let paint: PathStyle["paint"] = "stroke";
+  if (hasFill) {
+    paint = shapeHasStroke(style) ? "fillStroke" : "fill";
+  }
   const result: PathStyle = { paint };
   if (hasFill) {
     result.fill = { color: style!.fill };
   }
   if (paint !== "fill") {
-    result.stroke = {
-      ...(style?.stroke !== undefined ? { color: style.stroke } : {}),
-      ...(style?.lineWidth !== undefined ? { width: style.lineWidth } : {}),
-      ...(style?.lineCap !== undefined ? { lineCap: style.lineCap } : {}),
-      ...(style?.lineJoin !== undefined ? { lineJoin: style.lineJoin } : {}),
-      ...(style?.dashArray !== undefined ? { dashArray: style.dashArray } : {}),
-    };
+    result.stroke = shapeStrokeStyle(style);
   }
   if (style?.tag !== undefined) {
     result.tag = style.tag;
@@ -478,20 +496,47 @@ function ellipseCommands(cx: number, cy: number, rx: number, ry: number): PathCo
 }
 
 /** Sniffs a raster image format from its leading magic bytes. */
+/**
+ * Magic-byte signatures per image format. `undefined` in a pattern matches any
+ * byte, letting RIFF/WebP and JP2 check bytes past their container header.
+ */
+const IMAGE_SIGNATURES: ReadonlyArray<{
+  readonly format: "jpeg" | "png" | "gif" | "bmp" | "tiff" | "jp2" | "webp";
+  readonly patterns: ReadonlyArray<ReadonlyArray<number | undefined>>;
+}> = [
+  { format: "jpeg", patterns: [[0xff, 0xd8, 0xff]] },
+  { format: "png", patterns: [[0x89, 0x50, 0x4e, 0x47]] },
+  { format: "gif", patterns: [[0x47, 0x49, 0x46]] },
+  { format: "bmp", patterns: [[0x42, 0x4d]] },
+  {
+    format: "tiff",
+    patterns: [
+      [0x49, 0x49, 0x2a, 0x00],
+      [0x4d, 0x4d, 0x00, 0x2a],
+    ],
+  },
+  {
+    format: "webp",
+    patterns: [
+      [0x52, 0x49, 0x46, 0x46, undefined, undefined, undefined, undefined, 0x57, 0x45, 0x42, 0x50],
+    ],
+  },
+  {
+    format: "jp2",
+    patterns: [
+      [0x00, 0x00, 0x00, 0x0c, 0x6a, 0x50],
+      [0xff, 0x4f, 0xff, 0x51],
+    ],
+  },
+];
+
+function matchesSignature(bytes: Uint8Array, pattern: ReadonlyArray<number | undefined>): boolean {
+  return pattern.every((expected, index) => expected === undefined || bytes[index] === expected);
+}
+
 function detectImageFormat(bytes: Uint8Array): "jpeg" | "png" | "gif" | "bmp" | "tiff" | "jp2" | "webp" {
-  const b = bytes;
-  const at = (i: number): number => b[i] ?? -1;
-  if (at(0) === 0xff && at(1) === 0xd8 && at(2) === 0xff) return "jpeg";
-  if (at(0) === 0x89 && at(1) === 0x50 && at(2) === 0x4e && at(3) === 0x47) return "png";
-  if (at(0) === 0x47 && at(1) === 0x49 && at(2) === 0x46) return "gif";
-  if (at(0) === 0x42 && at(1) === 0x4d) return "bmp";
-  if ((at(0) === 0x49 && at(1) === 0x49 && at(2) === 0x2a && at(3) === 0x00) ||
-      (at(0) === 0x4d && at(1) === 0x4d && at(2) === 0x00 && at(3) === 0x2a)) return "tiff";
-  if (at(0) === 0x52 && at(1) === 0x49 && at(2) === 0x46 && at(3) === 0x46 &&
-      at(8) === 0x57 && at(9) === 0x45 && at(10) === 0x42 && at(11) === 0x50) return "webp";
-  if ((at(0) === 0x00 && at(1) === 0x00 && at(2) === 0x00 && at(3) === 0x0c &&
-       at(4) === 0x6a && at(5) === 0x50) || (at(0) === 0xff && at(1) === 0x4f && at(2) === 0xff && at(3) === 0x51)) {
-    return "jp2";
+  for (const { format, patterns } of IMAGE_SIGNATURES) {
+    if (patterns.some((pattern) => matchesSignature(bytes, pattern))) return format;
   }
   throw new PdfEngineError(
     PdfErrorCode.UNSUPPORTED_IMAGE_FORMAT,
@@ -538,14 +583,14 @@ function pickFamilyFace(
   bold: boolean | undefined,
   italic: boolean | undefined,
 ): PdfFont {
-  const picked =
-    bold && italic
-      ? faces.boldItalic ?? faces.bold ?? faces.italic
-      : bold
-        ? faces.bold ?? faces.boldItalic
-        : italic
-          ? faces.italic ?? faces.boldItalic
-          : faces.regular;
+  let picked: PdfFont | undefined = faces.regular;
+  if (bold && italic) {
+    picked = faces.boldItalic ?? faces.bold ?? faces.italic;
+  } else if (bold) {
+    picked = faces.bold ?? faces.boldItalic;
+  } else if (italic) {
+    picked = faces.italic ?? faces.boldItalic;
+  }
   return picked ?? faces.regular;
 }
 
@@ -564,7 +609,7 @@ function resolveFontFamilyOptions<T extends StyleableTextOptions>(
   const { bold, italic } = options;
   let resolved = options;
 
-  if (options.fallbackFonts !== undefined && options.fallbackFonts.some((font) => lookupFontFamily(font, families) !== undefined)) {
+  if (options.fallbackFonts?.some((font) => lookupFontFamily(font, families) !== undefined) === true) {
     resolved = {
       ...resolved,
       fallbackFonts: options.fallbackFonts.map((font) => {
@@ -644,6 +689,17 @@ function resolveTableCellContent(
  * Fills in document-wide text defaults for any text option omitted on the call.
  * Per-call options always win; defaults only supply missing values.
  */
+/** Text keys a document default can fill in when the call omits them. */
+const INHERITED_TEXT_KEYS = [
+  'font',
+  'bold',
+  'italic',
+  'fontSize',
+  'color',
+  'kerning',
+  'direction',
+] as const;
+
 function fillTextDefaults<T extends TextOptions | TextBlockOptions>(
   options: T,
   defaults: TextDefaults | undefined,
@@ -651,18 +707,15 @@ function fillTextDefaults<T extends TextOptions | TextBlockOptions>(
   if (defaults === undefined) {
     return options;
   }
-  const merged = { ...options };
-  if (merged.font === undefined && defaults.font !== undefined) merged.font = defaults.font;
-  if (merged.bold === undefined && defaults.bold !== undefined) merged.bold = defaults.bold;
-  if (merged.italic === undefined && defaults.italic !== undefined) merged.italic = defaults.italic;
-  if (merged.fontSize === undefined && defaults.fontSize !== undefined) merged.fontSize = defaults.fontSize;
-  if (merged.color === undefined && defaults.color !== undefined) merged.color = defaults.color;
-  if (merged.kerning === undefined && defaults.kerning !== undefined) merged.kerning = defaults.kerning;
-  if (merged.direction === undefined && defaults.direction !== undefined) merged.direction = defaults.direction;
+  const merged: Record<string, unknown> = { ...options };
+  for (const key of INHERITED_TEXT_KEYS) {
+    if (merged[key] === undefined && defaults[key] !== undefined) merged[key] = defaults[key];
+  }
+  // Copied rather than shared: callers may mutate their own fallback list.
   if (merged.fallbackFonts === undefined && defaults.fallbackFonts !== undefined) {
     merged.fallbackFonts = [...defaults.fallbackFonts];
   }
-  return merged;
+  return merged as T;
 }
 
 /**
@@ -693,48 +746,58 @@ type RichBlockStyle = {
  * family, producing the run inputs consumed by {@link addRichTextToPage}.
  * Built-in bold/italic variants are resolved later during normalization.
  */
+/** Run-level keys copied straight through when the run sets them. */
+const RUN_STYLE_KEYS = [
+  'bold',
+  'italic',
+  'underline',
+  'strike',
+  'tag',
+  'characterSpacing',
+  'rise',
+  'superscript',
+  'subscript',
+  'renderMode',
+  'strokeColor',
+  'strokeWidth',
+  'horizontalScaling',
+  'highlight',
+] as const;
+
+/** Merges one run's style over the block defaults into concrete text options. */
+function mergeRunStyle(run: InlineTextRun, block: RichBlockStyle): TextOptions {
+  const font = run.font ?? block.font;
+  const fontSize = run.fontSize ?? block.fontSize;
+  const color = run.color ?? block.color;
+  const kerning = run.kerning ?? block.kerning;
+  const merged: Record<string, unknown> = {
+    x: 0,
+    y: 0,
+    direction: "ltr",
+    ...(font !== undefined ? { font } : {}),
+    ...(block.fallbackFonts !== undefined ? { fallbackFonts: block.fallbackFonts } : {}),
+    ...(fontSize !== undefined ? { fontSize } : {}),
+    ...(color !== undefined ? { color } : {}),
+    ...(kerning !== undefined ? { kerning } : {}),
+    ...(block.tag !== undefined ? { tag: block.tag } : {}),
+  };
+  for (const key of RUN_STYLE_KEYS) {
+    if (run[key] !== undefined) merged[key] = run[key];
+  }
+  return merged as unknown as TextOptions;
+}
+
 function buildRichRunInputs(
   runs: readonly InlineTextRun[],
   block: RichBlockStyle,
   families: ReadonlyMap<string, FontFamilyFaces>,
   defaults: TextDefaults | undefined,
 ): RichRunInput[] {
-  return runs.map((run) => {
-    const font = run.font ?? block.font;
-    const fontSize = run.fontSize ?? block.fontSize;
-    const color = run.color ?? block.color;
-    const kerning = run.kerning ?? block.kerning;
-    const merged: TextOptions = {
-      x: 0,
-      y: 0,
-      direction: "ltr",
-      ...(font !== undefined ? { font } : {}),
-      ...(block.fallbackFonts !== undefined ? { fallbackFonts: block.fallbackFonts } : {}),
-      ...(run.bold !== undefined ? { bold: run.bold } : {}),
-      ...(run.italic !== undefined ? { italic: run.italic } : {}),
-      ...(run.underline !== undefined ? { underline: run.underline } : {}),
-      ...(run.strike !== undefined ? { strike: run.strike } : {}),
-      ...(fontSize !== undefined ? { fontSize } : {}),
-      ...(color !== undefined ? { color } : {}),
-      ...(kerning !== undefined ? { kerning } : {}),
-      ...(block.tag !== undefined ? { tag: block.tag } : {}),
-      ...(run.tag !== undefined ? { tag: run.tag } : {}),
-      ...(run.characterSpacing !== undefined ? { characterSpacing: run.characterSpacing } : {}),
-      ...(run.rise !== undefined ? { rise: run.rise } : {}),
-      ...(run.superscript !== undefined ? { superscript: run.superscript } : {}),
-      ...(run.subscript !== undefined ? { subscript: run.subscript } : {}),
-      ...(run.renderMode !== undefined ? { renderMode: run.renderMode } : {}),
-      ...(run.strokeColor !== undefined ? { strokeColor: run.strokeColor } : {}),
-      ...(run.strokeWidth !== undefined ? { strokeWidth: run.strokeWidth } : {}),
-      ...(run.horizontalScaling !== undefined ? { horizontalScaling: run.horizontalScaling } : {}),
-      ...(run.highlight !== undefined ? { highlight: run.highlight } : {}),
-    };
-    return {
-      text: run.text,
-      options: prepareTextOptions(merged, families, defaults),
-      ...(run.link !== undefined ? { link: run.link } : {}),
-    };
-  });
+  return runs.map((run) => ({
+    text: run.text,
+    options: prepareTextOptions(mergeRunStyle(run, block), families, defaults),
+    ...(run.link !== undefined ? { link: run.link } : {}),
+  }));
 }
 
 /**
@@ -766,6 +829,59 @@ function prepareListRichRuns(
  *
  * A builder for grouping tagged PDF content under a shared structure element. It can add text, blocks, lists, tables, images, and nested sections to the same semantic container.
  */
+/**
+ * Records a (possibly dotted) form field name on the page, registering every
+ * intermediate parent so hierarchical fields serialize with the right kids.
+ */
+function registerDottedFieldName(page: InternalPageModel, name: string): string {
+  const lastDot = name.lastIndexOf(".");
+  if (lastDot === -1) {
+    return name;
+  }
+
+  const childName = name.slice(lastDot + 1);
+  const parentName = name.slice(0, lastDot);
+
+  if (childName.length === 0 || parentName.length === 0) {
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_FORM_FIELD_NAME,
+      "Dotted form field names must have non-empty segments on both sides of the dot.",
+      { name },
+    );
+  }
+
+  // Recurse to register intermediate parents.
+  if (parentName.includes(".")) {
+    registerDottedFieldName(page, parentName);
+  }
+
+  page.parentFieldKids ??= new Map();
+
+  const kids = page.parentFieldKids.get(parentName);
+  if (kids) {
+    if (!kids.includes(name)) {
+      kids.push(name);
+    }
+  } else {
+    page.parentFieldKids.set(parentName, [name]);
+  }
+
+  return name;
+}
+
+/** Copies bytes into a standalone `ArrayBuffer` sized exactly to their length. */
+function toDetachedArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
+}
+
+/** Writes serialized PDF bytes to a file path, importing `node:fs` lazily. */
+async function writeBytesToFile(path: string, bytes: Uint8Array): Promise<void> {
+  const { writeFile } = await import('node:fs/promises');
+  await writeFile(path, bytes);
+}
+
 export class PdfStructureContainer {
   /**
    * Creates a structure container bound to a page, embedded fonts, and parent structure node.
@@ -1470,6 +1586,123 @@ interface CodeVisualLine {
  * continuation lines and prefers breaking at a space; a token wider than the
  * content width is split mid-token rather than overflowing.
  */
+/** Measuring and option-building closures shared across one code block. */
+interface CodeTextHelpers {
+  readonly textOptions: (
+    x: number,
+    y: number,
+    color: ColorInput,
+    tag: "Code" | "P" | "Artifact",
+    font?: PdfFont | undefined,
+    fontSize?: number | undefined,
+  ) => NormalizedTextBaseOptions;
+  readonly measure: (value: string) => number;
+  readonly measureAt: (value: string, fontSize: number) => number;
+}
+
+/** One fragment of a code block: the lines it holds and the notes around them. */
+interface CodeFragmentPlan {
+  readonly bandLines: readonly CodeVisualLine[];
+  readonly isContinuation: boolean;
+  readonly willContinue: boolean;
+  readonly topLabel: string | undefined;
+  readonly bottomLabel: string | undefined;
+  readonly bandHeight: number;
+}
+
+/**
+ * A continuation note occupies a line of its own at the top of a resumed
+ * fragment; only fragments after the first can have one.
+ */
+function fragmentTopLabelHeight(style: ResolvedCodeStyle, fragmentIndex: number): number {
+  return fragmentIndex > 0 && style.continuedLabel !== undefined ? style.labelHeight : 0;
+}
+
+/**
+ * Decides how many lines the next fragment takes and which continuation notes
+ * it carries. A fragment that cannot be continued anywhere is kept whole and
+ * allowed to overflow the region: dropping code silently would be worse.
+ */
+function planCodeFragment(input: {
+  lines: readonly CodeVisualLine[];
+  index: number;
+  fragmentIndex: number;
+  style: ResolvedCodeStyle;
+  available: number;
+  totalLines: number;
+  canAdvanceRegion: boolean;
+}): CodeFragmentPlan {
+  const { lines, index, fragmentIndex, style, available } = input;
+  const isContinuation = fragmentIndex > 0;
+  const bottomLabelAllowance = style.continuesLabel !== undefined ? style.labelHeight : 0;
+  const remaining = lines.length - index;
+
+  // Take everything if it fits without a bottom note; otherwise leave room for
+  // the note that says the block continues.
+  const fitsWhole = Math.floor(available / style.lineHeight) >= remaining;
+  const capacity = Math.max(
+    1,
+    Math.floor((available - (fitsWhole ? 0 : bottomLabelAllowance)) / style.lineHeight),
+  );
+  const take = remaining > capacity && !input.canAdvanceRegion ? remaining : Math.min(capacity, remaining);
+  const bandLines = lines.slice(index, index + take);
+  const willContinue = index + bandLines.length < lines.length && input.canAdvanceRegion;
+
+  const firstLineNumber = firstNumberFrom(lines, index);
+  const info: import("./types.js").CodeContinuationInfo = {
+    fragmentIndex,
+    firstLineNumber,
+    lastLineNumber: lastNumberIn(bandLines) ?? firstLineNumber,
+    totalLines: input.totalLines,
+  };
+  const topLabel = isContinuation ? formatCodeLabel(style.continuedLabel, info) : undefined;
+  const bottomLabel = willContinue ? formatCodeLabel(style.continuesLabel, info) : undefined;
+
+  return {
+    bandLines,
+    isContinuation,
+    willContinue,
+    topLabel,
+    bottomLabel,
+    bandHeight:
+      bandLines.length * style.lineHeight +
+      style.padding * 2 +
+      (topLabel === undefined ? 0 : style.labelHeight) +
+      (bottomLabel === undefined ? 0 : style.labelHeight),
+  };
+}
+
+/**
+ * Wraps one over-long code line into visual lines. Continuations repeat the
+ * line's leading indent (dropped when it would leave less than half the width
+ * for content, which would make no progress) and carry no line number.
+ */
+function wrapCodeLine(
+  line: string,
+  number: number,
+  width: number,
+  measure: (text: string) => number,
+): CodeVisualLine[] {
+  const indent = line.slice(0, line.length - line.trimStart().length);
+  const hangingIndent = measure(indent) < width / 2 ? indent : "";
+  const out: CodeVisualLine[] = [];
+  let rest = line;
+  let first = true;
+
+  while (rest.length > 0) {
+    const prefix = first ? "" : hangingIndent;
+    const room = Math.max(width - measure(prefix), 1);
+    const taken = takeCodeSegment(rest, room, measure);
+    out.push({ text: prefix + taken, number: first ? number : undefined });
+    rest = rest.slice(taken.length);
+    // Leading spaces of a continuation come from the hanging indent instead.
+    if (!first || hangingIndent.length > 0) rest = rest.replace(/^ +/, "");
+    first = false;
+    if (taken.length === 0) break;
+  }
+  return out;
+}
+
 function layoutCodeLines(
   source: string,
   style: ResolvedCodeStyle,
@@ -1477,16 +1710,13 @@ function layoutCodeLines(
   measure: (text: string) => number,
 ): readonly CodeVisualLine[] {
   const tab = " ".repeat(style.tabSize);
-  const sourceLines = source.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  const sourceLines = source.replaceAll(/\r\n/g, "\n").replaceAll(/\r/g, "\n").split("\n");
   const out: CodeVisualLine[] = [];
-  for (let index = 0; index < sourceLines.length; index += 1) {
+
+  for (const [index, sourceLine] of sourceLines.entries()) {
     const number = style.firstLineNumber + index;
-    const line = sourceLines[index]!.replace(/\t/g, tab);
-    if (line.length === 0) {
-      out.push({ text: "", number });
-      continue;
-    }
-    if (measure(line) <= width) {
+    const line = sourceLine.replaceAll(/\t/g, tab);
+    if (line.length === 0 || measure(line) <= width) {
       out.push({ text: line, number });
       continue;
     }
@@ -1494,22 +1724,7 @@ function layoutCodeLines(
       out.push({ text: clipCodeLine(line, width, measure), number });
       continue;
     }
-    const indent = line.slice(0, line.length - line.trimStart().length);
-    // A continuation indent wider than the content width would make no progress.
-    const hangingIndent = measure(indent) < width / 2 ? indent : "";
-    let rest = line;
-    let first = true;
-    while (rest.length > 0) {
-      const prefix = first ? "" : hangingIndent;
-      const room = Math.max(width - measure(prefix), 1);
-      const taken = takeCodeSegment(rest, room, measure);
-      out.push({ text: prefix + taken, number: first ? number : undefined });
-      rest = rest.slice(taken.length);
-      // Leading spaces of a continuation come from the hanging indent instead.
-      if (!first || hangingIndent.length > 0) rest = rest.replace(/^ +/, "");
-      first = false;
-      if (taken.length === 0) break;
-    }
+    out.push(...wrapCodeLine(line, number, width, measure));
   }
   return out;
 }
@@ -1575,16 +1790,16 @@ interface CodeSpan {
  * Splits a rendered line into colored spans. Earlier rules win: a rule never
  * re-colors characters already claimed by a rule before it.
  */
-function highlightCodeLine(
+/**
+ * Per-character map of which rule claimed each position (`-1` for none). Earlier
+ * rules win: a later rule never repaints a character an earlier one matched.
+ */
+function buildHighlightOwners(
   line: string,
   rules: readonly import("./types.js").CodeHighlightRule[],
-): readonly CodeSpan[] {
-  if (rules.length === 0 || line.length === 0) {
-    return [{ text: line, color: undefined, font: undefined }];
-  }
+): number[] {
   const owner = new Array<number>(line.length).fill(-1);
-  for (let ruleIndex = 0; ruleIndex < rules.length; ruleIndex += 1) {
-    const rule = rules[ruleIndex]!;
+  for (const [ruleIndex, rule] of rules.entries()) {
     const pattern = codeHighlightRegExp(rule.pattern);
     pattern.lastIndex = 0;
     let match = pattern.exec(line);
@@ -1599,19 +1814,26 @@ function highlightCodeLine(
       match = pattern.exec(line);
     }
   }
+  return owner;
+}
+
+function highlightCodeLine(
+  line: string,
+  rules: readonly import("./types.js").CodeHighlightRule[],
+): readonly CodeSpan[] {
+  if (rules.length === 0 || line.length === 0) {
+    return [{ text: line, color: undefined, font: undefined }];
+  }
+
+  const owner = buildHighlightOwners(line, rules);
   const spans: CodeSpan[] = [];
   let start = 0;
   for (let i = 1; i <= line.length; i += 1) {
-    if (i === line.length || owner[i] !== owner[start]) {
-      const ruleIndex = owner[start]!;
-      const rule = ruleIndex === -1 ? undefined : rules[ruleIndex];
-      spans.push({
-        text: line.slice(start, i),
-        color: rule?.color,
-        font: rule?.font,
-      });
-      start = i;
-    }
+    if (i !== line.length && owner[i] === owner[start]) continue;
+    const ruleIndex = owner[start]!;
+    const rule = ruleIndex === -1 ? undefined : rules[ruleIndex];
+    spans.push({ text: line.slice(start, i), color: rule?.color, font: rule?.font });
+    start = i;
   }
   return spans;
 }
@@ -1620,7 +1842,7 @@ const CODE_HIGHLIGHT_REGEXP_CACHE = new WeakMap<RegExp, RegExp>();
 
 function codeHighlightRegExp(pattern: RegExp | string): RegExp {
   if (typeof pattern === "string") {
-    return new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
+    return new RegExp(pattern.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`), "g");
   }
   const cached = CODE_HIGHLIGHT_REGEXP_CACHE.get(pattern);
   if (cached) return cached;
@@ -1635,7 +1857,7 @@ function groupPositionedRunsByLine(
 ): import("./internal/text-layout.js").PositionedTextRun[][] {
   const lines: import("./internal/text-layout.js").PositionedTextRun[][] = [];
   for (const run of runs) {
-    const last = lines[lines.length - 1];
+    const last = lines.at(-1);
     if (last && Math.abs(last[0]!.options.y - run.options.y) < 0.001) {
       last.push(run);
     } else {
@@ -1803,7 +2025,7 @@ function withAutoColumnWidths(
   // Correct floating-point drift so the widths sum to exactly `width`
   // (normalizeTableOptions enforces this within 0.001).
   const drift = width - widths.reduce((s, w) => s + w, 0);
-  widths[widths.length - 1] = widths[widths.length - 1]! + drift;
+  widths[widths.length - 1] = widths.at(-1)! + drift;
 
   return { ...options, columnWidths: widths };
 }
@@ -2074,7 +2296,7 @@ export class PdfFlow {
    */
   private composeFlowText(options: FlowTextOptions): FlowTextOptions {
     const merged: FlowTextOptions = {
-      ...(this.textDefaults ?? {}),
+      ...this.textDefaults,
       ...flowTextDefaults(this.state),
       ...options,
     };
@@ -2377,6 +2599,23 @@ export class PdfFlow {
    * @param runs The styled inline runs to lay out together.
    * @param options Flow spacing and inherited style defaults.
    */
+  /** Block-level text style inline runs inherit: per-call value, else flow state. */
+  private resolveRichBlockStyle(options: FlowRichTextOptions): RichBlockStyle {
+    const font = options.font ?? this.state.font;
+    const fontSize = options.fontSize ?? this.state.fontSize;
+    const color = options.color ?? this.state.color;
+    const kerning = options.kerning ?? this.state.kerning;
+    const fallbackFonts = options.fallbackFonts ?? this.state.fallbackFonts;
+    return {
+      ...(font !== undefined ? { font } : {}),
+      ...(fallbackFonts !== undefined ? { fallbackFonts } : {}),
+      ...(fontSize !== undefined ? { fontSize } : {}),
+      ...(color !== undefined ? { color } : {}),
+      ...(kerning !== undefined ? { kerning } : {}),
+      tag: options.tag ?? "P",
+    };
+  }
+
   richParagraph(
     runs: readonly InlineTextRun[],
     options: FlowRichTextOptions = {},
@@ -2389,19 +2628,7 @@ export class PdfFlow {
       options.blockWidth ?? Math.max(this.state.width - spacing.left - spacing.right, 1),
       Math.max(this.state.width - spacing.left - spacing.right, 1),
     );
-    const font = options.font ?? this.state.font;
-    const fontSize = options.fontSize ?? this.state.fontSize;
-    const color = options.color ?? this.state.color;
-    const kerning = options.kerning ?? this.state.kerning;
-    const fallbackFonts = options.fallbackFonts ?? this.state.fallbackFonts;
-    const blockStyle: RichBlockStyle = {
-      ...(font !== undefined ? { font } : {}),
-      ...(fallbackFonts !== undefined ? { fallbackFonts } : {}),
-      ...(fontSize !== undefined ? { fontSize } : {}),
-      ...(color !== undefined ? { color } : {}),
-      ...(kerning !== undefined ? { kerning } : {}),
-      tag: options.tag ?? "P",
-    };
+    const blockStyle = this.resolveRichBlockStyle(options);
     const inputs = buildRichRunInputs(runs, blockStyle, this.fontFamilies, this.textDefaults);
     const normalizedRuns = normalizeRichRuns(inputs);
     const writingMode = options.writingMode ?? "horizontal";
@@ -2558,54 +2785,19 @@ export class PdfFlow {
     const spacing = this.resolveSpacing("code", options);
     this.applyMarginTop(spacing.before);
 
-    const fallbackFonts = this.resolveFallbackFonts(options.fallbackFonts);
-    const styled = resolveFontFamilyOptions(
-      {
-        font: this.resolveCodeFont(options.font),
-        ...(fallbackFonts ? { fallbackFonts } : {}),
-      },
-      this.fontFamilies,
-    );
-    // The marked-content tag must travel on every text op: the serializer only
-    // wraps (and only records an MCID for) text that carries one.
-    const textOptions = (
-      x: number,
-      y: number,
-      color: ColorInput,
-      tag: "Code" | "P" | "Artifact",
-      font?: PdfFont | undefined,
-      fontSize?: number | undefined,
-    ): import("./internal/validation.js").NormalizedTextBaseOptions =>
-      normalizeTextBaseOptions({
-        x,
-        y,
-        font: font ?? styled.font,
-        ...(styled.fallbackFonts ? { fallbackFonts: styled.fallbackFonts } : {}),
-        fontSize: fontSize ?? style.fontSize,
-        kerning: options.kerning ?? false,
-        color,
-        tag,
-      });
-    const measureBase = textOptions(0, 0, style.color, style.tag);
-    const measure = (text: string): number =>
-      text.length === 0 ? 0 : measureTextWidth(text, measureBase, this.embeddedFonts);
-    const measureAt = (text: string, fontSize: number): number =>
-      text.length === 0
-        ? 0
-        : measureTextWidth(text, textOptions(0, 0, style.color, "Artifact", undefined, fontSize), this.embeddedFonts);
-
+    const text = this.buildCodeTextHelpers(style, options);
     const blockAlign = options.blockAlign ?? "left";
     const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
     const blockWidth = Math.min(options.blockWidth ?? innerWidth, innerWidth);
 
-    const sourceLineCount = source.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").length;
+    const sourceLineCount = source.replaceAll(/\r\n/g, "\n").replaceAll(/\r/g, "\n").split("\n").length;
     const gutterWidth = style.lineNumbers
-      ? measure(String(style.firstLineNumber + sourceLineCount - 1)) + style.gutterGap
+      ? text.measure(String(style.firstLineNumber + sourceLineCount - 1)) + style.gutterGap
       : 0;
     const textWidth = Math.max(blockWidth - style.padding * 2 - gutterWidth, 1);
-    const lines = layoutCodeLines(source, style, textWidth, measure);
-    const overhead = style.padding * 2;
-    const totalLines = lines[lines.length - 1]?.number ?? style.firstLineNumber;
+    const lines = layoutCodeLines(source, style, textWidth, text.measure);
+    const totalLines = lines.at(-1)?.number ?? style.firstLineNumber;
+
     // One structure element per page: fragments split across columns of the same
     // page stay inside it, so the tag tree has an element per page rather than
     // per fragment.
@@ -2631,125 +2823,178 @@ export class PdfFlow {
     let index = 0;
     let fragmentIndex = 0;
     while (index < lines.length) {
-      const isContinuation = fragmentIndex > 0;
-      // A continuation note occupies a line of its own at the top of a resumed
-      // fragment, and at the bottom of one that carries on.
-      const topLabelHeight = isContinuation && style.continuedLabel !== undefined ? style.labelHeight : 0;
-      const bottomLabelAllowance = style.continuesLabel !== undefined ? style.labelHeight : 0;
-      const fixed = overhead + topLabelHeight;
+      const fixed = style.padding * 2 + fragmentTopLabelHeight(style, fragmentIndex);
       let available = this.remainingHeight - fixed;
       // Not even one line fits: move to a fresh region when one is available,
       // otherwise overflow the current one rather than loop forever.
       if (available < style.lineHeight && this.state.y < this.state.startY && this.advanceFlowRegion()) {
         available = this.remainingHeight - fixed;
       }
-      const remaining = lines.length - index;
-      // Take everything if it fits without a bottom note; otherwise leave room
-      // for the note that says the block continues.
-      const fitsWhole = Math.floor(available / style.lineHeight) >= remaining;
-      const capacity = Math.max(
-        1,
-        Math.floor((available - (fitsWhole ? 0 : bottomLabelAllowance)) / style.lineHeight),
-      );
-      // A fragment that cannot be continued anywhere is kept whole and allowed
-      // to overflow the region: dropping code silently would be worse.
-      const take = remaining > capacity && !this.canAdvanceRegion ? remaining : Math.min(capacity, remaining);
-      const bandLines = lines.slice(index, index + take);
-      const willContinue = index + bandLines.length < lines.length && this.canAdvanceRegion;
 
-      const firstLineNumber = firstNumberFrom(lines, index);
-      const lastLineNumber = lastNumberIn(bandLines) ?? firstLineNumber;
-      const info: import("./types.js").CodeContinuationInfo = {
+      const fragment = planCodeFragment({
+        lines,
+        index,
         fragmentIndex,
-        firstLineNumber,
-        lastLineNumber,
+        style,
+        available,
         totalLines,
-      };
-      const topLabel = isContinuation ? formatCodeLabel(style.continuedLabel, info) : undefined;
-      const bottomLabel = willContinue ? formatCodeLabel(style.continuesLabel, info) : undefined;
+        canAdvanceRegion: this.canAdvanceRegion,
+      });
 
-      const bandHeight =
-        bandLines.length * style.lineHeight +
-        overhead +
-        (topLabel === undefined ? 0 : style.labelHeight) +
-        (bottomLabel === undefined ? 0 : style.labelHeight);
       // Geometry is re-derived per fragment: a column or page advance moves the
       // content edge (and may narrow the region).
       const bandInnerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
       const bandWidth = Math.min(blockWidth, bandInnerWidth);
       const bandX = computeBlockX(this.state.x, spacing.left, bandInnerWidth, bandWidth, blockAlign);
-      const textX = bandX + style.padding + gutterWidth;
       // The border opens where the listing was cut, so consecutive fragments
       // read as one block instead of separate boxes.
-      this.drawCodeBand(bandX, bandWidth, bandHeight, style, {
-        openTop: style.openSplitEdges && isContinuation,
-        openBottom: style.openSplitEdges && willContinue,
+      this.drawCodeBand(bandX, bandWidth, fragment.bandHeight, style, {
+        openTop: style.openSplitEdges && fragment.isContinuation,
+        openBottom: style.openSplitEdges && fragment.willContinue,
       });
 
-      const fragmentNode = structureNodeForFragment();
+      this.drawCodeFragment(fragment, {
+        style,
+        text,
+        bandX,
+        bandWidth,
+        textX: bandX + style.padding + gutterWidth,
+        gutterWidth,
+        structureNode: structureNodeForFragment(),
+      });
 
-      let baseline = this.state.y - style.padding;
-      const drawLabel = (text: string): void => {
-        baseline -= style.continuationFontSize * CODE_ASCENT_RATIO;
-        const width = measureAt(text, style.continuationFontSize);
-        const labelX =
-          style.continuationAlign === "left"
-            ? bandX + style.padding
-            : bandX + bandWidth - style.padding - width;
-        // Notes about the split are decoration, not part of the code.
-        this.pushCodeText(
-          text,
-          labelX,
-          baseline,
-          textOptions(labelX, baseline, style.continuationColor, "Artifact", undefined, style.continuationFontSize),
-          undefined,
-        );
-        baseline -= style.labelHeight - style.continuationFontSize * CODE_ASCENT_RATIO;
-      };
-      if (topLabel !== undefined) drawLabel(topLabel);
-      baseline -= style.fontSize * CODE_ASCENT_RATIO;
-      for (const line of bandLines) {
-        if (style.lineNumbers && line.number !== undefined) {
-          const label = String(line.number);
-          const numberX = textX - style.gutterGap - measure(label);
-          // Gutter numbers are decoration: artifacts, so they stay out of the
-          // reading order and are not spoken with the code.
-          this.pushCodeText(
-            label,
-            numberX,
-            baseline,
-            textOptions(numberX, baseline, style.lineNumberColor, "Artifact"),
-            undefined,
-          );
-        }
-        let x = textX;
-        for (const span of highlightCodeLine(line.text, style.highlight)) {
-          if (span.text.trim().length > 0) {
-            this.pushCodeText(
-              span.text,
-              x,
-              baseline,
-              textOptions(x, baseline, span.color ?? style.color, style.tag, span.font),
-              fragmentNode,
-            );
-          }
-          x += measure(span.text);
-        }
-        baseline -= style.lineHeight;
-      }
-      if (bottomLabel !== undefined) {
-        baseline += style.fontSize * CODE_ASCENT_RATIO;
-        drawLabel(bottomLabel);
-      }
-
-      this.state.y -= bandHeight;
-      index += bandLines.length;
+      this.state.y -= fragment.bandHeight;
+      index += fragment.bandLines.length;
       fragmentIndex += 1;
       if (index < lines.length && !this.advanceFlowRegion()) break;
     }
 
     this.state.y -= spacing.after;
     return this;
+  }
+
+  /**
+   * Text measuring and option building for one code block. Every op carries the
+   * marked-content tag: the serializer only wraps (and only records an MCID for)
+   * text that has one.
+   */
+  private buildCodeTextHelpers(
+    style: ResolvedCodeStyle,
+    options: FlowCodeOptions,
+  ): CodeTextHelpers {
+    const fallbackFonts = this.resolveFallbackFonts(options.fallbackFonts);
+    const styled = resolveFontFamilyOptions(
+      {
+        font: this.resolveCodeFont(options.font),
+        ...(fallbackFonts ? { fallbackFonts } : {}),
+      },
+      this.fontFamilies,
+    );
+    const textOptions = (
+      x: number,
+      y: number,
+      color: ColorInput,
+      tag: "Code" | "P" | "Artifact",
+      font?: PdfFont | undefined,
+      fontSize?: number | undefined,
+    ): NormalizedTextBaseOptions =>
+      normalizeTextBaseOptions({
+        x,
+        y,
+        font: font ?? styled.font,
+        ...(styled.fallbackFonts ? { fallbackFonts: styled.fallbackFonts } : {}),
+        fontSize: fontSize ?? style.fontSize,
+        kerning: options.kerning ?? false,
+        color,
+        tag,
+      });
+    const measureBase = textOptions(0, 0, style.color, style.tag);
+    return {
+      textOptions,
+      measure: (value: string): number =>
+        value.length === 0 ? 0 : measureTextWidth(value, measureBase, this.embeddedFonts),
+      measureAt: (value: string, fontSize: number): number =>
+        value.length === 0
+          ? 0
+          : measureTextWidth(
+              value,
+              textOptions(0, 0, style.color, "Artifact", undefined, fontSize),
+              this.embeddedFonts,
+            ),
+    };
+  }
+
+  /** Draws one fragment's continuation notes, gutter numbers, and code spans. */
+  private drawCodeFragment(
+    fragment: CodeFragmentPlan,
+    context: {
+      style: ResolvedCodeStyle;
+      text: CodeTextHelpers;
+      bandX: number;
+      bandWidth: number;
+      textX: number;
+      gutterWidth: number;
+      structureNode: InternalStructureNode | undefined;
+    },
+  ): void {
+    const { style, text, bandX, bandWidth, textX } = context;
+    let baseline = this.state.y - style.padding;
+
+    // Notes about the split are decoration, not part of the code.
+    const drawLabel = (label: string): void => {
+      baseline -= style.continuationFontSize * CODE_ASCENT_RATIO;
+      const width = text.measureAt(label, style.continuationFontSize);
+      const labelX =
+        style.continuationAlign === "left"
+          ? bandX + style.padding
+          : bandX + bandWidth - style.padding - width;
+      this.pushCodeText(
+        label,
+        labelX,
+        baseline,
+        text.textOptions(labelX, baseline, style.continuationColor, "Artifact", undefined, style.continuationFontSize),
+        undefined,
+      );
+      baseline -= style.labelHeight - style.continuationFontSize * CODE_ASCENT_RATIO;
+    };
+
+    if (fragment.topLabel !== undefined) drawLabel(fragment.topLabel);
+    baseline -= style.fontSize * CODE_ASCENT_RATIO;
+
+    for (const line of fragment.bandLines) {
+      if (style.lineNumbers && line.number !== undefined) {
+        const label = String(line.number);
+        const numberX = textX - style.gutterGap - text.measure(label);
+        // Gutter numbers are decoration: artifacts, so they stay out of the
+        // reading order and are not spoken with the code.
+        this.pushCodeText(
+          label,
+          numberX,
+          baseline,
+          text.textOptions(numberX, baseline, style.lineNumberColor, "Artifact"),
+          undefined,
+        );
+      }
+      let x = textX;
+      for (const span of highlightCodeLine(line.text, style.highlight)) {
+        if (span.text.trim().length > 0) {
+          this.pushCodeText(
+            span.text,
+            x,
+            baseline,
+            text.textOptions(x, baseline, span.color ?? style.color, style.tag, span.font),
+            context.structureNode,
+          );
+        }
+        x += text.measure(span.text);
+      }
+      baseline -= style.lineHeight;
+    }
+
+    if (fragment.bottomLabel !== undefined) {
+      baseline += style.fontSize * CODE_ASCENT_RATIO;
+      drawLabel(fragment.bottomLabel);
+    }
   }
 
   /**
@@ -2762,8 +3007,9 @@ export class PdfFlow {
     width: number,
     height: number,
     style: ResolvedCodeStyle,
-    edges: { openTop: boolean; openBottom: boolean } = { openTop: false, openBottom: false },
+    edges?: { openTop: boolean; openBottom: boolean },
   ): void {
+    const { openTop = false, openBottom = false } = edges ?? {};
     if (style.background === undefined && style.borderColor === undefined) return;
     const bottom = this.state.y - height;
     const top = this.state.y;
@@ -2781,7 +3027,7 @@ export class PdfFlow {
     }
     if (style.borderColor === undefined) return;
     const stroke = { color: style.borderColor, width: style.borderWidth };
-    if (!edges.openTop && !edges.openBottom) {
+    if (!openTop && !openBottom) {
       this.page.ops.push({
         type: "path",
         commands: [{ type: "rect", x, y: bottom, width, height }],
@@ -2796,10 +3042,10 @@ export class PdfFlow {
       { type: "moveTo", x: right, y: bottom },
       { type: "lineTo", x: right, y: top },
     ];
-    if (!edges.openTop) {
+    if (!openTop) {
       commands.push({ type: "moveTo", x, y: top }, { type: "lineTo", x: right, y: top });
     }
-    if (!edges.openBottom) {
+    if (!openBottom) {
       commands.push({ type: "moveTo", x, y: bottom }, { type: "lineTo", x: right, y: bottom });
     }
     this.page.ops.push({
@@ -2851,7 +3097,7 @@ export class PdfFlow {
       text.length === 0 ? 0 : measureTextWidth(text, measureBase, this.embeddedFonts);
     const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
     const blockWidth = Math.min(options.blockWidth ?? innerWidth, innerWidth);
-    const sourceLineCount = source.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").length;
+    const sourceLineCount = source.replaceAll(/\r\n/g, "\n").replaceAll(/\r/g, "\n").split("\n").length;
     const gutterWidth = style.lineNumbers
       ? measure(String(style.firstLineNumber + sourceLineCount - 1)) + style.gutterGap
       : 0;
@@ -3140,7 +3386,7 @@ export class PdfFlow {
     );
     const width = options.width ?? innerWidth;
     const normalizedOptions = normalizeTableOptions(normalizedRows, withAutoColumnWidths(resolveFontFamilyOptions({
-      ...(this.textDefaults ?? {}),
+      ...this.textDefaults,
       ...flowTextDefaults(this.state),
       ...options,
       x: this.state.x + spacing.left,
@@ -3192,7 +3438,7 @@ export class PdfFlow {
     const width = options.width ?? innerWidth;
     const resolved = withAutoColumnWidths(
       resolveFontFamilyOptions(
-        { ...(this.textDefaults ?? {}), ...flowTextDefaults(this.state), ...options, x: this.state.x, y: this.state.y, width },
+        { ...this.textDefaults, ...flowTextDefaults(this.state), ...options, x: this.state.x, y: this.state.y, width },
         this.fontFamilies,
       ),
       normalizedRows,
@@ -3408,7 +3654,7 @@ export class PdfFlow {
     const innerWidth = Math.max(this.state.width - spacing.left - spacing.right, 1);
     const width = options.width ?? innerWidth;
     const normalizedOptions = normalizeTableOptions(normalizedRows, withAutoColumnWidths(resolveFontFamilyOptions({
-      ...(this.textDefaults ?? {}),
+      ...this.textDefaults,
       ...flowTextDefaults(this.state),
       ...options,
       x: this.state.x,
@@ -3432,55 +3678,13 @@ export class PdfFlow {
           startColumn + cell.colSpan,
           normalizedOptions.columnWidths.length,
         );
-        const cellWidth = sumNumbers(
-          normalizedOptions.columnWidths.slice(startColumn, endColumn),
-        );
-        const textWidth = Math.max(
-          1,
-          cellWidth - normalizedOptions.cellPadding * 2,
-        );
-        if (cell.richRuns !== undefined) {
-          const normalizedRuns = normalizeRichRuns(cell.richRuns);
-          const lineHeight = Math.max(normalizedOptions.lineHeight, richLineHeight(normalizedRuns));
-          const lines = breakInlineLines(
-            normalizedRuns,
-            { width: textWidth, writingMode: "horizontal" },
-            this.embeddedFonts,
-          );
-          cellHeights.push(
-            Math.max(lines.length, 1) * lineHeight + normalizedOptions.cellPadding * 2,
-          );
-        } else {
-          const runs = layoutTextBlock(
-            cell.text,
-            {
-              ...normalizedOptions,
-              ...(cell.font !== undefined ? { font: cell.font } : {}),
-              x: this.state.x + normalizedOptions.cellPadding,
-              y: this.state.y - normalizedOptions.cellPadding,
-              width: textWidth,
-              tag: "P",
-            },
-            this.embeddedFonts,
-          );
-          cellHeights.push(
-            measurePositionedRunHeight(runs, normalizedOptions.lineHeight) +
-              normalizedOptions.cellPadding * 2,
-          );
-        }
+        cellHeights.push(this.measureTableCellHeight(cell, startColumn, endColumn, normalizedOptions));
 
         if (cell.rowSpan > 1) {
-          for (
-            let occupiedColumn = startColumn;
-            occupiedColumn < endColumn;
-            occupiedColumn += 1
-          ) {
+          for (let occupiedColumn = startColumn; occupiedColumn < endColumn; occupiedColumn += 1) {
             rowSpanOccupancy.set(
               occupiedColumn,
-              Math.max(
-                rowSpanOccupancy.get(occupiedColumn) ?? 0,
-                cell.rowSpan - 1,
-              ),
+              Math.max(rowSpanOccupancy.get(occupiedColumn) ?? 0, cell.rowSpan - 1),
             );
           }
         }
@@ -3497,6 +3701,48 @@ export class PdfFlow {
     }
 
     return heights;
+  }
+
+  /**
+   * Height one cell needs, including padding. Rich runs are line-broken with
+   * their own (possibly larger) line height; plain text is laid out normally.
+   */
+  private measureTableCellHeight(
+    cell: NormalizedTableRow[number],
+    startColumn: number,
+    endColumn: number,
+    normalizedOptions: ReturnType<typeof normalizeTableOptions>,
+  ): number {
+    const cellWidth = sumNumbers(normalizedOptions.columnWidths.slice(startColumn, endColumn));
+    const textWidth = Math.max(1, cellWidth - normalizedOptions.cellPadding * 2);
+
+    if (cell.richRuns !== undefined) {
+      const normalizedRuns = normalizeRichRuns(cell.richRuns);
+      const lineHeight = Math.max(normalizedOptions.lineHeight, richLineHeight(normalizedRuns));
+      const lines = breakInlineLines(
+        normalizedRuns,
+        { width: textWidth, writingMode: "horizontal" },
+        this.embeddedFonts,
+      );
+      return Math.max(lines.length, 1) * lineHeight + normalizedOptions.cellPadding * 2;
+    }
+
+    const runs = layoutTextBlock(
+      cell.text,
+      {
+        ...normalizedOptions,
+        ...(cell.font !== undefined ? { font: cell.font } : {}),
+        x: this.state.x + normalizedOptions.cellPadding,
+        y: this.state.y - normalizedOptions.cellPadding,
+        width: textWidth,
+        tag: "P",
+      },
+      this.embeddedFonts,
+    );
+    return (
+      measurePositionedRunHeight(runs, normalizedOptions.lineHeight) +
+      normalizedOptions.cellPadding * 2
+    );
   }
 
   /**
@@ -3564,7 +3810,7 @@ export class PdfFlow {
   ): number {
     const normalizedItems = normalizeListItems(items);
     const normalizedOptions = normalizeListOptions(normalizedItems, resolveFontFamilyOptions({
-      ...(this.textDefaults ?? {}),
+      ...this.textDefaults,
       ...flowTextDefaults(this.state),
       x: this.state.x,
       y: this.state.y,
@@ -3618,86 +3864,19 @@ export class PdfFlow {
     const blockWidth = Math.min(options.blockWidth ?? innerWidth, innerWidth);
     const blockAlign = options.blockAlign ?? "left";
     const blockX = computeBlockX(this.state.x, marginLeft, innerWidth, blockWidth, blockAlign);
+
+    // Multi-column flows place the paragraph line-by-line so it can break
+    // across columns; a single column can hand the whole block to the page.
     if (this.state.columnCount > 1 && options.writingMode !== "vertical") {
-      validateText(text);
-      const normalized = normalizeTextBlockOptions(text, {
-        ...this.composeFlowText(options),
-        x: blockX,
-        y: this.state.y,
-        width: blockWidth,
+      return this.writeTextBlockAcrossColumns(text, options, {
+        marginLeft,
+        marginRight,
+        blockWidth,
+        blockAlign,
+        blockX,
       });
-      const createTextStructureNode = (): InternalStructureNode | undefined =>
-        normalized.tag === undefined || normalized.tag === "Artifact"
-          ? undefined
-          : createStructureNode(this.page, normalized.tag, normalized.structure, this.parent);
-      let structureNode = createTextStructureNode();
-      const laidOutRuns = layoutTextBlock(text, normalized, this.embeddedFonts);
-      const lines = groupPositionedRunsByLine(laidOutRuns);
-      let placedRuns: import("./internal/text-layout.js").PositionedTextRun[] = [];
-
-      const advanceRegion = (): void => {
-        if (!this.advanceColumn()) {
-          pushTextHighlights(this.page, placedRuns, normalized, this.embeddedFonts);
-          pushPositionedTextRuns(this.page, placedRuns, structureNode?.id);
-          pushTextDecorations(this.page, placedRuns, normalized, this.embeddedFonts);
-          placedRuns = [];
-          if (this.advanceFlowRegion()) {
-            structureNode = createTextStructureNode();
-          }
-        }
-      };
-
-      // Precompute region break points so orphan/widow minimums can pull the
-      // break earlier than a purely greedy fill would. Defaults (1/1) reproduce
-      // greedy fill exactly.
-      const lineHeight = normalized.lineHeight;
-      const orphans = Math.max(1, Math.floor(options.orphans ?? 1));
-      const widows = Math.max(1, Math.floor(options.widows ?? 1));
-      const fullCap = Math.max(1, Math.floor((this.state.startY - this.state.marginBottom) / lineHeight));
-      let firstCap = Math.max(0, Math.floor(this.remainingHeight / lineHeight));
-      // Orphan control: if the paragraph will split and fewer than `orphans` of
-      // its lines fit in the current partial region, move it whole to a fresh one.
-      if (this.state.y < this.state.startY && lines.length > firstCap && firstCap < orphans) {
-        advanceRegion();
-        firstCap = fullCap;
-      }
-      const breakBefore = new Set(
-        computeParagraphRegionBreaks(lines.length, firstCap, fullCap, orphans, widows),
-      );
-
-      for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
-        const line = lines[lineIndex]!;
-        if (breakBefore.has(lineIndex)) {
-          advanceRegion();
-        }
-        const currentInnerWidth = Math.max(this.state.width - marginLeft - marginRight, 1);
-        const currentBlockX = computeBlockX(
-          this.state.x,
-          marginLeft,
-          currentInnerWidth,
-          blockWidth,
-          blockAlign,
-        );
-        const deltaX = currentBlockX - blockX;
-        for (const run of line) {
-          placedRuns.push({
-            text: run.text,
-            options: {
-              ...run.options,
-              x: run.options.x + deltaX,
-              y: this.state.y,
-            },
-            ...(run.glyphs ? { glyphs: run.glyphs } : {}),
-          });
-        }
-        this.state.y -= normalized.lineHeight;
-      }
-
-      pushTextHighlights(this.page, placedRuns, normalized, this.embeddedFonts);
-      pushPositionedTextRuns(this.page, placedRuns, structureNode?.id);
-      pushTextDecorations(this.page, placedRuns, normalized, this.embeddedFonts);
-      return { height: 0, runs: placedRuns };
     }
+
     return addFlowTextBlockToPage(
       this.page,
       this.embeddedFonts,
@@ -3710,6 +3889,103 @@ export class PdfFlow {
       },
       this.parent,
     );
+  }
+
+  /**
+   * Places a paragraph line-by-line across the flow's columns, honouring the
+   * orphan/widow minimums, and returns the runs it emitted. Height is reported
+   * as 0: the cursor has already been advanced per line.
+   */
+  private writeTextBlockAcrossColumns(
+    text: string,
+    options: FlowTextOptions,
+    geometry: {
+      marginLeft: number;
+      marginRight: number;
+      blockWidth: number;
+      blockAlign: "left" | "center" | "right";
+      blockX: number;
+    },
+  ): { height: number; runs: readonly import("./internal/text-layout.js").PositionedTextRun[] } {
+    const { marginLeft, marginRight, blockWidth, blockAlign, blockX } = geometry;
+    validateText(text);
+    const normalized = normalizeTextBlockOptions(text, {
+      ...this.composeFlowText(options),
+      x: blockX,
+      y: this.state.y,
+      width: blockWidth,
+    });
+    const createTextStructureNode = (): InternalStructureNode | undefined =>
+      normalized.tag === undefined || normalized.tag === "Artifact"
+        ? undefined
+        : createStructureNode(this.page, normalized.tag, normalized.structure, this.parent);
+    let structureNode = createTextStructureNode();
+    const laidOutRuns = layoutTextBlock(text, normalized, this.embeddedFonts);
+    const lines = groupPositionedRunsByLine(laidOutRuns);
+    let placedRuns: import("./internal/text-layout.js").PositionedTextRun[] = [];
+
+    const advanceRegion = (): void => {
+      if (!this.advanceColumn()) {
+        pushTextHighlights(this.page, placedRuns, normalized, this.embeddedFonts);
+        pushPositionedTextRuns(this.page, placedRuns, structureNode?.id);
+        pushTextDecorations(this.page, placedRuns, normalized, this.embeddedFonts);
+        placedRuns = [];
+        if (this.advanceFlowRegion()) {
+          structureNode = createTextStructureNode();
+        }
+      }
+    };
+
+    // Precompute region break points so orphan/widow minimums can pull the
+    // break earlier than a purely greedy fill would. Defaults (1/1) reproduce
+    // greedy fill exactly.
+    const lineHeight = normalized.lineHeight;
+    const orphans = Math.max(1, Math.floor(options.orphans ?? 1));
+    const widows = Math.max(1, Math.floor(options.widows ?? 1));
+    const fullCap = Math.max(1, Math.floor((this.state.startY - this.state.marginBottom) / lineHeight));
+    let firstCap = Math.max(0, Math.floor(this.remainingHeight / lineHeight));
+    // Orphan control: if the paragraph will split and fewer than `orphans` of
+    // its lines fit in the current partial region, move it whole to a fresh one.
+    if (this.state.y < this.state.startY && lines.length > firstCap && firstCap < orphans) {
+      advanceRegion();
+      firstCap = fullCap;
+    }
+    const breakBefore = new Set(
+      computeParagraphRegionBreaks(lines.length, firstCap, fullCap, orphans, widows),
+    );
+
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+      const line = lines[lineIndex]!;
+      if (breakBefore.has(lineIndex)) {
+        advanceRegion();
+      }
+      const currentInnerWidth = Math.max(this.state.width - marginLeft - marginRight, 1);
+      const currentBlockX = computeBlockX(
+        this.state.x,
+        marginLeft,
+        currentInnerWidth,
+        blockWidth,
+        blockAlign,
+      );
+      const deltaX = currentBlockX - blockX;
+      for (const run of line) {
+        placedRuns.push({
+          text: run.text,
+          options: {
+            ...run.options,
+            x: run.options.x + deltaX,
+            y: this.state.y,
+          },
+          ...(run.glyphs ? { glyphs: run.glyphs } : {}),
+        });
+      }
+      this.state.y -= normalized.lineHeight;
+    }
+
+    pushTextHighlights(this.page, placedRuns, normalized, this.embeddedFonts);
+    pushPositionedTextRuns(this.page, placedRuns, structureNode?.id);
+    pushTextDecorations(this.page, placedRuns, normalized, this.embeddedFonts);
+    return { height: 0, runs: placedRuns };
   }
 
   private applyParagraphAnnotations(
@@ -4448,7 +4724,7 @@ export class PdfFlow {
     const x = options.x ?? this.state.x + spacing.left;
     const width = options.width ?? Math.max(this.state.width - spacing.left - spacing.right, 1);
     const resolvedOptions = resolveFontFamilyOptions({
-      ...(this.textDefaults ?? {}),
+      ...this.textDefaults,
       ...flowTextDefaults(this.state),
       ...options,
       x,
@@ -4479,38 +4755,7 @@ export class PdfFlow {
    * relationships for hierarchical form fields.
    */
   private registerFieldName(name: string): string {
-    const lastDot = name.lastIndexOf(".");
-    if (lastDot === -1) {
-      return name;
-    }
-
-    const childName = name.slice(lastDot + 1);
-    const parentName = name.slice(0, lastDot);
-
-    if (childName.length === 0 || parentName.length === 0) {
-      throw new PdfEngineError(
-        PdfErrorCode.INVALID_FORM_FIELD_NAME,
-        "Dotted form field names must have non-empty segments on both sides of the dot.",
-        { name },
-      );
-    }
-
-    if (name.slice(0, lastDot).includes(".")) {
-      this.registerFieldName(parentName);
-    }
-
-    this.page.parentFieldKids ??= new Map();
-
-    const kids = this.page.parentFieldKids.get(parentName);
-    if (kids) {
-      if (!kids.includes(name)) {
-        kids.push(name);
-      }
-    } else {
-      this.page.parentFieldKids.set(parentName, [name]);
-    }
-
-    return name;
+    return registerDottedFieldName(this.page, name);
   }
 }
 
@@ -5366,39 +5611,7 @@ export class PdfPage {
    * relationships for hierarchical form fields. Returns the full name.
    */
   private registerFieldName(name: string): string {
-    const lastDot = name.lastIndexOf(".");
-    if (lastDot === -1) {
-      return name;
-    }
-
-    const childName = name.slice(lastDot + 1);
-    const parentName = name.slice(0, lastDot);
-
-    if (childName.length === 0 || parentName.length === 0) {
-      throw new PdfEngineError(
-        PdfErrorCode.INVALID_FORM_FIELD_NAME,
-        "Dotted form field names must have non-empty segments on both sides of the dot.",
-        { name },
-      );
-    }
-
-    if (name.slice(0, lastDot).includes(".")) {
-      // Recurse to register intermediate parents
-      this.registerFieldName(parentName);
-    }
-
-    this.page.parentFieldKids ??= new Map();
-
-    const kids = this.page.parentFieldKids.get(parentName);
-    if (kids) {
-      if (!kids.includes(name)) {
-        kids.push(name);
-      }
-    } else {
-      this.page.parentFieldKids.set(parentName, [name]);
-    }
-
-    return name;
+    return registerDottedFieldName(this.page, name);
   }
 
   /**
@@ -5818,7 +6031,7 @@ export class PdfDocument {
   private textShaper?: TextShaper | undefined;
 
   /** Document-wide text defaults applied to text APIs when options are omitted. */
-  private readonly textDefaults?: TextDefaults | undefined;
+  private readonly textDefaults: TextDefaults;
 
   /**
    * Font used for code content when a call omits it: the `codeFont` default,
@@ -5878,9 +6091,7 @@ export class PdfDocument {
     this.outputIntent = options.outputIntent;
     this.signature = options.signature;
     this.textShaper = options.textShaper;
-    if (options.defaults !== undefined) {
-      this.textDefaults = { ...options.defaults };
-    }
+    this.textDefaults = { ...options.defaults };
     if (options.shapeDefaults !== undefined) {
       this.shapeDefaults = { ...options.shapeDefaults };
     }
@@ -5942,6 +6153,34 @@ export class PdfDocument {
   setTextShaper(shaper: TextShaper | undefined): void {
     this._mutate();
     this.textShaper = shaper;
+  }
+
+  /**
+   * Updates the document-wide text defaults. Existing page builders observe
+   * the update as well, so fonts can be loaded asynchronously after creating
+   * the document but before drawing text.
+   */
+  setTextDefaults(defaults: TextDefaults): void {
+    this._mutate();
+    Object.assign(this.textDefaults, defaults);
+    this._unlock();
+  }
+
+  /**
+   * Loads and configures document fonts through the high-level font API.
+   *
+   * @example
+   * ```ts
+   * const doc = createDocument();
+   * await doc.fonts(liberation);
+   * doc.addPage().text("Typography · café — ✓", { x: 56, y: 760 });
+   * ```
+   */
+  async fonts(
+    configuration: import("./fonts.js").FontConfiguration,
+  ): Promise<import("./fonts.js").ConfiguredFonts> {
+    const { configureFonts } = await import("./fonts.js");
+    return configureFonts(this, configuration);
   }
 
   /**
@@ -6438,9 +6677,7 @@ export class PdfDocument {
           "Document has been modified after serialization. Create a new document to produce additional output.",
         );
       }
-      if (this._finalizedBytes === undefined) {
-        this._finalizedBytes = serializeDocument(this.toModel());
-      }
+      this._finalizedBytes ??= serializeDocument(this.toModel());
       const bytes = this._finalizedBytes!;
       const buffer = new ArrayBuffer(bytes.byteLength);
       new Uint8Array(buffer).set(bytes);
@@ -6476,9 +6713,7 @@ export class PdfDocument {
           "Document has been modified after serialization. Create a new document to produce additional output.",
         );
       }
-      if (this._finalizedBytes === undefined) {
-        this._finalizedBytes = serializeDocument(this.toModel());
-      }
+      this._finalizedBytes ??= serializeDocument(this.toModel());
       return new Blob([this._finalizedBytes! as BlobPart], { type: "application/pdf" });
     }
     // See toUint8Array() for why finalization happens only after success.
@@ -6495,10 +6730,7 @@ export class PdfDocument {
    * @returns The serialized PDF data as an ArrayBuffer.
    */
   async toArrayBufferAsync(): Promise<ArrayBuffer> {
-    const bytes = await this.toUint8ArrayAsync();
-    const buffer = new ArrayBuffer(bytes.byteLength);
-    new Uint8Array(buffer).set(bytes);
-    return buffer;
+    return toDetachedArrayBuffer(await this.toUint8ArrayAsync());
   }
 
   /**
@@ -6826,9 +7058,7 @@ export class PdfDocument {
    * @param path The file path to write to.
    */
   async writeToFile(path: string): Promise<void> {
-    const bytes = await this.toUint8ArrayAsync();
-    const { writeFile } = await import('node:fs/promises');
-    await writeFile(path, bytes);
+    await writeBytesToFile(path, await this.toUint8ArrayAsync());
   }
 
   /**
@@ -7849,9 +8079,7 @@ export class PdfEditableDocument {
           "Document has been modified after serialization. Create a new document to produce additional output.",
         );
       }
-      if (this._finalizedBytes === undefined) {
-        this._finalizedBytes = serializeIncrementalUpdate(this.toIncrementalModel());
-      }
+      this._finalizedBytes ??= serializeIncrementalUpdate(this.toIncrementalModel());
       const bytes = this._finalizedBytes!;
       const buffer = new ArrayBuffer(bytes.byteLength);
       new Uint8Array(buffer).set(bytes);
@@ -7887,9 +8115,7 @@ export class PdfEditableDocument {
           "Document has been modified after serialization. Create a new document to produce additional output.",
         );
       }
-      if (this._finalizedBytes === undefined) {
-        this._finalizedBytes = serializeIncrementalUpdate(this.toIncrementalModel());
-      }
+      this._finalizedBytes ??= serializeIncrementalUpdate(this.toIncrementalModel());
       return new Blob([this._finalizedBytes! as BlobPart], { type: "application/pdf" });
     }
     // See toUint8Array() for why finalization happens only after success.
@@ -7906,10 +8132,7 @@ export class PdfEditableDocument {
    * @returns The serialized PDF data as an ArrayBuffer.
    */
   async toArrayBufferAsync(): Promise<ArrayBuffer> {
-    const bytes = await this.toUint8ArrayAsync();
-    const buffer = new ArrayBuffer(bytes.byteLength);
-    new Uint8Array(buffer).set(bytes);
-    return buffer;
+    return toDetachedArrayBuffer(await this.toUint8ArrayAsync());
   }
 
   /**
@@ -8096,9 +8319,7 @@ export class PdfEditableDocument {
    * @param path The file path to write to.
    */
   async writeToFile(path: string): Promise<void> {
-    const bytes = await this.toUint8ArrayAsync();
-    const { writeFile } = await import('node:fs/promises');
-    await writeFile(path, bytes);
+    await writeBytesToFile(path, await this.toUint8ArrayAsync());
   }
 
   /**
@@ -8305,23 +8526,27 @@ function matchesEditableStructureElementHandle(
   );
 }
 
-function createFlowState(
+/** Flow margins: explicit per-side values win over the shorthand, then the default. */
+function resolveFlowMargins(
   page: InternalPageModel,
   options: FlowOptions,
-): FlowState {
+): { top: number; right: number; bottom: number; left: number } {
   const fallback = defaultFlowMargin(page.size);
   const shorthand = resolveMarginShorthand(options.margin);
   const hasShorthand = options.margin !== undefined;
-  const top = options.marginTop ?? (hasShorthand ? shorthand.top : fallback);
-  const right =
-    options.marginRight ?? (hasShorthand ? shorthand.right : fallback);
-  const bottomMargin =
-    options.marginBottom ?? (hasShorthand ? shorthand.bottom : fallback);
-  const leftMargin =
-    options.marginLeft ?? (hasShorthand ? shorthand.left : fallback);
-  const x = options.x ?? leftMargin;
-  const y = options.y ?? page.size.height - top;
-  const frameWidth = options.width ?? page.size.width - x - right;
+  return {
+    top: options.marginTop ?? (hasShorthand ? shorthand.top : fallback),
+    right: options.marginRight ?? (hasShorthand ? shorthand.right : fallback),
+    bottom: options.marginBottom ?? (hasShorthand ? shorthand.bottom : fallback),
+    left: options.marginLeft ?? (hasShorthand ? shorthand.left : fallback),
+  };
+}
+
+/** Validates the column setup and returns the width of a single column. */
+function resolveFlowColumns(
+  options: FlowOptions,
+  frameWidth: number,
+): { columnCount: number; columnGap: number; columnWidth: number } {
   const columnCount = options.columns?.count ?? 1;
   const columnGap = options.columns?.gap ?? (columnCount > 1 ? 18 : 0);
   if (!Number.isInteger(columnCount) || columnCount < 1) {
@@ -8346,7 +8571,33 @@ function createFlowState(
       { width: frameWidth, columns: columnCount, columnGap },
     );
   }
-  const columnWidth = (frameWidth - totalColumnGap) / columnCount;
+  return { columnCount, columnGap, columnWidth: (frameWidth - totalColumnGap) / columnCount };
+}
+
+/** Inline text style the flow carries as its default for every block. */
+function inheritedFlowStyle(options: FlowOptions): Partial<FlowState> {
+  return {
+    ...(options.font === undefined ? {} : { font: options.font }),
+    ...(options.fallbackFonts === undefined ? {} : { fallbackFonts: [...options.fallbackFonts] }),
+    ...(options.direction === undefined ? {} : { direction: options.direction }),
+    ...(options.fontSize === undefined ? {} : { fontSize: options.fontSize }),
+    ...(options.color === undefined ? {} : { color: options.color }),
+    ...(options.lineHeight === undefined ? {} : { lineHeight: options.lineHeight }),
+    ...(options.align === undefined ? {} : { align: options.align }),
+    ...(options.kerning === undefined ? {} : { kerning: options.kerning }),
+    ...(options.writingMode === undefined ? {} : { writingMode: options.writingMode }),
+  };
+}
+
+function createFlowState(
+  page: InternalPageModel,
+  options: FlowOptions,
+): FlowState {
+  const margins = resolveFlowMargins(page, options);
+  const x = options.x ?? margins.left;
+  const y = options.y ?? page.size.height - margins.top;
+  const frameWidth = options.width ?? page.size.width - x - margins.right;
+  const { columnCount, columnGap, columnWidth } = resolveFlowColumns(options, frameWidth);
 
   return {
     x,
@@ -8358,25 +8609,9 @@ function createFlowState(
     columnGap,
     columnIndex: 0,
     gap: options.gap ?? STANDARD_FLOW_SPACING.paragraphAfter,
-    marginBottom: bottomMargin,
+    marginBottom: margins.bottom,
     spacing: resolveFlowSpacing(options),
-    ...(options.font === undefined ? {} : { font: options.font }),
-    ...(options.fallbackFonts === undefined
-      ? {}
-      : { fallbackFonts: [...options.fallbackFonts] }),
-    ...(options.direction === undefined
-      ? {}
-      : { direction: options.direction }),
-    ...(options.fontSize === undefined ? {} : { fontSize: options.fontSize }),
-    ...(options.color === undefined ? {} : { color: options.color }),
-    ...(options.lineHeight === undefined
-      ? {}
-      : { lineHeight: options.lineHeight }),
-    ...(options.align === undefined ? {} : { align: options.align }),
-    ...(options.kerning === undefined ? {} : { kerning: options.kerning }),
-    ...(options.writingMode === undefined
-      ? {}
-      : { writingMode: options.writingMode }),
+    ...inheritedFlowStyle(options),
   };
 }
 
@@ -8695,7 +8930,7 @@ const BUILTIN_FONT_USAGE_LIMIT = 25;
 const BUILTIN_FONT_SNIPPET_LENGTH = 60;
 
 function builtInFontSnippet(text: string): string {
-  const collapsed = text.replace(/\s+/g, " ").trim();
+  const collapsed = text.replaceAll(/\s+/g, " ").trim();
   return collapsed.length > BUILTIN_FONT_SNIPPET_LENGTH
     ? `${collapsed.slice(0, BUILTIN_FONT_SNIPPET_LENGTH)}…`
     : collapsed;
@@ -8705,19 +8940,25 @@ function builtInFontSnippet(text: string): string {
  * Lists the text ops and annotations that draw with a built-in (non-embedded)
  * font, so compliance errors can name the page and content at fault.
  */
+/** Annotation types whose appearance stream names a built-in font. */
+const FONT_BEARING_ANNOTATION_TYPES = new Set([
+  "textField",
+  "choiceField",
+  "freeText",
+  "pushButton",
+]);
+
 function collectBuiltInFontUsages(
   pages: readonly InternalPageModel[],
 ): PdfComplianceLocation[] {
   const usages: PdfComplianceLocation[] = [];
+
   for (const [index, page] of pages.entries()) {
     const pageNumber = index + 1;
+
     for (const op of page.ops) {
-      if (usages.length >= BUILTIN_FONT_USAGE_LIMIT) {
-        return usages;
-      }
-      if (op.type !== "text" || typeof op.options.font !== "string") {
-        continue;
-      }
+      if (usages.length >= BUILTIN_FONT_USAGE_LIMIT) return usages;
+      if (op.type !== "text" || typeof op.options.font !== "string") continue;
       const snippet = builtInFontSnippet(op.text);
       usages.push({
         page: pageNumber,
@@ -8726,23 +8967,16 @@ function collectBuiltInFontUsages(
         ...(snippet !== "" ? { snippet } : {}),
       });
     }
+
     for (const annotation of page.annotations) {
-      if (usages.length >= BUILTIN_FONT_USAGE_LIMIT) {
-        return usages;
-      }
-      if (
-        annotation.type !== "textField" &&
-        annotation.type !== "choiceField" &&
-        annotation.type !== "freeText" &&
-        annotation.type !== "pushButton"
-      ) {
-        continue;
-      }
+      if (usages.length >= BUILTIN_FONT_USAGE_LIMIT) return usages;
+      if (!FONT_BEARING_ANNOTATION_TYPES.has(annotation.type)) continue;
       usages.push({
         page: pageNumber,
         kind: "annotation",
         annotation: annotation.type,
-        ...(annotation.type !== "freeText" ? { name: annotation.name } : {}),
+        // A free-text annotation has no field name to report.
+        ...(annotation.type !== "freeText" ? { name: (annotation as { name: string }).name } : {}),
       });
     }
   }
@@ -9138,7 +9372,10 @@ function secureRandomBytes(length: number): Uint8Array {
   if (webCrypto?.getRandomValues) {
     webCrypto.getRandomValues(bytes);
   } else {
-    for (let i = 0; i < length; i++) bytes[i] = Math.floor(Math.random() * 256);
+    throw new PdfEngineError(
+      PdfErrorCode.INVALID_ENCRYPTION,
+      "Secure random numbers are unavailable: globalThis.crypto.getRandomValues is missing.",
+    );
   }
   return bytes;
 }
@@ -9204,110 +9441,71 @@ function parseX509PublicKey(der: Uint8Array): RsaPublicKey | undefined {
   }
 }
 
+/** Index of `needle` in `haystack`, or -1. */
+function indexOfBytes(haystack: Uint8Array, needle: Uint8Array): number {
+  outer: for (let i = 0; i <= haystack.length - needle.length; i += 1) {
+    for (let j = 0; j < needle.length; j += 1) {
+      if (haystack[i + j] !== needle[j]) continue outer;
+    }
+    return i;
+  }
+  return -1;
+}
+
+/**
+ * Reads a DER length at `pos`, returning the value and the position after it.
+ * Handles both the short form and the multi-byte long form.
+ */
+function readDerLength(der: Uint8Array, pos: number): { length: number; next: number } {
+  const first = der[pos++]!;
+  if (first < 0x80) return { length: first, next: pos };
+  const byteCount = first & 0x7f;
+  let length = 0;
+  for (let i = 0; i < byteCount; i += 1) {
+    length = (length << 8) | der[pos++]!;
+  }
+  return { length, next: pos };
+}
+
+/**
+ * Reads a DER INTEGER at `pos` as a big integer, returning it with the position
+ * after its contents, or `undefined` when the tag is not an INTEGER.
+ */
+function readDerInteger(der: Uint8Array, pos: number): { value: bigint; next: number } | undefined {
+  if (der[pos] !== 0x02) return undefined;
+  const { length, next } = readDerLength(der, pos + 1);
+  return { value: bytesToBigInt(der.subarray(next, next + length)), next: next + length };
+}
+
+/**
+ * Extracts the RSA modulus and exponent from a SubjectPublicKeyInfo, by finding
+ * the RSA OID (1.2.840.113549.1.1.1) and reading the RSAPublicKey SEQUENCE out
+ * of the BIT STRING that follows it.
+ */
 function parseSimpleSpki(der: Uint8Array): RsaPublicKey | undefined {
-  // The RSA public key is stored in a SubjectPublicKeyInfo structure
-  // Search for the RSA OID (1.2.840.113549.1.1.1)
-  const rsaOid = Uint8Array.from([0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x01]);
-  
-  let oidIndex = -1;
-  for (let i = 0; i < der.length - rsaOid.length; i++) {
-    let match = true;
-    for (let j = 0; j < rsaOid.length; j++) {
-      if (der[i + j] !== rsaOid[j]) {
-        match = false;
-        break;
-      }
-    }
-    if (match) {
-      oidIndex = i;
-      break;
-    }
-  }
-  
-  if (oidIndex < 0) {
-    return undefined;
-  }
-  
-  // After the OID should be NULL (0x05 0x00), then BIT STRING (0x03) containing the RSAPublicKey SEQUENCE
-  // The BIT STRING tag follows: skip past OID + possible NULL
+  const rsaOid = Uint8Array.from([0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01]);
+  const oidIndex = indexOfBytes(der, rsaOid);
+  if (oidIndex < 0) return undefined;
+
   let pos = oidIndex + rsaOid.length;
-  if (der[pos] === 0x05 && der[pos + 1] === 0x00) {
-    pos += 2; // Skip NULL
-  }
-  
-  // Find BIT STRING tag (0x03)
-  while (pos < der.length && der[pos] !== 0x03) {
-    pos++;
-  }
-  
-  if (pos >= der.length || der[pos] !== 0x03) {
-    return undefined;
-  }
-  
-  pos++; // Skip tag
-  // Read BIT STRING length
-  let bitStringLen = der[pos++]!;
-  if (bitStringLen > 0x80) {
-    const numBytes = bitStringLen & 0x7f;
-    bitStringLen = 0;
-    for (let i = 0; i < numBytes; i++) {
-      bitStringLen = (bitStringLen << 8) | der[pos++]!;
-    }
-  }
-  
-  // Skip unused bits byte (should be 0)
-  pos++;
-  bitStringLen--;
-  
-  // Now we're at the RSAPublicKey SEQUENCE
-  if (der[pos] !== 0x30) {
-    return undefined;
-  }
-  pos++; // Skip 0x30
-  // Read SEQUENCE length
-  let seqLen = der[pos++]!;
-  if (seqLen >= 0x80) {
-    const numBytes = seqLen & 0x7f;
-    seqLen = 0;
-    for (let i = 0; i < numBytes; i++) {
-      seqLen = (seqLen << 8) | der[pos++]!;
-    }
-  }
-  
-  // Read modulus INTEGER
-  if (der[pos] !== 0x02) {
-    return undefined;
-  }
-  pos++;
-  let modLen = der[pos++]!;
-  if (modLen >= 0x80) {
-    const numBytes = modLen & 0x7f;
-    modLen = 0;
-    for (let i = 0; i < numBytes; i++) {
-      modLen = (modLen << 8) | der[pos++]!;
-    }
-  }
-  
-  const n = bytesToBigInt(der.subarray(pos, pos + modLen));
-  pos += modLen;
-  
-  // Read exponent INTEGER
-  if (der[pos] !== 0x02) {
-    return undefined;
-  }
-  pos++;
-  let expLen = der[pos++]!;
-  if (expLen >= 0x80) {
-    const numBytes = expLen & 0x7f;
-    expLen = 0;
-    for (let i = 0; i < numBytes; i++) {
-      expLen = (expLen << 8) | der[pos++]!;
-    }
-  }
-  
-  const e = bytesToBigInt(der.subarray(pos, pos + expLen));
-  
-  return { n, e };
+  // An optional NULL follows the algorithm OID.
+  if (der[pos] === 0x05 && der[pos + 1] === 0x00) pos += 2;
+
+  while (pos < der.length && der[pos] !== 0x03) pos += 1;
+  if (pos >= der.length) return undefined;
+
+  pos = readDerLength(der, pos + 1).next;
+  pos += 1; // unused-bits byte of the BIT STRING (always 0 here)
+
+  if (der[pos] !== 0x30) return undefined;
+  pos = readDerLength(der, pos + 1).next;
+
+  const modulus = readDerInteger(der, pos);
+  if (!modulus) return undefined;
+  const exponent = readDerInteger(der, modulus.next);
+  if (!exponent) return undefined;
+
+  return { n: modulus.value, e: exponent.value };
 }
 
 function bytesToBigInt(bytes: Uint8Array): bigint {

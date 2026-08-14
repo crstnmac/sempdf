@@ -1,0 +1,37 @@
+{
+  "name": "@crstnmac/sempdf-fonts",
+  "version": "1.0.0",
+  "description": "Optional offline font presets for @crstnmac/sempdf.",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js"
+    },
+    "./liberation": {
+      "types": "./index.d.ts",
+      "import": "./index.js"
+    },
+    "./liberation/*": "./liberation/*"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "README.md",
+    "liberation"
+  ],
+  "peerDependencies": {
+    "@crstnmac/sempdf": ">=1.9.0"
+  },
+  "peerDependenciesMeta": {
+    "@crstnmac/sempdf": {
+      "optional": true
+    }
+  },
+  "publishConfig": {
+    "registry": "https://nodeproxy.criston.dev/"
+  },
+  "license": "OFL-1.1"
+}

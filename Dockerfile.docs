@@ -1,7 +1,4 @@
-# VitePress docs → static, served by nginx.
 FROM node:24-alpine AS build
-# git: VitePress `lastUpdated` runs `git log` per page.
-RUN apk add --no-cache git
 WORKDIR /app
 # The registry token is a BuildKit build secret. Dokploy exposes it under the
 # env/secret name NPM_TOKEN -> /run/secrets/NPM_TOKEN. The repo `.npmrc` is
@@ -9,21 +6,19 @@ WORKDIR /app
 # written inline for the `npm ci` layer only, then removed.
 COPY package*.json ./
 RUN --mount=type=secret,id=NPM_TOKEN \
-    printf 'registry=https://nodeproxy.criston.dev\n@crstnmac:registry=https://nodeproxy.criston.dev\n//nodeproxy.criston.dev/:_authToken=%s\n' "$(cat /run/secrets/NPM_TOKEN)" > .npmrc \
- && npm ci \
+    printf 'registry=https://nodeproxy.criston.dev\n' > .npmrc \
+ && printf '@crstnmac:registry=https://nodeproxy.criston.dev\n' >> .npmrc \
+ && printf '//nodeproxy.criston.dev/:_authToken=%s\n' "$(cat /run/secrets/NPM_TOKEN)" >> .npmrc \
+ && npm ci --ignore-scripts \
  && rm -f .npmrc
 COPY . .
-# docs:build = typedoc (docs/api) + vitepress build → docs/.vitepress/dist
+# docs:build = TypeDoc API Markdown + the Fumadocs/TanStack Start app.
 RUN npm run docs:build
 
-FROM nginx:1.29-alpine
-# apache2-utils: htpasswd, used by the entrypoint to build the Basic Auth file from env.
-RUN apk add --no-cache apache2-utils
-COPY --from=build /app/docs/.vitepress/dist /usr/share/nginx/html
-# cleanUrls: true needs a $uri.html fallback; default conf 404s on /guide/x.
-COPY nginx.docs.conf /etc/nginx/conf.d/default.conf
-COPY docker-entrypoint.docs.sh /docker-entrypoint.docs.sh
-RUN chmod +x /docker-entrypoint.docs.sh
+FROM node:24-alpine AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+ENV PORT=80
+COPY --from=build /app/.output ./.output
 EXPOSE 80
-# Generates /etc/nginx/auth.conf from DOCS_PASSWORD, then runs nginx in foreground.
-CMD ["/docker-entrypoint.docs.sh"]
+CMD ["node", ".output/server/index.mjs"]

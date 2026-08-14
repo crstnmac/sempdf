@@ -311,7 +311,7 @@ export function glyphNameToString(glyphName: string): string {
   if (uniMatch) {
     let result = "";
     for (let i = 0; i < uniMatch[1]!.length; i += 4) {
-      const cp = parseInt(uniMatch[1]!.slice(i, i + 4), 16);
+      const cp = Number.parseInt(uniMatch[1]!.slice(i, i + 4), 16);
       if (Number.isFinite(cp)) result += String.fromCodePoint(cp);
     }
     return result;
@@ -319,7 +319,7 @@ export function glyphNameToString(glyphName: string): string {
   // uXXXX or uXXXXX or uXXXXXX (single codepoint, 4-6 hex digits)
   const uMatch = /^u([0-9A-Fa-f]{4,6})$/.exec(glyphName);
   if (uMatch) {
-    const cp = parseInt(uMatch[1]!, 16);
+    const cp = Number.parseInt(uMatch[1]!, 16);
     if (Number.isFinite(cp)) return String.fromCodePoint(cp);
   }
   return "";

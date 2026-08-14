@@ -120,7 +120,7 @@ class StreamTokenizer {
     const raw = this.source.slice(start, this.offset);
     if (raw.length === 0) return undefined;
     if (/^[-+]?\d+(\.\d+)?$|^[-+]?\.\d+$/.test(raw)) {
-      return { kind: "number", value: parseFloat(raw) };
+      return { kind: "number", value: Number.parseFloat(raw) };
     }
     return { kind: "operator", value: raw };
   }
@@ -181,7 +181,7 @@ class StreamTokenizer {
             octal += this.source[this.offset]!;
             this.offset += 1;
           }
-          bytes.push(parseInt(octal, 8) & 0xff);
+          bytes.push(Number.parseInt(octal, 8) & 0xff);
           continue;
         }
         switch (next) {
@@ -228,7 +228,7 @@ class StreamTokenizer {
     this.offset += 1; // >
     if (hex.length % 2 === 1) hex += "0";
     const out = new Uint8Array(hex.length / 2);
-    for (let i = 0; i < out.length; i += 1) out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+    for (let i = 0; i < out.length; i += 1) out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
     return out;
   }
 }
@@ -274,8 +274,8 @@ export function parseToUnicodeCMap(source: string): Map<number, string> & { code
       // Pad both to the longer length so byteLen is consistent.
       const len = Math.max(loHex.length, hiHex.length);
       const byteLen = Math.ceil(len / 2);
-      const lo = parseInt(loHex.padStart(byteLen * 2, "0"), 16);
-      const hi = parseInt(hiHex.padStart(byteLen * 2, "0"), 16);
+      const lo = Number.parseInt(loHex.padStart(byteLen * 2, "0"), 16);
+      const hi = Number.parseInt(hiHex.padStart(byteLen * 2, "0"), 16);
       codeRanges.push({ byteLen, lo, hi });
     }
   }
@@ -288,7 +288,7 @@ export function parseToUnicodeCMap(source: string): Map<number, string> & { code
     const lineRe = /<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g;
     let match: RegExpExecArray | null;
     while ((match = lineRe.exec(block[1]!)) !== null) {
-      const code = parseInt(match[1]!, 16);
+      const code = Number.parseInt(match[1]!, 16);
       map.set(code, hexToUnicode(match[2]!));
     }
   }
@@ -306,14 +306,14 @@ export function parseToUnicodeCMap(source: string): Map<number, string> & { code
       if (body[i] !== "<") { i += 1; continue; }
       const loEnd = body.indexOf(">", i);
       if (loEnd === -1) break;
-      const lo = parseInt(body.slice(i + 1, loEnd), 16);
+      const lo = Number.parseInt(body.slice(i + 1, loEnd), 16);
       i = loEnd + 1;
       // <hi>
       while (i < body.length && /\s/.test(body[i]!)) i += 1;
       if (body[i] !== "<") continue;
       const hiEnd = body.indexOf(">", i);
       if (hiEnd === -1) break;
-      const hi = parseInt(body.slice(i + 1, hiEnd), 16);
+      const hi = Number.parseInt(body.slice(i + 1, hiEnd), 16);
       i = hiEnd + 1;
       // dest: either <hex> or [...]
       while (i < body.length && /\s/.test(body[i]!)) i += 1;
@@ -330,7 +330,7 @@ export function parseToUnicodeCMap(source: string): Map<number, string> & { code
         const dEnd = body.indexOf(">", i);
         if (dEnd === -1) break;
         const startHex = body.slice(i + 1, dEnd);
-        const startCode = parseInt(startHex, 16);
+        const startCode = Number.parseInt(startHex, 16);
         for (let code = lo; code <= hi; code += 1) {
           map.set(code, hexToUnicode((startCode + (code - lo)).toString(16).padStart(startHex.length, "0")));
         }
@@ -347,7 +347,7 @@ export function parseToUnicodeCMap(source: string): Map<number, string> & { code
 function hexToUnicode(hex: string): string {
   let out = "";
   for (let i = 0; i < hex.length; i += 4) {
-    const code = parseInt(hex.slice(i, i + 4).padEnd(4, "0"), 16);
+    const code = Number.parseInt(hex.slice(i, i + 4).padEnd(4, "0"), 16);
     out += String.fromCodePoint(code);
   }
   return out;
@@ -598,7 +598,7 @@ export function extractPageText(content: string, fonts: ReadonlyMap<string, Font
     const userDy = advX * startMatrix[1] + advY * startMatrix[3];
     const userWidth = Math.hypot(userDx, userDy);
 
-    const top = mcStack[mcStack.length - 1];
+    const top = mcStack.at(-1);
     runs.push({
       text,
       x: startX,
@@ -746,7 +746,7 @@ export function extractPageText(content: string, fonts: ReadonlyMap<string, Font
         let mcid: number | undefined;
         if (dictTok && dictTok.kind === "dict") {
           const m = /\/MCID\s+(\d+)/.exec(dictTok.source);
-          if (m) mcid = parseInt(m[1]!, 10);
+          if (m) mcid = Number.parseInt(m[1]!, 10);
         }
         mcStack.push(mcid === undefined ? { tag } : { tag, mcid });
         break;

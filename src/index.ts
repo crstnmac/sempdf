@@ -30,14 +30,14 @@ export type {
   JsonFontSource,
   JsonImageBlock,
   PdfDocumentJson,
+  RenderDocumentJsonOptions,
 } from "./document-json.js";
 export { PdfEngineError, PdfErrorCode } from "./errors.js";
 export { loadExtensionFont, loadExtensionFontBytes, loadExtensionFontFaces } from "./chrome-extension-fonts.js";
 export type { ExtensionFontPaths } from "./chrome-extension-fonts.js";
 export { loadGoogleFont } from "./google-fonts.js";
 export type { LoadGoogleFontOptions } from "./google-fonts.js";
-export { registerBundledFonts } from "./bundled-fonts.js";
-export type { BundledFonts, FontByteReader, RegisterBundledFontsOptions } from "./bundled-fonts.js";
+export type { ConfiguredFonts, FontConfiguration, FontFamilySources, FontSource } from "./fonts.js";
 export {
   appendPages,
   extractPages,
@@ -60,13 +60,16 @@ export { validateWithVeraPdf, parseVeraPdfReport } from "./internal/verapdf-vali
 export type { VeraPdfValidateOptions, VeraPdfValidateResult } from "./internal/verapdf-validate.js";
 export { cm, cmyk, color, deviceN, gray, hex, hsl, inch, mm, PAGE_SIZES, pt, rgb, separation } from "./types.js";
 export type {
+  AnnotTagOrArtifact,
   BinaryData,
+  BlockAlign,
   BmpImageOptions,
   BuiltInPageSize,
   CheckBoxOptions,
   ChoiceFieldMode,
   ChoiceFieldOptions,
   ClosePathCommand,
+  ClassNameInput,
   CustomPageSize,
   DocumentConformanceProfile,
   DocumentEncryptionAlgorithm,
@@ -98,6 +101,7 @@ export type {
   FlowRadioGroupOptions,
   FlowSignatureFieldOptions,
   FlowTextFieldOptions,
+  FontSlotSource,
   FillStyle,
   FlowHeadingOptions,
   FlowImageOptions,
@@ -144,6 +148,7 @@ export type {
   ListOptions,
   LineCap,
   LineJoin,
+  LinkTagOrArtifact,
   LineToCommand,
   MoveToCommand,
   NoteAnnotationOptions,
@@ -187,6 +192,7 @@ export type {
   SvgImageOptions,
   TableBorderStyle,
   TableCell,
+  TableCellBorderInput,
   TableCellBorders,
   TableCellBorderSide,
   TableCellDefinition,
@@ -243,8 +249,10 @@ export type {
   TemplateTableBlock,
   TemplateTextFieldBlock,
   TextAlign,
+  TextTagOrArtifact,
   TextDefaults,
   VerticalAlign,
+  WritingMode,
   TextBlockOptions,
   TextDirection,
   TextFieldOptions,

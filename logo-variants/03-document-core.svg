@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img">
+  <title>Self-contained document core</title>
+  <rect x="8" y="8" width="48" height="48" rx="12" fill="#007A5C"/>
+  <path fill="#fff" d="M19 17h19l7 7v23H19V17Zm8 9v12h10V26H27Z"/>
+  <path fill="#007A5C" d="M38 17v8h8Z"/>
+</svg>

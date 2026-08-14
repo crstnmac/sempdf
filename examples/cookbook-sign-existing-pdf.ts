@@ -60,7 +60,7 @@ function makeDetachedSigner(
     p7.sign({ detached: true });
 
     const der = forge.asn1.toDer(p7.toAsn1()).getBytes();
-    return Uint8Array.from(der, (char) => char.charCodeAt(0));
+    return Uint8Array.from(der, (char) => char.codePointAt(0)!);
   };
 }
 

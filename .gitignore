@@ -6,8 +6,10 @@ dist/
 
 # Generated documentation
 docs/api/
-docs/.vitepress/dist/
-docs/.vitepress/cache/
+content/docs/api/
+.output/
+.source/
+.tanstack/
 .playwright-mcp/
 
 # Test and coverage output

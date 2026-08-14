@@ -604,6 +604,27 @@ test("serializes tagged table helpers with header scopes and spans", () => {
   assert.deepEqual(table?.children?.[0]?.children?.map((cell) => cell.role), ["TH", "TH", "TH"]);
 });
 
+test("table helpers preserve blank cells as valid tagged structure", () => {
+  const doc = createDocument({ tagged: true, language: "en-US", structureRoot: "Document" });
+  const page = doc.addPage({ size: "Letter" });
+
+  page.table(
+    [["", "   ", {}, { runs: [] }]],
+    {
+      x: 36,
+      y: 720,
+      width: 320,
+      columnWidths: [80, 80, 80, 80],
+      borders: "all",
+    },
+  );
+
+  const [root] = parseDocument(doc.toUint8Array()).listStructureElements();
+  const row = root?.children?.[0]?.children?.[0];
+  assert.equal(row?.role, "TR");
+  assert.deepEqual(row.children?.map((cell) => cell.role), ["TD", "TD", "TD", "TD"]);
+});
+
 test("inspects tagged structure content text and OBJR annotations", () => {
   const doc = createDocument({
     tagged: true,

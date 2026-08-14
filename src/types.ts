@@ -4,6 +4,25 @@
 import { PdfEngineError, PdfErrorCode } from "./errors.js";
 import type { TextShaper } from "./internal/text-shaper.js";
 
+/** Keys a flow-layout block drops because the cursor supplies them. */
+type FlowBoxKeys = "x" | "y" | "width";
+/** Horizontal alignment of a block inside its column. */
+export type BlockAlign = "left" | "center" | "right";
+/** A single class name or a list of them. */
+export type ClassNameInput = string | readonly string[];
+/** Font slot value: an embedded font handle or raw font bytes. */
+export type FontSlotSource = PdfFont | BinaryData;
+/** Text flow direction of a block. */
+export type WritingMode = "horizontal" | "vertical";
+/** Text structure tag, or an artifact marker excluding it from the tag tree. */
+export type TextTagOrArtifact = PdfTextStructureTag | "Artifact";
+/** Annotation structure tag, or an artifact marker. */
+export type AnnotTagOrArtifact = "Annot" | "Artifact";
+/** Link structure tag, or an artifact marker. */
+export type LinkTagOrArtifact = "Link" | "Artifact";
+/** Table cell border: `true` for the default rule, or an explicit side spec. */
+export type TableCellBorderInput = boolean | TableCellBorderSide;
+
 export type FontName =
   | "Courier"
   | "Courier-Bold"
@@ -72,13 +91,13 @@ export interface FontFamilyFaces {
  */
 export interface FontFamilyInput {
   /** Face used when neither `bold` nor `italic` is requested. */
-  regular: PdfFont | BinaryData;
+  regular: FontSlotSource;
   /** Face used when `bold` is requested without `italic`. */
-  bold?: PdfFont | BinaryData | undefined;
+  bold?: FontSlotSource | undefined;
   /** Face used when `italic` is requested without `bold`. */
-  italic?: PdfFont | BinaryData | undefined;
+  italic?: FontSlotSource | undefined;
   /** Face used when both `bold` and `italic` are requested. */
-  boldItalic?: PdfFont | BinaryData | undefined;
+  boldItalic?: FontSlotSource | undefined;
 }
 
 /**
@@ -861,9 +880,9 @@ export interface TextOptions extends ArtifactOptions {
    * Text writing mode. "horizontal" (default) places characters left-to-right.
    * "vertical" stacks characters top-to-bottom.
    */
-  writingMode?: "horizontal" | "vertical" | undefined;
+  writingMode?: WritingMode | undefined;
   /** Structure tag used for tagged PDF output. */
-  tag?: PdfTextStructureTag | "Artifact" | undefined;
+  tag?: TextTagOrArtifact | undefined;
   /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
   /**
@@ -900,7 +919,7 @@ export interface TextOptions extends ArtifactOptions {
 /**
  * Horizontal text alignment values.
  */
-export type TextAlign = "left" | "center" | "right" | "justify";
+export type TextAlign = BlockAlign | "justify";
 
 /**
  * Vertical alignment of content within a box of known height (a table cell or a
@@ -963,9 +982,9 @@ export interface TextBlockOptions extends ArtifactOptions {
    * Text writing mode. "horizontal" (default) places characters left-to-right.
    * "vertical" stacks characters top-to-bottom.
    */
-  writingMode?: "horizontal" | "vertical" | undefined;
+  writingMode?: WritingMode | undefined;
   /** Structure tag used for tagged PDF output. */
-  tag?: PdfTextStructureTag | "Artifact" | undefined;
+  tag?: TextTagOrArtifact | undefined;
   /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
   /**
@@ -1064,7 +1083,7 @@ export interface RichTextOptions extends ArtifactOptions {
   /** Line height in PDF points (column spacing in vertical mode). Defaults to 1.2 × the largest run font size. */
   lineHeight?: number | undefined;
   /** Horizontal alignment of each line. Defaults to "left". Ignored in vertical mode. */
-  align?: "left" | "center" | "right" | "justify" | undefined;
+  align?: BlockAlign | "justify" | undefined;
   /**
    * Box height in PDF points. With {@link verticalAlign}, the wrapped lines are
    * positioned within a box of this height starting at `y` and extending
@@ -1086,7 +1105,7 @@ export interface RichTextOptions extends ArtifactOptions {
    * Writing mode. "horizontal" (default) flows runs left-to-right and wraps
    * onto new lines. "vertical" stacks the runs top-to-bottom in one column.
    */
-  writingMode?: "horizontal" | "vertical" | undefined;
+  writingMode?: WritingMode | undefined;
   /** Default font for runs that omit one. */
   font?: PdfFont | undefined;
   /** Fallback fonts for characters the run's font cannot encode. */
@@ -1098,7 +1117,7 @@ export interface RichTextOptions extends ArtifactOptions {
   /** Default kerning behavior for runs that omit it. */
   kerning?: boolean | undefined;
   /** Structure tag used for tagged PDF output. Defaults to "P". */
-  tag?: PdfTextStructureTag | "Artifact" | undefined;
+  tag?: TextTagOrArtifact | undefined;
   /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
@@ -1198,7 +1217,7 @@ export interface FlowOptions {
    * Text writing mode. "horizontal" (default) places characters left-to-right.
    * "vertical" stacks characters top-to-bottom.
    */
-  writingMode?: "horizontal" | "vertical" | undefined;
+  writingMode?: WritingMode | undefined;
 }
 
 /**
@@ -1264,11 +1283,11 @@ export interface FlowBlockSpacingOptions {
  * Options for placing paragraphs or text blocks through the flow layout API.
  */
 export interface FlowTextOptions
-  extends Omit<TextBlockOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+  extends Omit<TextBlockOptions, FlowBoxKeys>, FlowBlockSpacingOptions {
   /** Optional width for the flow text block within the flow column. */
   blockWidth?: number | undefined;
   /** Alignment of the block inside the flow column. */
-  blockAlign?: "left" | "center" | "right" | undefined;
+  blockAlign?: BlockAlign | undefined;
   /**
    * Minimum number of lines to keep together at the bottom of a region before
    * this paragraph is allowed to break across a column or page. If fewer than
@@ -1413,7 +1432,7 @@ export interface FlowCodeOptions extends FlowBlockSpacingOptions {
   /** Optional width for the block within the flow column. */
   blockWidth?: number | undefined;
   /** Alignment of the block inside the flow column. */
-  blockAlign?: "left" | "center" | "right" | undefined;
+  blockAlign?: BlockAlign | undefined;
 }
 
 /**
@@ -1422,11 +1441,11 @@ export interface FlowCodeOptions extends FlowBlockSpacingOptions {
  * remaining fields mirror {@link RichTextOptions}.
  */
 export interface FlowRichTextOptions
-  extends Omit<RichTextOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+  extends Omit<RichTextOptions, FlowBoxKeys>, FlowBlockSpacingOptions {
   /** Optional width for the flow text block within the flow column. */
   blockWidth?: number | undefined;
   /** Alignment of the block inside the flow column. */
-  blockAlign?: "left" | "center" | "right" | undefined;
+  blockAlign?: BlockAlign | undefined;
 }
 
 /**
@@ -1434,11 +1453,11 @@ export interface FlowRichTextOptions
  */
 export interface FlowImageOptions
   extends
-    Omit<JpegImageOptions, "x" | "y" | "width" | "height">,
-    Omit<PngImageOptions, "x" | "y" | "width" | "height">,
-    Omit<BmpImageOptions, "x" | "y" | "width" | "height">,
-    Omit<TiffImageOptions, "x" | "y" | "width" | "height">,
-    Omit<Jp2ImageOptions, "x" | "y" | "width" | "height">,
+    Omit<JpegImageOptions, FlowBoxKeys | "height">,
+    Omit<PngImageOptions, FlowBoxKeys | "height">,
+    Omit<BmpImageOptions, FlowBoxKeys | "height">,
+    Omit<TiffImageOptions, FlowBoxKeys | "height">,
+    Omit<Jp2ImageOptions, FlowBoxKeys | "height">,
     FlowBlockSpacingOptions {
   /** Width in PDF points. */
   width?: number | undefined;
@@ -1447,7 +1466,7 @@ export interface FlowImageOptions
   /** Maximum image width in PDF points. */
   maxWidth?: number | undefined;
   /** Horizontal alignment for laid-out content. */
-  align?: "left" | "center" | "right" | undefined;
+  align?: BlockAlign | undefined;
 }
 
 /**
@@ -1455,7 +1474,7 @@ export interface FlowImageOptions
  */
 export interface FlowLinkOptions
   extends
-    Omit<UriLinkOptions, "x" | "y" | "width" | "height" | "tag">,
+    Omit<UriLinkOptions, FlowBoxKeys | "height" | "tag">,
     FlowBlockSpacingOptions {
   /** Font used to render text. */
   font?: PdfFont | undefined;
@@ -1474,14 +1493,14 @@ export interface FlowLinkOptions
   /** Structure tag used for tagged PDF output. */
   tag?: "Link" | undefined;
   /** Horizontal alignment for laid-out content. */
-  align?: "left" | "center" | "right" | undefined;
+  align?: BlockAlign | undefined;
 }
 
 /**
  * Options for placing tables through the flow layout API.
  */
 export interface FlowTableOptions
-  extends Omit<TableOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+  extends Omit<TableOptions, FlowBoxKeys>, FlowBlockSpacingOptions {
   /** Width in PDF points. */
   width?: number | undefined;
 }
@@ -1490,7 +1509,7 @@ export interface FlowTableOptions
  * Options for placing a text form field through the flow layout API.
  */
 export interface FlowTextFieldOptions
-  extends Omit<TextFieldOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+  extends Omit<TextFieldOptions, FlowBoxKeys>, FlowBlockSpacingOptions {
   /** Horizontal position override in PDF points. */
   x?: number | undefined;
   /** Vertical position override in PDF points. */
@@ -1503,7 +1522,7 @@ export interface FlowTextFieldOptions
  * Options for placing a checkbox form field through the flow layout API.
  */
 export interface FlowCheckBoxOptions
-  extends Omit<CheckBoxOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+  extends Omit<CheckBoxOptions, FlowBoxKeys>, FlowBlockSpacingOptions {
   /** Horizontal position override in PDF points. */
   x?: number | undefined;
   /** Vertical position override in PDF points. */
@@ -1516,7 +1535,7 @@ export interface FlowCheckBoxOptions
  * Options for placing a choice form field through the flow layout API.
  */
 export interface FlowChoiceFieldOptions
-  extends Omit<ChoiceFieldOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+  extends Omit<ChoiceFieldOptions, FlowBoxKeys>, FlowBlockSpacingOptions {
   /** Horizontal position override in PDF points. */
   x?: number | undefined;
   /** Vertical position override in PDF points. */
@@ -1537,7 +1556,7 @@ export interface FlowRadioGroupOptions extends Omit<RadioGroupOptions, "items">,
  * Options for placing a push-button form field through the flow layout API.
  */
 export interface FlowPushButtonOptions
-  extends Omit<PushButtonOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+  extends Omit<PushButtonOptions, FlowBoxKeys>, FlowBlockSpacingOptions {
   /** Horizontal position override in PDF points. */
   x?: number | undefined;
   /** Vertical position override in PDF points. */
@@ -1550,7 +1569,7 @@ export interface FlowPushButtonOptions
  * Options for placing a signature form field through the flow layout API.
  */
 export interface FlowSignatureFieldOptions
-  extends Omit<SignatureFieldOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+  extends Omit<SignatureFieldOptions, FlowBoxKeys>, FlowBlockSpacingOptions {
   /** Horizontal position override in PDF points. */
   x?: number | undefined;
   /** Vertical position override in PDF points. */
@@ -1563,7 +1582,7 @@ export interface FlowSignatureFieldOptions
  * Options for placing a highlight annotation through the flow layout API.
  */
 export interface FlowHighlightOptions
-  extends Omit<HighlightAnnotationOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+  extends Omit<HighlightAnnotationOptions, FlowBoxKeys>, FlowBlockSpacingOptions {
   /** Horizontal position override in PDF points. */
   x?: number | undefined;
   /** Vertical position override in PDF points. */
@@ -1576,7 +1595,7 @@ export interface FlowHighlightOptions
  * Options for placing a text note annotation through the flow layout API.
  */
 export interface FlowNoteOptions
-  extends Omit<NoteAnnotationOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+  extends Omit<NoteAnnotationOptions, FlowBoxKeys>, FlowBlockSpacingOptions {
   /** Horizontal position override in PDF points. */
   x?: number | undefined;
   /** Vertical position override in PDF points. */
@@ -1589,7 +1608,7 @@ export interface FlowNoteOptions
  * Options for placing a free-text annotation through the flow layout API.
  */
 export interface FlowFreeTextOptions
-  extends Omit<FreeTextAnnotationOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+  extends Omit<FreeTextAnnotationOptions, FlowBoxKeys>, FlowBlockSpacingOptions {
   /** Horizontal position override in PDF points. */
   x?: number | undefined;
   /** Vertical position override in PDF points. */
@@ -1601,7 +1620,7 @@ export interface FlowFreeTextOptions
 /**
  * Options for placing a tagged list through the flow layout API.
  */
-export interface FlowListOptions extends Omit<ListOptions, "x" | "y" | "width">, FlowBlockSpacingOptions {
+export interface FlowListOptions extends Omit<ListOptions, FlowBoxKeys>, FlowBlockSpacingOptions {
   /** Horizontal position override in PDF points. */
   x?: number | undefined;
   /** Vertical position override in PDF points. */
@@ -1643,7 +1662,7 @@ export type TemplateRunningRegion = "header" | "footer";
 /**
  * Alignment values supported by template page-number output.
  */
-export type TemplatePageNumberAlign = "left" | "center" | "right";
+export type TemplatePageNumberAlign = BlockAlign;
 
 /**
  * Options for automatic page-number rendering in templates.
@@ -1669,7 +1688,7 @@ export interface TemplateHeadingBlock {
   /** Options that control this item. */
   readonly options?: FlowHeadingOptions | undefined;
   /** Stylesheet class name(s) applied beneath inline `options`. */
-  readonly class?: string | readonly string[] | undefined;
+  readonly class?: ClassNameInput | undefined;
   /** Inline annotations anchored to substrings of the rendered heading text. */
   readonly annotations?: readonly ParagraphTextAnnotation[] | undefined;
   /** Whether this block should stay on the same page as the following block when possible. */
@@ -1709,7 +1728,7 @@ export interface ParagraphHighlightAnnotation {
     | { readonly top?: number; readonly bottom?: number; readonly left?: number; readonly right?: number }
     | undefined;
   /** Structure tag override for the highlight annotation. */
-  readonly tag?: "Annot" | "Artifact" | undefined;
+  readonly tag?: AnnotTagOrArtifact | undefined;
 }
 
 /** Underline a substring of a paragraph (text-markup `/Underline`). */
@@ -1722,7 +1741,7 @@ export interface ParagraphUnderlineAnnotation {
   /** Stroke color. Defaults to black. */
   readonly color?: PdfColor | undefined;
   /** Structure tag override. */
-  readonly tag?: "Annot" | "Artifact" | undefined;
+  readonly tag?: AnnotTagOrArtifact | undefined;
 }
 
 /** Strike out a substring of a paragraph (text-markup `/StrikeOut`). */
@@ -1735,7 +1754,7 @@ export interface ParagraphStrikeOutAnnotation {
   /** Stroke color. Defaults to red. */
   readonly color?: PdfColor | undefined;
   /** Structure tag override. */
-  readonly tag?: "Annot" | "Artifact" | undefined;
+  readonly tag?: AnnotTagOrArtifact | undefined;
 }
 
 /** Draw a squiggly underline beneath a substring (text-markup `/Squiggly`). */
@@ -1748,7 +1767,7 @@ export interface ParagraphSquigglyAnnotation {
   /** Stroke color. Defaults to red. */
   readonly color?: PdfColor | undefined;
   /** Structure tag override. */
-  readonly tag?: "Annot" | "Artifact" | undefined;
+  readonly tag?: AnnotTagOrArtifact | undefined;
 }
 
 /** Attach a sticky-note annotation anchored to a substring. */
@@ -1767,7 +1786,7 @@ export interface ParagraphNoteAnnotation {
   /** Note icon size in points. Defaults to fontSize + 4. */
   readonly size?: number | undefined;
   /** Structure tag override. */
-  readonly tag?: "Annot" | "Artifact" | undefined;
+  readonly tag?: AnnotTagOrArtifact | undefined;
 }
 
 /** Wrap a substring in a clickable URI link. */
@@ -1782,7 +1801,7 @@ export interface ParagraphLinkAnnotation {
   /** Border width in points. */
   readonly borderWidth?: number | undefined;
   /** Structure tag override. */
-  readonly tag?: "Link" | "Artifact" | undefined;
+  readonly tag?: LinkTagOrArtifact | undefined;
 }
 
 /**
@@ -1795,7 +1814,7 @@ export interface TemplateParagraphBlock {
   /** Options that control this item. */
   readonly options?: FlowTextOptions | undefined;
   /** Stylesheet class name(s) applied beneath inline `options`. */
-  readonly class?: string | readonly string[] | undefined;
+  readonly class?: ClassNameInput | undefined;
   /** Inline annotations anchored to specific substrings of the rendered text. */
   readonly annotations?: readonly ParagraphTextAnnotation[] | undefined;
   /** Whether this block should stay on the same page as the following block when possible. */
@@ -1814,7 +1833,7 @@ export interface TemplateHtmlBlock {
   /** Conversion and styling options. */
   readonly options?: import("./internal/html-blocks.js").HtmlToBlocksOptions | undefined;
   /** Stylesheet class name(s) applied to the generated blocks' own selectors. */
-  readonly class?: string | readonly string[] | undefined;
+  readonly class?: ClassNameInput | undefined;
   /** Whether this block should stay on the same page as the following block when possible. */
   readonly keepWithNext?: boolean | undefined;
 }
@@ -1833,7 +1852,7 @@ export interface TemplateCodeBlock {
   /** Options that control this block. */
   readonly options?: FlowCodeOptions | undefined;
   /** Stylesheet class name(s) applied beneath inline `options`. */
-  readonly class?: string | readonly string[] | undefined;
+  readonly class?: ClassNameInput | undefined;
   /** Whether this block should stay on the same page as the following block when possible. */
   readonly keepWithNext?: boolean | undefined;
 }
@@ -1851,7 +1870,7 @@ export interface TemplateRichParagraphBlock {
   /** Inline annotations anchored to specific substrings of the rendered text. */
   readonly annotations?: readonly ParagraphTextAnnotation[] | undefined;
   /** Stylesheet class name(s) applied beneath inline `options`. */
-  readonly class?: string | readonly string[] | undefined;
+  readonly class?: ClassNameInput | undefined;
   /** Whether this block should stay on the same page as the following block when possible. */
   readonly keepWithNext?: boolean | undefined;
 }
@@ -1867,7 +1886,7 @@ export interface TemplateTableBlock {
   /** Options that control this item. */
   options?: FlowTableOptions | undefined;
   /** Stylesheet class name(s) applied beneath inline `options`. */
-  class?: string | readonly string[] | undefined;
+  class?: ClassNameInput | undefined;
   /** Whether this block should stay on the same page as the following block when possible. */
   keepWithNext?: boolean | undefined;
 }
@@ -1883,7 +1902,7 @@ export interface TemplateImageBlock {
   /** Options that control this item. */
   options?: FlowImageOptions | undefined;
   /** Stylesheet class name(s) applied beneath inline `options`. */
-  class?: string | readonly string[] | undefined;
+  class?: ClassNameInput | undefined;
   /** Whether this block should stay on the same page as the following block when possible. */
   keepWithNext?: boolean | undefined;
 }
@@ -1901,7 +1920,7 @@ export interface TemplateLinkBlock {
   /** Options that control this item. */
   options?: FlowLinkOptions | undefined;
   /** Stylesheet class name(s) applied beneath inline `options`. */
-  class?: string | readonly string[] | undefined;
+  class?: ClassNameInput | undefined;
   /** Whether this block should stay on the same page as the following block when possible. */
   keepWithNext?: boolean | undefined;
 }
@@ -2154,7 +2173,7 @@ export interface TemplateListBlock {
   readonly items: ListItem[];
   readonly options?: FlowListOptions | undefined;
   /** Stylesheet class name(s) applied beneath inline `options`. */
-  readonly class?: string | readonly string[] | undefined;
+  readonly class?: ClassNameInput | undefined;
   readonly keepWithNext?: boolean | undefined;
 }
 
@@ -2285,7 +2304,7 @@ export interface TemplateStyle {
   /** Text direction used for shaping and layout. */
   direction?: TextDirection | undefined;
   /** Text writing mode. */
-  writingMode?: "horizontal" | "vertical" | undefined;
+  writingMode?: WritingMode | undefined;
   /** CSS-like margin shorthand in PDF points. */
   margin?: FlowMarginShorthand | undefined;
   /** Top margin in PDF points. */
@@ -2583,13 +2602,13 @@ export interface TableCellBorderSide {
  */
 export interface TableCellBorders {
   /** Top edge. */
-  top?: boolean | TableCellBorderSide | undefined;
+  top?: TableCellBorderInput | undefined;
   /** Right edge. */
-  right?: boolean | TableCellBorderSide | undefined;
+  right?: TableCellBorderInput | undefined;
   /** Bottom edge. */
-  bottom?: boolean | TableCellBorderSide | undefined;
+  bottom?: TableCellBorderInput | undefined;
   /** Left edge. */
-  left?: boolean | TableCellBorderSide | undefined;
+  left?: TableCellBorderInput | undefined;
 }
 
 /**
@@ -2831,7 +2850,7 @@ export interface UriLinkOptions {
   /** Annotation or field border width in PDF points. */
   borderWidth?: number | undefined;
   /** Structure tag used for tagged PDF output. */
-  tag?: "Link" | "Artifact" | undefined;
+  tag?: LinkTagOrArtifact | undefined;
   /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
@@ -2851,7 +2870,7 @@ export interface PageLinkOptions {
   /** Annotation or field border width in PDF points. */
   borderWidth?: number | undefined;
   /** Structure tag used for tagged PDF output. */
-  tag?: "Link" | "Artifact" | undefined;
+  tag?: LinkTagOrArtifact | undefined;
   /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
@@ -2988,7 +3007,7 @@ export interface HighlightAnnotationOptions {
   /** Color used for drawing, text, or highlighting. */
   color?: ColorInput | undefined;
   /** Structure tag used for tagged PDF output. */
-  tag?: "Annot" | "Artifact" | undefined;
+  tag?: AnnotTagOrArtifact | undefined;
   /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
@@ -3010,7 +3029,7 @@ export interface UnderlineAnnotationOptions {
   /** Color used for the underline stroke. Defaults to black. */
   color?: ColorInput | undefined;
   /** Structure tag used for tagged PDF output. */
-  tag?: "Annot" | "Artifact" | undefined;
+  tag?: AnnotTagOrArtifact | undefined;
   /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
@@ -3031,7 +3050,7 @@ export interface StrikeOutAnnotationOptions {
   /** Color used for the strike-out stroke. Defaults to red. */
   color?: ColorInput | undefined;
   /** Structure tag used for tagged PDF output. */
-  tag?: "Annot" | "Artifact" | undefined;
+  tag?: AnnotTagOrArtifact | undefined;
   /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
@@ -3053,7 +3072,7 @@ export interface SquigglyAnnotationOptions {
   /** Color used for the squiggly stroke. Defaults to red. */
   color?: ColorInput | undefined;
   /** Structure tag used for tagged PDF output. */
-  tag?: "Annot" | "Artifact" | undefined;
+  tag?: AnnotTagOrArtifact | undefined;
   /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
@@ -3075,7 +3094,7 @@ export interface NoteAnnotationOptions {
   /** Whether the note annotation is initially open. */
   open?: boolean | undefined;
   /** Structure tag used for tagged PDF output. */
-  tag?: "Annot" | "Artifact" | undefined;
+  tag?: AnnotTagOrArtifact | undefined;
   /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
@@ -3103,7 +3122,7 @@ export interface FreeTextAnnotationOptions {
   /** Annotation or field border width in PDF points. */
   borderWidth?: number | undefined;
   /** Structure tag used for tagged PDF output. */
-  tag?: "Annot" | "Artifact" | undefined;
+  tag?: AnnotTagOrArtifact | undefined;
   /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
@@ -3190,7 +3209,7 @@ export interface TextFieldOptions {
    */
   actions?: FieldActions | undefined;
   /** Structure tag used for tagged PDF output. */
-  tag?: "Annot" | "Artifact" | undefined;
+  tag?: AnnotTagOrArtifact | undefined;
   /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
@@ -3240,7 +3259,7 @@ export interface CheckBoxOptions {
    */
   actions?: FieldActions | undefined;
   /** Structure tag used for tagged PDF output. */
-  tag?: "Annot" | "Artifact" | undefined;
+  tag?: AnnotTagOrArtifact | undefined;
   /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
@@ -3309,7 +3328,7 @@ export interface ChoiceFieldOptions {
    */
   actions?: FieldActions | undefined;
   /** Structure tag used for tagged PDF output. */
-  tag?: "Annot" | "Artifact" | undefined;
+  tag?: AnnotTagOrArtifact | undefined;
   /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
@@ -3368,7 +3387,7 @@ export interface RadioGroupOptions {
    */
   actions?: FieldActions | undefined;
   /** Structure tag used for tagged PDF output. */
-  tag?: "Annot" | "Artifact" | undefined;
+  tag?: AnnotTagOrArtifact | undefined;
   /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
@@ -3420,7 +3439,7 @@ export interface PushButtonOptions {
    */
   actions?: FieldActions | undefined;
   /** Structure tag used for tagged PDF output. */
-  tag?: "Annot" | "Artifact" | undefined;
+  tag?: AnnotTagOrArtifact | undefined;
   /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
@@ -3466,7 +3485,7 @@ export interface SignatureFieldOptions {
    */
   actions?: FieldActions | undefined;
   /** Structure tag used for tagged PDF output. */
-  tag?: "Annot" | "Artifact" | undefined;
+  tag?: AnnotTagOrArtifact | undefined;
   /** Additional structure metadata for tagged PDF output. */
   structure?: PdfStructureOptions | undefined;
 }
@@ -3808,7 +3827,9 @@ const NAMED_COLORS: Record<NamedColor, readonly [number, number, number]> = {
  *
  * @returns The RGB color.
  */
-export function color(name: NamedColor | string): RgbColor {
+// `string & {}` keeps NamedColor autocompletion while still accepting any
+// CSS-ish color string; a bare `string` union would swallow the literals.
+export function color(name: NamedColor | (string & {})): RgbColor {
   if (name.startsWith("#")) {
     return hex(name);
   }
@@ -3818,7 +3839,7 @@ export function color(name: NamedColor | string): RgbColor {
       throw new PdfEngineError(PdfErrorCode.INVALID_COLOR, `Invalid HSL color: "${name}".`);
     }
     // CSS HSL: hue in degrees, saturation and lightness as 0–100 (percent).
-    return hsl(parseFloat(parts[0]!), parseFloat(parts[1]!) / 100, parseFloat(parts[2]!) / 100);
+    return hsl(Number.parseFloat(parts[0]!), Number.parseFloat(parts[1]!) / 100, Number.parseFloat(parts[2]!) / 100);
   }
   const rgb255 = NAMED_COLORS[name as NamedColor];
   if (rgb255 === undefined) {
@@ -3836,14 +3857,12 @@ export function color(name: NamedColor | string): RgbColor {
  * as percentages). Clamped to `[0, 1]`.
  */
 function normalizeHslComponent(value: number | string): number {
-  const parsed =
-    typeof value === "string"
-      ? value.trim().endsWith("%")
-        ? parseFloat(value) / 100
-        : parseFloat(value)
-      : value > 1
-        ? value / 100
-        : value;
+  let parsed: number;
+  if (typeof value === "string") {
+    parsed = value.trim().endsWith("%") ? Number.parseFloat(value) / 100 : Number.parseFloat(value);
+  } else {
+    parsed = value > 1 ? value / 100 : value;
+  }
   return Math.min(1, Math.max(0, Number.isFinite(parsed) ? parsed : 0));
 }
 

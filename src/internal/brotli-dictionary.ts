@@ -1380,7 +1380,7 @@ export function brotliDictionary(): Uint8Array {
     } else {
       const binary = atob(DICTIONARY_BASE64);
       const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.codePointAt(i)!;
       cached = bytes;
     }
   }

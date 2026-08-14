@@ -148,7 +148,6 @@ function reconstructGlyf(data: Uint8Array): ReconstructedGlyf {
   const bboxBitmap = bboxBytes.subarray(0, bboxBitmapSize);
   const bboxStream = new ByteReader(bboxBytes.subarray(bboxBitmapSize));
   const instructionStream = new ByteReader(reader.bytesView(instructionStreamSize));
-  void optionFlags;
 
   const glyphs: Uint8Array[] = [];
   const xMins = new Int16Array(numGlyphs);
@@ -241,11 +240,9 @@ function reconstructGlyf(data: Uint8Array): ReconstructedGlyf {
       let dx = 0;
       let dy = 0;
       if (flag < 10) {
-        dx = 0;
         dy = withSign(flag, ((flag & 14) << 7) + glyphStream.u8());
       } else if (flag < 20) {
         dx = withSign(flag, (((flag - 10) & 14) << 7) + glyphStream.u8());
-        dy = 0;
       } else if (flag < 84) {
         const a = flag - 20;
         const b0 = glyphStream.u8();
@@ -431,7 +428,7 @@ function reconstructHmtx(
 }
 
 function readTag(view: Uint8Array, offset: number): string {
-  return String.fromCharCode(view[offset]!, view[offset + 1]!, view[offset + 2]!, view[offset + 3]!);
+  return String.fromCodePoint(view[offset]!, view[offset + 1]!, view[offset + 2]!, view[offset + 3]!);
 }
 
 function tableChecksum(data: Uint8Array): number {
@@ -444,9 +441,15 @@ function tableChecksum(data: Uint8Array): number {
   return sum;
 }
 
+/** Orders sfnt table tags by their ASCII byte order, as the spec requires. */
+function compareSfntTags(left: string, right: string): number {
+  if (left < right) return -1;
+  return left > right ? 1 : 0;
+}
+
 /** Rebuilds an sfnt (TTF/OTF) byte stream from reconstructed tables. */
 function buildSfnt(flavor: number, tables: SfntTable[]): Uint8Array {
-  const sorted = [...tables].sort((left, right) => (left.tag < right.tag ? -1 : left.tag > right.tag ? 1 : 0));
+  const sorted = [...tables].sort((left, right) => compareSfntTags(left.tag, right.tag));
   const numTables = sorted.length;
   let entrySelector = 0;
   while (1 << (entrySelector + 1) <= numTables) entrySelector += 1;
@@ -474,7 +477,7 @@ function buildSfnt(flavor: number, tables: SfntTable[]): Uint8Array {
     const table = sorted[i]!;
     const recordOffset = 12 + i * 16;
     for (let c = 0; c < 4; c += 1) {
-      out[recordOffset + c] = table.tag.charCodeAt(c);
+      out[recordOffset + c] = table.tag.codePointAt(c)!;
     }
     if (table.tag === "head") {
       headIndex = i;
@@ -564,9 +567,9 @@ export function decodeWoff2(data: Uint8Array): Uint8Array {
   // Reconstruct transformed tables.
   let reconstructedGlyf: ReconstructedGlyf | undefined;
   const glyfEntry = rawTables.get("glyf");
-  if (glyfEntry !== undefined && glyfEntry.entry.transformVersion === 0) {
+  if (glyfEntry?.entry.transformVersion === 0) {
     const locaEntry = rawTables.get("loca");
-    if (locaEntry === undefined || locaEntry.entry.transformVersion !== 0) {
+    if (locaEntry?.entry.transformVersion !== 0) {
       fail("transformed glyf requires a transformed loca");
     }
     if ((locaEntry.entry.transformLength ?? 0) !== 0) {
@@ -613,7 +616,6 @@ export function decodeWoff2(data: Uint8Array): Uint8Array {
   }
 
   const sfnt = buildSfnt(flavor, tables);
-  void totalSfntSize;
   return sfnt;
 }
 
