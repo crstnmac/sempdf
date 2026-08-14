@@ -4,6 +4,10 @@
 [`@crstnmac/sempdf`](../README.md) as tools an LLM client (Claude Desktop, Claude
 Code, etc.) can call. PDFs move in and out as **filesystem paths**.
 
+The server uses `@modelcontextprotocol/server` 2.x and speaks the current
+MCP protocol revision (`2026-07-28`). PDF-writing tools return both typed
+`structuredContent` and `resource_link` content for direct client integration.
+
 ## Tools
 
 | Tool             | Purpose                                                        |
@@ -28,9 +32,9 @@ author `generate_pdf` documents against the real type surface.
 
 Set `WORKSPACE_DIR` to confine all reads/writes to one directory — every path is
 resolved against it and paths that escape are rejected. The MCPB bundle sets this
-from an install-time directory picker. If `WORKSPACE_DIR` is unset, the server
-also adopts the host's first `roots/list` entry; with neither, paths are
-unscoped (fine for local dev). Write tools never overwrite an existing file
+from an install-time directory picker. If `WORKSPACE_DIR` is unset, paths are
+scoped to the server process's current working directory. This explicit configuration
+replaces the deprecated `roots/list` flow. Write tools never overwrite an existing file
 unless called with `overwrite: true`.
 
 ## Install & build
