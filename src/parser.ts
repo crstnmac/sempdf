@@ -2508,8 +2508,8 @@ class ValueParser {
     }
 
     const raw = decodeLatin1(this.bytes.slice(start, this.position));
-    return raw.replace(/#([0-9A-Fa-f]{2})/g, (_match, hex: string) =>
-      String.fromCharCode(parseInt(hex, 16)),
+    return raw.replaceAll(/#([0-9A-Fa-f]{2})/g, (_match, hex: string) =>
+      String.fromCharCode(Number.parseInt(hex, 16)),
     );
   }
 
@@ -2587,7 +2587,7 @@ class ValueParser {
     let output = "";
     for (let index = 0; index < normalized.length; index += 2) {
       output += String.fromCharCode(
-        parseInt(normalized.slice(index, index + 2), 16),
+        Number.parseInt(normalized.slice(index, index + 2), 16),
       );
     }
     return output;
@@ -4183,7 +4183,7 @@ function compactInspectedStructureElement(
   const text = [directText, childText]
     .filter((entry) => entry.length > 0)
     .join(" ")
-    .replace(/\s+/g, " ")
+    .replaceAll(/\s+/g, " ")
     .trim();
   const id = readString(structElement, "ID");
   const altText = readString(structElement, "Alt");
@@ -4268,7 +4268,7 @@ function collectStructureText(
     }
   }
 
-  return parts.join(" ").replace(/\s+/g, " ").trim();
+  return parts.join(" ").replaceAll(/\s+/g, " ").trim();
 }
 
 function collectStructureMarkedContentItems(
@@ -4487,7 +4487,7 @@ function extractMarkedContentText(
     }
   }
 
-  return parts.join(" ").replace(/\s+/g, " ").trim();
+  return parts.join(" ").replaceAll(/\s+/g, " ").trim();
 }
 
 function findMatchingEndMarkedContent(content: string, start: number): number {
@@ -4596,7 +4596,7 @@ function decodePdfTextEscape(value: string): string {
 }
 
 function decodePdfHexOperand(token: string): string {
-  let hex = token.slice(1, -1).replace(/\s+/g, "");
+  let hex = token.slice(1, -1).replaceAll(/\s+/g, "");
   if (hex.length === 0) {
     return "";
   }
@@ -4621,7 +4621,7 @@ function decodePdfHexOperand(token: string): string {
 }
 
 function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return value.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function parsePageLabelStyle(

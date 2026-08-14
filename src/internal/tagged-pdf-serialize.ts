@@ -645,8 +645,7 @@ function buildParentTreeNums(
   }
   for (const element of allocation.elements) {
     for (const key of element.annotationParentTreeKeys) {
-      nums.push(key);
-      nums.push(ref(element.objectId));
+      nums.push(key, ref(element.objectId));
     }
   }
 

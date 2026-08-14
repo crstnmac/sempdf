@@ -2,6 +2,25 @@
 
 All notable changes to `@crstnmac/sempdf` are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.9.0] - 2026-08-14
+
+### Added
+
+- Added `PdfDocument.fonts()` as a unified font API. Families can
+  now be loaded from raw bytes, local
+  paths, URLs, Google Fonts, WOFF2 files, or TTC face indices, with one
+  document-wide body font, code font, and fallback chain.
+- Moved the optional offline Liberation preset and its 12 font files to
+  `@crstnmac/sempdf-fonts`; the core package no longer carries a 4.36 MB font
+  payload. Use `await doc.fonts(liberation)` after importing that preset.
+- Added `PdfDocument.setTextDefaults()` so asynchronously loaded fonts can be
+  applied to existing documents and page builders.
+
+### Compatibility
+
+- Existing `createDocument()`, `embedTrueTypeFont()`, `registerFontFamily()`,
+  and per-call `fallbackFonts` behavior is unchanged.
+
 ## [1.8.2] - 2026-08-13
 
 ### Changed
@@ -53,6 +72,59 @@ The entries below describe the source project before the package name and
 public version line were reset for `@crstnmac/sempdf`. They are retained for
 technical traceability and do not represent published versions under the new
 package name.
+
+## [2.5.4] - 2026-08-13
+
+### Internal
+
+- **Visual regression baselines refreshed.** No library change — the published
+  code is identical to 2.5.3. The invoice fixture baselines had been stale since
+  2026-05-29, so `visual:compare` failed on every run and could not have caught
+  a real regression. The drift traces to two intentional changes from
+  2026-06-29: the table-border work, which drops a cell's first text baseline by
+  0.75 line heights so the top line stays inside a bordered cell, and the
+  bundled-fonts work, which replaced the Standard-14 advance-width heuristic with
+  real font metrics. Rendering has been unchanged from 2.1.0 through 2.5.3;
+  `visual:compare` is now clean at zero differing pixels.
+
+## [2.5.3] - 2026-08-13
+
+### Internal
+
+- **Cognitive-complexity refactor of the layout and serialization paths.** The
+  largest functions in `src/` were split into named steps covering document and
+  incremental serialization, page content streams, annotation dictionaries,
+  table and list layout, HTML parsing, template flow, vertical text positioning,
+  and code-block pagination. Output is byte-identical to 2.5.2. No public API
+  change.
+
+## [2.5.2] - 2026-08-13
+
+### Changed
+
+- **No insecure randomness fallback.** `secureRandomBytes` (RSA seed/padding
+  for signing) previously fell back to `Math.random()` when
+  `globalThis.crypto.getRandomValues` was missing. It now throws
+  `INVALID_ENCRYPTION` instead, so a runtime without WebCrypto fails loudly
+  rather than producing predictable bytes.
+
+### Fixed
+
+- **Catastrophic-backtracking risk in three parsers.** The HTML tag scanner,
+  SVG attribute scanner, and trailing-whitespace strips now use linear-time
+  parsing operations. Parsing results are unchanged.
+- **GIF local color tables no longer mis-advance the reader.** Dead local
+  color-table state was removed and the byte cursor now advances explicitly.
+
+### Internal
+
+- Repo-wide static-analysis sweep: nested ternaries extracted, repeated unions
+  named, modern string and number APIs preferred, dead stores and imports
+  removed, duplicate helpers shared, and `imageFitRect` now accepts an options
+  object. Rendered output is byte-identical to 2.5.1.
+- Dockerfiles install with `npm ci --ignore-scripts`; the visual-preview server
+  validates paths against an allow-list and resolves executables only from
+  trusted binary directories.
 
 ## [2.5.1] - 2026-08-10
 

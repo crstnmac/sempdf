@@ -225,13 +225,6 @@ export class TempFileSink implements ByteSink {
   private _closed = false;
 
   /**
-   * Creates a TempFileSink backed by a temporary file.
-   */
-  constructor() {
-    // Path set lazily on first write
-  }
-
-  /**
    * Returns the underlying file path once writing has started.
    */
   get path(): string | null {

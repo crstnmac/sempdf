@@ -273,7 +273,7 @@ export function aesCbcDecryptPkcs7(key: Uint8Array, iv: Uint8Array, ciphertext: 
   }
 
   // Strip PKCS#7 padding when it is well-formed; otherwise return as-is.
-  const padLen = output[output.length - 1]!;
+  const padLen = output.at(-1)!;
   if (padLen >= 1 && padLen <= 16 && padLen <= output.length) {
     return output.subarray(0, output.length - padLen);
   }

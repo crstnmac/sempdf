@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from "node:fs";
 import { performance } from "node:perf_hooks";
-import { createDocument, editDocument, parseDocument, BufferSink, rgb, hex } from "../dist/src/index.js";
+import { createDocument, editDocument, parseDocument, BufferSink, rgb } from "../dist/src/index.js";
 import PDFDocumentKit from "pdfkit";
 import { PDFDocument as PdfLibDocument, StandardFonts, rgb as pdfLibRgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
@@ -321,8 +321,10 @@ await runScenario("6. Template rendering (50 blocks)", [
     const doc = createDocument({ info: { title: "Template" } });
     const blocks = [];
     for (let i = 0; i < 8; i++) {
-      blocks.push({ type: "heading", text: `Section ${i + 1}`, options: { level: 2 } });
-      blocks.push({ type: "paragraph", text: sampleLine(0) + " " + sampleLine(1) + " " + sampleLine(2) });
+      blocks.push(
+        { type: "heading", text: `Section ${i + 1}`, options: { level: 2 } },
+        { type: "paragraph", text: sampleLine(0) + " " + sampleLine(1) + " " + sampleLine(2) },
+      );
       blocks.push({
         type: "table",
         rows: [

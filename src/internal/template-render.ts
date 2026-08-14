@@ -26,7 +26,7 @@ import type {
   TemplateCrossRefBlock,
   TemplateWatermarkOptions,
 } from '../types.js';
-import { expandHtmlBlocks, htmlToBlocks } from './html-blocks.js';
+import { expandHtmlBlocks } from './html-blocks.js';
 import type { ResolvedPageSize } from './validation.js';
 
 interface ResolvedPageMargins {
@@ -110,6 +110,135 @@ interface ResolvedStrictLayoutOptions {
   readonly maxPages?: number | undefined;
 }
 
+/** One rendered template page plus its live flow cursor. */
+type TemplatePage = ReturnType<typeof createTemplatePage>;
+
+/** Everything the structural block handlers need from the render loop. */
+interface StructuralBlockContext {
+  readonly strict: ResolvedStrictLayoutOptions | undefined;
+  readonly blocks: readonly TemplateBlock[];
+  readonly styles: TemplateDocumentOptions['styles'];
+  readonly getCurrent: () => TemplatePage;
+  readonly advanceToNewPage: () => void;
+  readonly advanceToNextFlowRegion: () => void;
+  readonly anchors: Map<string, PdfPage>;
+  readonly deferredPageLinks: DeferredPageLink[];
+  readonly tocBackfills: TocBackfill[];
+  readonly crossRefBackfills: CrossRefBackfill[];
+  readonly measureLineWidth: (text: string, fontSize: number, font: PdfFont | undefined) => number;
+  readonly templateFont: PdfFont | undefined;
+}
+
+/**
+ * Renders the block types that manage their own pagination or resolve later
+ * (`pageBreak`, `pageLink`, `table`, `toc`, `crossRef`). Returns `false` when
+ * the block is ordinary content for the main flow path.
+ */
+function renderStructuralBlock(
+  block: TemplateBlock,
+  index: number,
+  ctx: StructuralBlockContext,
+): boolean {
+  const current = ctx.getCurrent();
+  if (block.type === 'pageBreak') {
+    if (current.flow.cursorY < current.startY) ctx.advanceToNewPage();
+    return true;
+  }
+  if (block.type === 'pageLink') {
+    renderPageLinkBlock(current.flow, current.page, block.target, block.options, ctx.deferredPageLinks);
+    return true;
+  }
+  if (block.type === 'table') {
+    if (block.anchor !== undefined) ctx.anchors.set(block.anchor, current.page);
+    renderTableWithSplits(block, index, ctx.strict, ctx.getCurrent, ctx.advanceToNextFlowRegion, ctx.styles);
+    return true;
+  }
+  if (block.type === 'toc') {
+    if (block.anchor !== undefined) ctx.anchors.set(block.anchor, current.page);
+    renderTocBlock(
+      block,
+      ctx.blocks,
+      ctx.getCurrent,
+      ctx.advanceToNextFlowRegion,
+      ctx.tocBackfills,
+      ctx.measureLineWidth,
+      ctx.templateFont,
+    );
+    return true;
+  }
+  if (block.type === 'crossRef') {
+    renderCrossRefBlock(block, ctx.getCurrent, ctx.advanceToNextFlowRegion, ctx.crossRefBackfills, ctx.templateFont);
+    return true;
+  }
+  return false;
+}
+
+/** Height budget a block (and anything kept with it) is measured against. */
+interface BlockFitMetrics {
+  readonly estimatedHeight: number;
+  readonly nextEstimatedHeight: number;
+  readonly selfPaginates: boolean;
+  readonly canSplitTextAcrossColumn: boolean;
+  readonly balanceTarget: number | undefined;
+}
+
+/**
+ * Measures the block, the block it is kept with, and the column-balance target.
+ * Code blocks paginate themselves line-by-line, so keeping a heading with one
+ * means keeping it with that block's first fragment only — otherwise a long
+ * listing would push its own heading to a fresh region every time.
+ */
+function measureBlockFit(
+  block: TemplateBlock,
+  index: number,
+  blocks: readonly TemplateBlock[],
+  current: TemplatePage,
+  styles: TemplateDocumentOptions['styles'],
+): BlockFitMetrics {
+  const estimatedHeight = estimateTemplateBlockHeight(block, current.flow, styles);
+  const keepWithNext = ('keepWithNext' in block ? block.keepWithNext : undefined) ?? block.type === 'heading';
+  const next = blocks[index + 1];
+  let nextEstimatedHeight =
+    keepWithNext && next !== undefined ? estimateTemplateBlockHeight(next, current.flow, styles) : 0;
+  if (next?.type === 'code' && next.keepTogether !== true) {
+    nextEstimatedHeight = Math.min(nextEstimatedHeight, flowRegionCapacity(current) * 0.25);
+  }
+  return {
+    estimatedHeight,
+    nextEstimatedHeight,
+    selfPaginates: block.type === 'code' && block.keepTogether !== true,
+    // `keepTogether` forbids splitting a paragraph line-by-line across columns,
+    // forcing it to be placed whole (breaking before it if it does not fit).
+    canSplitTextAcrossColumn:
+      block.type === 'paragraph' &&
+      block.keepTogether !== true &&
+      current.flow.columnIndex + 1 < current.flow.columnCount,
+    balanceTarget: resolveColumnBalanceTarget(blocks, index, current, styles),
+  };
+}
+
+/**
+ * True when the block should start a fresh region: either it would push a
+ * balanced column past its target, or it simply does not fit what is left.
+ * Both only apply once the region has content to break away from.
+ */
+function needsFreshRegion(current: TemplatePage, fit: BlockFitMetrics): boolean {
+  if (current.flow.cursorY >= current.startY) return false;
+  const used = current.startY - current.flow.cursorY;
+  if (
+    fit.balanceTarget !== undefined &&
+    !fit.selfPaginates &&
+    used + fit.estimatedHeight + fit.nextEstimatedHeight > fit.balanceTarget
+  ) {
+    return true;
+  }
+  return (
+    current.flow.remainingHeight < fit.estimatedHeight + fit.nextEstimatedHeight &&
+    !fit.canSplitTextAcrossColumn &&
+    !(fit.selfPaginates && fit.estimatedHeight > flowRegionCapacity(current))
+  );
+}
+
 export function renderTemplateDocument(
   doc: PdfDocument,
   options: TemplateDocumentOptions,
@@ -168,6 +297,21 @@ export function renderTemplateDocument(
     }
   };
 
+  const structuralContext: StructuralBlockContext = {
+    strict,
+    blocks: options.blocks,
+    styles: options.styles,
+    getCurrent: () => current,
+    advanceToNewPage,
+    advanceToNextFlowRegion,
+    anchors,
+    deferredPageLinks,
+    tocBackfills,
+    crossRefBackfills,
+    measureLineWidth,
+    templateFont,
+  };
+
   // Set when the previous block requested `breakAfter`; consumed at the top of
   // the next iteration so it composes correctly with `pageBreak`/`breakBefore`.
   let pendingBreakAfter = false;
@@ -184,87 +328,22 @@ export function renderTemplateDocument(
     pendingBreakAfter = false;
     const breakAfter = block.breakAfter === true;
 
-    if (block.type === 'pageBreak') {
-      if (current.flow.cursorY < current.startY) {
-        advanceToNewPage();
-      }
+    if (renderStructuralBlock(block, index, structuralContext)) {
+      // `pageBreak` never carries `breakAfter` forward; it already broke.
+      pendingBreakAfter = block.type === 'pageBreak' ? false : breakAfter;
       continue;
     }
 
-    if (block.type === 'pageLink') {
-      renderPageLinkBlock(current.flow, current.page, block.target, block.options, deferredPageLinks);
-      pendingBreakAfter = breakAfter;
-      continue;
+    const fit = measureBlockFit(block, index, options.blocks, current, options.styles);
+    if (!fit.selfPaginates) {
+      assertBlockFitsStrictLayout(strict, block, index, current, fit.estimatedHeight);
     }
-
-    if (block.type === 'table') {
-      if (block.anchor !== undefined) anchors.set(block.anchor, current.page);
-      renderTableWithSplits(block, index, strict, () => current, advanceToNextFlowRegion, options.styles);
-      pendingBreakAfter = breakAfter;
-      continue;
-    }
-
-    if (block.type === 'toc') {
-      if (block.anchor !== undefined) anchors.set(block.anchor, current.page);
-      renderTocBlock(block, options.blocks, () => current, advanceToNextFlowRegion, tocBackfills, measureLineWidth, templateFont);
-      pendingBreakAfter = breakAfter;
-      continue;
-    }
-
-    if (block.type === 'crossRef') {
-      renderCrossRefBlock(block, () => current, advanceToNextFlowRegion, crossRefBackfills, templateFont);
-      pendingBreakAfter = breakAfter;
-      continue;
-    }
-
-    const estimatedHeight = estimateTemplateBlockHeight(block, current.flow, options.styles);
-    // Code blocks paginate themselves line-by-line, so an oversized one is not
-    // a layout failure and must not be pushed to a fresh region it cannot fill.
-    const selfPaginates = block.type === 'code' && block.keepTogether !== true;
-    if (!selfPaginates) {
-      assertBlockFitsStrictLayout(strict, block, index, current, estimatedHeight);
-    }
-    const keepWithNext = block.keepWithNext ?? block.type === 'heading';
-    const next = options.blocks[index + 1];
-    let nextEstimatedHeight =
-      keepWithNext && next !== undefined
-        ? estimateTemplateBlockHeight(next, current.flow, options.styles)
-        : 0;
-    // Keeping a heading with a self-paginating block means keeping it with that
-    // block's first fragment, not with all of it — otherwise a long code
-    // listing would push its own heading to a fresh region every time.
-    if (next !== undefined && next.type === 'code' && next.keepTogether !== true) {
-      nextEstimatedHeight = Math.min(nextEstimatedHeight, flowRegionCapacity(current) * 0.25);
-    }
-    const balanceTarget = resolveColumnBalanceTarget(options.blocks, index, current, options.styles);
-    // `keepTogether` forbids splitting a paragraph line-by-line across columns,
-    // forcing it to be placed whole (breaking before it if it does not fit).
-    const canSplitTextAcrossColumn =
-      block.type === 'paragraph' &&
-      block.keepTogether !== true &&
-      current.flow.columnIndex + 1 < current.flow.columnCount;
-
-    if (
-      balanceTarget !== undefined &&
-      !selfPaginates &&
-      current.flow.cursorY < current.startY &&
-      current.startY - current.flow.cursorY + estimatedHeight + nextEstimatedHeight > balanceTarget
-    ) {
-      advanceToNextFlowRegion();
-    }
-
-    if (
-      current.flow.remainingHeight < estimatedHeight + nextEstimatedHeight &&
-      current.flow.cursorY < current.startY &&
-      !canSplitTextAcrossColumn &&
-      !(selfPaginates && estimatedHeight > flowRegionCapacity(current))
-    ) {
+    if (needsFreshRegion(current, fit)) {
       advanceToNextFlowRegion();
     }
 
     if (block.type === 'heading' && collectHeadings) {
-      const level = block.options?.level ?? 1;
-      headings.push({ level, text: block.text, page: current.page });
+      headings.push({ level: block.options?.level ?? 1, text: block.text, page: current.page });
     }
 
     if (block.anchor !== undefined) anchors.set(block.anchor, current.page);
@@ -521,6 +600,60 @@ function collectTocEntries(
  * the TOC paginates like any other content), but page numbers and links are
  * left for {@link resolveTocBackfills} once every page exists.
  */
+/** Geometry of one rendered TOC line. */
+interface TocLeaderGeometry {
+  readonly startX: number;
+  readonly endX: number;
+  readonly baselineY: number;
+  readonly fontSize: number;
+  readonly font: PdfFont | undefined;
+  readonly color: ColorInput;
+}
+
+/**
+ * Draws the decorative leader between a TOC title and its page-number slot, as
+ * an artifact on the host page so it stays out of the reading order.
+ */
+function drawTocLeader(
+  host: PdfPage,
+  kind: 'dots' | 'line',
+  geometry: TocLeaderGeometry,
+  measure: (text: string, fontSize: number, font: PdfFont | undefined) => number,
+): void {
+  const { startX, endX, baselineY, fontSize, font, color } = geometry;
+  if (endX - startX <= fontSize * 0.5) return;
+
+  if (kind === 'line') {
+    const ruleY = baselineY + fontSize * 0.15;
+    host.line(startX, ruleY, endX, ruleY, { stroke: color, lineWidth: 0.5, tag: 'Artifact' });
+    return;
+  }
+
+  const unit = '. ';
+  const unitWidth = measure(unit, fontSize, font) || fontSize * 0.5;
+  const count = Math.floor((endX - startX) / unitWidth);
+  if (count > 0) {
+    host.text(unit.repeat(count), {
+      x: startX,
+      y: baselineY,
+      fontSize,
+      ...(font ? { font } : {}),
+      color,
+      tag: 'Artifact',
+    });
+  }
+}
+
+/**
+ * Advances the hierarchical section counters to `level` and returns the label
+ * for that entry (e.g. `"1.2  "`), resetting any deeper levels.
+ */
+function nextTocNumber(counters: number[], level: number): string {
+  counters[level - 1] = (counters[level - 1] ?? 0) + 1;
+  counters.length = level;
+  return `${counters.map((count) => count ?? 0).join('.')}  `;
+}
+
 function renderTocBlock(
   block: TemplateTocBlock,
   allBlocks: readonly TemplateBlock[],
@@ -544,7 +677,6 @@ function renderTocBlock(
   const leader = opts.leader ?? 'dots';
   const leaderColor: ColorInput = opts.leaderColor ?? { kind: 'gray', value: 0.6 };
   const levelStyles = opts.levelStyles;
-  const numbering = opts.numbering === true;
   // Hierarchical section counters; index i tracks the current level (i+1) count.
   const counters: number[] = [];
 
@@ -587,15 +719,12 @@ function renderTocBlock(
       marginBottom: 0,
     });
     const baselineY = rect.y + lineHeight * 0.25;
-    const indent = (entry.level - 1) * indentStep;
-    let textX = rect.x + indent;
+    let textX = rect.x + (entry.level - 1) * indentStep;
     const toci = tocContainerFor(getCurrent().page).container('TOCI');
 
     // Optional hierarchical section number (TOCI → Lbl), e.g. "1", "1.2".
-    if (numbering) {
-      counters[entry.level - 1] = (counters[entry.level - 1] ?? 0) + 1;
-      counters.length = entry.level; // reset deeper levels
-      const label = `${counters.map((count) => count ?? 0).join('.')}  `;
+    if (opts.numbering === true) {
+      const label = nextTocNumber(counters, entry.level);
       toci.structure('Lbl').text(label, { x: textX, y: baselineY, ...textStyle, tag: 'Span' });
       textX += measure(label, fontSize, font);
     }
@@ -608,37 +737,15 @@ function renderTocBlock(
     const content = link ? reference.structure('Link') : reference;
     content.text(entry.text, { x: textX, y: baselineY, ...textStyle, tag: 'Span' });
 
-    // Decorative leader between the title and the page-number slot. Drawn as an
-    // artifact on the host page so it stays out of the reading order.
     if (leader !== 'none' && showNumbers) {
-      const titleWidth = measure(entry.text, fontSize, font);
-      const leaderStart = textX + titleWidth + fontSize * 0.5;
-      const leaderEnd = rect.x + rect.width - numberSlot - fontSize * 0.3;
-      if (leaderEnd - leaderStart > fontSize * 0.5) {
-        const host = getCurrent().page;
-        if (leader === 'dots') {
-          const unit = '. ';
-          const unitWidth = measure(unit, fontSize, font) || fontSize * 0.5;
-          const count = Math.floor((leaderEnd - leaderStart) / unitWidth);
-          if (count > 0) {
-            host.text(unit.repeat(count), {
-              x: leaderStart,
-              y: baselineY,
-              fontSize,
-              ...(font ? { font } : {}),
-              color: leaderColor,
-              tag: 'Artifact',
-            });
-          }
-        } else {
-          const ruleY = baselineY + fontSize * 0.15;
-          host.line(leaderStart, ruleY, leaderEnd, ruleY, {
-            stroke: leaderColor,
-            lineWidth: 0.5,
-            tag: 'Artifact',
-          });
-        }
-      }
+      drawTocLeader(getCurrent().page, leader, {
+        startX: textX + measure(entry.text, fontSize, font) + fontSize * 0.5,
+        endX: rect.x + rect.width - numberSlot - fontSize * 0.3,
+        baselineY,
+        fontSize,
+        font,
+        color: leaderColor,
+      }, measure);
     }
 
     backfills.push({
@@ -885,6 +992,40 @@ function resolveColumnBalanceTarget(
   return (alreadyConsumed + totalHeight) / remainingColumns;
 }
 
+/** Row heights of a table plus the repeated header/footer height they imply. */
+interface TableSplitMetrics {
+  readonly rowHeights: readonly number[];
+  readonly headerHeight: number;
+  readonly footerHeight: number;
+}
+
+function measureTableSplit(
+  flow: PdfFlow,
+  rows: readonly TableRow[],
+  opts: FlowTableOptions,
+  headerRowCount: number,
+  bodyEnd: number,
+): TableSplitMetrics {
+  const rowHeights = flow.estimateTableRowHeights(rows, opts);
+  const sum = (heights: readonly number[]): number => heights.reduce((total, h) => total + h, 0);
+  return {
+    rowHeights,
+    headerHeight: sum(rowHeights.slice(0, headerRowCount)),
+    footerHeight: sum(rowHeights.slice(bodyEnd)),
+  };
+}
+
+/** Rejects a `rows` value that is not an array, naming the offending block. */
+function assertTableRowsArray(block: TemplateTableBlock, blockIndex: number): void {
+  if (Array.isArray(block.rows)) return;
+  const received = block.rows === null ? 'null' : typeof block.rows;
+  throw new PdfEngineError(
+    PdfErrorCode.INVALID_TEXT,
+    `Table rows must be an array; received ${received}. Supply them in the \`rows\` field.`,
+    { blockIndex, received, field: 'rows' },
+  );
+}
+
 function renderTableWithSplits(
   block: TemplateTableBlock,
   blockIndex: number,
@@ -893,14 +1034,7 @@ function renderTableWithSplits(
   advancePage: () => void,
   stylesheet: TemplateStylesheet | undefined,
 ): void {
-  if (!Array.isArray(block.rows)) {
-    const received = block.rows === null ? 'null' : typeof block.rows;
-    throw new PdfEngineError(
-      PdfErrorCode.INVALID_TEXT,
-      `Table rows must be an array; received ${received}. Supply them in the \`rows\` field.`,
-      { blockIndex, received, field: 'rows' },
-    );
-  }
+  assertTableRowsArray(block, blockIndex);
   const allRows = block.rows;
   if (allRows.length === 0) return;
 
@@ -919,37 +1053,34 @@ function renderTableWithSplits(
   const headers = allRows.slice(0, headerRowCount);
   const footers = allRows.slice(bodyEnd);
 
-  const sumHeights = (heights: readonly number[]): number => heights.reduce((s, h) => s + h, 0);
-
-  let rowHeights = getCurrent().flow.estimateTableRowHeights(allRows, opts);
-  let headerHeight = sumHeights(rowHeights.slice(0, headerRowCount));
-  let footerHeight = sumHeights(rowHeights.slice(bodyEnd));
-
   // A table with no body rows (only header/footer) never splits — render whole.
   if (bodyStart >= bodyEnd) {
     getCurrent().flow.table(allRows, opts);
     return;
   }
 
+  let metrics = measureTableSplit(getCurrent().flow, allRows, opts, headerRowCount, bodyEnd);
+  const remeasureOnNewPage = (): void => {
+    advancePage();
+    metrics = measureTableSplit(getCurrent().flow, allRows, opts, headerRowCount, bodyEnd);
+  };
+
   let cursor = bodyStart;
   while (cursor < bodyEnd) {
     const flow = getCurrent().flow;
     // Headers and footers repeat on every slice, so their height is reserved up
     // front and body rows are packed into what remains.
-    let available = flow.remainingHeight - headerHeight - footerHeight;
+    let available = flow.remainingHeight - metrics.headerHeight - metrics.footerHeight;
 
     let endCursor = cursor;
-    while (endCursor < bodyEnd && rowHeights[endCursor]! <= available) {
-      available -= rowHeights[endCursor]!;
+    while (endCursor < bodyEnd && metrics.rowHeights[endCursor]! <= available) {
+      available -= metrics.rowHeights[endCursor]!;
       endCursor += 1;
     }
 
     if (endCursor === cursor) {
       if (flow.cursorY < getCurrent().startY) {
-        advancePage();
-        rowHeights = getCurrent().flow.estimateTableRowHeights(allRows, opts);
-        headerHeight = sumHeights(rowHeights.slice(0, headerRowCount));
-        footerHeight = sumHeights(rowHeights.slice(bodyEnd));
+        remeasureOnNewPage();
         continue;
       }
       assertTableRowFitsStrictLayout(
@@ -957,8 +1088,8 @@ function renderTableWithSplits(
         blockIndex,
         cursor,
         getCurrent(),
-        rowHeights[cursor]!,
-        headerHeight + footerHeight,
+        metrics.rowHeights[cursor]!,
+        metrics.headerHeight + metrics.footerHeight,
       );
       // At start of a fresh page and even one row exceeds height: force-place that row.
       endCursor = cursor + 1;
@@ -973,10 +1104,7 @@ function renderTableWithSplits(
     cursor = endCursor;
 
     if (cursor < bodyEnd) {
-      advancePage();
-      rowHeights = getCurrent().flow.estimateTableRowHeights(allRows, opts);
-      headerHeight = sumHeights(rowHeights.slice(0, headerRowCount));
-      footerHeight = sumHeights(rowHeights.slice(bodyEnd));
+      remeasureOnNewPage();
     }
   }
 }
@@ -991,10 +1119,10 @@ function buildOutlineFromHeadings(
   const stack: Array<{ level: number; item: ReturnType<PdfDocument['addOutline']> }> = [];
   for (const heading of headings) {
     if (heading.level > maxLevel) continue;
-    while (stack.length > 0 && stack[stack.length - 1]!.level >= heading.level) {
+    while (stack.length > 0 && stack.at(-1)!.level >= heading.level) {
       stack.pop();
     }
-    const parent = stack[stack.length - 1]?.item;
+    const parent = stack.at(-1)?.item;
     const item = parent
       ? parent.addChild(heading.text, heading.page, { expanded })
       : doc.addOutline(heading.text, heading.page, { expanded });
@@ -1021,11 +1149,8 @@ function renderTemplateRunningRegions(
   measure: (text: string, fontSize: number, font: PdfFont | undefined) => number,
 ): void {
   const totalPages = pages.length;
-  const watermark = options.watermark === undefined
-    ? undefined
-    : typeof options.watermark === 'string'
-      ? { text: options.watermark }
-      : options.watermark;
+  const watermark =
+    typeof options.watermark === 'string' ? { text: options.watermark } : options.watermark;
   for (const { pageNumber, page } of pages) {
     const context = { pageNumber, totalPages, ...metadata };
     // Draw the watermark first so that, once every "behind" layer is hoisted to

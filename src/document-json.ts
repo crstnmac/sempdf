@@ -19,6 +19,7 @@
  */
 import { createDocument, type PdfPage } from "./document.js";
 import { PdfEngineError, PdfErrorCode } from "./errors.js";
+import type { FontConfiguration } from "./fonts.js";
 import { loadGoogleFont, type LoadGoogleFontOptions } from "./google-fonts.js";
 import type {
   BinaryData,
@@ -165,6 +166,12 @@ export interface PdfDocumentJson {
   readonly blocks: readonly JsonBlock[];
 }
 
+/** Runtime-only assets and defaults used while rendering document JSON. */
+export interface RenderDocumentJsonOptions {
+  /** Font preset or configuration applied before JSON-declared fonts render. */
+  readonly fonts?: FontConfiguration;
+}
+
 /* Validation --------------------------------------------------------------- */
 
 function fail(message: string): never {
@@ -217,7 +224,7 @@ function decodeBase64(base64: string): Uint8Array {
   if (typeof Buffer !== "undefined") return new Uint8Array(Buffer.from(base64, "base64"));
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.codePointAt(i)!;
   return bytes;
 }
 
@@ -463,7 +470,7 @@ function toDocumentOptions(json: PdfDocumentJson): DocumentOptions {
   if (json.compress !== undefined) options.compress = json.compress;
   if (json.encryption !== undefined) options.encryption = json.encryption;
   if (json.defaultPageSize !== undefined) options.defaultPageSize = json.defaultPageSize;
-  const defaults: TextDefaults = { ...(json.defaults ?? {}) };
+  const defaults: TextDefaults = { ...json.defaults };
   if (json.defaultFont !== undefined) defaults.font = json.defaultFont;
   if (Object.keys(defaults).length > 0) options.defaults = defaults;
   return options;
@@ -496,12 +503,22 @@ function toTemplateOptions(
  *
  * @returns The serialized PDF as a `Uint8Array`.
  */
-export async function renderDocumentJson(json: PdfDocumentJson): Promise<Uint8Array> {
+export async function renderDocumentJson(
+  json: PdfDocumentJson,
+  options: RenderDocumentJsonOptions = {},
+): Promise<Uint8Array> {
   validate(json);
   // Clone so the caller's input is never mutated by asset resolution.
   const doc = structuredClone(json) as PdfDocumentJson;
 
-  const pdf = createDocument(toDocumentOptions(doc));
+  const documentOptions = toDocumentOptions(doc);
+  const pdf = createDocument(documentOptions);
+  if (options.fonts !== undefined) {
+    await pdf.fonts(options.fonts);
+    // Explicit JSON defaults win over preset defaults while retaining any
+    // preset font slots the JSON omitted.
+    if (documentOptions.defaults !== undefined) pdf.setTextDefaults(documentOptions.defaults);
+  }
   for (const font of doc.fonts ?? []) {
     pdf.registerFontFamily(font.name, await loadFacesAsync(asFaces(font.source)));
   }

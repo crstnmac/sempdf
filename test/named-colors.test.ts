@@ -16,7 +16,9 @@ test("hsl converts to the equivalent RGB color", () => {
   // Hue wraps and s/l clamp to [0,1].
   assert.deepEqual(hsl(-120, 1, 0.5), hsl(240, 1, 0.5));
   const clamped = hsl(0, 5, -1);
-  assert.ok(approx(clamped.r, 0) && approx(clamped.g, 0) && approx(clamped.b, 0));
+  assert.ok(approx(clamped.r, 0), `red channel should clamp to 0, got ${clamped.r}`);
+  assert.ok(approx(clamped.g, 0), `green channel should clamp to 0, got ${clamped.g}`);
+  assert.ok(approx(clamped.b, 0), `blue channel should clamp to 0, got ${clamped.b}`);
 });
 
 test("hsl accepts percentages, 0-100 numbers, and CSS strings equivalently", () => {

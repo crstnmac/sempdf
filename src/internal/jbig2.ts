@@ -116,7 +116,7 @@ export function parseJbig2(data: BinaryData): EmbeddedJbig2Asset {
 function parseFileHeader(bytes: Uint8Array): Jbig2FileHeader {
   const idBytes = bytes.slice(0, 8);
   const id = new TextDecoder().decode(idBytes);
-  if (id.charCodeAt(0) !== 0x97 || id !== "JBIG2\x00\x00\x00") {
+  if (id.codePointAt(0)! !== 0x97 || id !== "JBIG2\x00\x00\x00") {
     throw new PdfEngineError(
       PdfErrorCode.UNSUPPORTED_IMAGE_FORMAT,
       "Only JBIG2 image data is supported.",
@@ -146,10 +146,6 @@ function parseSegmentHeader(bytes: Uint8Array, offset: number): Jbig2SegmentHead
   const flags = bytes[offset + 4]!;
   const segmentType = flags & 0x3f;
   const referredToCount = (bytes[offset + 5]! >> 5) & 0x07;
-  const retentionFlags = referredToCount === 7
-    ? (bytes[offset + 5]! & 0x1f) << 24 | bytes[offset + 6]! << 16 | bytes[offset + 7]! << 8
-    : 0;
-
   let cursor = offset + 7 + 1;
   const referredToSegments: number[] = [];
 
@@ -180,8 +176,6 @@ function parseSegmentHeader(bytes: Uint8Array, offset: number): Jbig2SegmentHead
   const dataLength = readBigEndian32(bytes, cursor);
   cursor += 4;
 
-  const headerSize = cursor - offset;
-
   return {
     segmentNumber,
     segmentType,
@@ -198,29 +192,11 @@ function parseGenericRegionSegment(data: Uint8Array): Jbig2RegionSegmentInfo | u
   const height = readBigEndian32(data, 4);
   const x = readBigEndian32(data, 8);
   const y = readBigEndian32(data, 12);
-  const flags = data[16]!;
-  const mmr = (flags & 1) !== 0;
-  const templateType = (flags >> 1) & 0x03;
-  const isTPGDon = (flags >> 3) & 1 ? true : false;
-
-  if (!mmr && templateType === 0 && data.length >= 22) {
-    const atx1 = data[17]!;
-    const aty1 = data[18]!;
-    const atx2 = data[19]!;
-    const aty2 = data[20]!;
-    const atx3 = data[21]!;
-    const aty3 = data[22]!;
-  }
-
   return { width, height, x, y };
 }
 
 function parseSymbolDictionarySegment(data: Uint8Array): Jbig2RegionSegmentInfo | undefined {
   if (data.length < 18) return undefined;
-
-  const flags = readBigEndian16(data, 0);
-  const templateType = flags & 0x03;
-  const sdTemplate = (flags >> 14) & 0x3ff;
 
   const width = readBigEndian32(data, 2);
   const height = readBigEndian32(data, 6);
@@ -231,7 +207,6 @@ function parseSymbolDictionarySegment(data: Uint8Array): Jbig2RegionSegmentInfo 
 function findPageInformationSegment(bytes: Uint8Array): Jbig2RegionSegmentInfo | undefined {
   let offset = 9;
   while (offset + 11 <= bytes.length) {
-    const segmentNumber = readBigEndian32(bytes, offset);
     const flags = bytes[offset + 4]!;
     const segmentType = flags & 0x3f;
 
@@ -280,9 +255,4 @@ function readBigEndian32(bytes: Uint8Array, offset: number): number {
     (bytes[offset + 2]! << 8) |
     bytes[offset + 3]!
   ) >>> 0;
-}
-
-function readBigEndian16(bytes: Uint8Array, offset: number): number {
-  if (offset + 1 >= bytes.length) return 0;
-  return ((bytes[offset]! << 8) | bytes[offset + 1]!) >>> 0;
 }

@@ -1,6 +1,9 @@
 import { PdfEngineError, PdfErrorCode } from "../errors.js";
 import type { BinaryData } from "../types.js";
 
+/** Supported EXIF orientation values (0/180 degree flips and 90 degree rotations). */
+type ExifOrientation = 1 | 3 | 6 | 8;
+
 export interface EmbeddedJpegAsset {
   readonly kind: "jpeg";
   readonly key: string;
@@ -10,7 +13,7 @@ export interface EmbeddedJpegAsset {
   readonly bitsPerComponent: number;
   readonly colorSpace: "DeviceGray" | "DeviceRGB" | "DeviceCMYK";
   readonly iccProfile?: { readonly bytes: Uint8Array; readonly channels: number } | undefined;
-  readonly orientation: 1 | 3 | 6 | 8;
+  readonly orientation: ExifOrientation;
 }
 
 const SOF_MARKERS = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
@@ -26,7 +29,7 @@ export function parseJpeg(data: BinaryData): EmbeddedJpegAsset {
     }
 
     let offset = 2;
-    let orientation: 1 | 3 | 6 | 8 = 1;
+    let orientation: ExifOrientation = 1;
     while (offset < bytes.length) {
       if (bytes[offset] !== 0xff) {
         throw new PdfEngineError(PdfErrorCode.INVALID_IMAGE, "Invalid JPEG marker alignment.", { offset });
@@ -136,7 +139,7 @@ function buildJpegKey(bytes: Uint8Array, pixelWidth: number, pixelHeight: number
   return `jpeg:${pixelWidth}x${pixelHeight}:${componentCount}:${bytes.length}:${(hash >>> 0).toString(16)}`;
 }
 
-function parseExifOrientation(bytes: Uint8Array, app1Offset: number, segmentLength: number): 1 | 3 | 6 | 8 | undefined {
+function parseExifOrientation(bytes: Uint8Array, app1Offset: number, segmentLength: number): ExifOrientation | undefined {
   const dataOffset = app1Offset + 2;
   if (
     bytes[dataOffset] !== 0x45 ||
@@ -193,7 +196,7 @@ function parseExifOrientation(bytes: Uint8Array, app1Offset: number, segmentLeng
       if (type === 3) {
         const value = read16(entryOffset + 8);
         if (value === 1 || value === 3 || value === 6 || value === 8) {
-          return value as 1 | 3 | 6 | 8;
+          return value as ExifOrientation;
         }
       }
     }

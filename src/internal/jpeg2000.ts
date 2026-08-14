@@ -43,7 +43,7 @@ function readAscii(bytes: Uint8Array, offset: number, length: number): string {
     const byte = bytes[offset + i];
     if (byte === 0) break;
     if (byte === undefined) break;
-    result += String.fromCharCode(byte);
+    result += String.fromCodePoint(byte);
   }
   return result;
 }
@@ -151,10 +151,12 @@ export function parseJp2(data: BinaryData): EmbeddedJp2Asset {
 
     const { header, rawData } = parseJp2Boxes(bytes);
 
-    const colorSpace =
-      header.componentCount === 1 ? "DeviceGray" as const
-      : header.componentCount === 4 ? "DeviceCMYK" as const
-      : "DeviceRGB" as const;
+    let colorSpace: "DeviceGray" | "DeviceCMYK" | "DeviceRGB" = "DeviceRGB";
+    if (header.componentCount === 1) {
+      colorSpace = "DeviceGray";
+    } else if (header.componentCount === 4) {
+      colorSpace = "DeviceCMYK";
+    }
 
     const channels = header.componentCount as 1 | 3 | 4;
 
@@ -178,8 +180,8 @@ export function parseJp2(data: BinaryData): EmbeddedJp2Asset {
 
 function hashBytes(data: Uint8Array): string {
   let h = 0x811c9dc5;
-  for (let i = 0; i < data.length; i++) {
-    h ^= data[i]!;
+  for (const byte of data) {
+    h ^= byte;
     h = Math.imul(h, 0x01000193);
   }
   return (h >>> 0).toString(16);

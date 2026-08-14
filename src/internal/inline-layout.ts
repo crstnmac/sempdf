@@ -139,7 +139,7 @@ export function breakInlineLines(
   // Vertical rich text stacks in a single column (no auto column wrap).
   if (geometry.writingMode === "vertical") {
     const trimmed = [...pieces];
-    while (trimmed.length > 0 && trimmed[trimmed.length - 1]!.isSpace) {
+    while (trimmed.length > 0 && trimmed.at(-1)!.isSpace) {
       trimmed.pop();
     }
     return trimmed.length > 0
@@ -152,7 +152,7 @@ export function breakInlineLines(
   let currentSize = 0;
 
   const flush = (isLast: boolean): void => {
-    while (current.length > 0 && current[current.length - 1]!.isSpace) {
+    while (current.length > 0 && current.at(-1)!.isSpace) {
       current.pop();
     }
     if (current.length > 0) {
@@ -260,7 +260,7 @@ export function placeInlineLine(
       embeddedFonts,
     );
     runs.push(...produced);
-    for (let i = 0; i < produced.length; i += 1) {
+    for (const _piece of produced) {
       runLinks.push(piece.run.link);
     }
     const url = piece.run.link;
@@ -312,7 +312,7 @@ function placeVerticalColumn(
       embeddedFonts,
     );
     runs.push(...produced);
-    for (let i = 0; i < produced.length; i += 1) {
+    for (const _piece of produced) {
       runLinks.push(piece.run.link);
     }
     if (piece.run.link !== undefined && !piece.isSpace) {

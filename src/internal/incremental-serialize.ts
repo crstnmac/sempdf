@@ -36,6 +36,9 @@ import {
 import { isPdfDictEntries } from './document-helpers.js';
 import { mergePdfDict, patchPdfDict, getPdfDictValue } from './pdf-utils.js';
 
+/** Cross-reference stream entry type: 0 free, 1 in-use, 2 compressed. */
+type XrefEntryType = 0 | 1 | 2;
+
 export const COMPRESSION_MIN_BYTES = 256;
 
 interface WritePdfOptions {
@@ -551,7 +554,7 @@ function buildIncrementalFileIdValue(
 function buildFullXrefStreamValue(
   xrefEntries: ReadonlyMap<
     number,
-    { type: 0 | 1 | 2; field2: number; field3: number }
+    { type: XrefEntryType; field2: number; field3: number }
   >,
   xrefStreamObjectId: number,
   options: WritePdfOptions,
@@ -564,7 +567,7 @@ function buildFullXrefStreamValue(
   const indexValues: number[] = [];
   const allEntries: Array<{
     objectId: number;
-    type: 0 | 1 | 2;
+    type: XrefEntryType;
     field2: number;
     field3: number;
   }> = [];
@@ -660,7 +663,7 @@ function buildIncrementalXrefStreamValue(
   model: PdfIncrementalUpdateModel,
   xrefEntries: ReadonlyMap<
     number,
-    { type: 0 | 1 | 2; field2: number; field3: number }
+    { type: XrefEntryType; field2: number; field3: number }
   >,
   xrefStreamObjectId: number,
   infoObjectId: number | undefined,
@@ -843,7 +846,7 @@ export function writePdfWithObjectStreams(
   const offsets = new Map<number, number>();
   const xrefEntries = new Map<
     number,
-    { type: 0 | 1 | 2; field2: number; field3: number }
+    { type: XrefEntryType; field2: number; field3: number }
   >();
   xrefEntries.set(0, { type: 0, field2: 0, field3: 65535 });
 
@@ -930,7 +933,7 @@ export function writeIncrementalPdf(
   const baseBytes = model.base.getSourceBytes();
   const encryption = getIncrementalEncryption(model);
   const writer = new ByteWriter();
-  const lastByte = baseBytes[baseBytes.length - 1];
+  const lastByte = baseBytes.at(-1);
   if (lastByte !== undefined && lastByte !== 0x0a && lastByte !== 0x0d) {
     writer.writeLine();
   }
@@ -1010,7 +1013,7 @@ export async function writeIncrementalPdfToSink(
 
   const encryption = getIncrementalEncryption(model);
   const writer = new StreamingByteWriter(sink);
-  const lastByte = baseBytes[baseBytes.length - 1];
+  const lastByte = baseBytes.at(-1);
   if (lastByte !== undefined && lastByte !== 0x0a && lastByte !== 0x0d) {
     await writer.writeLine();
   }
@@ -1081,7 +1084,7 @@ function writeIncrementalXrefStreamPdf(
   const baseBytes = model.base.getSourceBytes();
   const encryption = getIncrementalEncryption(model);
   const writer = new ByteWriter();
-  const lastByte = baseBytes[baseBytes.length - 1];
+  const lastByte = baseBytes.at(-1);
   if (lastByte !== undefined && lastByte !== 0x0a && lastByte !== 0x0d) {
     writer.writeLine();
   }
@@ -1109,7 +1112,7 @@ function writeIncrementalXrefStreamPdf(
   const xrefStreamOffset = baseBytes.length + writer.size;
   const xrefEntries = new Map<
     number,
-    { type: 0 | 1 | 2; field2: number; field3: number }
+    { type: XrefEntryType; field2: number; field3: number }
   >();
   xrefEntries.set(0, { type: 0, field2: 0, field3: 65535 });
   for (const object of objects) {
@@ -1161,7 +1164,7 @@ async function writeIncrementalXrefStreamPdfToSink(
 
   const encryption = getIncrementalEncryption(model);
   const writer = new StreamingByteWriter(sink);
-  const lastByte = baseBytes[baseBytes.length - 1];
+  const lastByte = baseBytes.at(-1);
   if (lastByte !== undefined && lastByte !== 0x0a && lastByte !== 0x0d) {
     await writer.writeLine();
   }
@@ -1195,7 +1198,7 @@ async function writeIncrementalXrefStreamPdfToSink(
   const xrefStreamOffset = baseBytes.length + writer.size;
   const xrefEntries = new Map<
     number,
-    { type: 0 | 1 | 2; field2: number; field3: number }
+    { type: XrefEntryType; field2: number; field3: number }
   >();
   xrefEntries.set(0, { type: 0, field2: 0, field3: 65535 });
   for (const [objectId, offset] of offsets) {

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img">
+  <title>Document with a modular byte edge</title>
+  <path fill="#007A5C" d="M10 6h29l15 15v12H44v8h10v15H10V6Zm10 12v8h17v-8H20Zm0 16v8h14v-8H20Z"/>
+  <path fill="#fff" d="M39 6v15h15Z"/>
+</svg>

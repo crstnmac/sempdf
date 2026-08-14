@@ -5,5 +5,15 @@
     "declarationMap": false,
     "stripInternal": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  "exclude": [
+    "src/components/**",
+    "src/routes/**",
+    "src/router.tsx",
+    "src/routeTree.gen.ts",
+    "src/start.ts",
+    "src/lib/layout.shared.tsx",
+    "src/lib/shared.ts",
+    "src/lib/source.ts"
+  ]
 }

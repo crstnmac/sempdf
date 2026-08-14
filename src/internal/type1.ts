@@ -140,7 +140,7 @@ function parseType1Text(text: string, rawBytes: Uint8Array, isPfb: boolean): Par
     if (inEncoding) {
       const names = trimmed.split(/\s+/).filter((s) => s.length > 0);
       for (const n of names) {
-        const name = n.replace(/^\/|def$/g, "");
+        const name = n.replaceAll(/^\/|def$/g, "");
         encoding.push(name);
       }
       continue;
@@ -160,7 +160,7 @@ function parseType1Text(text: string, rawBytes: Uint8Array, isPfb: boolean): Par
           /dup\s+(\d+)\s+\/(\S+)/
         );
         if (eMatch && !inCharStrings) {
-          const idx = parseInt(eMatch[1]!, 10);
+          const idx = Number.parseInt(eMatch[1]!, 10);
           const name = eMatch[2]!;
           encoding[idx] = name;
         }
@@ -238,7 +238,7 @@ function extractPfaCharStrings(
   const rdPattern = /\/\w+\s+(-?\d+)\s+RD\s+([\s\S]*?)\s+ND/gm;
   let match;
   while ((match = rdPattern.exec(text)) !== null) {
-    const hexData = match[2]?.replace(/\s/g, "") ?? "";
+    const hexData = match[2]?.replaceAll(/\s/g, "") ?? "";
     if (hexData.length > 0) {
       try {
         const binData = hexToBytes(hexData);
@@ -256,7 +256,7 @@ function hexToBytes(hex: string): Uint8Array {
   }
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < hex.length; i += 2) {
-    bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
+    bytes[i / 2] = Number.parseInt(hex.slice(i, i + 2), 16);
   }
   return bytes;
 }
