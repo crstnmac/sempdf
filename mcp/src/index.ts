@@ -11,9 +11,9 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
+import { McpServer } from "@modelcontextprotocol/server";
+import { serveStdio } from "@modelcontextprotocol/server/stdio";
+import { z } from "zod/v4";
 
 import {
   appendPages,
@@ -32,13 +32,13 @@ import {
 const MAX_PDF_BYTES = 100 * 1024 * 1024;
 
 // Every path is resolved against a workspace root and may not escape it —
-// WORKSPACE_DIR env (set by the MCPB manifest) wins; otherwise the host's
-// first approved root (roots/list) is adopted once available; failing both,
-// the boundary defaults to the process's cwd. Never unscoped.
+// WORKSPACE_DIR env (set by the MCPB manifest) wins; otherwise the boundary
+// defaults to the process's cwd. Never unscoped. The 2026-07-28 protocol
+// deprecates roots, so filesystem authority is configured explicitly.
 const explicitWorkspaceRoot: string | null = process.env.WORKSPACE_DIR
   ? resolve(process.env.WORKSPACE_DIR)
   : null;
-let workspaceRoot: string = explicitWorkspaceRoot ?? process.cwd();
+const workspaceRoot: string = explicitWorkspaceRoot ?? process.cwd();
 
 /** Resolves a user-supplied path, enforcing containment within the workspace root. */
 function resolvePath(userPath: string): string {
@@ -177,7 +177,7 @@ const splitPdfOutput = {
 const server = new McpServer(
   {
     name: "zeropdf",
-    version: "0.6.0",
+    version: "0.6.1",
     title: "zeroPDF",
     websiteUrl: "https://zeropdf.criston.dev",
   },
@@ -212,7 +212,7 @@ server.registerTool(
       "merge_pdfs / append_pages / extract_pages instead.",
     inputSchema: {
       document: z
-        .object({ blocks: z.array(z.record(z.unknown())).min(1) })
+        .object({ blocks: z.array(z.record(z.string(), z.unknown())).min(1) })
         .passthrough()
         .describe(
           "A PdfDocumentJson value. `blocks` is a non-empty array of flow blocks and/or " +
@@ -553,29 +553,14 @@ async function loadTypeDeclarations(): Promise<string> {
 
 /* Boot ---------------------------------------------------------------------- */
 
-// If no WORKSPACE_DIR was configured, adopt the host's first approved root
-// (roots/list) as the workspace boundary once the session initializes.
-server.server.oninitialized = async () => {
-  if (explicitWorkspaceRoot) return;
-  const caps = server.server.getClientCapabilities();
-  if (!caps?.roots) return;
-  try {
-    const { roots } = await server.server.listRoots();
-    if (roots[0]?.uri) workspaceRoot = fileURLToPath(roots[0].uri);
-  } catch {
-    // Host advertised roots but the call failed — retain the cwd boundary.
-  }
-};
-
-async function main() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+function main() {
+  serveStdio(() => server);
   // stderr is safe; stdout is reserved for the MCP protocol.
   console.error("zeropdf MCP server running on stdio");
 }
 
 try {
-  await main();
+  main();
 } catch (error) {
   console.error("Fatal:", error);
   process.exit(1);
