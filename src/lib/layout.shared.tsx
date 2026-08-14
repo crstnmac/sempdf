@@ -1,11 +1,12 @@
 import type { BaseLayoutProps } from "fumadocs-ui/layouts/shared";
+import { LiquidMetalMark } from "@/components/liquid-metal-mark";
 
 export function baseOptions(): BaseLayoutProps {
   return {
     nav: {
       title: (
         <span className="brand-lockup">
-          <span className="brand-mark" aria-hidden="true" />
+          <LiquidMetalMark />
           <span>sempdf</span>
         </span>
       ),
