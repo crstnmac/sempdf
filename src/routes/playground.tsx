@@ -1,4 +1,5 @@
 import { ClientOnly, createFileRoute, Link } from "@tanstack/react-router";
+import { createServerFn } from "@tanstack/react-start";
 import { HomeLayout } from "fumadocs-ui/layouts/home";
 import {
   Check,
@@ -17,28 +18,65 @@ import { baseOptions } from "@/lib/layout.shared";
 import type { PdfDocumentJson } from "../document-json";
 
 type PlaygroundMode = "html" | "typescript" | "json";
-type WorkerResult = { ok: true; bytes: ArrayBuffer; durationMs: number } | { ok: false; error: string };
+type RenderResult = { ok: true; bytesBase64: string; durationMs: number } | { ok: false; error: string };
 
-function renderInWorker(mode: PlaygroundMode, source: string): Promise<WorkerResult> {
-  return new Promise((resolve) => {
-    const worker = new Worker(new URL("../workers/playground.worker.ts", import.meta.url), { type: "module" });
-    const timeout = window.setTimeout(() => {
-      worker.terminate();
-      resolve({ ok: false, error: "Rendering exceeded the 10 second limit." });
-    }, 10_000);
-    worker.onmessage = (event: MessageEvent<WorkerResult>) => {
-      window.clearTimeout(timeout);
-      worker.terminate();
-      resolve(event.data);
-    };
-    worker.onerror = (event) => {
-      window.clearTimeout(timeout);
-      worker.terminate();
-      resolve({ ok: false, error: event.message || "The playground worker failed." });
-    };
-    worker.postMessage({ mode, source });
+const renderOnServer = createServerFn({ method: "POST" })
+  .validator((input: { mode: PlaygroundMode; source: string }) => input)
+  .handler(async ({ data }): Promise<RenderResult> => {
+    const startedAt = performance.now();
+    try {
+      if (Buffer.byteLength(data.source, "utf8") > 64 * 1024) {
+        throw new Error("Playground source is limited to 64 KB.");
+      }
+
+      const [ts, sempdf, sempdfFonts] = await Promise.all([
+        import("typescript"),
+        import("../index.js"),
+        import("@crstnmac/sempdf-fonts"),
+      ]);
+      const transpiled = ts.default.transpileModule(data.source, {
+        compilerOptions: {
+          target: ts.default.ScriptTarget.ES2022,
+          module: ts.default.ModuleKind.CommonJS,
+          esModuleInterop: true,
+        },
+        reportDiagnostics: true,
+      });
+      const syntaxError = transpiled.diagnostics?.find(
+        (diagnostic) => diagnostic.category === ts.default.DiagnosticCategory.Error,
+      );
+      if (syntaxError) throw new Error(ts.default.flattenDiagnosticMessageText(syntaxError.messageText, "\n"));
+
+      const requireModule = (name: unknown) => {
+        if (name === "@crstnmac/sempdf") return sempdf;
+        if (name === "@crstnmac/sempdf-fonts") return sempdfFonts;
+        throw new Error(`Module ${String(name)} is not available in the playground.`);
+      };
+      const module = { exports: {} as Record<string, unknown> };
+      const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
+        ...args: string[]
+      ) => (...values: unknown[]) => Promise<unknown>;
+      const execute = new AsyncFunction(
+        "exports",
+        "require",
+        "module",
+        `${transpiled.outputText}\nreturn typeof bytes === "undefined" ? undefined : bytes;`,
+      );
+      const output = await execute(module.exports, requireModule, module);
+      if (!(output instanceof Uint8Array)) {
+        throw new Error("TypeScript mode must assign the generated Uint8Array to `bytes`.");
+      }
+      if (output.byteLength > 5 * 1024 * 1024) throw new Error("Rendered PDFs are limited to 5 MB.");
+
+      return {
+        ok: true,
+        bytesBase64: Buffer.from(output.buffer, output.byteOffset, output.byteLength).toString("base64"),
+        durationMs: Math.round(performance.now() - startedAt),
+      };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : "TypeScript execution failed." };
+    }
   });
-}
 
 const samples = {
   "Accessible report": {
@@ -284,15 +322,15 @@ function Playground() {
 
   async function render() {
     setStatus("rendering");
-    setMessage("Running sempdf in the browser…");
+    setMessage("Running sempdf on the Node.js server…");
     try {
-      const result = await renderInWorker(mode, source);
+      const result = await renderOnServer({ data: { mode, source } });
       if (!result.ok) {
         setStatus("error");
         setMessage(result.error);
         return;
       }
-      const bytes = new Uint8Array(result.bytes);
+      const bytes = Uint8Array.from(atob(result.bytesBase64), (character) => character.charCodeAt(0));
       const pdfBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
       const nextUrl = URL.createObjectURL(new Blob([pdfBuffer], { type: "application/pdf" }));
       setPdfUrl((current) => {
@@ -477,7 +515,7 @@ function Playground() {
             {status === "error" ? <TriangleAlert aria-hidden="true" size={15} /> : status === "ready" ? <Check aria-hidden="true" size={15} /> : <span />}
           </div>
           <output aria-live="polite">{message}</output>
-          <span className="playground-safety">Real library runtime · isolated browser worker · 10 s limit</span>
+          <span className="playground-safety">Real library runtime · Node.js server rendering · 5 MB limit</span>
         </footer>
       </main>
     </HomeLayout>
