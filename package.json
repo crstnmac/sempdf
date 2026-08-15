@@ -81,6 +81,9 @@
   "engines": {
     "node": ">=22"
   },
+  "overrides": {
+    "dompurify": "3.4.13"
+  },
   "devDependencies": {
     "@crstnmac/sempdf-fonts": "file:./fonts",
     "@fontsource-variable/geist": "^5.3.0",

@@ -19,21 +19,140 @@ import type { PdfDocumentJson } from "../document-json";
 
 type PlaygroundMode = "html" | "typescript" | "json";
 type RenderResult = { ok: true; bytesBase64: string; durationMs: number } | { ok: false; error: string };
+const renderStarts: number[] = [];
+let activeRenders = 0;
 
 const renderOnServer = createServerFn({ method: "POST" })
   .validator((input: { mode: PlaygroundMode; source: string }) => input)
   .handler(async ({ data }): Promise<RenderResult> => {
     const startedAt = performance.now();
+    const now = Date.now();
+    while (renderStarts[0] !== undefined && renderStarts[0] < now - 60_000) renderStarts.shift();
+    if (renderStarts.length >= 30) return { ok: false, error: "The render rate limit has been reached. Try again shortly." };
+    if (activeRenders >= 2) return { ok: false, error: "The renderer is busy. Try again shortly." };
+    renderStarts.push(now);
+    activeRenders += 1;
     try {
       if (Buffer.byteLength(data.source, "utf8") > 64 * 1024) {
         throw new Error("Playground source is limited to 64 KB.");
       }
 
-      const [ts, sempdf, sempdfFonts] = await Promise.all([
+      // TypeScript's CommonJS-oriented system shim still reads these globals
+      // while its ESM server bundle is being initialized.
+      const serverGlobals = globalThis as typeof globalThis & { __filename?: string; __dirname?: string };
+      serverGlobals.__filename ??= import.meta.filename;
+      serverGlobals.__dirname ??= import.meta.dirname;
+      const [ts, vm, sempdf, sempdfFonts] = await Promise.all([
         import("typescript"),
+        import("node:vm"),
         import("../index.js"),
         import("@crstnmac/sempdf-fonts"),
       ]);
+      const sourceFile = ts.default.createSourceFile("playground.ts", data.source, ts.default.ScriptTarget.ES2022, true);
+      const allowedModules = new Map([
+        ["@crstnmac/sempdf", new Set(["createDocument", "hex", "htmlToBlocks", "renderDocumentJson"])],
+        ["@crstnmac/sempdf-fonts", new Set(["liberation"])],
+      ]);
+      const allowedIdentifiers = new Set(["undefined", "String"]);
+      const forbiddenProperties = new Set(["constructor", "prototype", "__proto__", "writeToFile"]);
+      const fail = (node: import("typescript").Node, message: string): never => {
+        const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+        throw new Error(`${message} (line ${position.line + 1}).`);
+      };
+      const checkExpression = (node: import("typescript").Expression): void => {
+        if (
+          ts.default.isStringLiteral(node) || ts.default.isNumericLiteral(node) ||
+          node.kind === ts.default.SyntaxKind.TrueKeyword || node.kind === ts.default.SyntaxKind.FalseKeyword ||
+          node.kind === ts.default.SyntaxKind.NullKeyword || ts.default.isNoSubstitutionTemplateLiteral(node)
+        ) return;
+        if (ts.default.isIdentifier(node)) {
+          if (!allowedIdentifiers.has(node.text)) fail(node, `Identifier ${node.text} is not available`);
+          return;
+        }
+        if (ts.default.isArrayLiteralExpression(node)) {
+          for (const element of node.elements) {
+            if (ts.default.isSpreadElement(element)) fail(element, "Spread syntax is not available");
+            checkExpression(element as import("typescript").Expression);
+          }
+          return;
+        }
+        if (ts.default.isObjectLiteralExpression(node)) {
+          for (const property of node.properties) {
+            if (!ts.default.isPropertyAssignment(property)) {
+              fail(property, "Only plain object properties are available");
+            }
+            const assignment = property as import("typescript").PropertyAssignment;
+            if (ts.default.isComputedPropertyName(assignment.name)) fail(assignment.name, "Computed properties are not available");
+            checkExpression(assignment.initializer);
+          }
+          return;
+        }
+        if (ts.default.isPropertyAccessExpression(node)) {
+          if (forbiddenProperties.has(node.name.text)) fail(node.name, `Property ${node.name.text} is not available`);
+          checkExpression(node.expression);
+          return;
+        }
+        if (ts.default.isCallExpression(node)) {
+          checkExpression(node.expression);
+          for (const argument of node.arguments) checkExpression(argument);
+          return;
+        }
+        if (ts.default.isAwaitExpression(node)) {
+          checkExpression(node.expression);
+          return;
+        }
+        if (ts.default.isTaggedTemplateExpression(node) && ts.default.isNoSubstitutionTemplateLiteral(node.template)) {
+          checkExpression(node.tag);
+          return;
+        }
+        if (ts.default.isParenthesizedExpression(node) || ts.default.isAsExpression(node) || ts.default.isNonNullExpression(node)) {
+          checkExpression(node.expression);
+          return;
+        }
+        if (ts.default.isPrefixUnaryExpression(node) && (node.operator === ts.default.SyntaxKind.MinusToken || node.operator === ts.default.SyntaxKind.PlusToken)) {
+          checkExpression(node.operand);
+          return;
+        }
+        fail(node, `Syntax ${ts.default.SyntaxKind[node.kind]} is not available`);
+      };
+      for (const statement of sourceFile.statements) {
+        if (ts.default.isImportDeclaration(statement)) {
+          if (!ts.default.isStringLiteral(statement.moduleSpecifier)) {
+            fail(statement, "Invalid module import");
+          }
+          const moduleName = (statement.moduleSpecifier as import("typescript").StringLiteral).text;
+          const exports = allowedModules.get(moduleName);
+          const bindings = statement.importClause?.namedBindings;
+          if (exports === undefined || (bindings !== undefined && !ts.default.isNamedImports(bindings))) {
+            fail(statement, "Module import is not available");
+          }
+          const availableExports = exports as Set<string>;
+          const elements = bindings !== undefined && ts.default.isNamedImports(bindings) ? bindings.elements : [];
+          for (const element of elements) {
+            if (statement.importClause?.isTypeOnly === true || element.isTypeOnly) continue;
+            const imported = element.propertyName?.text ?? element.name.text;
+            if (!availableExports.has(imported)) fail(element, `Import ${imported} is not available`);
+            allowedIdentifiers.add(element.name.text);
+          }
+          continue;
+        }
+        if (ts.default.isVariableStatement(statement) && (statement.declarationList.flags & ts.default.NodeFlags.Const) !== 0) {
+          for (const declaration of statement.declarationList.declarations) {
+            if (!ts.default.isIdentifier(declaration.name) || declaration.initializer === undefined) {
+              fail(declaration, "Only initialized const declarations are available");
+            }
+            if (!ts.default.isIdentifier(declaration.name) || declaration.initializer === undefined) continue;
+            checkExpression(declaration.initializer);
+            allowedIdentifiers.add(declaration.name.text);
+          }
+          continue;
+        }
+        if (ts.default.isExpressionStatement(statement) && ts.default.isCallExpression(statement.expression)) {
+          checkExpression(statement.expression);
+          continue;
+        }
+        fail(statement, "This statement is not available in the server playground");
+      }
       const transpiled = ts.default.transpileModule(data.source, {
         compilerOptions: {
           target: ts.default.ScriptTarget.ES2022,
@@ -47,34 +166,43 @@ const renderOnServer = createServerFn({ method: "POST" })
       );
       if (syntaxError) throw new Error(ts.default.flattenDiagnosticMessageText(syntaxError.messageText, "\n"));
 
+      const safeSempdf = Object.freeze({
+        createDocument: sempdf.createDocument,
+        hex: sempdf.hex,
+        htmlToBlocks: sempdf.htmlToBlocks,
+        renderDocumentJson: sempdf.renderDocumentJson,
+      });
+      const safeFonts = Object.freeze({ liberation: sempdfFonts.liberation });
       const requireModule = (name: unknown) => {
-        if (name === "@crstnmac/sempdf") return sempdf;
-        if (name === "@crstnmac/sempdf-fonts") return sempdfFonts;
+        if (name === "@crstnmac/sempdf") return safeSempdf;
+        if (name === "@crstnmac/sempdf-fonts") return safeFonts;
         throw new Error(`Module ${String(name)} is not available in the playground.`);
       };
       const module = { exports: {} as Record<string, unknown> };
-      const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
-        ...args: string[]
-      ) => (...values: unknown[]) => Promise<unknown>;
-      const execute = new AsyncFunction(
-        "exports",
-        "require",
-        "module",
-        `${transpiled.outputText}\nreturn typeof bytes === "undefined" ? undefined : bytes;`,
+      const context = vm.default.createContext(
+        { exports: module.exports, require: requireModule, module },
+        { codeGeneration: { strings: false, wasm: false } },
       );
-      const output = await execute(module.exports, requireModule, module);
-      if (!(output instanceof Uint8Array)) {
+      const output = await vm.default.runInContext(
+        `(async () => { ${transpiled.outputText}\nreturn typeof bytes === "undefined" ? undefined : bytes; })()`,
+        context,
+        { timeout: 10_000 },
+      );
+      if (!ArrayBuffer.isView(output) || (output as { BYTES_PER_ELEMENT?: number }).BYTES_PER_ELEMENT !== 1) {
         throw new Error("TypeScript mode must assign the generated Uint8Array to `bytes`.");
       }
-      if (output.byteLength > 5 * 1024 * 1024) throw new Error("Rendered PDFs are limited to 5 MB.");
+      const bytes = new Uint8Array(output.buffer, output.byteOffset, output.byteLength);
+      if (bytes.byteLength > 5 * 1024 * 1024) throw new Error("Rendered PDFs are limited to 5 MB.");
 
       return {
         ok: true,
-        bytesBase64: Buffer.from(output.buffer, output.byteOffset, output.byteLength).toString("base64"),
+        bytesBase64: Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64"),
         durationMs: Math.round(performance.now() - startedAt),
       };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : "TypeScript execution failed." };
+    } finally {
+      activeRenders -= 1;
     }
   });
 
@@ -219,14 +347,18 @@ function sampleHtml(sample: SampleName): string {
   return `<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="utf-8">\n  <title>${escapeHtml(document.title ?? sample)}</title>\n</head>\n<body>\n${body.split("\n").map((line) => `  ${line}`).join("\n")}\n</body>\n</html>`;
 }
 
+function formatTypeScriptValue(value: unknown): string {
+  return JSON.stringify(value, null, 2).replace(/^(\s*)"([A-Za-z_$][\w$]*)":/gm, "$1$2:");
+}
+
 function formatSample(sample: SampleName, mode: PlaygroundMode): string {
-  const json = JSON.stringify(samples[sample], null, 2);
+  const jsonDocument = mode === "json" ? { ...samples[sample], conformance: undefined } : samples[sample];
+  const json = JSON.stringify(jsonDocument, null, 2);
   if (mode === "json") return `import { renderDocumentJson, type PdfDocumentJson } from "@crstnmac/sempdf";
-import { liberation } from "@crstnmac/sempdf-fonts";
 
 const document: PdfDocumentJson = ${json};
 
-const bytes = await renderDocumentJson(document, { fonts: liberation });`;
+const bytes = await renderDocumentJson(document);`;
   if (mode === "html") {
     const html = sampleHtml(sample).replaceAll("`", "\\`").replaceAll("${", "\\${");
     return `import { createDocument, htmlToBlocks } from "@crstnmac/sempdf";
@@ -242,48 +374,25 @@ doc.renderTemplate({
 const bytes = doc.toUint8Array();`;
   }
   const document: PdfDocumentJson = samples[sample];
-  let y = 790;
-  const commands: string[] = [];
-  for (const item of document.blocks) {
-    if (item.type === "heading") {
-      commands.push(`page.text(${JSON.stringify(item.text)}, { x: 56, y: ${y}, fontSize: ${item.options?.level === 1 ? 24 : 16}, color: hex("#315200") });`);
-      y -= item.options?.level === 1 ? 42 : 30;
-    } else if (item.type === "paragraph") {
-      commands.push(`page.textBlock(${JSON.stringify(item.text)}, { x: 56, y: ${y}, width: 480, fontSize: 11, lineHeight: 16 });`);
-      y -= 42;
-    } else if (item.type === "richParagraph") {
-      commands.push(`page.textBlock(${JSON.stringify(item.runs.map((run) => run.text).join(""))}, { x: 56, y: ${y}, width: 480, fontSize: 11, lineHeight: 16 });`);
-      y -= 34;
-    } else if (item.type === "list") {
-      for (const entry of item.items) {
-        commands.push(`page.text(${JSON.stringify(`- ${String(entry)}`)}, { x: 68, y: ${y}, fontSize: 11 });`);
-        y -= 20;
-      }
-    } else if (item.type === "table") {
-      for (const row of item.rows) {
-        const text = row.map((cell) => typeof cell === "string" ? cell : cell.text).join("    ");
-        commands.push(`page.text(${JSON.stringify(text)}, { x: 56, y: ${y}, fontSize: 10 });`);
-        y -= 20;
-      }
-    } else if (item.type === "rect") {
-      commands.push(`page.rect(56, ${Math.max(80, y - item.height)}, ${item.width}, ${item.height}, { paint: "fillStroke", fill: { color: hex("#e8efec") }, stroke: { color: hex("#315200"), width: 1 } });`);
-      y -= item.height + 20;
-    }
-  }
-  return `import { createDocument, hex } from "@crstnmac/sempdf";
+  const template = {
+    ...(document.page === undefined ? {} : { page: document.page }),
+    ...(document.styles === undefined ? {} : { styles: document.styles }),
+    ...(document.autoOutline === undefined ? {} : { autoOutline: document.autoOutline }),
+    blocks: document.blocks,
+  };
+  return `import { createDocument } from "@crstnmac/sempdf";
 
 const doc = createDocument({
   language: ${JSON.stringify(document.language ?? "en-US")},
   tagged: ${document.tagged ?? false},
   compress: ${document.compress ?? true},
   defaultPageSize: ${JSON.stringify(document.page?.size ?? "A4")},
-  info: ${JSON.stringify(document.info ?? { title: document.title ?? sample }, null, 2)}
+  info: ${formatTypeScriptValue({ title: document.title ?? sample, ...document.info })}
 });
 
-const page = doc.addPage();
-${commands.join("\n")}
+doc.renderTemplate(${formatTypeScriptValue(template)});
 
-// The worker previews whichever Uint8Array is assigned to \`bytes\`.
+// The server previews whichever Uint8Array is assigned to \`bytes\`.
 const bytes = doc.toUint8Array();`;
 }
 
